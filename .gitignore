@@ -1,0 +1,29 @@
+# Entorno virtual y Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Anaconda
+.conda/
+
+# Datos y modelos (archivos demasiado grandes para Git)
+data/raw/
+data/processed/
+models/weights/
+
+# Outputs generados
+outputs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Variables de entorno y secretos
+.env
+
+# Mac
+.DS_Store
+
+# IDEs
+.vscode/settings.json
