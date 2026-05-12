@@ -22,7 +22,7 @@ class PlayerTracker:
         # track_activation_threshold: confianza mínima para activar un nuevo track
         # lost_track_buffer: frames que esperamos antes de eliminar un track perdido
         # minimum_matching_threshold: IoU mínimo para asociar detección con track
-        self.tracker = sv.ByteTracker(
+        self.tracker = sv.ByteTrack(
             track_activation_threshold=confidence,
             lost_track_buffer=150,
             minimum_matching_threshold=0.8,
