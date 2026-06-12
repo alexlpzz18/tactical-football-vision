@@ -94,6 +94,41 @@ class TeamClassifier:
         )
         self.kmeans.fit(colors)
         self.is_fitted = True
+    
+    def fit_multiple(
+    self,
+    frames: list,
+    detections_list: list
+) -> None:
+    """
+    Entrena el clasificador con múltiples frames para mayor robustez.
+    Más variedad de colores = mejor separación entre equipos.
+
+    Args:
+        frames: lista de frames
+        detections_list: lista de detecciones correspondientes
+    """
+    all_colors = []
+
+    for frame, detections in zip(frames, detections_list):
+        if len(detections) == 0:
+            continue
+        for bbox in detections.xyxy:
+            color = self._extract_torso_color(frame, bbox)
+            all_colors.append(color)
+
+    if len(all_colors) < self.n_clusters:
+        return
+
+    all_colors = np.array(all_colors)
+
+    self.kmeans = KMeans(
+        n_clusters=self.n_clusters,
+        random_state=42,
+        n_init=10
+    )
+    self.kmeans.fit(all_colors)
+    self.is_fitted = True
 
     def predict(
         self,
