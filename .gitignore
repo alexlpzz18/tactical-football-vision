@@ -35,3 +35,6 @@ data/calibracion/*.png
 
 # Modelos entrenados (van por DVC, no a GitHub)
 *.pt
+
+# Informes generados (derivados, se regeneran con el script)
+data/reports/
