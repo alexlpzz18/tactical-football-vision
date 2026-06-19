@@ -1,0 +1,145 @@
+[
+  {
+    "nombre": "center",
+    "pixel": [
+      1297,
+      558
+    ],
+    "metros": [
+      50.0,
+      32.0
+    ]
+  },
+  {
+    "nombre": "circulo_top",
+    "pixel": [
+      1299,
+      541
+    ],
+    "metros": [
+      50.0,
+      41.15
+    ]
+  },
+  {
+    "nombre": "circulo_bottom",
+    "pixel": [
+      1295,
+      586
+    ],
+    "metros": [
+      50.0,
+      22.85
+    ]
+  },
+  {
+    "nombre": "halfway_top",
+    "pixel": [
+      1298,
+      515
+    ],
+    "metros": [
+      50.0,
+      64.0
+    ]
+  },
+  {
+    "nombre": "halfway_bottom",
+    "pixel": [
+      1289,
+      823
+    ],
+    "metros": [
+      50.0,
+      0.0
+    ]
+  },
+  {
+    "nombre": "box_left_top",
+    "pixel": [
+      881,
+      524
+    ],
+    "metros": [
+      16.5,
+      52.16
+    ]
+  },
+  {
+    "nombre": "box_left_bottom",
+    "pixel": [
+      318,
+      603
+    ],
+    "metros": [
+      16.5,
+      11.84
+    ]
+  },
+  {
+    "nombre": "box_right_top",
+    "pixel": [
+      1722,
+      535
+    ],
+    "metros": [
+      83.5,
+      52.16
+    ]
+  },
+  {
+    "nombre": "box_right_bottom",
+    "pixel": [
+      2317,
+      624
+    ],
+    "metros": [
+      83.5,
+      11.84
+    ]
+  },
+  {
+    "nombre": "penalty_left",
+    "pixel": [
+      636,
+      546
+    ],
+    "metros": [
+      11.0,
+      32.0
+    ]
+  },
+  {
+    "nombre": "penalty_right",
+    "pixel": [
+      1971,
+      560
+    ],
+    "metros": [
+      89.0,
+      32.0
+    ]
+  },
+  {
+    "nombre": "corner_top_left",
+    "pixel": [
+      787,
+      512
+    ],
+    "metros": [
+      0.0,
+      64.0
+    ]
+  },
+  {
+    "nombre": "corner_top_right",
+    "pixel": [
+      1817,
+      521
+    ],
+    "metros": [
+      100.0,
+      64.0
+    ]
+  }
+]

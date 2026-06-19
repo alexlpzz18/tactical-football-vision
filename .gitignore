@@ -27,3 +27,11 @@ outputs/
 
 # IDEs
 .vscode/settings.json
+# Notebooks de experimentos (pesados, valor documental para TFG, solo en local)
+notebooks/
+
+# Imágenes de calibración (pesadas, van en Drive/DVC)
+data/calibracion/*.png
+
+# Modelos entrenados (van por DVC, no a GitHub)
+*.pt
