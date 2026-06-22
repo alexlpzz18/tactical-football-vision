@@ -1,18 +1,21 @@
 """
 Procesador de vídeo → tracking data.
-Recorre un vídeo, corrige distorsión, detecta/trackea jugadores,
-clasifica equipos y proyecta posiciones a metros con la homografía.
-Produce una tabla de posiciones (CSV) + metadatos (JSON).
+Recorre un vídeo, corrige distorsión, detecta jugadores con SAHI (inferencia
+por recortes), los trackea, clasifica equipos y proyecta posiciones a metros
+con la homografía. Produce una tabla de posiciones (CSV) + metadatos (JSON).
 """
 
 import cv2
 import json
 import numpy as np
 import pandas as pd
+import supervision as sv
 from pathlib import Path
 from datetime import datetime
 
-from src.tracking.tracker import PlayerTracker
+from sahi import AutoDetectionModel
+from sahi.predict import get_sliced_prediction
+
 from src.team_classification.classifier import TeamClassifier
 
 
@@ -30,6 +33,25 @@ def project_point(x, y, H):
     return float(proy[0]), float(proy[1])
 
 
+def _sahi_to_detections(sahi_result):
+    """Convierte el resultado de SAHI al formato sv.Detections de supervision."""
+    boxes = []
+    confidences = []
+    for pred in sahi_result.object_prediction_list:
+        b = pred.bbox
+        boxes.append([b.minx, b.miny, b.maxx, b.maxy])
+        confidences.append(pred.score.value)
+
+    if len(boxes) == 0:
+        return sv.Detections.empty()
+
+    return sv.Detections(
+        xyxy=np.array(boxes, dtype=np.float32),
+        confidence=np.array(confidences, dtype=np.float32),
+        class_id=np.zeros(len(boxes), dtype=int),
+    )
+
+
 def process_video(
     video_path: str,
     model_path: str,
@@ -40,9 +62,12 @@ def process_video(
     k2: float = 0.5,
     sample_every: int = 5,
     max_frames: int = None,
-    confidence: float = 0.3,
+    confidence: float = 0.2,
     field_length: float = 100.0,
     field_width: float = 64.0,
+    slice_rows: int = 2,
+    slice_cols: int = 4,
+    device: str = "cuda",
 ):
     """
     Procesa el vídeo y guarda la tabla de posiciones.
@@ -58,10 +83,27 @@ def process_video(
         max_frames: limitar nº de frames originales a recorrer (None = todo)
         confidence: umbral de confianza del detector
         field_length, field_width: dimensiones del campo en metros
+        slice_rows, slice_cols: divisiones de SAHI (filas x columnas)
+        device: 'cuda' en Colab con GPU, 'cpu' en local
     """
-    # ── Cargar homografía, modelo y clasificador ──
+    # ── Cargar homografía, modelo SAHI, tracker y clasificador ──
     H = np.load(homography_path)
-    tracker = PlayerTracker(model_path, confidence)
+
+    modelo_sahi = AutoDetectionModel.from_pretrained(
+        model_type="ultralytics",
+        model_path=model_path,
+        confidence_threshold=confidence,
+        device=device,
+    )
+
+    # Mantenemos ByteTrack para los IDs (igual que antes)
+    tracker = sv.ByteTrack(
+        track_activation_threshold=confidence,
+        lost_track_buffer=150,
+        minimum_matching_threshold=0.8,
+        frame_rate=30,
+    )
+
     classifier = TeamClassifier(n_teams=2)
 
     cap = cv2.VideoCapture(video_path)
@@ -74,6 +116,11 @@ def process_video(
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     print(f"Vídeo {w}x{h} @ {fps}fps, {total} frames")
+    print(f"SAHI: {slice_rows}x{slice_cols} trozos, umbral {confidence}")
+
+    # Tamaño de cada trozo de SAHI
+    slice_h = h // slice_rows
+    slice_w = w // slice_cols
 
     # ── Preparar la corrección de distorsión ──
     K = _build_camera_matrix(w, h)
@@ -102,10 +149,22 @@ def process_video(
         # 1. Corregir distorsión
         frame = cv2.undistort(frame, K, dist)
 
-        # 2. Detectar y trackear
-        detections = tracker.detect_and_track(frame)
+        # 2. Detectar con SAHI
+        sahi_result = get_sliced_prediction(
+            frame,
+            modelo_sahi,
+            slice_height=slice_h,
+            slice_width=slice_w,
+            overlap_height_ratio=0.2,
+            overlap_width_ratio=0.2,
+            verbose=0,
+        )
+        detections = _sahi_to_detections(sahi_result)
 
-        # 3. Entrenar el clasificador de equipos (primeros 30 frames válidos)
+        # 3. Trackear (IDs) con ByteTrack
+        detections = tracker.update_with_detections(detections)
+
+        # 4. Entrenar el clasificador de equipos (primeros 30 frames válidos)
         if not classifier_fitted:
             if len(detections) >= 3:
                 training_frames.append((frame.copy(), detections))
@@ -117,13 +176,13 @@ def process_video(
                 classifier_fitted = True
                 print(f"  Clasificador entrenado ({len(training_frames)} frames)")
 
-        # 4. Clasificar equipos
+        # 5. Clasificar equipos
         if classifier_fitted and len(detections) > 0:
             team_ids = classifier.predict(frame, detections)
         else:
             team_ids = np.zeros(len(detections), dtype=int)
 
-        # 5. Proyectar cada jugador y guardar una fila
+        # 6. Proyectar cada jugador y guardar una fila
         for i, (bbox, tid) in enumerate(zip(detections.xyxy, detections.tracker_id)):
             if tid is None:
                 continue
@@ -168,6 +227,9 @@ def process_video(
         "distorsion": {"k1": k1, "k2": k2},
         "homografia": Path(homography_path).name,
         "campo_m": [field_length, field_width],
+        "deteccion": "SAHI",
+        "sahi_slices": [slice_rows, slice_cols],
+        "confidence": confidence,
         "total_detecciones": len(filas),
         "ids_unicos": int(df["id_jugador"].nunique()) if len(df) else 0,
     }
