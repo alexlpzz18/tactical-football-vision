@@ -275,3 +275,42 @@ Lecturas:
    equipos por identidad** (agregando muchos recortes por identidad, la
    señal se limpia). Invalida usarlo como discriminador de identidad
    individual tracklet a tracklet en esta resolución.
+
+---
+
+## Tarea 2 cerrada — TeamClassifierColor conectado al banco (12-jul-2026)
+
+`TeamClassifierColor` migrado a `src/team_classification/color_classifier.py`
+(KMeans k=8 → fusión jerárquica con umbral auto → 2 meta-grupos mayores por
+tamaño → prototipos; predict por distancia). El banco clasifica cada
+identidad por su color AGREGADO (media de todos sus recortes del caché) y
+la puntúa contra el team GT por voto mayoritario, con mapeo A↔B óptimo
+(las etiquetas del clustering son arbitrarias).
+
+**Resultado sobre el pipeline oficial (goloso conservador, 89 ids):**
+
+- Accuracy jugadores de campo (GT A/B): **0.559** (68 identidades, mapeo permutado)
+- Confusión GT → predicho: A → {A:17, B:9, otro:8} · B → {A:5, B:21, otro:8}
+  · porteros → B (2)
+
+**Diagnóstico (por detección aislada, etiquetada con el GT a <2 m):**
+
+- Accuracy global por detección: 0.649 (el umbral auto elige 0.80, que ES
+  el mejor del barrido: 0.649 vs 0.431 a 0.70 — el techo está en la señal,
+  no en la fusión).
+- **La accuracy depende de la profundidad** (= tamaño del recorte):
+
+| franja my | n | accuracy | →otro | alto mediano del recorte |
+|---|---|---|---|---|
+| 0-17 m | 69 | **0.957** | 0 % | 47 px |
+| 17-34 m | 396 | **0.864** | 0.3 % | 34 px |
+| 34-51 m | 746 | 0.558 | 14.6 % | 26 px |
+| 51-75 m | 204 | 0.466 | 19.1 % | 20 px |
+
+**Conclusión (TFM):** el diseño de 2 fases funciona donde el jugador
+supera ~30 px de alto (0.86-0.96); por debajo, el histograma HS de un
+torso de <8 px de ancho es ruido y ninguna agregación lo rescata (la
+identidad media 0.559 refleja que la mayoría de recortes son lejanos,
+más la contaminación residual del cosido). La mejora de equipos pasa por
+resolución/zoom o features que no dependan del color del torso, no por
+retocar el clasificador.

@@ -141,3 +141,32 @@ def test_asociacion_umbral_depende_de_profundidad():
     lejos_gt = [_obs(1, 20.0, 60.0)]
     lejos_pred = [_obs(7, 22.5, 60.0)]
     assert asociar_frame(lejos_gt, lejos_pred, u) == [(0, 0)]
+
+
+def test_resumen_equipos_permutacion_optima():
+    """Si el clasificador llama B al equipo A del GT, el mapeo lo corrige."""
+    from src.evaluation.metricas import resumen_equipos
+
+    detalle = {
+        1: ("B", "A"),  # el clasificador etiqueta al revés...
+        2: ("B", "A"),
+        3: ("A", "B"),  # ...consistentemente
+        4: ("A", "B"),
+        5: ("otro", "portero_A"),  # el portero no entra en accuracy de campo
+    }
+    r = resumen_equipos(detalle)
+    assert r.permutado is True
+    assert r.accuracy_campo == pytest.approx(1.0)
+    assert r.n_campo == 4
+    # La confusión se reporta YA mapeada
+    assert r.confusion["A"] == {"A": 2}
+    assert r.confusion["B"] == {"B": 2}
+    assert r.confusion["portero_A"] == {"otro": 1}
+
+
+def test_resumen_equipos_sin_predicciones():
+    from src.evaluation.metricas import resumen_equipos
+
+    r = resumen_equipos({1: (None, "A"), 2: (None, "B")})
+    assert r.accuracy_campo is None
+    assert r.n_campo == 0

@@ -192,3 +192,57 @@ def accuracy_equipos(
         n_identidades_evaluadas=evaluables,
         detalle=detalle,
     )
+
+
+@dataclass
+class ResumenEquipos:
+    """Resumen de la clasificación de equipos con mapeo A↔B óptimo.
+
+    Las etiquetas A/B del clasificador son arbitrarias (clustering sin
+    supervisión): se elige la correspondencia con las del GT que maximiza
+    los aciertos sobre jugadores de campo, y se informa si hubo que
+    permutar.
+    """
+
+    accuracy_campo: float | None  # sobre identidades con GT mayoritario A o B
+    n_campo: int  # identidades de campo evaluadas
+    permutado: bool  # True si el mapeo óptimo fue A↔B
+    confusion: dict[str, Counter]  # {equipo_gt: Counter(equipo_pred mapeado)}
+
+
+def resumen_equipos(
+    detalle: dict[int, tuple[str | None, str | None]],
+) -> ResumenEquipos:
+    """Calcula accuracy de campo y confusión a partir del detalle por identidad.
+
+    Args:
+        detalle: salida de accuracy_equipos().detalle:
+            {id_identidad: (equipo_predicho, equipo_gt_mayoritario)}.
+    """
+    con_prediccion = [(pred, gt) for pred, gt in detalle.values() if pred is not None]
+
+    def _aciertos_campo(mapa: dict[str, str]) -> tuple[int, int]:
+        aciertos = total = 0
+        for pred, gt in con_prediccion:
+            if gt in ("A", "B"):
+                total += 1
+                if mapa.get(pred, pred) == gt:
+                    aciertos += 1
+        return aciertos, total
+
+    directo = _aciertos_campo({"A": "A", "B": "B"})
+    invertido = _aciertos_campo({"A": "B", "B": "A"})
+    permutado = invertido[0] > directo[0]
+    aciertos, n_campo = invertido if permutado else directo
+    mapa = {"A": "B", "B": "A"} if permutado else {"A": "A", "B": "B"}
+
+    confusion: dict[str, Counter] = defaultdict(Counter)
+    for pred, gt in con_prediccion:
+        confusion[gt][mapa.get(pred, pred)] += 1
+
+    return ResumenEquipos(
+        accuracy_campo=aciertos / n_campo if n_campo else None,
+        n_campo=n_campo,
+        permutado=permutado,
+        confusion=dict(confusion),
+    )

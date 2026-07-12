@@ -20,7 +20,7 @@ import logging
 import pickle
 import sys
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +42,11 @@ from src.evaluation.gt_parser import gt_a_por_frame, parsear_cvat  # noqa: E402
 from src.evaluation.metricas import (  # noqa: E402
     accuracy_equipos,
     calcular_metricas_tracking,
+    resumen_equipos,
+)
+from src.team_classification.color_classifier import (  # noqa: E402
+    ParametrosClasificadorColor,
+    TeamClassifierColor,
 )
 from src.evaluation.trackeval_runner import evaluar_con_trackeval  # noqa: E402
 from src.tracking.cache_io import cargar_cache  # noqa: E402
@@ -84,6 +89,58 @@ def cargar_colores_opcional(ruta: Path, identidades_tracklets) -> dict | None:
     return color_medio
 
 
+def clasificar_equipos_por_identidad(
+    ruta_colores: Path, identidades: list
+) -> dict[int, str] | None:
+    """Clasifica cada identidad en A/B/otro por su color AGREGADO.
+
+    Entrena TeamClassifierColor con TODAS las features del caché de colores
+    (población completa de recortes) y predice cada identidad con la media
+    de las features de todos sus recortes: agregar muchos recortes limpia
+    la señal, que a nivel de recorte individual es ruidosa (ver
+    docs/experimentos_tracking.md, conclusión sobre el color).
+
+    Returns:
+        {id_identidad (1..N, mismo orden que el adaptador): 'A'/'B'/'otro'}
+        o None si no hay caché de colores. Identidades sin ningún recorte
+        con color quedan fuera del dict (sin clasificar).
+    """
+    if not ruta_colores.exists():
+        logger.info("Sin caché de colores: equipos no evaluables.")
+        return None
+    with open(ruta_colores, "rb") as f:
+        features = pickle.load(f)
+
+    ruta_config = Path("configs/team_classification.yaml")
+    if ruta_config.exists():
+        with open(ruta_config) as f:
+            params = ParametrosClasificadorColor.desde_dict(
+                yaml.safe_load(f)["clasificador_color"]
+            )
+    else:
+        params = None
+    clasificador = TeamClassifierColor(params)
+    clasificador.fit_features(np.array(list(features.values())))
+
+    equipos: dict[int, str] = {}
+    for id_identidad, identidad in enumerate(identidades, start=1):
+        feats = [
+            features[par]
+            for tracklet in identidad
+            for par in tracklet.det_idxs
+            if par in features
+        ]
+        if feats:
+            equipos[id_identidad] = clasificador.predict_color(np.mean(feats, axis=0))
+    logger.info(
+        "Equipos por identidad: %d/%d clasificadas (%s)",
+        len(equipos),
+        len(identidades),
+        dict(sorted(Counter(equipos.values()).items())),
+    )
+    return equipos
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/evaluation.yaml")
@@ -109,8 +166,11 @@ def main() -> None:
     parser.add_argument(
         "--color",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Usar el caché de colores si existe (--no-color: solo movimiento)",
+        default=False,
+        help="Usar el color como veto en el cosido (medido: no aporta; "
+        "off por defecto — ver docs/experimentos_tracking.md). La "
+        "clasificación de EQUIPOS por identidad usa el color siempre "
+        "que el caché exista, independientemente de este flag.",
     )
     args = parser.parse_args()
 
@@ -155,7 +215,7 @@ def main() -> None:
             Path(cfg["rutas"]["cache_colores"]), tracklets
         )
     else:
-        logger.info("Color desactivado por --no-color: cosido solo por movimiento.")
+        logger.info("Veto de color en el cosido: off (--color para activarlo).")
         color_medio = None
     stitcher = TrackletStitcher(ParametrosCosido.desde_dict(cfg_tracking["cosido"]))
     identidades = stitcher.coser(tracklets, color_medio)
@@ -177,6 +237,12 @@ def main() -> None:
         super_tracklets = [fusionar_identidad(ident) for ident in identidades]
         identidades = stitcher_p2.coser(super_tracklets)
 
+    # Tarea 2: clasificación de EQUIPOS por identidad agregada (color medio
+    # de todos los recortes de la identidad → una etiqueta por identidad)
+    equipos_pred = clasificar_equipos_por_identidad(
+        Path(cfg["rutas"]["cache_colores"]), identidades
+    )
+
     # Tarea 3a: interpolación de huecos dentro de identidades (opcional)
     cfg_interp = cfg_tracking.get("interpolacion", {})
     interpolar = (
@@ -189,9 +255,9 @@ def main() -> None:
         trayectorias = interpolar_identidades(
             identidades, frames_ts, cfg_interp["max_hueco"]
         )
-        pred = trayectorias_a_por_frame(trayectorias)
+        pred = trayectorias_a_por_frame(trayectorias, equipos_pred)
     else:
-        pred = identidades_a_por_frame(identidades)
+        pred = identidades_a_por_frame(identidades, equipos_pred)
 
     # ------------------------------------------------------------- alineación
     frames_cache = [e["frame_idx"] for e in datos["cache"]]
@@ -227,6 +293,7 @@ def main() -> None:
     votos_por_equipo = defaultdict(int)
     for _, equipo_gt in equipos.detalle.values():
         votos_por_equipo[equipo_gt] += 1
+    resumen = resumen_equipos(equipos.detalle)
 
     # ------------------------------------------------------------------ tabla
     ancho = 66
@@ -286,13 +353,19 @@ def main() -> None:
     print(f"  Frag:  {estandar['Frag']}")
     print(f"  MOTA:  {estandar['MOTA']:.3f}")
     print("-" * ancho)
-    if equipos.accuracy is not None:
+    if resumen.n_campo > 0:
+        print("EQUIPOS (clasificación por identidad agregada, color medio)")
         print(
-            f"EQUIPOS: accuracy = {equipos.accuracy:.3f} "
-            f"({equipos.n_identidades_evaluadas} identidades)"
+            f"  Accuracy jugadores de campo (GT A/B): {resumen.accuracy_campo:.3f} "
+            f"({resumen.n_campo} identidades; mapeo A↔B "
+            f"{'permutado' if resumen.permutado else 'directo'})"
         )
+        print("  Confusión GT → predicho:")
+        for equipo_gt in sorted(resumen.confusion):
+            reparto = dict(sorted(resumen.confusion[equipo_gt].items()))
+            print(f"    {equipo_gt:<10} → {reparto}")
     else:
-        print("EQUIPOS: N/A (clasificador de equipos aún no conectado al pipeline)")
+        print("EQUIPOS: N/A (sin caché de colores o sin identidades emparejadas)")
         print(f"  Identidades pred con equipo GT mayoritario: {dict(votos_por_equipo)}")
     print("=" * ancho + "\n")
 
