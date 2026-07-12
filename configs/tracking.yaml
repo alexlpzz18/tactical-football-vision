@@ -26,6 +26,16 @@ exclusion_espacial:
   dist_max: 1.5
   min_frames_comunes: 3
 
+# Contexto de plantilla (2/2): cota BLANDA de plantilla — fusión golosa de
+# identidades ENTRELAZADAS (observaciones alternadas en el tiempo,
+# espacialmente compatibles por interpolación) hasta acercar la
+# concurrencia de identidades activas a la plantilla real (~23). Blanda:
+# se para cuando no quedan pares con coste <= coste_max.
+cota_plantilla:
+  activa: false  # solo tiene sentido sobre rescate+grafo+exclusion
+  cota: 23
+  coste_max: 4.0
+
 # Tarea 3c: segunda pasada de cosido sobre las identidades ya cosidas
 # (fusionadas en super-tracklets), para cerrar huecos largos. Tolerancia
 # más conservadora que la 1ª pasada: con huecos de >6 s la extrapolación

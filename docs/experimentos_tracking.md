@@ -391,6 +391,63 @@ refuerza: ya no hay trade-off en IDF1.
 
 ---
 
+## Variante 3h — Contexto de plantilla (2/2): cota blanda ~23
+
+**Diagnóstico que la motiva:** en el candidato+exclusión hay ~21
+identidades OBSERVADAS por frame (≈ los 22-23 reales del GT ✓) pero **~77
+ACTIVAS simultáneas**: fragmentos del mismo jugador cuyas observaciones se
+ALTERNAN en el tiempo (los frames de uno caen en los huecos del otro). El
+cosido no puede unirlos (solo une final→inicio) ni la exclusión (no
+comparten frames). Es una tercera clase de fragmentación, invisible hasta
+ahora.
+
+**Qué:** fusión golosa de pares entrelazados espacialmente compatibles
+(mediana de la distancia de las obs de uno a la trayectoria INTERPOLADA
+del otro, en ambos sentidos, sin extrapolar) hasta acercar la concurrencia
+mediana a la cota (~23 = 22 jugadores + árbitro). BLANDA: si no queda par
+con coste ≤ coste_max, se para (entradas/salidas de encuadre).
+`src/tracking/cota_plantilla.py`, config `cota_plantilla:`, flag
+`--cota-plantilla`.
+
+**Medición (sobre candidato + exclusión 1.5):**
+
+| variante | nIds | conc | IDF1 | IDSW | recall | prec | HOTA |
+|---|---|---|---|---|---|---|---|
+| base (cand+exclusión) | 87 | 77 | 0.287 | 632 | 0.698 | 0.729 | 0.165 |
+| +cota23 coste_max=1.5 | 82 | 74 | 0.302 | 608 | 0.701 | 0.744 | 0.169 |
+| +cota23 coste_max=3.0 | 70 | 64 | 0.312 | 578 | 0.693 | 0.746 | 0.170 |
+| **+cota23 coste_max=4.0** | **58** | **53** | **0.325** | **536** | 0.688 | 0.757 | **0.171** |
+| +cota23 coste_max=5.0 | 47 | 44 | 0.335 | 495 | 0.677 | 0.760 | 0.172 |
+| +cota23 coste_max=7.0 | 31 | 29 | 0.343 | 374 | 0.576 | 0.771 | 0.167 |
+
+**Decisión: SEGUNDA variante que cumple el criterio** (IDSW baja y todo
+lo demás sube). Punto de operación: coste_max=4.0 (5.0 da métricas casi
+idénticas pero 5 m de compatibilidad mediana es físicamente laxo →
+riesgo de sobreajuste al tramo; en 7.0 se gira: fusiona jugadores reales
+y el recall se hunde).
+
+## Estado del candidato tras el contexto de plantilla (12-jul-2026)
+
+Pila completa: Etapa A min_frames=1 → cosido global → filtro <3 frames →
+exclusión espacial (1.5 m) → cota blanda (23, 4.0 m):
+
+| | oficial | candidato pila completa |
+|---|---|---|
+| HOTA | 0.106 | **0.171 (+61 %)** |
+| IDF1 propio | 0.229 | **0.325 (+42 %)** |
+| recall/frame | 0.259 | **0.688 (×2.7)** |
+| precision/frame | 0.730 | **0.757** |
+| identidades (23 GT) | 89 | **58** |
+| IDSW bruto (tasa/frame emp.) | 130 (0.23) | 536 (0.35) |
+
+El candidato ya domina al oficial en TODAS las métricas de calidad
+excepto el IDSW bruto (0.35 vs 0.23 por frame emparejado, bajando desde
+0.50 en cada iteración). La concurrencia sigue en 53 (vs ~23 reales):
+queda margen para más contexto de plantilla (asignación por ventana
+temporal con exclusión mutua explícita).
+
+---
+
 ## Variante 3f — Consistencia de velocidad en la unión del cosido
 
 **Qué:** dos mecanismos sobre la velocidad implicada por el salto

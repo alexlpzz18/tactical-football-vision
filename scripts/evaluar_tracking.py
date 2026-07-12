@@ -58,6 +58,7 @@ from src.tracking.field_tracker import (  # noqa: E402
     ConservativeTracker,
     ParametrosEtapaA,
 )
+from src.tracking.cota_plantilla import fusionar_hasta_cota  # noqa: E402
 from src.tracking.exclusion_espacial import (  # noqa: E402
     fusionar_identidades_duplicadas,
 )
@@ -184,6 +185,12 @@ def main() -> None:
         help="Forzar exclusión espacial (fusión de duplicados) on/off",
     )
     parser.add_argument(
+        "--cota-plantilla",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forzar cota blanda de plantilla (fusión de entrelazadas) on/off",
+    )
+    parser.add_argument(
         "--segunda-pasada",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -258,6 +265,18 @@ def main() -> None:
     if excluir:
         identidades = fusionar_identidades_duplicadas(
             identidades, cfg_excl["dist_max"], cfg_excl["min_frames_comunes"]
+        )
+
+    # Contexto de plantilla: cota blanda (fusión de entrelazadas)
+    cfg_cota = cfg_tracking.get("cota_plantilla", {})
+    aplicar_cota = (
+        args.cota_plantilla
+        if args.cota_plantilla is not None
+        else cfg_cota.get("activa", False)
+    )
+    if aplicar_cota:
+        identidades = fusionar_hasta_cota(
+            identidades, cfg_cota["cota"], cfg_cota["coste_max"]
         )
 
     # Tarea 3c: segunda pasada de cosido sobre identidades fusionadas
