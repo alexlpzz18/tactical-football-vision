@@ -50,7 +50,12 @@ from src.tracking.field_tracker import (  # noqa: E402
     ParametrosEtapaA,
 )
 from src.tracking.interpolacion import interpolar_identidades  # noqa: E402
-from src.tracking.stitcher import ParametrosCosido, TrackletStitcher  # noqa: E402
+from src.tracking.stitcher import (  # noqa: E402
+    ParametrosCosido,
+    TrackletStitcher,
+    filtrar_identidades_cortas,
+    fusionar_identidad,
+)
 
 logger = logging.getLogger("evaluar_tracking")
 
@@ -89,6 +94,18 @@ def main() -> None:
         default=None,
         help="Forzar interpolación de huecos on/off (por defecto: lo que diga la config)",
     )
+    parser.add_argument(
+        "--rescatar-cortos",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forzar rescate de tracklets cortos on/off (por defecto: config)",
+    )
+    parser.add_argument(
+        "--segunda-pasada",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forzar segunda pasada de cosido on/off (por defecto: config)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -113,7 +130,18 @@ def main() -> None:
     )
 
     # --------------------------------------------------------------- pipeline
-    tracker = ConservativeTracker(ParametrosEtapaA.desde_dict(cfg_tracking["etapa_a"]))
+    # Tarea 3b: con rescate de cortos, la Etapa A no filtra (min_frames=1)
+    # y el filtro de calidad se aplica tras el cosido, a nivel de identidad.
+    cfg_rescate = cfg_tracking.get("rescate_cortos", {})
+    rescatar = (
+        args.rescatar_cortos
+        if args.rescatar_cortos is not None
+        else cfg_rescate.get("activo", False)
+    )
+    params_etapa_a = dict(cfg_tracking["etapa_a"])
+    if rescatar:
+        params_etapa_a["min_frames"] = 1
+    tracker = ConservativeTracker(ParametrosEtapaA.desde_dict(params_etapa_a))
     tracklets = tracker.procesar(datos["cache"], datos["fps"], datos["sample"])
 
     color_medio = cargar_colores_opcional(
@@ -121,6 +149,23 @@ def main() -> None:
     )
     stitcher = TrackletStitcher(ParametrosCosido.desde_dict(cfg_tracking["cosido"]))
     identidades = stitcher.coser(tracklets, color_medio)
+    if rescatar:
+        identidades = filtrar_identidades_cortas(
+            identidades, cfg_rescate["min_frames_identidad"]
+        )
+
+    # Tarea 3c: segunda pasada de cosido sobre identidades fusionadas
+    cfg_p2 = cfg_tracking.get("segunda_pasada", {})
+    segunda = (
+        args.segunda_pasada
+        if args.segunda_pasada is not None
+        else cfg_p2.get("activa", False)
+    )
+    if segunda:
+        params_p2 = {k: v for k, v in cfg_p2.items() if k != "activa"}
+        stitcher_p2 = TrackletStitcher(ParametrosCosido.desde_dict(params_p2))
+        super_tracklets = [fusionar_identidad(ident) for ident in identidades]
+        identidades = stitcher_p2.coser(super_tracklets)
 
     # Tarea 3a: interpolación de huecos dentro de identidades (opcional)
     cfg_interp = cfg_tracking.get("interpolacion", {})
@@ -184,6 +229,8 @@ def main() -> None:
         f"{len(identidades)} ({'con color' if color_medio else 'solo movimiento'})"
     )
     print(f"Interpolación de huecos: {'ACTIVA' if interpolar else 'off'}")
+    print(f"Rescate de tracklets cortos: {'ACTIVO' if rescatar else 'off'}")
+    print(f"Segunda pasada de cosido: {'ACTIVA' if segunda else 'off'}")
     print(f"Identidades GT: {len(tracks_gt)} (22 players + 1 referee)")
     print(
         f"Sanidad alineación: dist. media GT→det más cercana = {dist_alineacion:.2f} m"

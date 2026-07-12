@@ -1,6 +1,7 @@
 """Tests de la Etapa B (cosido de tracklets) con casos sintéticos."""
 
 import numpy as np
+import pytest
 
 from src.tracking.field_tracker import Tracklet
 from src.tracking.stitcher import ParametrosCosido, TrackletStitcher
@@ -93,3 +94,42 @@ def test_parametros_desde_dict():
     )
     assert p.max_hueco == 5.0
     assert p.peso_color == 0.1
+
+
+def test_filtrar_identidades_cortas():
+    """Se conservan identidades con sustancia total; las aisladas cortas no."""
+    from src.tracking.stitcher import filtrar_identidades_cortas
+
+    larga = _tracklet_recto(1, t0=0.0, x0=0.0, vx=3.0, n_frames=10)
+    corta_cosida = Tracklet(2, 0.0, np.array([0.0, 0.0]), 0, 0)  # 1 frame
+    corta_aislada = Tracklet(3, 5.0, np.array([50.0, 50.0]), 0, 0)  # 1 frame
+    identidades = [[larga, corta_cosida], [corta_aislada]]
+    filtradas = filtrar_identidades_cortas(identidades, min_frames_total=3)
+    assert len(filtradas) == 1
+    assert filtradas[0][0].id == 1  # la cadena con el tracklet largo sobrevive
+
+
+def test_rescate_un_corto_se_cose_a_la_cadena():
+    """Un tracklet de 1 frame en la prolongación de una cadena queda cosido."""
+    tr_a = _tracklet_recto(1, t0=0.0, x0=0.0, vx=3.0, n_frames=10)
+    hueco = 0.5
+    corto = Tracklet(
+        2, tr_a.ts[-1] + hueco, np.array([tr_a.pos[-1][0] + 3.0 * hueco, 10.0]), 0, 0
+    )
+    identidades = TrackletStitcher().coser([tr_a, corto])
+    assert len(identidades) == 1
+    assert [tr.id for tr in identidades[0]] == [1, 2]
+
+
+def test_fusionar_identidad():
+    """La fusión concatena observaciones en orden y recalcula la velocidad."""
+    from src.tracking.stitcher import fusionar_identidad
+
+    tr_a = _tracklet_recto(1, t0=0.0, x0=0.0, vx=3.0, n_frames=5)
+    tr_b = _tracklet_recto(2, t0=1.0, x0=3.0, vx=3.0, n_frames=5)
+    fusionado = fusionar_identidad([tr_a, tr_b])
+    assert len(fusionado) == 10
+    assert fusionado.ts == sorted(fusionado.ts)
+    assert fusionado.id == 1  # conserva el id del primer tracklet
+    # Velocidad ~3 m/s en x tras recorrer toda la trayectoria
+    assert fusionado.vel[0] == pytest.approx(3.0, abs=0.2)

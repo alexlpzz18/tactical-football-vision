@@ -41,6 +41,56 @@ class ParametrosCosido:
         return cls(**d)
 
 
+def fusionar_identidad(identidad: list[Tracklet]) -> Tracklet:
+    """Une una identidad (cadena de tracklets) en UN tracklet continuo.
+
+    Necesario para la segunda pasada de cosido (Tarea 3c): cada identidad
+    de la primera pasada se convierte en un "super-tracklet" y se vuelve a
+    coser con huecos más largos. La velocidad se recalcula con la misma
+    media móvil exponencial que usa la Etapa A, recorriendo todas las
+    observaciones en orden.
+    """
+    observaciones = []
+    for tracklet in identidad:
+        for t, pos, (frame_idx, det_idx) in zip(
+            tracklet.ts, tracklet.pos, tracklet.det_idxs
+        ):
+            observaciones.append((t, pos, det_idx, frame_idx))
+    observaciones.sort(key=lambda x: x[0])
+
+    t0, pos0, det0, frame0 = observaciones[0]
+    fusionado = Tracklet(identidad[0].id, t0, pos0, det0, frame0)
+    for t, pos, det_idx, frame_idx in observaciones[1:]:
+        fusionado.anadir(t, pos, det_idx, frame_idx)
+    return fusionado
+
+
+def filtrar_identidades_cortas(
+    identidades: list[list[Tracklet]],
+    min_frames_total: int,
+) -> list[list[Tracklet]]:
+    """Descarta identidades con menos de `min_frames_total` observaciones.
+
+    Pensado para la variante "rescate de cortos" (Tarea 3b): la Etapa A se
+    corre con min_frames=1 para que los tracklets cortos entren al cosido,
+    y el filtro de calidad se aplica DESPUÉS, a nivel de identidad: un
+    tracklet de 1 frame aislado se descarta igual que antes, pero si quedó
+    cosido a una cadena con sustancia, se conserva.
+    """
+    filtradas = [
+        identidad
+        for identidad in identidades
+        if sum(len(tr) for tr in identidad) >= min_frames_total
+    ]
+    logger.info(
+        "Filtro de identidades cortas: %d → %d (mínimo %d frames en total)",
+        len(identidades),
+        len(filtradas),
+        min_frames_total,
+    )
+    return filtradas
+
+
 class TrackletStitcher:
     """Etapa B: cose tracklets en identidades persistentes."""
 
