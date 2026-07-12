@@ -2,6 +2,22 @@
 # Valores validados en Colab (briefing 2.3). El script de evaluación los
 # carga si este archivo existe; si no, usa los defaults del dataclass.
 
+# Regla de porteros por POSICIÓN (sobrescribe al color): identidad con
+# posición MEDIANA dentro de un área de penalti → portero del equipo que
+# defiende ese lado. Verificado en GT: portero_A mediana mx=90.9,
+# portero_B mx=15.4; ningún jugador de campo tiene mediana en las áreas.
+porteros:
+  activo: true
+  # Límites ajustados con el GT: portero_A mediana mx=90.9 (rango 85-95.5)
+  # pero los defensas de campo llegan a mediana 88.2 → corte en 88.5
+  area_mx_bajo: [0.0, 19.0]
+  area_mx_alto: [88.5, 110.0]
+  area_my: [20.0, 55.0]
+  # Qué equipo defiende cada lado en este tramo (cambia al descanso;
+  # automatizarlo es parte de la integración end-to-end)
+  equipo_mx_alto: A
+  equipo_mx_bajo: B
+
 clasificador_color:
   # Banda del pecho dentro del recorte (fracciones de alto/ancho)
   torso_alto: [0.12, 0.45]

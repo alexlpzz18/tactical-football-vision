@@ -208,6 +208,10 @@ class ResumenEquipos:
     n_campo: int  # identidades de campo evaluadas
     permutado: bool  # True si el mapeo óptimo fue A↔B
     confusion: dict[str, Counter]  # {equipo_gt: Counter(equipo_pred mapeado)}
+    # Porteros (regla posicional, etiquetas ancladas al lado del campo:
+    # NO se permutan con A↔B)
+    accuracy_porteros: float | None = None
+    n_porteros: int = 0
 
 
 def resumen_equipos(
@@ -240,9 +244,18 @@ def resumen_equipos(
     for pred, gt in con_prediccion:
         confusion[gt][mapa.get(pred, pred)] += 1
 
+    # Porteros: la regla posicional ancla la etiqueta al lado del campo,
+    # así que se compara directa (sin permutación A↔B)
+    porteros = [
+        (pred, gt) for pred, gt in con_prediccion if gt in ("portero_A", "portero_B")
+    ]
+    aciertos_porteros = sum(1 for pred, gt in porteros if pred == gt)
+
     return ResumenEquipos(
         accuracy_campo=aciertos / n_campo if n_campo else None,
         n_campo=n_campo,
         permutado=permutado,
         confusion=dict(confusion),
+        accuracy_porteros=aciertos_porteros / len(porteros) if porteros else None,
+        n_porteros=len(porteros),
     )

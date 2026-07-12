@@ -48,6 +48,10 @@ from src.team_classification.color_classifier import (  # noqa: E402
     ParametrosClasificadorColor,
     TeamClassifierColor,
 )
+from src.team_classification.porteros import (  # noqa: E402
+    ReglaPorteros,
+    aplicar_regla_porteros,
+)
 from src.evaluation.trackeval_runner import evaluar_con_trackeval  # noqa: E402
 from src.tracking.cache_io import cargar_cache  # noqa: E402
 from src.tracking.field_tracker import (  # noqa: E402
@@ -243,6 +247,18 @@ def main() -> None:
         Path(cfg["rutas"]["cache_colores"]), identidades
     )
 
+    # Regla de porteros por posición (sobrescribe al color)
+    ruta_config_equipos = Path("configs/team_classification.yaml")
+    if equipos_pred is not None and ruta_config_equipos.exists():
+        with open(ruta_config_equipos) as f:
+            cfg_equipos = yaml.safe_load(f)
+        cfg_porteros = cfg_equipos.get("porteros", {})
+        if cfg_porteros.get("activo", False):
+            regla = ReglaPorteros.desde_dict(
+                {k: v for k, v in cfg_porteros.items() if k != "activo"}
+            )
+            equipos_pred = aplicar_regla_porteros(equipos_pred, identidades, regla)
+
     # Tarea 3a: interpolación de huecos dentro de identidades (opcional)
     cfg_interp = cfg_tracking.get("interpolacion", {})
     interpolar = (
@@ -360,6 +376,11 @@ def main() -> None:
             f"({resumen.n_campo} identidades; mapeo A↔B "
             f"{'permutado' if resumen.permutado else 'directo'})"
         )
+        if resumen.n_porteros > 0:
+            print(
+                f"  Accuracy porteros (regla posicional): "
+                f"{resumen.accuracy_porteros:.3f} ({resumen.n_porteros} identidades)"
+            )
         print("  Confusión GT → predicho:")
         for equipo_gt in sorted(resumen.confusion):
             reparto = dict(sorted(resumen.confusion[equipo_gt].items()))
