@@ -264,6 +264,35 @@ def process_video(
 # ══════════════════════════════════════════════════════════════════════
 
 
+def _rango_de_frames(cfg_muestreo: dict, fps: float) -> tuple[int, int | None]:
+    """Rango [frame_ini, frame_fin) de frames ORIGINALES a procesar.
+
+    Soporta dos límites combinables en configs/processor.yaml (muestreo):
+    - tramo: {min_ini, dur_seg} → procesar solo esa ventana del partido
+      (caso real: saltar el descanso, validar con un tramo corto).
+    - max_frames: tope de frames originales a recorrer desde el inicio
+      del tramo (o del vídeo si no hay tramo).
+
+    Los frame_idx resultantes siguen siendo GLOBALES del vídeo (el formato
+    del caché los usa así: min 5 a 25 fps → frame 7500), por eso el tramo
+    solo posiciona el lector, nunca renumera.
+
+    Returns:
+        (frame_ini, frame_fin): fin exclusivo, None = hasta el final.
+    """
+    frame_ini = 0
+    frame_fin = None
+    tramo = cfg_muestreo.get("tramo") or {}
+    if tramo:
+        frame_ini = int(round(tramo["min_ini"] * 60.0 * fps))
+        frame_fin = frame_ini + int(round(tramo["dur_seg"] * fps))
+    max_frames = cfg_muestreo.get("max_frames")
+    if max_frames is not None:
+        fin_por_max = frame_ini + int(max_frames)
+        frame_fin = fin_por_max if frame_fin is None else min(frame_fin, fin_por_max)
+    return frame_ini, frame_fin
+
+
 def _filtrar_detecciones_v2(dets, confianza_min, max_area_frac, area_frame):
     """Filtros validados: confianza mínima y descarte de cajas gigantes.
 
@@ -321,9 +350,22 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     filas_sahi = cfg_det["sahi"]["filas"]
     cols_sahi = cfg_det["sahi"]["columnas"]
 
+    # Tramo/límite opcional (muestreo.tramo / muestreo.max_frames)
+    frame_ini, frame_fin = _rango_de_frames(cfg["muestreo"], fps)
+    if frame_ini > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ini)
+        logger.info(
+            "Tramo: arrancando en el frame %d (t=%.1f s)%s",
+            frame_ini,
+            frame_ini / fps,
+            f", hasta el {frame_fin}" if frame_fin is not None else "",
+        )
+
     cache, colores = [], {}
-    frame_idx = 0
+    frame_idx = frame_ini
     while True:
+        if frame_fin is not None and frame_idx >= frame_fin:
+            break
         ret, frame = cap.read()
         if not ret:
             break

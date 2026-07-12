@@ -22,6 +22,10 @@ distorsion:
 
 muestreo:
   sample_every: 3
+  # Opcionales (modo full): procesar solo una parte del vídeo. Combinables
+  # (manda el límite más corto). Los frame_idx siguen siendo GLOBALES.
+  # tramo: {min_ini: 5.0, dur_seg: 60.0}   # p. ej. minuto 5-6 (validación)
+  # max_frames: 1500                        # tope de frames originales
 
 # ── Tracking: el perfil decide el pipeline (ver src/tracking/perfiles.py) ──
 tracking:
