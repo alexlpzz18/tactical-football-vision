@@ -1,0 +1,33 @@
+# Configuración del banco de evaluación de tracking (Tarea 1).
+
+rutas:
+  cache: data/tracking/cache_detecciones_min5_60s.pkl
+  ground_truth: data/annotations/ground_truth_tracking/annotations.xml
+  homografia: data/calibracion/homografia.npy
+  # Opcional: features de color por detección {(frame_idx, det_idx): np.array(256)}.
+  # Si no existe, el cosido va solo por movimiento (baseline actual).
+  cache_colores: data/tracking/cache_colores_min5_60s.pkl
+
+alineacion:
+  # El GT (CVAT) usa frames locales 0..99 = 1 de cada 15 frames reales del
+  # vídeo; el caché usa frame_idx global con 1 de cada 3. Correspondencia:
+  #   frame_global = frame_offset + paso_gt * frame_local
+  # frame_offset = 7500 (min 5 a 25 fps). Se valida empíricamente en el
+  # script de evaluación (distancia GT proyectado ↔ detecciones del caché).
+  frame_offset: 7500
+  paso_gt: 15
+
+asociacion:
+  # Emparejamiento GT↔predicción por DISTANCIA EN METROS (no IoU): con
+  # jugadores de 15-40 px el IoU es frágil, y todo el pipeline vive en
+  # metros. El pie de la caja GT se proyecta con la MISMA homografía que
+  # sufren las predicciones, así los errores de proyección afectan a ambas
+  # y se cancelan parcialmente.
+  umbral_metros: 2.0
+
+trackeval:
+  # Truco para usar TrackEval (que asocia por IoU de cajas) con distancias
+  # métricas: cada objeto se convierte en una caja sintética de LxL "metros"
+  # centrada en su posición de campo. El IoU entre cajas sintéticas opera
+  # entonces como cercanía métrica.
+  lado_caja_sintetica: 2.0
