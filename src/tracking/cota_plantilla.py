@@ -27,37 +27,75 @@ from src.tracking.field_tracker import Tracklet
 logger = logging.getLogger(__name__)
 
 
-def _observaciones(identidad: list[Tracklet]) -> tuple[np.ndarray, np.ndarray]:
-    """(tiempos ordenados, posiciones Nx2) de todas las obs de la identidad."""
+def _observaciones(
+    identidad: list[Tracklet],
+) -> tuple[np.ndarray, np.ndarray, dict[int, np.ndarray]]:
+    """(tiempos ordenados, posiciones Nx2, {frame: pos}) de la identidad."""
     ts, poss = [], []
+    por_frame: dict[int, np.ndarray] = {}
     for tracklet in identidad:
         ts.extend(tracklet.ts)
         poss.extend(tracklet.pos)
+        for pos, (frame_idx, _det) in zip(tracklet.pos, tracklet.det_idxs):
+            por_frame[frame_idx] = pos
     orden = np.argsort(ts)
-    return np.array(ts)[orden], np.array(poss)[orden]
+    return np.array(ts)[orden], np.array(poss)[orden], por_frame
 
 
 def _coste_entrelazado(
-    obs_a: tuple[np.ndarray, np.ndarray],
-    obs_b: tuple[np.ndarray, np.ndarray],
+    obs_a: tuple[np.ndarray, np.ndarray, dict],
+    obs_b: tuple[np.ndarray, np.ndarray, dict],
+    ventana_s: float | None = None,
+    excl_dist: float | None = None,
+    excl_min_comunes: int = 3,
 ) -> float:
     """Compatibilidad espacial de dos identidades entrelazadas.
 
-    Mediana de la distancia de cada observación de una identidad a la
-    posición INTERPOLADA de la otra en ese instante (en ambos sentidos;
-    solo se interpola dentro del rango temporal, nunca se extrapola).
-    inf si no hay solape temporal evaluable.
+    Base: distancia de cada observación de una identidad a la posición
+    INTERPOLADA de la otra en ese instante (ambos sentidos; nunca se
+    extrapola). inf si no hay solape temporal evaluable.
+
+    Endurecimientos (iteración "asignación por ventana con exclusión
+    mutua explícita"):
+    - excl_dist: si comparten ≥ excl_min_comunes frames OBSERVADOS y su
+      distancia mediana en ellos supera excl_dist → inf. Estar en dos
+      sitios a la vez es prueba directa de ser jugadores distintos.
+    - ventana_s: el coste es el MÁXIMO de las medianas por ventana
+      temporal (la compatibilidad debe cumplirse en TODAS las ventanas;
+      una mediana global puede esconder una ventana donde divergen).
+      None = mediana global (comportamiento original).
     """
-    distancias = []
-    for (ts_x, pos_x), (ts_y, pos_y) in ((obs_a, obs_b), (obs_b, obs_a)):
+    ts_a, pos_a, frames_a = obs_a
+    ts_b, pos_b, frames_b = obs_b
+
+    # Exclusión mutua explícita por co-observación
+    if excl_dist is not None:
+        comunes = frames_a.keys() & frames_b.keys()
+        if len(comunes) >= excl_min_comunes:
+            d_com = np.median(
+                [np.linalg.norm(frames_a[f] - frames_b[f]) for f in comunes]
+            )
+            if d_com > excl_dist:
+                return float("inf")
+
+    muestras: list[tuple[float, float]] = []  # (t, distancia)
+    for (ts_x, pos_x, _), (ts_y, pos_y, _) in ((obs_a, obs_b), (obs_b, obs_a)):
         dentro = (ts_y >= ts_x[0]) & (ts_y <= ts_x[-1])
         if not dentro.any():
             continue
         interp_x = np.interp(ts_y[dentro], ts_x, pos_x[:, 0])
         interp_y = np.interp(ts_y[dentro], ts_x, pos_x[:, 1])
         d = np.hypot(pos_y[dentro, 0] - interp_x, pos_y[dentro, 1] - interp_y)
-        distancias.extend(d.tolist())
-    return float(np.median(distancias)) if distancias else float("inf")
+        muestras.extend(zip(ts_y[dentro].tolist(), d.tolist()))
+    if not muestras:
+        return float("inf")
+
+    if ventana_s is None:
+        return float(np.median([d for _, d in muestras]))
+    por_ventana: dict[int, list[float]] = {}
+    for t, d in muestras:
+        por_ventana.setdefault(int(t // ventana_s), []).append(d)
+    return float(max(np.median(ds) for ds in por_ventana.values()))
 
 
 def _concurrencia_mediana(identidades: list[list[Tracklet]]) -> float:
@@ -85,12 +123,17 @@ def fusionar_hasta_cota(
     identidades: list[list[Tracklet]],
     cota: int,
     coste_max: float,
+    ventana_s: float | None = None,
+    excl_dist: float | None = None,
+    excl_min_comunes: int = 3,
 ) -> list[list[Tracklet]]:
     """Fusiona golosamente pares entrelazados hasta acercarse a la cota.
 
     En cada paso se fusiona el par con MENOR coste de compatibilidad; se
     para cuando la concurrencia mediana baja de `cota` o cuando el mejor
     par disponible supera `coste_max` (cota blanda: no se fuerza).
+    ventana_s / excl_dist activan los endurecimientos (ver
+    _coste_entrelazado).
     """
     identidades = list(identidades)
     n_fusiones = 0
@@ -99,7 +142,13 @@ def fusionar_hasta_cota(
         mejor = (float("inf"), -1, -1)
         for i in range(len(identidades)):
             for j in range(i + 1, len(identidades)):
-                coste = _coste_entrelazado(observaciones[i], observaciones[j])
+                coste = _coste_entrelazado(
+                    observaciones[i],
+                    observaciones[j],
+                    ventana_s=ventana_s,
+                    excl_dist=excl_dist,
+                    excl_min_comunes=excl_min_comunes,
+                )
                 if coste < mejor[0]:
                     mejor = (coste, i, j)
         coste, i, j = mejor

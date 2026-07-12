@@ -469,6 +469,39 @@ posiciones cubiertas con el equipo correcto — lo da la cobertura.
 
 ---
 
+## Variante 3i — Asignación por ventana con exclusión mutua explícita (timebox)
+
+**Qué:** dos endurecimientos de la cota blanda: (1) exclusión mutua
+explícita — pares con ≥3 frames co-observados a mediana > excl_dist son
+infusionables ("estar en dos sitios a la vez" = jugadores distintos);
+(2) compatibilidad por ventana — el coste es el MÁXIMO de las medianas
+por ventana temporal, no la mediana global. Parámetros `ventana_s` /
+`excl_dist` en `fusionar_hasta_cota` (default None = v1).
+
+**Medición (tasa = IDSW por frame emparejado):**
+
+| variante | nIds | IDF1 | IDSW | tasa | recall | HOTA |
+|---|---|---|---|---|---|---|
+| **v1 cota blanda cm=4.0 (referencia)** | 58 | **0.325** | **536** | **0.351** | 0.688 | **0.171** |
+| v2 ventana15+excl2.0 (cm 4-10) | 76-83 | 0.287-0.289 | 628-631 | 0.406-0.408 | 0.697 | 0.165 |
+| v2b solo-exclusión (ed 4-5, cm 5-10) | 47-59 | 0.304-0.320 | 531-566 | 0.370-0.374 | 0.642-0.682 | 0.165-0.166 |
+| v2c ventana30+ed5 cm=6 | 61 | 0.301 | 568 | 0.374 | 0.685 | 0.166 |
+
+**Decisión (timebox): la tasa NO baja de 0.351 → SE PARA. v1 se queda.**
+
+**Aprendizaje (cierra la veta):** la exclusión mutua "dura" fracasa por
+la misma causa raíz que el color y la velocidad: el ruido de localización
+del fondo (mediana 2.5 m en my>51) corrompe la evidencia — dos
+observaciones del MISMO jugador lejano distan >2-5 m por el error de
+proyección, así que el veto de co-observación mata fusiones correctas, y
+la ventana convierte ruido local en veto global. **Toda señal de grano
+fino (color, velocidad, co-observación) está por debajo del suelo de
+ruido en la mitad lejana del campo.** El siguiente salto real de tracking
+no está en el post-procesado: está en reducir ese ruido (modelo v4 con
+mejores cajas, o suavizado/filtrado de posiciones antes de asociar).
+
+---
+
 ## Variante 3f — Consistencia de velocidad en la unión del cosido
 
 **Qué:** dos mecanismos sobre la velocidad implicada por el salto
