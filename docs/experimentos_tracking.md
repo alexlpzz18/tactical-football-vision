@@ -317,6 +317,44 @@ retocar el clasificador.
 
 ---
 
+## Regla de porteros + hipótesis "identidades largas clasifican mejor" (12-jul-2026)
+
+**Regla de porteros (posicional):** identidad con posición MEDIANA dentro
+de un área de penalti → portero del equipo que defiende ese lado
+(sobrescribe al color). Áreas calibradas con GT (portero_A mx=90.9,
+portero_B mx=15.4; corte alto en 88.5 porque los defensas llegan a
+mediana 88.2). **Resultado: 3/3 porteros correctos (accuracy 1.000) sin
+tragarse jugadores de campo.**
+
+**Hipótesis (¿las identidades largas se clasifican mejor?): CONFIRMADA,
+con matiz.** Sobre las 68 identidades de campo del pipeline oficial:
+
+| duración (obs) | n | accuracy | | recortes cercanos (my<34) | n | accuracy |
+|---|---|---|---|---|---|---|
+| 3-10 | 18 | 0.556 | | 0 | 53 | 0.472 |
+| 10-25 | 18 | 0.444 | | 1-4 | 3 | 0.667 |
+| 25-60 | 15 | 0.600 | | 5-19 | 5 | 0.800 |
+| ≥60 | 17 | 0.647 | | ≥20 | 7 | **1.000** |
+
+Cruce duración × cercanía: corta+cercanos = 1.000 (n=4); larga+cercanos
+= 0.818 (n=11); larga+sin cercanos = 0.524 (n=21); corta+sin = 0.438.
+
+**El mecanismo real no es la duración sino la CERCANÍA:** una identidad
+se clasifica bien si atraviesa la zona donde el jugador supera ~30 px.
+La duración ayuda solo porque las identidades largas tienen más
+probabilidad de pasar por ahí. **Queda demostrado que mejorar el cosido
+mejora también la clasificación**: cada unión correcta que conecte un
+fragmento lejano con un paso por la zona cercana hereda una etiqueta
+fiable.
+
+**Mejora derivada (adoptada):** agregación con preferencia por recortes
+cercanos — si la identidad tiene recortes con my<45, el color medio usa
+SOLO esos. Accuracy de campo 0.559 → **0.603** (config
+`agregacion.solo_cercanos`). Ganancia limitada porque solo 15/68
+identidades tienen recortes cercanos: otra vez, el techo es el cosido.
+
+---
+
 ## Variante 3f — Consistencia de velocidad en la unión del cosido
 
 **Qué:** dos mecanismos sobre la velocidad implicada por el salto

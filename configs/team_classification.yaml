@@ -18,6 +18,14 @@ porteros:
   equipo_mx_alto: A
   equipo_mx_bajo: B
 
+# Agregación por identidad: si la identidad tiene recortes "cercanos"
+# (my < umbral, donde el jugador es grande y el color es señal), usar SOLO
+# esos para el color medio; si no tiene, usar todos. Medido: 0.559 → 0.603
+# de accuracy de campo (un recorte limpio vale más que muchos ruidosos).
+agregacion:
+  solo_cercanos: true
+  umbral_my: 45.0
+
 clasificador_color:
   # Banda del pecho dentro del recorte (fracciones de alto/ancho)
   torso_alto: [0.12, 0.45]

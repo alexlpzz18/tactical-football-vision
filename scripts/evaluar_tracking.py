@@ -126,14 +126,27 @@ def clasificar_equipos_por_identidad(
     clasificador = TeamClassifierColor(params)
     clasificador.fit_features(np.array(list(features.values())))
 
+    # Agregación con preferencia por recortes cercanos (my < umbral): donde
+    # el jugador es grande, el color es señal; lejos es ruido (medido:
+    # accuracy 1.000 con ≥20 recortes cercanos vs 0.472 sin ninguno)
+    cfg_agg = {}
+    if ruta_config is not None and ruta_config.exists():
+        with open(ruta_config) as f:
+            cfg_agg = yaml.safe_load(f).get("agregacion", {})
+    solo_cercanos = cfg_agg.get("solo_cercanos", False)
+    umbral_my = cfg_agg.get("umbral_my", 45.0)
+
     equipos: dict[int, str] = {}
     for id_identidad, identidad in enumerate(identidades, start=1):
-        feats = [
-            features[par]
-            for tracklet in identidad
-            for par in tracklet.det_idxs
-            if par in features
-        ]
+        todos, cercanos = [], []
+        for tracklet in identidad:
+            for pos, par in zip(tracklet.pos, tracklet.det_idxs):
+                if par not in features:
+                    continue
+                todos.append(features[par])
+                if pos[1] < umbral_my:
+                    cercanos.append(features[par])
+        feats = cercanos if (solo_cercanos and cercanos) else todos
         if feats:
             equipos[id_identidad] = clasificador.predict_color(np.mean(feats, axis=0))
     logger.info(
