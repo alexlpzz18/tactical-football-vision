@@ -195,6 +195,94 @@ def accuracy_equipos(
 
 
 @dataclass
+class ResultadoCobertura:
+    """Cobertura colectiva: la métrica de PRODUCTO del informe.
+
+    % de posiciones GT (con equipo) cubiertas por una predicción emparejada
+    cuyo equipo coincide, frame a frame. Un switch de identidad DENTRO del
+    mismo equipo no penaliza (el informe colectivo agrega por equipo, no
+    por jugador): solo importa que la posición esté y esté bien asignada.
+    """
+
+    cobertura: float  # global, sobre posiciones GT con equipo
+    n_posiciones_gt: int
+    permutado: bool  # mapeo A↔B aplicado a las predicciones
+    por_grupo: dict[str, float]  # cobertura por grupo de equipo ('A', 'B')
+
+
+def _grupo_equipo(team: str | None) -> str | None:
+    """Grupo de equipo a efectos del informe: el portero cuenta con su equipo."""
+    if team in ("A", "portero_A"):
+        return "A"
+    if team in ("B", "portero_B"):
+        return "B"
+    return None
+
+
+def cobertura_colectiva(
+    gt: PorFrame,
+    pred: PorFrame,
+    frames: list[int],
+    umbral_metros: Umbral,
+) -> ResultadoCobertura:
+    """Calcula la cobertura colectiva (ver ResultadoCobertura).
+
+    El emparejamiento GT↔pred es el mismo posicional del banco (húngaro +
+    umbral); el equipo se compara a nivel de GRUPO (A/B, porteros incluidos
+    en su equipo). Las etiquetas A/B del clasificador son arbitrarias: se
+    prueba el mapeo directo y el permutado y se reporta el mejor.
+    """
+    from src.evaluation.asociacion import asociar_frame
+
+    frames = sorted(frames)
+    # (grupo_gt, grupo_pred_directo) por cada posición GT con equipo
+    resultados_por_obs: list[tuple[str, str | None]] = []
+    for frame in frames:
+        obs_gt = gt.get(frame, [])
+        obs_pred = pred.get(frame, [])
+        pares = dict(asociar_frame(obs_gt, obs_pred, umbral_metros))
+        for idx_gt, obs in enumerate(obs_gt):
+            grupo_gt = _grupo_equipo(obs.team)
+            if grupo_gt is None:  # el árbitro no cuenta para el informe
+                continue
+            grupo_pred = None
+            if idx_gt in pares:
+                grupo_pred = _grupo_equipo(obs_pred[pares[idx_gt]].team)
+            resultados_por_obs.append((grupo_gt, grupo_pred))
+
+    def _cobertura(mapa: dict[str, str]) -> tuple[float, dict[str, float]]:
+        aciertos_grupo: Counter = Counter()
+        total_grupo: Counter = Counter()
+        for grupo_gt, grupo_pred in resultados_por_obs:
+            total_grupo[grupo_gt] += 1
+            if grupo_pred is not None and mapa.get(grupo_pred, grupo_pred) == grupo_gt:
+                aciertos_grupo[grupo_gt] += 1
+        total = sum(total_grupo.values())
+        global_ = sum(aciertos_grupo.values()) / total if total else 0.0
+        por_grupo = {g: aciertos_grupo[g] / total_grupo[g] for g in sorted(total_grupo)}
+        return global_, por_grupo
+
+    directo = _cobertura({"A": "A", "B": "B"})
+    invertido = _cobertura({"A": "B", "B": "A"})
+    permutado = invertido[0] > directo[0]
+    cobertura, por_grupo = invertido if permutado else directo
+
+    resultado = ResultadoCobertura(
+        cobertura=cobertura,
+        n_posiciones_gt=len(resultados_por_obs),
+        permutado=permutado,
+        por_grupo=por_grupo,
+    )
+    logger.info(
+        "Cobertura colectiva: %.3f sobre %d posiciones GT (%s)",
+        resultado.cobertura,
+        resultado.n_posiciones_gt,
+        por_grupo,
+    )
+    return resultado
+
+
+@dataclass
 class ResumenEquipos:
     """Resumen de la clasificación de equipos con mapeo A↔B óptimo.
 

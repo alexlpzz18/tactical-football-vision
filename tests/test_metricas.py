@@ -170,3 +170,63 @@ def test_resumen_equipos_sin_predicciones():
     r = resumen_equipos({1: (None, "A"), 2: (None, "B")})
     assert r.accuracy_campo is None
     assert r.n_campo == 0
+
+
+def test_cobertura_colectiva_tracker_perfecto():
+    """Posiciones y equipos correctos → cobertura 1.0."""
+    from src.evaluation.metricas import cobertura_colectiva
+
+    gt = _gt_dos_jugadores()
+    pred = {
+        f: [_obs(7, 10.0, 10.0, team="A"), _obs(9, 30.0, 30.0, team="B")]
+        for f in FRAMES
+    }
+    r = cobertura_colectiva(gt, pred, FRAMES, UMBRAL)
+    assert r.cobertura == pytest.approx(1.0)
+    assert r.por_grupo == {"A": 1.0, "B": 1.0}
+
+
+def test_cobertura_switch_dentro_del_equipo_no_penaliza():
+    """Dos jugadores del MISMO equipo intercambian IDs → cobertura 1.0."""
+    from src.evaluation.metricas import cobertura_colectiva
+
+    gt = {f: [_obs(1, 10.0, 10.0, "A"), _obs(2, 30.0, 30.0, "A")] for f in FRAMES}
+    pred = {}
+    for f in FRAMES:
+        a, b = (7, 9) if f < 5 else (9, 7)  # switch de identidad a mitad
+        pred[f] = [_obs(a, 10.0, 10.0, team="A"), _obs(b, 30.0, 30.0, team="A")]
+    r = cobertura_colectiva(gt, pred, FRAMES, UMBRAL)
+    assert r.cobertura == pytest.approx(1.0)  # el equipo es lo que cuenta
+
+
+def test_cobertura_equipo_incorrecto_penaliza():
+    from src.evaluation.metricas import cobertura_colectiva
+
+    gt = _gt_dos_jugadores()  # jugador 1 = A, jugador 2 = B
+    pred = {
+        f: [_obs(7, 10.0, 10.0, team="A"), _obs(9, 30.0, 30.0, team="A")]
+        for f in FRAMES
+    }
+    r = cobertura_colectiva(gt, pred, FRAMES, UMBRAL)
+    assert r.cobertura == pytest.approx(0.5)  # B mal etiquetado no cubre
+
+
+def test_cobertura_portero_cuenta_con_su_equipo():
+    from src.evaluation.metricas import cobertura_colectiva
+
+    gt = {0: [_obs(1, 91.0, 37.0, team="portero_A")]}
+    pred = {0: [_obs(7, 91.0, 37.0, team="portero_A")]}
+    r = cobertura_colectiva(gt, pred, [0], UMBRAL)
+    assert r.cobertura == pytest.approx(1.0)
+    # y también si la pred dice 'A' a secas (mismo grupo)
+    pred = {0: [_obs(7, 91.0, 37.0, team="A")]}
+    assert cobertura_colectiva(gt, pred, [0], UMBRAL).cobertura == pytest.approx(1.0)
+
+
+def test_cobertura_sin_emparejar_o_sin_equipo_no_cubre():
+    from src.evaluation.metricas import cobertura_colectiva
+
+    gt = {0: [_obs(1, 10.0, 10.0, "A"), _obs(2, 30.0, 30.0, "B")]}
+    pred = {0: [_obs(7, 10.0, 10.0, team=None)]}  # sin clasificar + B sin pred
+    r = cobertura_colectiva(gt, pred, [0], UMBRAL)
+    assert r.cobertura == pytest.approx(0.0)

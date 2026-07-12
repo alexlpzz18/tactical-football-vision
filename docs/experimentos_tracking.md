@@ -448,6 +448,27 @@ temporal con exclusión mutua explícita).
 
 ---
 
+## Métrica de PRODUCTO: cobertura colectiva (12-jul-2026)
+
+**Definición:** % de posiciones GT (con equipo; el árbitro no cuenta)
+cubiertas por una predicción emparejada (posicional, umbral oficial) cuyo
+GRUPO de equipo coincide (el portero cuenta con su equipo; mapeo A↔B
+óptimo). Un switch de identidad DENTRO del mismo equipo NO penaliza: el
+informe colectivo agrega por equipo, no por jugador. Es la métrica que
+manda para el producto. `cobertura_colectiva()` en metricas.py.
+
+| pipeline | cobertura | equipo A | equipo B |
+|---|---|---|---|
+| oficial (goloso conservador) | 0.140 | 0.118 | 0.167 |
+| **candidato completo** (rescate+grafo+excl+cota) | **0.384** | 0.319 | 0.463 |
+
+**El candidato multiplica ×2.7 la métrica de producto.** Sus IDSW extra
+son mayoritariamente switches dentro del mismo equipo o entre identidades
+que el informe colectivo ni distingue; lo que el producto necesita —
+posiciones cubiertas con el equipo correcto — lo da la cobertura.
+
+---
+
 ## Variante 3f — Consistencia de velocidad en la unión del cosido
 
 **Qué:** dos mecanismos sobre la velocidad implicada por el salto

@@ -42,6 +42,7 @@ from src.evaluation.gt_parser import gt_a_por_frame, parsear_cvat  # noqa: E402
 from src.evaluation.metricas import (  # noqa: E402
     accuracy_equipos,
     calcular_metricas_tracking,
+    cobertura_colectiva,
     resumen_equipos,
 )
 from src.team_classification.color_classifier import (  # noqa: E402
@@ -185,6 +186,12 @@ def main() -> None:
         help="Forzar exclusión espacial (fusión de duplicados) on/off",
     )
     parser.add_argument(
+        "--metodo-cosido",
+        choices=["goloso", "global"],
+        default=None,
+        help="Forzar el método de cosido (por defecto: config)",
+    )
+    parser.add_argument(
         "--cota-plantilla",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -250,7 +257,10 @@ def main() -> None:
     else:
         logger.info("Veto de color en el cosido: off (--color para activarlo).")
         color_medio = None
-    stitcher = TrackletStitcher(ParametrosCosido.desde_dict(cfg_tracking["cosido"]))
+    params_cosido = dict(cfg_tracking["cosido"])
+    if args.metodo_cosido is not None:
+        params_cosido["metodo"] = args.metodo_cosido
+    stitcher = TrackletStitcher(ParametrosCosido.desde_dict(params_cosido))
     identidades = stitcher.coser(tracklets, color_medio)
     if rescatar:
         identidades = filtrar_identidades_cortas(
@@ -350,6 +360,7 @@ def main() -> None:
     propias_prof = calcular_metricas_tracking(gt, pred, comunes, umbral_prof)
     propias_fijo = calcular_metricas_tracking(gt, pred, comunes, umbral_fijo)
     equipos = accuracy_equipos(gt, pred, comunes, umbral_prof)
+    cobertura = cobertura_colectiva(gt, pred, comunes, umbral_prof)
 
     with tempfile.TemporaryDirectory(prefix="trackeval_") as tmp:
         estandar = evaluar_con_trackeval(
@@ -419,6 +430,17 @@ def main() -> None:
     print(f"  IDSW:  {estandar['IDSW']}")
     print(f"  Frag:  {estandar['Frag']}")
     print(f"  MOTA:  {estandar['MOTA']:.3f}")
+    print("-" * ancho)
+    print("MÉTRICA DE PRODUCTO — cobertura colectiva")
+    print(
+        f"  Posiciones GT con equipo correcto: {cobertura.cobertura:.3f} "
+        f"({cobertura.n_posiciones_gt} posiciones; "
+        f"mapeo {'permutado' if cobertura.permutado else 'directo'})"
+    )
+    print(
+        "  Por equipo: "
+        + "  ".join(f"{g}={v:.3f}" for g, v in cobertura.por_grupo.items())
+    )
     print("-" * ancho)
     if resumen.n_campo > 0:
         print("EQUIPOS (clasificación por identidad agregada, color medio)")
