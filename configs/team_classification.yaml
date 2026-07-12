@@ -1,0 +1,21 @@
+# Parámetros del clasificador de equipos por color (TeamClassifierColor).
+# Valores validados en Colab (briefing 2.3). El script de evaluación los
+# carga si este archivo existe; si no, usa los defaults del dataclass.
+
+clasificador_color:
+  # Banda del pecho dentro del recorte (fracciones de alto/ancho)
+  torso_alto: [0.12, 0.45]
+  torso_ancho: [0.15, 0.85]
+  # Máscara anti-verde HSV (césped): H en rango, S y V por encima del mínimo
+  verde_h: [35, 85]
+  verde_s_min: 40
+  verde_v_min: 40
+  # Histograma HS
+  bins_h: 16
+  bins_s: 16
+  # Clustering: KMeans generoso + fusión jerárquica con umbral auto
+  k_clusters: 8
+  umbral_min: 0.5
+  umbral_max: 1.3
+  umbral_paso: 0.05
+  semilla: 0
