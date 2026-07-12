@@ -42,6 +42,17 @@ class ParametrosCosido:
     # Debe superar el coste máximo de un candidato real (~1.45 con los pesos
     # actuales) para que la asignación prefiera unir siempre que pueda.
     coste_no_union: float = 2.0
+    # Consistencia de velocidad en la unión (Tarea 3, off por defecto):
+    # v_salto = (inicio_B - fin_A) / hueco es la velocidad que el jugador
+    # habría necesitado para cubrir el salto.
+    # - v_max_salto: veto físico; si ||v_salto|| lo supera, no coser
+    #   (None = sin veto). Un jugador no corre a más de ~7 m/s.
+    v_max_salto: float | None = None
+    # - peso_vel: peso del término ||v_salto - vel_A|| / v_ref en el coste
+    #   (0 = off). Penaliza uniones que exigen cambios bruscos de velocidad.
+    peso_vel: float = 0.0
+    # - v_ref: normalizador del término de velocidad (m/s)
+    v_ref: float = 7.0
 
     @classmethod
     def desde_dict(cls, d: dict) -> "ParametrosCosido":
@@ -186,6 +197,16 @@ class TrackletStitcher:
                 tol = p.tol_base + p.tol_por_seg * hueco
                 if dist > tol:
                     continue
+                # Consistencia de velocidad: velocidad implicada por el salto
+                v_salto = (tr_b.pos[0] - tr_a.pos[-1]) / hueco
+                if (
+                    p.v_max_salto is not None
+                    and np.linalg.norm(v_salto) > p.v_max_salto
+                ):
+                    continue  # físicamente imposible: nadie corre tan rápido
+                coste_vel = 0.0
+                if p.peso_vel > 0:
+                    coste_vel = np.linalg.norm(v_salto - tr_a.vel) / p.v_ref
                 coste_color = 0.0
                 if (
                     color_medio is not None
@@ -200,6 +221,7 @@ class TrackletStitcher:
                     dist / tol
                     + p.peso_hueco * (hueco / p.max_hueco)
                     + p.peso_color * coste_color
+                    + p.peso_vel * coste_vel
                 )
                 candidatos.append((coste, i, j))
         return candidatos

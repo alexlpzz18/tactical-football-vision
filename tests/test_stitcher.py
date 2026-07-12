@@ -178,3 +178,42 @@ def test_global_igual_que_goloso_sin_conflictos():
         ids = TrackletStitcher(ParametrosCosido(metodo=metodo)).coser([tr_a, tr_b])
         assert len(ids) == 1
         assert [tr.id for tr in ids[0]] == [1, 2]
+
+
+def test_veto_velocidad_de_salto():
+    """Un salto que exige >7 m/s se veta aunque entre en tolerancia."""
+    # A corre a 6 m/s; tras hueco de 2 s, B aparece 17 m más adelante:
+    # v_salto = 8.5 m/s (imposible) pero dist a la predicción = 5 m < tol 7.2
+    tr_a = _tracklet_recto(1, t0=0.0, x0=0.0, vx=6.0, n_frames=10)
+    hueco = 2.0
+    tr_b = _tracklet_recto(
+        2, t0=tr_a.ts[-1] + hueco, x0=tr_a.pos[-1][0] + 17.0, vx=6.0, n_frames=10
+    )
+    sin_veto = TrackletStitcher(ParametrosCosido()).coser([tr_a, tr_b])
+    con_veto = TrackletStitcher(ParametrosCosido(v_max_salto=7.0)).coser([tr_a, tr_b])
+    assert len(sin_veto) == 1  # sin veto: se cose (entra en tolerancia)
+    assert len(con_veto) == 2  # con veto: físicamente imposible → no
+
+
+def test_coste_velocidad_penaliza_saltos_bruscos():
+    """El término de velocidad encarece candidatos con v_salto inconsistente."""
+    tr_a = _tracklet_recto(1, t0=0.0, x0=0.0, vx=3.0, n_frames=10)
+    hueco = 0.5
+    # B exige un giro brusco: 2.5 m lateral en 0.5 s (5 m/s de v extra)
+    tr_b = _tracklet_recto(
+        2,
+        t0=tr_a.ts[-1] + hueco,
+        x0=tr_a.pos[-1][0] + 3.0 * hueco,
+        vx=3.0,
+        n_frames=10,
+        y=12.5,
+    )
+    sin_vel = TrackletStitcher(ParametrosCosido())._generar_candidatos(
+        sorted([tr_a, tr_b], key=lambda t: t.ts[0]), None
+    )
+    con_vel = TrackletStitcher(ParametrosCosido(peso_vel=0.6))._generar_candidatos(
+        sorted([tr_a, tr_b], key=lambda t: t.ts[0]), None
+    )
+    assert len(sin_vel) == len(con_vel) == 1
+    # v_salto - vel_A ≈ (0, 5) → término ≈ 0.6 * 5/7 ≈ 0.43 de coste extra
+    assert con_vel[0][0] > sin_vel[0][0] + 0.3

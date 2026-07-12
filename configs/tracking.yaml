@@ -64,3 +64,9 @@ cosido:
   # Solo para metodo=global: coste de dejar un tracklet sin continuación
   # (> coste máximo de un candidato real, ~1.45)
   coste_no_union: 2.0
+  # Consistencia de velocidad en la unión (Tarea 3, ver experimentos):
+  # veto físico si la velocidad implicada por el salto supera v_max_salto
+  # (null = off) y término de coste peso_vel * ||v_salto - vel_A|| / v_ref
+  v_max_salto: null
+  peso_vel: 0.0
+  v_ref: 7.0

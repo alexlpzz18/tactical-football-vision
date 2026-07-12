@@ -314,3 +314,38 @@ identidad media 0.559 refleja que la mayoría de recortes son lejanos,
 más la contaminación residual del cosido). La mejora de equipos pasa por
 resolución/zoom o features que no dependan del color del torso, no por
 retocar el clasificador.
+
+---
+
+## Variante 3f — Consistencia de velocidad en la unión del cosido
+
+**Qué:** dos mecanismos sobre la velocidad implicada por el salto
+`v_salto = (inicio_B − fin_A)/hueco`: (1) veto físico si `‖v_salto‖ >
+v_max_salto` (7 m/s); (2) término de coste `peso_vel · ‖v_salto −
+vel_A‖ / v_ref`. Config en `cosido:` (`v_max_salto`, `peso_vel`, `v_ref`),
+off por defecto.
+
+**Medición (métrica oficial):**
+
+| variante | nIds | IDF1 | IDSW | HOTA |
+|---|---|---|---|---|
+| oficial (goloso, sin velocidad) | 89 | 0.229 | 130 | 0.106 |
+| oficial + veto 7 m/s | 89 | 0.228 | 131 | — |
+| oficial + peso_vel 0.3 | 90 | 0.223 | 138 | 0.106 |
+| candidato rescate+grafo (sin velocidad) | 114 | 0.225 | 807 | 0.147 |
+| candidato + veto 7 m/s | 119 | 0.217 | 831 | — |
+| candidato + peso_vel 0.3 | 148 | 0.204 | 909 | 0.137 |
+| candidato + peso_vel 0.6 | 191 | 0.190 | 958 | 0.136 |
+
+**Decisión: RECHAZADA (config off).** No reduce switches en ningún
+régimen; en el candidato los AUMENTA (807→914) y hunde IDF1/HOTA.
+
+**Aprendizaje (patrón que ya van tres veces):** cualquier señal por
+tracklet — color, velocidad — es demasiado ruidosa a este tamaño de
+fragmento para mejorar la decisión de unión: la velocidad de un tracklet
+corto es una EMA de 1-2 observaciones (los de 1 frame tienen vel=0), y
+penalizarla castiga uniones correctas. La única señal fiable a este
+nivel sigue siendo posición + tolerancia. Reducir los switches del
+candidato requerirá contexto de MÁS nivel (p. ej. consistencia global de
+la plantilla: 22 jugadores, exclusión mutua espacial), no más features
+por fragmento.
