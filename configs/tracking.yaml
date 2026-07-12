@@ -58,3 +58,9 @@ cosido:
   color_max_dist: 1.2
   # Peso del término de color en el coste del candidato
   peso_color: 0.15
+  # Selección de uniones: "goloso" (original validado) o "global"
+  # (asignación de coste mínimo en grafo; Tarea 3, ver experimentos)
+  metodo: goloso
+  # Solo para metodo=global: coste de dejar un tracklet sin continuación
+  # (> coste máximo de un candidato real, ~1.45)
+  coste_no_union: 2.0

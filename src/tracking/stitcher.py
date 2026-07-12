@@ -11,6 +11,7 @@ compatible. Se unen golosa y ordenadamente por coste, sin conflictos, y las
 cadenas resultantes son las identidades finales.
 """
 
+import bisect
 import logging
 from dataclasses import dataclass
 
@@ -34,6 +35,13 @@ class ParametrosCosido:
     peso_hueco: float = 0.3  # peso del hueco en el coste
     color_max_dist: float = 1.2  # veto suave: distancia de histogramas mayor → no coser
     peso_color: float = 0.15  # peso del color en el coste
+    # Método de selección de uniones: "goloso" (original, validado) o
+    # "global" (asignación óptima en grafo, Tarea 3)
+    metodo: str = "goloso"
+    # Solo para metodo=global: coste de dejar un tracklet sin continuación.
+    # Debe superar el coste máximo de un candidato real (~1.45 con los pesos
+    # actuales) para que la asignación prefiera unir siempre que pueda.
+    coste_no_union: float = 2.0
 
     @classmethod
     def desde_dict(cls, d: dict) -> "ParametrosCosido":
@@ -119,15 +127,58 @@ class TrackletStitcher:
         p = self.params
         orden = sorted(tracklets, key=lambda tr: tr.ts[0])
 
-        # 1. Generar candidatos (A, B): B podría ser la continuación de A
+        candidatos = self._generar_candidatos(orden, color_medio)
+
+        if p.metodo == "global":
+            union = self._seleccion_global(candidatos, len(orden))
+        else:
+            union = self._seleccion_golosa(candidatos)
+
+        # 3. Seguir las cadenas desde los tracklets que no son continuación
+        es = set(union.values())
+        inicios = [i for i in range(len(orden)) if i not in es]
+        identidades = []
+        for ini in inicios:
+            cadena = [ini]
+            while cadena[-1] in union:
+                cadena.append(union[cadena[-1]])
+            identidades.append([orden[k] for k in cadena])
+
+        logger.info(
+            "Cosido (%s): %d tracklets → %d identidades (%s)",
+            self.params.metodo,
+            len(tracklets),
+            len(identidades),
+            "con color" if color_medio else "solo movimiento",
+        )
+        return identidades
+
+    def _generar_candidatos(
+        self,
+        orden: list[Tracklet],
+        color_medio: dict[int, np.ndarray] | None,
+    ) -> list[tuple[float, int, int]]:
+        """Genera los candidatos (coste, i, j): B podría continuar a A.
+
+        La búsqueda usa una ventana temporal por bisección sobre los
+        tiempos de inicio (orden ya viene ordenado por ts[0]): solo se
+        examinan los B que empiezan en (fin_de_A, fin_de_A + max_hueco].
+        Mismo conjunto de candidatos que el doble bucle original, pero
+        O(n·k) en vez de O(n²) — necesario para el rescate de cortos
+        (miles de fragmentos).
+        """
+        p = self.params
+        inicios = [tr.ts[0] for tr in orden]
         candidatos: list[tuple[float, int, int]] = []
         for i, tr_a in enumerate(orden):
-            for j, tr_b in enumerate(orden):
+            fin_a = tr_a.ts[-1]
+            desde = bisect.bisect_right(inicios, fin_a)
+            hasta = bisect.bisect_right(inicios, fin_a + p.max_hueco)
+            for j in range(desde, hasta):
                 if i == j:
                     continue
-                hueco = tr_b.ts[0] - tr_a.ts[-1]
-                if hueco <= 0 or hueco > p.max_hueco:
-                    continue
+                tr_b = orden[j]
+                hueco = tr_b.ts[0] - fin_a
                 # ¿Dónde estaría A tras el hueco, a velocidad constante?
                 pred = tr_a.pos[-1] + tr_a.vel * hueco
                 dist = np.linalg.norm(pred - tr_b.pos[0])
@@ -151,33 +202,54 @@ class TrackletStitcher:
                     + p.peso_color * coste_color
                 )
                 candidatos.append((coste, i, j))
+        return candidatos
 
-        # 2. Unión golosa por coste creciente, sin conflictos: cada tracklet
-        #    recibe como mucho una continuación y es continuación de uno.
-        candidatos.sort()
+    @staticmethod
+    def _seleccion_golosa(
+        candidatos: list[tuple[float, int, int]],
+    ) -> dict[int, int]:
+        """Unión golosa por coste creciente, sin conflictos (método original):
+        cada tracklet recibe como mucho una continuación y es continuación
+        de uno."""
         tiene: set[int] = set()  # tracklets que ya tienen continuación
         es: set[int] = set()  # tracklets que ya son continuación de otro
         union: dict[int, int] = {}
-        for _, i, j in candidatos:
+        for _, i, j in sorted(candidatos):
             if i in tiene or j in es:
                 continue
             union[i] = j
             tiene.add(i)
             es.add(j)
+        return union
 
-        # 3. Seguir las cadenas desde los tracklets que no son continuación
-        inicios = [i for i in range(len(orden)) if i not in es]
-        identidades = []
-        for ini in inicios:
-            cadena = [ini]
-            while cadena[-1] in union:
-                cadena.append(union[cadena[-1]])
-            identidades.append([orden[k] for k in cadena])
+    def _seleccion_global(
+        self,
+        candidatos: list[tuple[float, int, int]],
+        n: int,
+    ) -> dict[int, int]:
+        """Selección GLOBAL de uniones: asignación de coste mínimo en grafo.
 
-        logger.info(
-            "Cosido: %d tracklets → %d identidades (%s)",
-            len(tracklets),
-            len(identidades),
-            "con color" if color_medio else "solo movimiento",
-        )
-        return identidades
+        En vez de aceptar candidatos uno a uno por orden de coste (goloso),
+        se resuelve el emparejamiento bipartito óptimo tracklet→sucesor:
+        se minimiza el coste TOTAL, de modo que un conflicto se resuelve
+        mirando el conjunto completo (el goloso puede bloquear con una
+        unión barata otra combinación globalmente mejor).
+
+        Implementación: matriz dispersa n×2n donde las columnas 0..n-1 son
+        los sucesores reales (coste del candidato) y las columnas n..2n-1
+        son "no unir" (una columna dummy por tracklet con coste
+        `coste_no_union`). El emparejamiento perfecto de filas siempre
+        existe gracias a los dummies; las filas asignadas a su dummy quedan
+        sin continuación.
+        """
+        if not candidatos or n == 0:
+            return {}
+        from scipy.sparse import csr_matrix
+        from scipy.sparse.csgraph import min_weight_full_bipartite_matching
+
+        filas = [i for _, i, _ in candidatos] + list(range(n))
+        columnas = [j for _, _, j in candidatos] + [n + i for i in range(n)]
+        costes = [c for c, _, _ in candidatos] + [self.params.coste_no_union] * n
+        matriz = csr_matrix((costes, (filas, columnas)), shape=(n, 2 * n))
+        idx_filas, idx_cols = min_weight_full_bipartite_matching(matriz)
+        return {i: j for i, j in zip(idx_filas, idx_cols) if j < n}

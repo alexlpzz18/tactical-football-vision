@@ -133,3 +133,48 @@ def test_fusionar_identidad():
     assert fusionado.id == 1  # conserva el id del primer tracklet
     # Velocidad ~3 m/s en x tras recorrer toda la trayectoria
     assert fusionado.vel[0] == pytest.approx(3.0, abs=0.2)
+
+
+def test_global_resuelve_conflicto_que_el_goloso_bloquea():
+    """Escenario: A y B acaban a la vez; X es buen sucesor de ambos, Y solo
+    de A. El goloso une A→X (lo más barato) y deja a B sin continuación;
+    el global prefiere A→Y + B→X (coste total menor que romper la cadena)."""
+    tr_a = _tracklet_recto(
+        1, t0=0.0, x0=7.0, vx=3.0, n_frames=10, y=10.0
+    )  # acaba (10.2, 10)
+    tr_b = _tracklet_recto(
+        2, t0=0.0, x0=7.0, vx=3.0, n_frames=10, y=13.0
+    )  # acaba (10.2, 13)
+    hueco = 0.5
+    t1 = tr_a.ts[-1] + hueco
+    x1 = tr_a.pos[-1][0] + 3.0 * hueco  # donde "deberían" estar tras el hueco
+    tr_x = _tracklet_recto(
+        3, t0=t1, x0=x1, vx=3.0, n_frames=10, y=10.9
+    )  # cerca de A, alcanzable por B
+    tr_y = _tracklet_recto(
+        4, t0=t1, x0=x1, vx=3.0, n_frames=10, y=8.4
+    )  # solo alcanzable por A
+
+    tracklets = [tr_a, tr_b, tr_x, tr_y]
+
+    golosas = TrackletStitcher(ParametrosCosido(metodo="goloso")).coser(tracklets)
+    globales = TrackletStitcher(ParametrosCosido(metodo="global")).coser(tracklets)
+
+    # Goloso: A→X y B queda suelto → 3 identidades
+    assert len(golosas) == 3
+    # Global: A→Y + B→X → 2 identidades, y B recupera su continuación
+    assert len(globales) == 2
+    cadenas = sorted([tr.id for tr in ident] for ident in globales)
+    assert cadenas == [[1, 4], [2, 3]]
+
+
+def test_global_igual_que_goloso_sin_conflictos():
+    """Sin conflictos, ambos métodos deben dar las mismas cadenas."""
+    tr_a = _tracklet_recto(1, t0=0.0, x0=0.0, vx=3.0, n_frames=10)
+    tr_b = _tracklet_recto(
+        2, t0=tr_a.ts[-1] + 0.5, x0=tr_a.pos[-1][0] + 1.5, vx=3.0, n_frames=10
+    )
+    for metodo in ("goloso", "global"):
+        ids = TrackletStitcher(ParametrosCosido(metodo=metodo)).coser([tr_a, tr_b])
+        assert len(ids) == 1
+        assert [tr.id for tr in ids[0]] == [1, 2]
