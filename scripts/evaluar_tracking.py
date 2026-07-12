@@ -58,6 +58,9 @@ from src.tracking.field_tracker import (  # noqa: E402
     ConservativeTracker,
     ParametrosEtapaA,
 )
+from src.tracking.exclusion_espacial import (  # noqa: E402
+    fusionar_identidades_duplicadas,
+)
 from src.tracking.interpolacion import interpolar_identidades  # noqa: E402
 from src.tracking.stitcher import (  # noqa: E402
     ParametrosCosido,
@@ -175,6 +178,12 @@ def main() -> None:
         help="Forzar rescate de tracklets cortos on/off (por defecto: config)",
     )
     parser.add_argument(
+        "--exclusion",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forzar exclusión espacial (fusión de duplicados) on/off",
+    )
+    parser.add_argument(
         "--segunda-pasada",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -239,6 +248,16 @@ def main() -> None:
     if rescatar:
         identidades = filtrar_identidades_cortas(
             identidades, cfg_rescate["min_frames_identidad"]
+        )
+
+    # Contexto de plantilla: exclusión espacial dura (fusión de duplicados)
+    cfg_excl = cfg_tracking.get("exclusion_espacial", {})
+    excluir = (
+        args.exclusion if args.exclusion is not None else cfg_excl.get("activa", False)
+    )
+    if excluir:
+        identidades = fusionar_identidades_duplicadas(
+            identidades, cfg_excl["dist_max"], cfg_excl["min_frames_comunes"]
         )
 
     # Tarea 3c: segunda pasada de cosido sobre identidades fusionadas

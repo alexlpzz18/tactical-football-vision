@@ -16,6 +16,16 @@ etapa_a:
   # Filtro final: descartar tracklets con menos de estos frames
   min_frames: 3
 
+# Contexto de plantilla (1/2): exclusión espacial dura — dos identidades
+# co-ubicadas (mediana de distancia <= dist_max en sus frames comunes) son
+# el mismo jugador y se fusionan (deduplicando por frame). No hace nada en
+# el pipeline oficial (sin duplicados paralelos); en el candidato
+# rescate+grafo: IDF1 0.225->0.287, IDSW 807->632, HOTA 0.147->0.165.
+exclusion_espacial:
+  activa: false  # sin efecto en el oficial; imprescindible con rescate
+  dist_max: 1.5
+  min_frames_comunes: 3
+
 # Tarea 3c: segunda pasada de cosido sobre las identidades ya cosidas
 # (fusionadas en super-tracklets), para cerrar huecos largos. Tolerancia
 # más conservadora que la 1ª pasada: con huecos de >6 s la extrapolación

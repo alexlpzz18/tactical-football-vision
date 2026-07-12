@@ -355,6 +355,42 @@ identidades tienen recortes cercanos: otra vez, el techo es el cosido.
 
 ---
 
+## Variante 3g — Contexto de plantilla (1/2): exclusión espacial dura
+
+**Qué:** dos identidades no pueden ocupar la misma posición en el mismo
+instante. Pares de identidades con solape temporal cuya distancia MEDIANA
+en los frames comunes es ≤ dist_max se fusionan (union-find transitivo,
+deduplicando por frame con prioridad a la identidad más larga). Son
+detecciones duplicadas de SAHI o fragmentos paralelos que el cosido
+final→inicio no puede unir. `src/tracking/exclusion_espacial.py`,
+config `exclusion_espacial:`, flag `--exclusion`.
+
+**Medición (métrica oficial + HOTA):**
+
+| variante | nIds | IDF1 | IDSW | recall | prec | HOTA |
+|---|---|---|---|---|---|---|
+| oficial (con/sin exclusión) | 89 | 0.229 | 130 | 0.259 | 0.730 | 0.106 |
+| candidato sin exclusión | 114 | 0.225 | 807 | 0.724 | 0.710 | 0.147 |
+| candidato + excl 0.5 | 107 | 0.243 | 777 | 0.724 | 0.714 | 0.153 |
+| candidato + excl 1.0 | 98 | 0.272 | 697 | 0.714 | 0.722 | 0.162 |
+| **candidato + excl 1.5** | **87** | **0.287** | **632** | 0.698 | 0.729 | **0.165** |
+| candidato + excl 2.5 | 70 | 0.303 | 569 | 0.672 | 0.732 | 0.165 |
+| candidato + excl 3.0 | 53 | 0.323 | 410 | 0.563 | 0.756 | 0.165 |
+
+**Decisión: PRIMERA VARIANTE QUE CUMPLE EL CRITERIO** (IDSW baja, todo
+lo demás sube). Punto de operación: dist_max=1.5 m, min_comunes=3
+(HOTA satura ahí; más allá de 2 m empieza a fusionar jugadores reales:
+el recall se hunde). En el pipeline oficial no hace nada (la Etapa A
+conservadora no genera duplicados paralelos).
+
+**Candidato actualizado (rescate + grafo + exclusión 1.5):**
+HOTA 0.165 (+56 % vs oficial), **IDF1 0.287 — ya SUPERA al oficial
+(0.229)**, recall 0.698 (×2.7), IDSW 632 en bruto (0.41/frame emparejado
+vs 0.23 del oficial; era 0.50 sin exclusión). El caso de adopción se
+refuerza: ya no hay trade-off en IDF1.
+
+---
+
 ## Variante 3f — Consistencia de velocidad en la unión del cosido
 
 **Qué:** dos mecanismos sobre la velocidad implicada por el salto
