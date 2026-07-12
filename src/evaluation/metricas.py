@@ -26,7 +26,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from src.evaluation.asociacion import asociar_todos
+from src.evaluation.asociacion import Umbral, asociar_todos
 from src.evaluation.modelo import PorFrame
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ def calcular_metricas_tracking(
     gt: PorFrame,
     pred: PorFrame,
     frames: list[int],
-    umbral_metros: float,
+    umbral_metros: Umbral,
 ) -> ResultadoTracking:
     """Calcula IDF1, IDSW y fragmentaciones con asociación en metros."""
     frames = sorted(frames)
@@ -141,7 +141,7 @@ def accuracy_equipos(
     gt: PorFrame,
     pred: PorFrame,
     frames: list[int],
-    umbral_metros: float,
+    umbral_metros: Umbral,
 ) -> ResultadoEquipos:
     """Accuracy de equipos por identidad predicha (voto mayoritario del GT).
 

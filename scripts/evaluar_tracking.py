@@ -34,6 +34,7 @@ from src.evaluation.alineacion import (  # noqa: E402
     distancia_media_gt_cache,
     frames_comunes,
 )
+from src.evaluation.asociacion import UmbralProfundidad  # noqa: E402
 from src.evaluation.gt_parser import gt_a_por_frame, parsear_cvat  # noqa: E402
 from src.evaluation.metricas import (  # noqa: E402
     accuracy_equipos,
@@ -130,9 +131,13 @@ def main() -> None:
         )
 
     # --------------------------------------------------------------- métricas
-    umbral = cfg["asociacion"]["umbral_metros"]
-    propias = calcular_metricas_tracking(gt, pred, comunes, umbral)
-    equipos = accuracy_equipos(gt, pred, comunes, umbral)
+    # Umbral OFICIAL: dependiente de la profundidad. El fijo se mantiene
+    # como referencia comparable con evaluaciones antiguas.
+    umbral_fijo = cfg["asociacion"]["umbral_metros"]
+    umbral_prof = UmbralProfundidad.desde_dict(cfg["asociacion"]["umbral_profundidad"])
+    propias_prof = calcular_metricas_tracking(gt, pred, comunes, umbral_prof)
+    propias_fijo = calcular_metricas_tracking(gt, pred, comunes, umbral_fijo)
+    equipos = accuracy_equipos(gt, pred, comunes, umbral_prof)
 
     with tempfile.TemporaryDirectory(prefix="trackeval_") as tmp:
         estandar = evaluar_con_trackeval(
@@ -159,15 +164,31 @@ def main() -> None:
         f"Sanidad alineación: dist. media GT→det más cercana = {dist_alineacion:.2f} m"
     )
     print("-" * ancho)
-    print(f"MÉTRICAS PROPIAS (asociación en metros, umbral {umbral:.1f} m)")
     print(
-        f"  IDF1:            {propias.idf1:.3f}   (IDTP={propias.idtp}, "
-        f"IDFP={propias.idfp}, IDFN={propias.idfn})"
+        "MÉTRICAS PROPIAS — umbral por PROFUNDIDAD (OFICIAL): "
+        f"clip({umbral_prof.base} + {umbral_prof.por_metro}·my, "
+        f"{umbral_prof.minimo}, {umbral_prof.maximo}) m"
     )
-    print(f"  ID switches:     {propias.id_switches}")
-    print(f"  Fragmentaciones: {propias.fragmentaciones}")
-    print(f"  Recall/frame:    {propias.recall:.3f}   ({propias.n_gt} obs GT)")
-    print(f"  Precision/frame: {propias.precision:.3f}   ({propias.n_pred} obs pred)")
+    print(
+        f"  IDF1:            {propias_prof.idf1:.3f}   (IDTP={propias_prof.idtp}, "
+        f"IDFP={propias_prof.idfp}, IDFN={propias_prof.idfn})"
+    )
+    print(f"  ID switches:     {propias_prof.id_switches}")
+    print(f"  Fragmentaciones: {propias_prof.fragmentaciones}")
+    print(
+        f"  Recall/frame:    {propias_prof.recall:.3f}   ({propias_prof.n_gt} obs GT)"
+    )
+    print(
+        f"  Precision/frame: {propias_prof.precision:.3f}   "
+        f"({propias_prof.n_pred} obs pred)"
+    )
+    print("-" * ancho)
+    print(f"MÉTRICAS PROPIAS — umbral FIJO {umbral_fijo:.1f} m (referencia)")
+    print(f"  IDF1:            {propias_fijo.idf1:.3f}")
+    print(f"  ID switches:     {propias_fijo.id_switches}")
+    print(f"  Fragmentaciones: {propias_fijo.fragmentaciones}")
+    print(f"  Recall/frame:    {propias_fijo.recall:.3f}")
+    print(f"  Precision/frame: {propias_fijo.precision:.3f}")
     print("-" * ancho)
     lado = cfg["trackeval"]["lado_caja_sintetica"]
     print(

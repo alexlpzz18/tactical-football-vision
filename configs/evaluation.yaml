@@ -23,7 +23,21 @@ asociacion:
   # metros. El pie de la caja GT se proyecta con la MISMA homografía que
   # sufren las predicciones, así los errores de proyección afectan a ambas
   # y se cancelan parcialmente.
+  # Umbral FIJO (se mantiene como referencia comparable):
   umbral_metros: 2.0
+  # Umbral OFICIAL, dependiente de la profundidad del objeto GT:
+  #   umbral(my) = clip(base + por_metro * my, minimo, maximo)
+  # Motivo: el error de localización crece con la profundidad (medido en el
+  # tramo de validación: mediana 0.25 m en my<17 vs 2.54 m en my>51, porque
+  # en el fondo 1 píxel de error del pie son metros tras la homografía).
+  # Calibración: recta que sigue ~el p90 del error genuino por franjas
+  # (0.80 m en my≈8, 2.4 m en my≈42), recortada para no bajar del ruido de
+  # anotación (1.0 m) ni tragarse al jugador vecino (4.0 m).
+  umbral_profundidad:
+    base: 0.4
+    por_metro: 0.045
+    minimo: 1.0
+    maximo: 4.0
 
 trackeval:
   # Truco para usar TrackEval (que asocia por IoU de cajas) con distancias

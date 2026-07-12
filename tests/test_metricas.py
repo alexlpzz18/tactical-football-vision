@@ -116,3 +116,28 @@ def test_adaptador_identidades():
     # Todos los frames llevan el MISMO id de identidad (1)
     assert {obs.obj_id for v in por_frame.values() for obs in v} == {1}
     np.testing.assert_allclose(por_frame[109][0].pos, [6.0, 5.0])
+
+
+def test_umbral_profundidad_recta_y_recortes():
+    """umbral(my) = clip(base + por_metro*my, minimo, maximo)."""
+    from src.evaluation.asociacion import UmbralProfundidad
+
+    u = UmbralProfundidad(base=0.4, por_metro=0.045, minimo=1.0, maximo=4.0)
+    assert u.para(0.0) == pytest.approx(1.0)  # 0.4 < minimo → recorta
+    assert u.para(30.0) == pytest.approx(0.4 + 0.045 * 30)  # zona lineal
+    assert u.para(100.0) == pytest.approx(4.0)  # > maximo → recorta
+
+
+def test_asociacion_umbral_depende_de_profundidad():
+    """El mismo error de 2.5 m empareja en el fondo pero no en el cercano."""
+    from src.evaluation.asociacion import UmbralProfundidad, asociar_frame
+
+    u = UmbralProfundidad(base=0.4, por_metro=0.045, minimo=1.0, maximo=4.0)
+    # Cerca (my=10 → umbral 1.0): error de 2.5 m NO empareja
+    cerca_gt = [_obs(1, 20.0, 10.0)]
+    cerca_pred = [_obs(7, 22.5, 10.0)]
+    assert asociar_frame(cerca_gt, cerca_pred, u) == []
+    # Lejos (my=60 → umbral 3.1): el mismo error SÍ empareja
+    lejos_gt = [_obs(1, 20.0, 60.0)]
+    lejos_pred = [_obs(7, 22.5, 60.0)]
+    assert asociar_frame(lejos_gt, lejos_pred, u) == [(0, 0)]
