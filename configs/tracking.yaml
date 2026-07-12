@@ -1,0 +1,32 @@
+# Parámetros del tracking en metros (2 etapas), validados experimentalmente
+# en Colab sobre el tramo min 5-6 (ver briefing_claude_code.md, Parte 2).
+# NO cambiar sin medir contra el banco de evaluación (Tarea 3).
+
+etapa_a:
+  # Velocidad máxima plausible de un jugador (m/s). Define el radio de búsqueda:
+  # RADIO = v_max * dt + margen
+  v_max: 7.0
+  # Margen de ruido de detección/proyección (metros)
+  margen: 0.8
+  # Regla anti-robo: si la 2ª mejor opción está a menos de este factor de
+  # distancia extra (en radios), NO asociar (preferimos cortar el tracklet)
+  ambig_factor: 0.7
+  # Un track sin verse más de (max_gap_dts * dt) segundos se cierra
+  max_gap_dts: 3.0
+  # Filtro final: descartar tracklets con menos de estos frames
+  min_frames: 3
+
+cosido:
+  # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
+  max_hueco: 6.0
+  # Tolerancia de distancia para coser: tol = tol_base + tol_por_seg * hueco
+  tol_base: 1.2
+  tol_por_seg: 3.0
+  # Peso del término de hueco en el coste del candidato
+  peso_hueco: 0.3
+  # Veto suave de color: distancia de histogramas mayor que esto → no coser.
+  # (El color en esta cámara es señal débil: mediana entre pares legítimos
+  # = 0.90, p90 = 1.16.)
+  color_max_dist: 1.2
+  # Peso del término de color en el coste del candidato
+  peso_color: 0.15
