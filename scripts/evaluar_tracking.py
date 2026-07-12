@@ -20,7 +20,7 @@ import logging
 import pickle
 import sys
 import tempfile
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -45,13 +45,10 @@ from src.evaluation.metricas import (  # noqa: E402
     cobertura_colectiva,
     resumen_equipos,
 )
-from src.team_classification.color_classifier import (  # noqa: E402
-    ParametrosClasificadorColor,
-    TeamClassifierColor,
-)
-from src.team_classification.porteros import (  # noqa: E402
-    ReglaPorteros,
-    aplicar_regla_porteros,
+from src.team_classification.pipeline_equipos import (  # noqa: E402
+    cargar_config_equipos,
+    clasificar_identidades,
+    entrenar_clasificador,
 )
 from src.evaluation.trackeval_runner import evaluar_con_trackeval  # noqa: E402
 from src.tracking.cache_io import cargar_cache  # noqa: E402
@@ -60,6 +57,7 @@ from src.tracking.field_tracker import (  # noqa: E402
     ParametrosEtapaA,
 )
 from src.tracking.cota_plantilla import fusionar_hasta_cota  # noqa: E402
+from src.tracking.perfiles import correr_perfil  # noqa: E402
 from src.tracking.exclusion_espacial import (  # noqa: E402
     fusionar_identidades_duplicadas,
 )
@@ -98,71 +96,6 @@ def cargar_colores_opcional(ruta: Path, identidades_tracklets) -> dict | None:
     return color_medio
 
 
-def clasificar_equipos_por_identidad(
-    ruta_colores: Path, identidades: list
-) -> dict[int, str] | None:
-    """Clasifica cada identidad en A/B/otro por su color AGREGADO.
-
-    Entrena TeamClassifierColor con TODAS las features del caché de colores
-    (población completa de recortes) y predice cada identidad con la media
-    de las features de todos sus recortes: agregar muchos recortes limpia
-    la señal, que a nivel de recorte individual es ruidosa (ver
-    docs/experimentos_tracking.md, conclusión sobre el color).
-
-    Returns:
-        {id_identidad (1..N, mismo orden que el adaptador): 'A'/'B'/'otro'}
-        o None si no hay caché de colores. Identidades sin ningún recorte
-        con color quedan fuera del dict (sin clasificar).
-    """
-    if not ruta_colores.exists():
-        logger.info("Sin caché de colores: equipos no evaluables.")
-        return None
-    with open(ruta_colores, "rb") as f:
-        features = pickle.load(f)
-
-    ruta_config = Path("configs/team_classification.yaml")
-    if ruta_config.exists():
-        with open(ruta_config) as f:
-            params = ParametrosClasificadorColor.desde_dict(
-                yaml.safe_load(f)["clasificador_color"]
-            )
-    else:
-        params = None
-    clasificador = TeamClassifierColor(params)
-    clasificador.fit_features(np.array(list(features.values())))
-
-    # Agregación con preferencia por recortes cercanos (my < umbral): donde
-    # el jugador es grande, el color es señal; lejos es ruido (medido:
-    # accuracy 1.000 con ≥20 recortes cercanos vs 0.472 sin ninguno)
-    cfg_agg = {}
-    if ruta_config is not None and ruta_config.exists():
-        with open(ruta_config) as f:
-            cfg_agg = yaml.safe_load(f).get("agregacion", {})
-    solo_cercanos = cfg_agg.get("solo_cercanos", False)
-    umbral_my = cfg_agg.get("umbral_my", 45.0)
-
-    equipos: dict[int, str] = {}
-    for id_identidad, identidad in enumerate(identidades, start=1):
-        todos, cercanos = [], []
-        for tracklet in identidad:
-            for pos, par in zip(tracklet.pos, tracklet.det_idxs):
-                if par not in features:
-                    continue
-                todos.append(features[par])
-                if pos[1] < umbral_my:
-                    cercanos.append(features[par])
-        feats = cercanos if (solo_cercanos and cercanos) else todos
-        if feats:
-            equipos[id_identidad] = clasificador.predict_color(np.mean(feats, axis=0))
-    logger.info(
-        "Equipos por identidad: %d/%d clasificadas (%s)",
-        len(equipos),
-        len(identidades),
-        dict(sorted(Counter(equipos.values()).items())),
-    )
-    return equipos
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/evaluation.yaml")
@@ -184,6 +117,13 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Forzar exclusión espacial (fusión de duplicados) on/off",
+    )
+    parser.add_argument(
+        "--perfil",
+        choices=["oficial", "candidato"],
+        default=None,
+        help="Correr un PERFIL completo (src/tracking/perfiles.py, el mismo "
+        "código que producción). Sustituye a la composición manual de flags.",
     )
     parser.add_argument(
         "--metodo-cosido",
@@ -302,23 +242,35 @@ def main() -> None:
         super_tracklets = [fusionar_identidad(ident) for ident in identidades]
         identidades = stitcher_p2.coser(super_tracklets)
 
-    # Tarea 2: clasificación de EQUIPOS por identidad agregada (color medio
-    # de todos los recortes de la identidad → una etiqueta por identidad)
-    equipos_pred = clasificar_equipos_por_identidad(
-        Path(cfg["rutas"]["cache_colores"]), identidades
-    )
+    # Perfil compartido banco↔producción (src/tracking/perfiles.py): si se
+    # pide --perfil, SUSTITUYE a la composición manual de flags de arriba.
+    # Así el banco mide exactamente el mismo código que corre producción.
+    colores_eq = None
+    clasificador_eq = None
+    cfg_eq = cargar_config_equipos()
+    ruta_colores = Path(cfg["rutas"]["cache_colores"])
+    if ruta_colores.exists():
+        with open(ruta_colores, "rb") as f:
+            colores_eq = pickle.load(f)
+        clasificador_eq = entrenar_clasificador(colores_eq, cfg_eq)
+    if args.perfil is not None:
+        identidades = correr_perfil(
+            datos["cache"],
+            datos["fps"],
+            datos["sample"],
+            cfg_tracking,
+            perfil=args.perfil,
+            colores=colores_eq,
+            clasificador=clasificador_eq,
+        )
 
-    # Regla de porteros por posición (sobrescribe al color)
-    ruta_config_equipos = Path("configs/team_classification.yaml")
-    if equipos_pred is not None and ruta_config_equipos.exists():
-        with open(ruta_config_equipos) as f:
-            cfg_equipos = yaml.safe_load(f)
-        cfg_porteros = cfg_equipos.get("porteros", {})
-        if cfg_porteros.get("activo", False):
-            regla = ReglaPorteros.desde_dict(
-                {k: v for k, v in cfg_porteros.items() if k != "activo"}
-            )
-            equipos_pred = aplicar_regla_porteros(equipos_pred, identidades, regla)
+    # Clasificación de EQUIPOS por identidad agregada + regla de porteros
+    # (pipeline compartido con producción)
+    equipos_pred = None
+    if clasificador_eq is not None:
+        equipos_pred = clasificar_identidades(
+            identidades, colores_eq, clasificador_eq, cfg_eq
+        )
 
     # Tarea 3a: interpolación de huecos dentro de identidades (opcional)
     cfg_interp = cfg_tracking.get("interpolacion", {})
@@ -383,6 +335,7 @@ def main() -> None:
         f"Tracklets Etapa A: {len(tracklets)} | identidades cosidas: "
         f"{len(identidades)} ({'con color' if color_medio else 'solo movimiento'})"
     )
+    print(f"Perfil: {args.perfil or 'composición manual (flags/config)'}")
     print(f"Interpolación de huecos: {'ACTIVA' if interpolar else 'off'}")
     print(f"Rescate de tracklets cortos: {'ACTIVO' if rescatar else 'off'}")
     print(f"Segunda pasada de cosido: {'ACTIVA' if segunda else 'off'}")
