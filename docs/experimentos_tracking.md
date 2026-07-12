@@ -219,3 +219,59 @@ cosido `global` (cnu=2.0, sin color) + filtro de identidades <3 frames:
 Pendiente de decisión: adoptarlo como oficial (el criterio estricto "sin
 subir IDSW" no se cumple en bruto, pero el IDSW bruto no es comparable
 entre coberturas; HOTA — que pondera ambas cosas — mejora un 39 %).
+
+---
+
+## Tabla homogénea de la tanda completa (12-jul-2026)
+
+Todas las variantes medidas en idénticas condiciones (100 frames comunes,
+umbral oficial por profundidad; IDSW = métricas propias, IDSW-TE =
+TrackEval con cajas 2×2 m):
+
+| variante | nIds | IDF1 | HOTA | IDSW | IDSW-TE | Frag | recall | prec |
+|---|---|---|---|---|---|---|---|---|
+| **baseline: goloso sin color** | 89 | **0.229** | 0.106 | **130** | 51 | 163 | 0.259 | 0.730 |
+| goloso CON color | 94 | 0.224 | 0.106 | 134 | 49 | 163 | 0.259 | 0.730 |
+| grafo sin color | 62 | 0.217 | 0.105 | 129 | 52 | 163 | 0.259 | 0.730 |
+| grafo CON color | 69 | 0.222 | 0.106 | 126 | 50 | 163 | 0.259 | 0.730 |
+| rescate + goloso sin color | 477 | 0.165 | 0.113 | 975 | 391 | 257 | 0.720 | 0.709 |
+| rescate + grafo sin color (candidato) | 114 | 0.225 | **0.147** | 807 | 320 | 249 | **0.724** | 0.710 |
+| rescate + grafo CON color | 145 | 0.203 | 0.126 | 836 | 322 | 248 | 0.723 | 0.710 |
+
+**Decisión (12-jul-2026): NO se adopta el candidato como oficial.** El
+criterio acordado exigía IDSW en el mismo orden que el baseline (130) y
+suben a 807 en bruto (6.2×) y a 0.50 switches por frame emparejado frente
+a 0.23 (2.2× normalizado por cobertura). El candidato queda disponible
+(`--rescatar-cortos` + `cosido.metodo: global`) como mejor punto conocido
+en HOTA; la línea de trabajo siguiente es reducir sus switches (p. ej.
+apariencia más robusta que el color, o penalizaciones de coste por
+cruces) antes de re-plantear la adopción.
+
+---
+
+## Conclusión sobre el COLOR (resultado para el TFM)
+
+El clasificador de color por histograma HS del torso, usado como veto/coste
+en el cosido, **no aporta señal útil de identidad en esta cámara** una vez
+medido contra el ground truth. Números (tabla homogénea de arriba):
+
+| régimen | sin color → con color | efecto |
+|---|---|---|
+| goloso (baja cobertura) | IDF1 0.229 → 0.224 · IDSW 130 → 134 | ligeramente negativo |
+| grafo (baja cobertura) | IDF1 0.217 → 0.222 · IDSW 129 → 126 | ligeramente positivo |
+| rescate + grafo (alta cobertura) | IDF1 0.225 → 0.203 · HOTA 0.147 → 0.126 · IDSW 807 → 836 | **claramente negativo** |
+
+Lecturas:
+1. En régimen de baja cobertura el efecto es ±0.005 de IDF1 — ruido. La
+   validación cualitativa del notebook (89→94 identidades "más puras") no
+   se traduce en mejora medible contra el GT.
+2. En el régimen de alta cobertura (rescate de cortos), el color es
+   **perjudicial**: los tracklets de 1-2 frames promedian el color de 1-2
+   recortes minúsculos (jugadores de 15-40 px), la feature resultante es
+   ruidosa, y el veto (umbral 1.2 con p90 de pares legítimos = 1.16)
+   elimina uniones correctas además de desordenar la asignación global
+   (114 → 145 identidades).
+3. Esto NO invalida el color para su otra función: la **clasificación de
+   equipos por identidad** (agregando muchos recortes por identidad, la
+   señal se limpia). Invalida usarlo como discriminador de identidad
+   individual tracklet a tracklet en esta resolución.
