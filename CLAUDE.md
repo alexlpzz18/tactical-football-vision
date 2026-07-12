@@ -10,13 +10,24 @@ Caso objetivo (difícil a propósito): cámara fija gran angular barata, jugador
 diminutos (15-40 px), equipaciones idénticas entre compañeros. El producto debe
 ser 100% AUTOMÁTICO (sin intervención humana por partido).
 
-## Estado del código
-- `src/` contiene el pipeline ANTIGUO (processor.py con SAHI + sv.ByteTrack +
-  TeamClassifier viejo de K-Means que NO funciona bien).
-- Las piezas NUEVAS y VALIDADAS (en notebooks de Colab, aún no en src/):
-  1. Tracking offline en 2 etapas EN METROS: tracklets conservadores + cosido.
-  2. Clasificador de equipos de 2 fases por color (automático).
-  Se validaron experimentalmente: 656 IDs (ByteTrack) → 94 identidades (nuevo).
+## Estado del código (actualizado 12-jul-2026)
+- Pipeline NUEVO integrado en `src/` y seleccionable por config:
+  - `src/tracking/perfiles.py`: composición única banco↔producción
+    (perfil `oficial` = goloso conservador; `candidato` = rescate + cosido
+    global + exclusión espacial con salvaguarda + cota de plantilla).
+    **`candidato` es el default de producto** (cobertura colectiva 0.376
+    vs 0.140; docs/experimentos_tracking.md registra TODAS las variantes
+    medidas y por qué se adoptaron o rechazaron).
+  - `src/evaluation/`: banco de evaluación contra GT de CVAT
+    (`scripts/evaluar_tracking.py`: métricas propias en metros + TrackEval
+    + cobertura colectiva; soporta `--perfil oficial|candidato`).
+  - `src/team_classification/color_classifier.py` + `pipeline_equipos.py`:
+    clasificador 2 fases + agregación por cercanía + regla de porteros.
+  - `src/tracking_data/processor.py`: v2 end-to-end (modos full/desde-caché,
+    `configs/processor.yaml`, CLI `scripts/procesar_partido.py`); el flujo
+    viejo (`process_video`, ByteTrack) sigue como fallback `pipeline: legacy`.
+- PENDIENTE: validar el modo `full` en Colab con `best_v3.pt` (la detección
+  requiere GPU; en local todo corre desde los cachés).
 - El usuario es PRINCIPIANTE en ingeniería de software: explicar decisiones,
   código claro y comentado en español.
 

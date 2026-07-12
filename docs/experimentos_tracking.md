@@ -1,5 +1,26 @@
 # Experimentos de optimización del tracking (Tarea 3)
 
+> **DECISIÓN FINAL (12-jul-2026): perfil `candidato` adoptado como default
+> de producto** (`configs/processor.yaml`). La métrica de producto arbitró:
+>
+> | | oficial | **candidato** (rescate+grafo+exclusión con salvaguarda+cota) |
+> |---|---|---|
+> | **Cobertura colectiva** | 0.140 | **0.376 (×2.7)** |
+> | HOTA | 0.106 | **0.172 (+62 %)** |
+> | IDF1 propio | 0.229 | **0.329 (+44 %)** |
+> | recall/frame | 0.259 | **0.679** |
+> | precision/frame | 0.730 | **0.757** |
+> | IDSW (tasa/frame emparejado) | 130 (0.23) | 513 (0.341) |
+> | Robos entre equipos (auditados) | — | 3 (de 4 sin salvaguarda) |
+>
+> El criterio original ("IDSW no empeora") aplicó variante a variante
+> dentro del candidato (cada pieza adoptada lo cumplió contra su base);
+> para la adopción del perfil completo arbitró la **cobertura colectiva**,
+> que es lo que consume el informe: los IDSW extra son mayoritariamente
+> switches que el informe colectivo no distingue. El perfil `oficial`
+> queda disponible por config y el banco (`--perfil`) mide ambos con el
+> mismo código de producción (`src/tracking/perfiles.py`).
+
 Cada variante se prueba UNA A UNA contra el banco de evaluación
 (`scripts/evaluar_tracking.py`) y solo se conserva si mejora IDF1/HOTA sin
 subir los ID switches. Métrica oficial: **umbral por profundidad**
