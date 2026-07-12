@@ -60,3 +60,33 @@ def test_identidades_conservan_todos_los_tracklets(resultado_pipeline):
     tracklets, identidades = resultado_pipeline
     ids_en_identidades = [tr.id for ident in identidades for tr in ident]
     assert sorted(ids_en_identidades) == sorted(tr.id for tr in tracklets)
+
+
+RUTA_COLORES = Path("data/tracking/cache_colores_min5_60s.pkl")
+
+
+@pytest.mark.skipif(
+    not RUTA_COLORES.exists(),
+    reason="Falta el caché de colores (copiar de Drive a data/tracking/)",
+)
+def test_cosido_con_color_reproduce_94_identidades(resultado_pipeline):
+    """Con el veto de color, el cosido debe dar las 94 identidades validadas."""
+    import pickle
+
+    import numpy as np
+
+    tracklets, _ = resultado_pipeline
+    with open(RUTA_COLORES, "rb") as f:
+        colores = pickle.load(f)
+    color_medio = {}
+    for tr in tracklets:
+        feats = [colores[par] for par in tr.det_idxs if par in colores]
+        if feats:
+            color_medio[tr.id] = np.mean(feats, axis=0)
+    with open(RUTA_CONFIG) as f:
+        config = yaml.safe_load(f)
+    stitcher = TrackletStitcher(ParametrosCosido.desde_dict(config["cosido"]))
+    identidades = stitcher.coser(tracklets, color_medio)
+    assert (
+        len(identidades) == 94
+    ), f"Esperadas 94 identidades con color, hay {len(identidades)}"

@@ -127,3 +127,95 @@ el techo alcanzable: las detecciones existen, falta encadenarlas bien.
    tracklet→tracklet) en vez de goloso — imprescindible para que 3b escale
    a miles de fragmentos.
 3. Re-medir 3a, 3b y 3c sobre ese cosido mejorado.
+
+---
+
+## Variante 3d — Veto de color en el cosido goloso
+
+**Qué:** con `cache_colores_min5_60s.pkl` (10.893 features; los recortes
+minúsculos no tienen color → esos tracklets van solo por movimiento),
+color medio por tracklet (299/309 con color) y veto suave del cosido v2.
+
+**Verificación de fidelidad:** 94 identidades CON color — exactamente la
+referencia del notebook (test de regresión añadido).
+
+**Medición (métrica oficial):**
+
+| variante | nIds | IDF1 | IDSW | Frag | recall | precision |
+|---|---|---|---|---|---|---|
+| goloso sin color (baseline) | 89 | 0.229 | 130 | 163 | 0.259 | 0.730 |
+| goloso con color | 94 | 0.224 | 134 | 163 | 0.259 | 0.730 |
+
+**Decisión: NEUTRA-NEGATIVA sobre el goloso.** Consistente con lo medido
+en Colab: el color en esta cámara es señal débil (p90 de pares legítimos
+= 1.16 con veto en 1.2 → veta ~10 % de uniones correctas). Se mantiene
+disponible (`--color/--no-color`) y como término de coste en el global.
+
+---
+
+## Variante 3e — Cosido GLOBAL en grafo (asignación de coste mínimo)
+
+**Qué:** en vez de aceptar candidatos por orden de coste (goloso), se
+resuelve el emparejamiento bipartito óptimo tracklet→sucesor
+(`min_weight_full_bipartite_matching` sobre matriz dispersa n×2n con
+columnas dummy de coste `coste_no_union`). Config `cosido.metodo: global`.
+La generación de candidatos pasa a ventana temporal por bisección
+(mismo conjunto, O(n·k)) para escalar a miles de fragmentos.
+
+**Medición sobre los 309 tracklets estándar (barrido de coste_no_union):**
+el global nunca supera al goloso aquí (mejor: IDF1 0.224, IDSW 128, con
+color y cnu=1.4). Con pocos fragmentos largos apenas hay conflictos que
+resolver globalmente.
+
+**Medición sobre el RESCATE DE CORTOS (7.604 fragmentos) — donde importa:**
+
+| variante 3b re-medida | nIds | IDF1 | IDSW | Frag | recall | prec | HOTA |
+|---|---|---|---|---|---|---|---|
+| baseline (goloso, sin rescate) | 89 | 0.229 | 130 | 163 | 0.259 | 0.730 | 0.106 |
+| rescate + goloso sin color | 477 | 0.165 | 975 | 257 | 0.720 | 0.709 | 0.113 |
+| rescate + goloso con color | 538 | 0.170 | 924 | 261 | 0.716 | 0.708 | — |
+| **rescate + GLOBAL sin color** | **114** | **0.225** | 807 | 249 | **0.724** | **0.710** | **0.147** |
+| rescate + global con color (cnu=1.4) | 205 | 0.218 | 825 | 252 | 0.722 | 0.709 | 0.146 |
+
+**Decisión: el cosido global DESBLOQUEA el rescate de cortos.**
+`rescate + global sin color` logra HOTA 0.147 (**+39 %** sobre baseline),
+recall ×2.8 (0.26→0.72) e IDF1 propio prácticamente plano (0.225 vs
+0.229). Los IDSW absolutos suben (130→807), pero no son comparables entre
+niveles de cobertura tan distintos: con 2.8× más frames emparejados hay
+2.8× más ocasiones de switch (tasa por frame emparejado: 0.23→0.50, sube
+pero mucho menos que el bruto). El color vuelve a ser neutro-negativo.
+
+---
+
+## Re-medición de 3a y 3c sobre el mejor cosido (rescate + global sin color)
+
+| variante | IDF1 | IDSW | Frag | recall | prec | HOTA |
+|---|---|---|---|---|---|---|
+| mejor cosido (sin extras) | 0.225 | 807 | 249 | 0.724 | 0.710 | 0.147 |
+| +3a interp max_hueco=1 s | 0.183 | 777 | 171 | 0.808 | 0.504 | — |
+| +3a interp max_hueco=2 s | 0.162 | 766 | 138 | 0.854 | 0.411 | 0.129 |
+| +3a interp max_hueco=6 s | 0.100 | 874 | 73 | 0.934 | 0.214 | 0.097 |
+| +3c 2ª pasada (3 combos) | 0.225 | 807 | 249 | 0.724 | 0.710 | — |
+
+**3a: RECHAZADA definitivamente sobre este cosido** — con recall ya en
+0.72, interpolar solo añade posiciones fantasma (la precisión se hunde).
+**3c: NEUTRA otra vez** (métricas idénticas: fusiona ruido, no reconecta).
+
+---
+
+## Estado tras la tanda (12-jul-2026)
+
+**Candidato a nuevo pipeline oficial:** Etapa A con `min_frames=1` +
+cosido `global` (cnu=2.0, sin color) + filtro de identidades <3 frames:
+
+| | baseline oficial | candidato (rescate+global) |
+|---|---|---|
+| HOTA | 0.106 | **0.147** (+39 %) |
+| IDF1 propio | **0.229** | 0.225 (−0.004) |
+| recall/frame | 0.259 | **0.724** (×2.8) |
+| precision/frame | 0.730 | 0.710 |
+| IDSW (tasa por frame emparejado) | 130 (0.23) | 807 (0.50) |
+
+Pendiente de decisión: adoptarlo como oficial (el criterio estricto "sin
+subir IDSW" no se cumple en bruto, pero el IDSW bruto no es comparable
+entre coberturas; HOTA — que pondera ambas cosas — mejora un 39 %).

@@ -106,6 +106,12 @@ def main() -> None:
         default=None,
         help="Forzar segunda pasada de cosido on/off (por defecto: config)",
     )
+    parser.add_argument(
+        "--color",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Usar el caché de colores si existe (--no-color: solo movimiento)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -144,9 +150,13 @@ def main() -> None:
     tracker = ConservativeTracker(ParametrosEtapaA.desde_dict(params_etapa_a))
     tracklets = tracker.procesar(datos["cache"], datos["fps"], datos["sample"])
 
-    color_medio = cargar_colores_opcional(
-        Path(cfg["rutas"]["cache_colores"]), tracklets
-    )
+    if args.color:
+        color_medio = cargar_colores_opcional(
+            Path(cfg["rutas"]["cache_colores"]), tracklets
+        )
+    else:
+        logger.info("Color desactivado por --no-color: cosido solo por movimiento.")
+        color_medio = None
     stitcher = TrackletStitcher(ParametrosCosido.desde_dict(cfg_tracking["cosido"]))
     identidades = stitcher.coser(tracklets, color_medio)
     if rescatar:
