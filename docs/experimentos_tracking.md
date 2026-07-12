@@ -469,6 +469,41 @@ posiciones cubiertas con el equipo correcto — lo da la cobertura.
 
 ---
 
+## Auditoría de la exclusión espacial + salvaguarda de marcaje (12-jul-2026)
+
+**Aclaración porteros 3/3:** el GT tiene exactamente 2 tracks de portero
+(track 0 = portero_A, track 1 = portero_B, 100 cajas cada uno) — NO hay
+duplicado en el GT. Las "3 identidades" son del SISTEMA: portero_A
+cubierto por 1 identidad y portero_B por 2 fragmentos nuestros. Las 3
+recibieron la etiqueta correcta.
+
+**Criterio exacto de fusión de la exclusión:** ≥3 frames co-observados y
+mediana de la distancia sobre TODOS los frames co-observados ≤ 1.5 m
+(sostenida, no puntual; pero un marcaje pegado durante todo el solape
+común sí dispararía).
+
+**Auditoría de robos (candidato, dm=1.5):** de 12 grupos fusionados,
+**4 mezclaban equipos GT distintos** (el peor: 10 identidades con 9×B +
+1×A). La preocupación de dominio (marcaje al hombre) era real.
+
+**Salvaguarda de marcaje (adoptada):** firma fiable por identidad =
+(etiqueta del clasificador, color medio) construida SOLO con recortes
+cercanos (my<45). Si ambas identidades tienen firma y sus etiquetas
+difieren o sus colores son incompatibles (>1.2), NO se fusionan.
+
+| pila candidato completa | nIds | IDF1 | IDSW | tasa | recall | HOTA |
+|---|---|---|---|---|---|---|
+| sin salvaguarda | 58 | 0.325 | 536 | 0.351 | 0.688 | 0.171 |
+| **con salvaguarda** | 58 | **0.329** | **513** | **0.341** | 0.679 | **0.172** |
+
+Robos: 4 → **3** (5 pares vetados). **Límite documentado:** los 3 robos
+restantes involucran al menos una identidad SIN firma (sin recortes
+cercanos): en la mitad lejana no existe señal de color con la que vetar.
+Es el mismo punto ciego de profundidad de todo el sistema; se resolverá
+con mejor localización (v4), no con más reglas.
+
+---
+
 ## Variante 3i — Asignación por ventana con exclusión mutua explícita (timebox)
 
 **Qué:** dos endurecimientos de la cota blanda: (1) exclusión mutua

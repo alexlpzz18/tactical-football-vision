@@ -26,6 +26,8 @@ def fusionar_identidades_duplicadas(
     identidades: list[list[Tracklet]],
     dist_max: float,
     min_frames_comunes: int,
+    firmas: dict[int, tuple[str, np.ndarray]] | None = None,
+    color_max_dist: float = 1.2,
 ) -> list[list[Tracklet]]:
     """Fusiona identidades que viven en el mismo sitio al mismo tiempo.
 
@@ -34,6 +36,14 @@ def fusionar_identidades_duplicadas(
         dist_max: distancia mediana máxima (metros) en los frames comunes
             para considerar que dos identidades son el mismo jugador.
         min_frames_comunes: mínimo de frames compartidos para decidir.
+        firmas: SALVAGUARDA DE MARCAJE (opcional): {índice_identidad
+            (0-based): (etiqueta_equipo, feature_color_cercana)} solo para
+            identidades con clasificación CONFIABLE (con recortes
+            cercanos). Dos jugadores reales pueden ir pegados mucho rato
+            (marcaje al hombre); si ambas identidades tienen firma, NO se
+            fusionan cuando sus etiquetas difieren o sus colores son
+            incompatibles (distancia > color_max_dist).
+        color_max_dist: umbral de incompatibilidad de color entre firmas.
 
     Returns:
         Lista de identidades tras las fusiones (los tracklets de las
@@ -58,6 +68,7 @@ def fusionar_identidades_duplicadas(
         return x
 
     n_pares = 0
+    n_vetados = 0
     for i in range(len(identidades)):
         for j in range(i + 1, len(identidades)):
             comunes = observaciones[i].keys() & observaciones[j].keys()
@@ -67,9 +78,21 @@ def fusionar_identidades_duplicadas(
                 np.linalg.norm(observaciones[i][f] - observaciones[j][f])
                 for f in comunes
             ]
-            if float(np.median(distancias)) <= dist_max:
-                padre[raiz(i)] = raiz(j)
-                n_pares += 1
+            if float(np.median(distancias)) > dist_max:
+                continue
+            # Salvaguarda de marcaje: dos identidades con firma fiable de
+            # equipos/colores distintos son jugadores REALES pegados, no
+            # un duplicado → no fusionar
+            if firmas is not None and i in firmas and j in firmas:
+                etiqueta_i, color_i = firmas[i]
+                etiqueta_j, color_j = firmas[j]
+                if etiqueta_i != etiqueta_j or (
+                    float(np.linalg.norm(color_i - color_j)) > color_max_dist
+                ):
+                    n_vetados += 1
+                    continue
+            padre[raiz(i)] = raiz(j)
+            n_pares += 1
 
     grupos: dict[int, list[int]] = defaultdict(list)
     for i in range(len(identidades)):
@@ -83,8 +106,10 @@ def fusionar_identidades_duplicadas(
             resultado.append(_fusionar_grupo([identidades[m] for m in miembros]))
 
     logger.info(
-        "Exclusión espacial: %d pares duplicados → %d → %d identidades",
+        "Exclusión espacial: %d pares duplicados (%d vetados por firma) "
+        "→ %d → %d identidades",
         n_pares,
+        n_vetados,
         len(identidades),
         len(resultado),
     )

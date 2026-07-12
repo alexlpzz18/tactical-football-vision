@@ -67,3 +67,47 @@ def test_fusion_transitiva():
     )
     assert len(resultado) == 1
     assert sum(len(tr) for tr in resultado[0]) == 10  # deduplicado por frame
+
+
+def test_salvaguarda_marcaje_veta_equipos_distintos():
+    """Dos identidades pegadas pero con firmas de equipos distintos → NO fusionar."""
+    a = _identidad(1, 10.0, 20.0)
+    b = _identidad(2, 10.0, 20.3)
+    firmas = {0: ("A", np.zeros(4)), 1: ("B", np.zeros(4))}
+    resultado = fusionar_identidades_duplicadas(
+        [a, b], dist_max=0.7, min_frames_comunes=3, firmas=firmas
+    )
+    assert len(resultado) == 2  # marcaje al hombre, no duplicado
+
+
+def test_salvaguarda_marcaje_veta_colores_incompatibles():
+    """Mismo equipo declarado pero colores incompatibles → NO fusionar."""
+    a = _identidad(1, 10.0, 20.0)
+    b = _identidad(2, 10.0, 20.3)
+    firmas = {0: ("A", np.zeros(4)), 1: ("A", np.array([1.0, 1.0, 1.0, 1.0]))}
+    resultado = fusionar_identidades_duplicadas(
+        [a, b], dist_max=0.7, min_frames_comunes=3, firmas=firmas, color_max_dist=1.2
+    )
+    assert len(resultado) == 2
+
+
+def test_salvaguarda_no_aplica_sin_firma():
+    """Si una identidad no tiene firma fiable, la fusión procede (no se puede juzgar)."""
+    a = _identidad(1, 10.0, 20.0)
+    b = _identidad(2, 10.0, 20.3)
+    firmas = {0: ("A", np.zeros(4))}  # b sin firma
+    resultado = fusionar_identidades_duplicadas(
+        [a, b], dist_max=0.7, min_frames_comunes=3, firmas=firmas
+    )
+    assert len(resultado) == 1
+
+
+def test_salvaguarda_mismo_equipo_fusiona():
+    """Firmas iguales y compatibles → fusión normal."""
+    a = _identidad(1, 10.0, 20.0)
+    b = _identidad(2, 10.0, 20.3)
+    firmas = {0: ("A", np.zeros(4)), 1: ("A", np.zeros(4))}
+    resultado = fusionar_identidades_duplicadas(
+        [a, b], dist_max=0.7, min_frames_comunes=3, firmas=firmas
+    )
+    assert len(resultado) == 1
