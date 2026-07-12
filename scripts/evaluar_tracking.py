@@ -29,7 +29,10 @@ import yaml
 # Permite ejecutar el script desde la raíz del repo sin instalar el paquete
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.evaluation.adaptador import identidades_a_por_frame  # noqa: E402
+from src.evaluation.adaptador import (  # noqa: E402
+    identidades_a_por_frame,
+    trayectorias_a_por_frame,
+)
 from src.evaluation.alineacion import (  # noqa: E402
     distancia_media_gt_cache,
     frames_comunes,
@@ -46,6 +49,7 @@ from src.tracking.field_tracker import (  # noqa: E402
     ConservativeTracker,
     ParametrosEtapaA,
 )
+from src.tracking.interpolacion import interpolar_identidades  # noqa: E402
 from src.tracking.stitcher import ParametrosCosido, TrackletStitcher  # noqa: E402
 
 logger = logging.getLogger("evaluar_tracking")
@@ -79,6 +83,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/evaluation.yaml")
     parser.add_argument("--config-tracking", default="configs/tracking.yaml")
+    parser.add_argument(
+        "--interpolar",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forzar interpolación de huecos on/off (por defecto: lo que diga la config)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -112,7 +122,21 @@ def main() -> None:
     stitcher = TrackletStitcher(ParametrosCosido.desde_dict(cfg_tracking["cosido"]))
     identidades = stitcher.coser(tracklets, color_medio)
 
-    pred = identidades_a_por_frame(identidades)
+    # Tarea 3a: interpolación de huecos dentro de identidades (opcional)
+    cfg_interp = cfg_tracking.get("interpolacion", {})
+    interpolar = (
+        args.interpolar
+        if args.interpolar is not None
+        else cfg_interp.get("activa", False)
+    )
+    if interpolar:
+        frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
+        trayectorias = interpolar_identidades(
+            identidades, frames_ts, cfg_interp["max_hueco"]
+        )
+        pred = trayectorias_a_por_frame(trayectorias)
+    else:
+        pred = identidades_a_por_frame(identidades)
 
     # ------------------------------------------------------------- alineación
     frames_cache = [e["frame_idx"] for e in datos["cache"]]
@@ -159,6 +183,7 @@ def main() -> None:
         f"Tracklets Etapa A: {len(tracklets)} | identidades cosidas: "
         f"{len(identidades)} ({'con color' if color_medio else 'solo movimiento'})"
     )
+    print(f"Interpolación de huecos: {'ACTIVA' if interpolar else 'off'}")
     print(f"Identidades GT: {len(tracks_gt)} (22 players + 1 referee)")
     print(
         f"Sanidad alineación: dist. media GT→det más cercana = {dist_alineacion:.2f} m"

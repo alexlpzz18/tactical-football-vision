@@ -7,6 +7,8 @@ el banco no sabe (ni le importa) qué tracker generó las predicciones.
 
 import logging
 
+import numpy as np
+
 from src.evaluation.modelo import Observacion, PorFrame
 from src.tracking.field_tracker import Tracklet
 
@@ -45,4 +47,31 @@ def identidades_a_por_frame(
         n_obs,
         len(por_frame),
     )
+    return por_frame
+
+
+def trayectorias_a_por_frame(
+    trayectorias: list[list[tuple[int, np.ndarray, bool]]],
+    equipos: dict[int, str] | None = None,
+) -> PorFrame:
+    """Convierte trayectorias interpoladas al formato común de evaluación.
+
+    Args:
+        trayectorias: salida de interpolar_identidades(): una lista por
+            identidad de (frame_global, pos, es_real). Las posiciones
+            interpoladas cuentan igual que las reales a efectos de métrica
+            (el GT no distingue cómo se obtuvo la posición).
+        equipos: opcional, {id_identidad: equipo} (ids secuenciales 1..N,
+            mismo criterio que identidades_a_por_frame).
+
+    Returns:
+        {frame_global: [Observacion, ...]}
+    """
+    por_frame: PorFrame = {}
+    for id_identidad, trayectoria in enumerate(trayectorias, start=1):
+        team = equipos.get(id_identidad) if equipos else None
+        for frame_global, pos, _es_real in trayectoria:
+            por_frame.setdefault(frame_global, []).append(
+                Observacion(obj_id=id_identidad, pos=pos, team=team)
+            )
     return por_frame

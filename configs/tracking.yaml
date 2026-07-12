@@ -16,6 +16,13 @@ etapa_a:
   # Filtro final: descartar tracklets con menos de estos frames
   min_frames: 3
 
+# Tarea 3a: interpolación de huecos DENTRO de identidades cosidas.
+# Solo entre dos posiciones reales (nunca extrapolar), solo en frames del
+# caché, y solo si el hueco no supera max_hueco segundos.
+interpolacion:
+  activa: false  # se decide tras medir contra el banco (docs/experimentos_tracking.md)
+  max_hueco: 6.0
+
 cosido:
   # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
   max_hueco: 6.0
