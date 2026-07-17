@@ -76,6 +76,59 @@ class _Prototipos:
     etiquetas: list[str] = field(default_factory=lambda: ["A", "B", "otro"])
 
 
+def extraer_color_torso(
+    crop: np.ndarray, params: ParametrosClasificadorColor | None = None
+) -> np.ndarray:
+    """Feature de color del torso de un recorte BGR de jugador.
+
+    ÚNICA función de extracción del repo (la usan el clasificador y el
+    modo full del procesador): banda del pecho + máscara anti-verde HSV +
+    histograma HS 16×16 **normalizado en L2** (256 floats). Si tras la
+    máscara no queda ningún píxel, devuelve ceros.
+
+    ⚠️ NORMALIZACIÓN L2, no por suma (bug de producción del 12-jul-2026):
+    el extractor validado del notebook usaba cv2.normalize, cuyo default
+    es NORM_L2 (verificado forense: el 96 % de las features del caché de
+    referencia tienen ||f||₂ = 1.0 exacto, el 4 % restante son ceros).
+    TODOS los umbrales calibrados del sistema viven en esa escala: el
+    barrido de fusión del fit (0.5-1.3), el veto de color (1.2, con
+    mediana de pares legítimos 0.90 y p90 1.16) y las firmas de la
+    salvaguarda. Con normalización por suma las distancias se encogen y
+    la fusión jerárquica colapsa en un solo equipo (reproducido: mismas
+    features en L1 → A=2548/B=44 con umbral 0.50, idéntico al fallo de
+    Colab).
+    """
+    p = params or ParametrosClasificadorColor()
+    alto, ancho = crop.shape[:2]
+    y0, y1 = int(alto * p.torso_alto[0]), int(alto * p.torso_alto[1])
+    x0, x1 = int(ancho * p.torso_ancho[0]), int(ancho * p.torso_ancho[1])
+    banda = crop[y0:y1, x0:x1]
+    if banda.size == 0:
+        return np.zeros(p.bins_h * p.bins_s)
+
+    hsv = cv2.cvtColor(banda, cv2.COLOR_BGR2HSV)
+    h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    es_verde = (
+        (h >= p.verde_h[0])
+        & (h <= p.verde_h[1])
+        & (s >= p.verde_s_min)
+        & (v >= p.verde_v_min)
+    )
+    validos = hsv[~es_verde]
+    if len(validos) == 0:
+        return np.zeros(p.bins_h * p.bins_s)
+
+    hist, _, _ = np.histogram2d(
+        validos[:, 0],
+        validos[:, 1],
+        bins=[p.bins_h, p.bins_s],
+        range=[[0, 180], [0, 256]],
+    )
+    hist = hist.flatten()
+    norma = np.linalg.norm(hist)
+    return hist / norma if norma > 0 else hist
+
+
 class TeamClassifierColor:
     """Clasificador de equipos por color, 100 % automático (sin etiquetas)."""
 
@@ -85,40 +138,8 @@ class TeamClassifierColor:
 
     # ------------------------------------------------------------ features
     def _color_torso(self, crop: np.ndarray) -> np.ndarray:
-        """Feature de color del torso de un recorte BGR de jugador.
-
-        Devuelve el histograma HS 16×16 normalizado (256 floats). Si tras
-        la máscara anti-verde no queda ningún píxel, devuelve ceros.
-        """
-        p = self.params
-        alto, ancho = crop.shape[:2]
-        y0, y1 = int(alto * p.torso_alto[0]), int(alto * p.torso_alto[1])
-        x0, x1 = int(ancho * p.torso_ancho[0]), int(ancho * p.torso_ancho[1])
-        banda = crop[y0:y1, x0:x1]
-        if banda.size == 0:
-            return np.zeros(p.bins_h * p.bins_s)
-
-        hsv = cv2.cvtColor(banda, cv2.COLOR_BGR2HSV)
-        h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
-        es_verde = (
-            (h >= p.verde_h[0])
-            & (h <= p.verde_h[1])
-            & (s >= p.verde_s_min)
-            & (v >= p.verde_v_min)
-        )
-        validos = hsv[~es_verde]
-        if len(validos) == 0:
-            return np.zeros(p.bins_h * p.bins_s)
-
-        hist, _, _ = np.histogram2d(
-            validos[:, 0],
-            validos[:, 1],
-            bins=[p.bins_h, p.bins_s],
-            range=[[0, 180], [0, 256]],
-        )
-        hist = hist.flatten()
-        total = hist.sum()
-        return hist / total if total > 0 else hist
+        """Feature de color del torso (delega en extraer_color_torso)."""
+        return extraer_color_torso(crop, self.params)
 
     # ----------------------------------------------------------------- fit
     def fit(self, crops: list[np.ndarray]) -> None:

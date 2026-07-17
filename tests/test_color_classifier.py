@@ -75,13 +75,13 @@ def test_fit_con_pocas_features_lanza_error():
 
 
 def test_color_torso_feature_valida():
-    """La feature de un recorte sintético es un histograma normalizado."""
+    """La feature de un recorte sintético es un histograma normalizado L2."""
     crop = np.zeros((60, 30, 3), dtype=np.uint8)
     crop[:, :] = (0, 0, 200)  # camiseta roja (BGR)
     clf = TeamClassifierColor()
     feat = clf._color_torso(crop)
     assert feat.shape == (256,)
-    assert feat.sum() == pytest.approx(1.0)
+    assert np.linalg.norm(feat) == pytest.approx(1.0)
 
 
 def test_color_torso_ignora_el_verde():
@@ -110,3 +110,71 @@ def test_parametros_desde_dict():
     )
     assert p.torso_alto == (0.1, 0.5)
     assert p.k_clusters == 6
+
+
+# ── Regresión de la EXTRACCIÓN (bug de producción 12-jul-2026) ──────────
+# La extracción es una única función compartida (extraer_color_torso) con
+# normalización L2 — la escala del extractor validado del notebook, en la
+# que están calibrados todos los umbrales del sistema. Estos tests fijan
+# features CONOCIDAS bin a bin: si alguien cambia banda, máscara, orden de
+# canales o normalización, fallan.
+
+
+def _crop_uniforme(bgr, alto=60, ancho=30):
+    crop = np.zeros((alto, ancho, 3), dtype=np.uint8)
+    crop[:, :] = bgr
+    return crop
+
+
+def test_extraccion_rojo_bin_exacto():
+    """Camiseta roja BGR(0,0,200): H=0 (bin 0), S=255 (bin 15) → índice 15."""
+    from src.team_classification.color_classifier import extraer_color_torso
+
+    feat = extraer_color_torso(_crop_uniforme((0, 0, 200)))
+    assert feat[15] == pytest.approx(1.0)  # todo el torso en un bin, L2=1
+    assert np.count_nonzero(feat) == 1
+
+
+def test_extraccion_azul_bin_exacto():
+    """Camiseta azul BGR(200,0,0): H=120 (bin 10), S=255 (bin 15) → 175."""
+    from src.team_classification.color_classifier import extraer_color_torso
+
+    feat = extraer_color_torso(_crop_uniforme((200, 0, 0)))
+    assert feat[10 * 16 + 15] == pytest.approx(1.0)
+    assert np.count_nonzero(feat) == 1
+
+
+def test_extraccion_mitad_y_mitad_es_l2():
+    """Torso mitad rojo / mitad azul → dos bins a 1/√2 (normalización L2,
+    NO por suma: por suma darían 0.5 y el fit colapsa — el bug de Colab)."""
+    from src.team_classification.color_classifier import extraer_color_torso
+
+    crop = _crop_uniforme((0, 0, 200))
+    crop[:, 15:] = (200, 0, 0)  # media camiseta azul
+    feat = extraer_color_torso(crop)
+    # La banda del torso es el 15-85% del ancho (cols 4..24): quedan 11
+    # columnas rojas y 10 azules → pesos exactos 11/√221 y 10/√221
+    assert feat[15] == pytest.approx(11 / np.sqrt(11**2 + 10**2), abs=1e-6)
+    assert feat[175] == pytest.approx(10 / np.sqrt(11**2 + 10**2), abs=1e-6)
+    assert np.linalg.norm(feat) == pytest.approx(1.0)
+
+
+def test_extraccion_cesped_da_cero():
+    """Verde césped puro → máscara lo elimina todo → vector nulo."""
+    from src.team_classification.color_classifier import extraer_color_torso
+
+    feat = extraer_color_torso(_crop_uniforme((60, 200, 60)))
+    assert feat.sum() == pytest.approx(0.0)
+
+
+def test_extraccion_misma_escala_que_referencia():
+    """Toda feature no-nula debe vivir en la esfera unidad L2 (la firma del
+    caché de referencia del notebook: 96% con ||f||=1 exacto, resto ceros)."""
+    from src.team_classification.color_classifier import extraer_color_torso
+
+    rng = np.random.default_rng(3)
+    for _ in range(10):
+        crop = rng.integers(0, 256, size=(40, 20, 3), dtype=np.uint8)
+        feat = extraer_color_torso(crop)
+        if feat.sum() > 0:
+            assert np.linalg.norm(feat) == pytest.approx(1.0)

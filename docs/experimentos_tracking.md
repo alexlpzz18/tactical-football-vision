@@ -16,6 +16,21 @@
 > 0.456** (A=0.49/B=0.41, antes 0.32/0.44), oficial 0.140 → 0.184;
 > accuracy de campo candidato 0.654, porteros 1.000. La decisión de
 > perfil no cambia: el candidato amplía su ventaja (0.456 vs 0.184).
+>
+> **SEGUNDA CAUSA RAÍZ (misma validación): normalización de la feature de
+> color.** El fit filtrado seguía colapsando en Colab (A=2554/B=44,
+> umbral 0.50) porque `_color_torso` de producción normalizaba el
+> histograma por SUMA (L1) mientras el extractor validado del notebook
+> normalizaba en **L2** (`cv2.normalize` por defecto). Forense: el 96 %
+> de las features del caché de referencia tienen ‖f‖₂ = 1.0 exacto (el
+> 4 % restante, ceros de máscara vacía) — imposible con L1. Todos los
+> umbrales del sistema (barrido de fusión 0.5-1.3, veto de color 1.2,
+> mediana 0.90/p90 1.16 del briefing) viven en escala L2; en L1 las
+> distancias se encogen y la fusión colapsa. Reproducido en local: las
+> MISMAS features de referencia re-normalizadas a L1 → A=2548/B=44 con
+> umbral 0.50, idéntico al log de Colab. Fix: extracción unificada en
+> `extraer_color_torso()` (única función, normalización L2, usada por el
+> clasificador y el modo full) con tests de regresión bin a bin.
 
 > **DECISIÓN FINAL (12-jul-2026): perfil `candidato` adoptado como default
 > de producto** (`configs/processor.yaml`). La métrica de producto arbitró:

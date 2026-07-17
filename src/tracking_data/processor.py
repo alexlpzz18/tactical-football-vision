@@ -392,12 +392,11 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     from sahi import AutoDetectionModel
     from sahi.predict import get_sliced_prediction
 
-    from src.team_classification.color_classifier import TeamClassifierColor
+    from src.team_classification.color_classifier import extraer_color_torso
 
     validar_config(cfg, _CLAVES_FULL)
     cfg_det = cfg["deteccion"]
     H = np.load(cfg["rutas"]["homografia"])
-    extractor_color = TeamClassifierColor()  # solo para _color_torso
 
     modelo = AutoDetectionModel.from_pretrained(
         model_type="ultralytics",
@@ -466,7 +465,9 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
             y1, x1 = max(y1, 0), max(x1, 0)
             crop = frame[y1:y2, x1:x2]
             if crop.size > 0:
-                feat = extractor_color._color_torso(crop)
+                # ÚNICA función de extracción del repo (normalización L2,
+                # la escala en la que están calibrados todos los umbrales)
+                feat = extraer_color_torso(crop)
                 if feat.sum() > 0:
                     colores[(frame_idx, det_idx)] = feat
         cache.append({"frame_idx": frame_idx, "t": frame_idx / fps, "dets": dets})
