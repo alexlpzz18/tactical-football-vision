@@ -252,7 +252,7 @@ def main() -> None:
     if ruta_colores.exists():
         with open(ruta_colores, "rb") as f:
             colores_eq = pickle.load(f)
-        clasificador_eq = entrenar_clasificador(colores_eq, cfg_eq)
+        clasificador_eq = entrenar_clasificador(colores_eq, cfg_eq, datos["cache"])
     if args.perfil is not None:
         identidades = correr_perfil(
             datos["cache"],

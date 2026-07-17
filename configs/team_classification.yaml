@@ -18,6 +18,18 @@ porteros:
   equipo_mx_alto: A
   equipo_mx_bajo: B
 
+# Entrenamiento del clasificador (fix del colapso en producción,
+# 12-jul-2026): el fit usa SOLO recortes cercanos (my < umbral_my), donde
+# el color es señal. Entrenar con todos era frágil: la masa de recortes
+# lejanos (histogramas-ruido) emborronaba la separación y la fusión podía
+# colapsar en un solo equipo (visto en Colab: A=10571/B=204/otro=0).
+# Con my<34: A=1242/B=1233 (equilibrio 0.99) y cobertura 0.376 → 0.456.
+# Si hay menos de min_features cercanas, se usa todo (con aviso en log).
+entrenamiento:
+  solo_cercanos: true
+  umbral_my: 34.0
+  min_features: 300
+
 # Agregación por identidad: si la identidad tiene recortes "cercanos"
 # (my < umbral, donde el jugador es grande y el color es señal), usar SOLO
 # esos para el color medio; si no tiene, usar todos. Medido: 0.559 → 0.603

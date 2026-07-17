@@ -510,7 +510,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     cfg_equipos = {}
     if colores is not None and cfg.get("equipos", {}).get("activo", True):
         cfg_equipos = cargar_config_equipos()
-        clasificador = entrenar_clasificador(colores, cfg_equipos)
+        clasificador = entrenar_clasificador(colores, cfg_equipos, datos["cache"])
 
     identidades = correr_perfil(
         datos["cache"],

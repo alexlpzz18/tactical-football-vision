@@ -1,5 +1,22 @@
 # Experimentos de optimización del tracking (Tarea 3)
 
+> **FIX POST-DECISIÓN (validación en Colab, 12-jul-2026): fit del
+> clasificador con recortes cercanos.** En producción, el fit con TODOS
+> los recortes colapsó (A=10571/B=204/otro=0 → CSV con cero B): la masa
+> de recortes lejanos (histogramas-ruido de jugadores <28 px) emborronaba
+> la separación y la fusión automática era estructuralmente frágil (en el
+> caché de referencia ya daba equilibrio 0.46). El fit filtrado a my<34
+> (la zona donde la señal de color existe) separa dos equipos casi
+> perfectos (A=1242/B=1233, equilibrio 0.99) y es robusto al cambio de
+> detector. Camino de entrenamiento ÚNICO banco↔producción en
+> `pipeline_equipos.entrenar_clasificador` (exige el caché de detecciones
+> si el filtro está activo: la divergencia ya no puede existir).
+>
+> Números oficiales tras el fix: **cobertura colectiva candidato 0.376 →
+> 0.456** (A=0.49/B=0.41, antes 0.32/0.44), oficial 0.140 → 0.184;
+> accuracy de campo candidato 0.654, porteros 1.000. La decisión de
+> perfil no cambia: el candidato amplía su ventaja (0.456 vs 0.184).
+
 > **DECISIÓN FINAL (12-jul-2026): perfil `candidato` adoptado como default
 > de producto** (`configs/processor.yaml`). La métrica de producto arbitró:
 >

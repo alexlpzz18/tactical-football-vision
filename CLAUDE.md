@@ -15,8 +15,8 @@ ser 100% AUTOMÁTICO (sin intervención humana por partido).
   - `src/tracking/perfiles.py`: composición única banco↔producción
     (perfil `oficial` = goloso conservador; `candidato` = rescate + cosido
     global + exclusión espacial con salvaguarda + cota de plantilla).
-    **`candidato` es el default de producto** (cobertura colectiva 0.376
-    vs 0.140; docs/experimentos_tracking.md registra TODAS las variantes
+    **`candidato` es el default de producto** (cobertura colectiva 0.456
+    vs 0.184; docs/experimentos_tracking.md registra TODAS las variantes
     medidas y por qué se adoptaron o rechazaron).
   - `src/evaluation/`: banco de evaluación contra GT de CVAT
     (`scripts/evaluar_tracking.py`: métricas propias en metros + TrackEval

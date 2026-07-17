@@ -38,17 +38,83 @@ def cargar_config_equipos(ruta: str | Path = RUTA_CONFIG_DEFECTO) -> dict:
 
 
 def entrenar_clasificador(
-    colores: dict, cfg_equipos: dict | None = None
+    colores: dict,
+    cfg_equipos: dict | None = None,
+    cache: list[dict] | None = None,
 ) -> TeamClassifierColor:
-    """Entrena TeamClassifierColor con todas las features del caché."""
+    """Entrena TeamClassifierColor. ÚNICO camino de entrenamiento del repo.
+
+    FIT CON RECORTES CERCANOS (bug de producción del 12-jul-2026): entrenar
+    con TODOS los recortes era estructuralmente frágil — la masa de
+    recortes lejanos (jugadores <28 px, histogramas-ruido) emborronaba la
+    separación y la fusión automática podía colapsar en un solo equipo
+    (visto en Colab: A=10571/B=204). Filtrando el fit a recortes cercanos
+    (my < umbral, donde la señal de color existe) los dos equipos separan
+    equilibrados (1242/1233 en el tramo de validación) y la cobertura
+    colectiva sube de 0.376 a 0.456. Config: sección `entrenamiento` de
+    team_classification.yaml. Si tras filtrar quedan menos de
+    `min_features`, se usa todo (con aviso): mejor un fit borroso que
+    ninguno.
+
+    Args:
+        colores: caché de colores {(frame_idx, det_idx): feature}.
+        cfg_equipos: contenido de team_classification.yaml.
+        cache: lista de frames del caché de detecciones (para conocer la
+            profundidad my de cada recorte). OBLIGATORIO si el filtro de
+            entrenamiento está activo.
+    """
     cfg_equipos = cfg_equipos or {}
     params = None
     if "clasificador_color" in cfg_equipos:
         params = ParametrosClasificadorColor.desde_dict(
             cfg_equipos["clasificador_color"]
         )
+
+    cfg_fit = cfg_equipos.get("entrenamiento", {})
+    solo_cercanos = cfg_fit.get("solo_cercanos", True)
+    umbral_my = cfg_fit.get("umbral_my", 34.0)
+    min_features = cfg_fit.get("min_features", 300)
+
+    features = np.array(list(colores.values()))
+    if solo_cercanos:
+        if cache is None:
+            raise ValueError(
+                "entrenar_clasificador: el fit con recortes cercanos está "
+                "activo (entrenamiento.solo_cercanos) y requiere el caché "
+                "de detecciones para conocer la profundidad de cada recorte. "
+                "Pásalo (cache=datos['cache']) o desactiva el filtro."
+            )
+        my_por_clave = {
+            (entrada["frame_idx"], det_idx): det[1]
+            for entrada in cache
+            for det_idx, det in enumerate(entrada["dets"])
+        }
+        cercanas = np.array(
+            [
+                feature
+                for clave, feature in colores.items()
+                if my_por_clave.get(clave, float("inf")) < umbral_my
+            ]
+        )
+        if len(cercanas) >= min_features:
+            features = cercanas
+            logger.info(
+                "Fit del clasificador con %d recortes cercanos (my<%.0f) "
+                "de %d totales",
+                len(cercanas),
+                umbral_my,
+                len(colores),
+            )
+        else:
+            logger.warning(
+                "Solo %d recortes cercanos (<%d): fit con TODAS las "
+                "features (posible fusión frágil).",
+                len(cercanas),
+                min_features,
+            )
+
     clasificador = TeamClassifierColor(params)
-    clasificador.fit_features(np.array(list(colores.values())))
+    clasificador.fit_features(features)
     return clasificador
 
 
