@@ -1,0 +1,306 @@
+"""Replay táctico 2D: HTML autocontenido con el partido animado sobre el campo.
+
+Genera, a partir del CSV de posiciones del pipeline, una página HTML sin
+dependencias externas (canvas + JS inline) con un círculo por identidad
+moviéndose en el tiempo. Es a la vez producto (visualización para el
+entrenador) y herramienta de DIAGNÓSTICO: puesta al lado del vídeo real
+permite ver qué detectamos y qué no.
+
+Decisiones de diseño:
+- Los datos van embebidos como JSON compacto por identidad (arrays de
+  t/x/y): un partido completo (~90 min, ~1M filas) produce un HTML grande
+  pero manejable; un tramo corto, uno ligero. Funciona con cualquier tramo
+  porque el reloj usa el tiempo ABSOLUTO del vídeo (tiempo_s del CSV).
+- Interpolación visual lineal entre observaciones consecutivas de la misma
+  identidad, PERO nunca a través de huecos mayores que `max_hueco_s`: un
+  hueco largo se muestra como desaparición (honesto para el diagnóstico:
+  si no lo detectamos, no se pinta).
+- Colores por etiqueta: A azul, B rojo, porteros en tono oscuro de su
+  equipo, 'otro' gris translúcido.
+"""
+
+import json
+import logging
+from pathlib import Path
+
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+COLUMNAS_REQUERIDAS = ["frame", "tiempo_s", "id_jugador", "etiqueta", "x_m", "y_m"]
+
+# Colores por etiqueta (relleno, borde)
+COLORES = {
+    "A": ("#2563eb", "#1d4ed8"),
+    "B": ("#dc2626", "#b91c1c"),
+    "portero_A": ("#1e3a8a", "#172554"),
+    "portero_B": ("#7f1d1d", "#450a0a"),
+    "otro": ("rgba(128,128,128,0.45)", "rgba(90,90,90,0.6)"),
+}
+
+
+def generar_replay(
+    csv_path: str | Path,
+    salida_html: str | Path,
+    largo: float = 105.0,
+    ancho: float = 68.0,
+    max_hueco_s: float = 3.0,
+    titulo: str = "Replay táctico",
+) -> Path:
+    """Genera el HTML del replay desde el CSV de posiciones.
+
+    Args:
+        csv_path: CSV con columnas frame, tiempo_s, id_jugador, etiqueta,
+            x_m, y_m (equipo es opcional; el color sale de la etiqueta).
+        salida_html: dónde escribir el HTML autocontenido.
+        largo, ancho: dimensiones del campo en metros (ejes de la
+            homografía: x = portería a portería).
+        max_hueco_s: hueco máximo (s) que la animación interpola; huecos
+            mayores se muestran como desaparición.
+        titulo: título de la página.
+    """
+    df = pd.read_csv(csv_path)
+    faltan = [c for c in COLUMNAS_REQUERIDAS if c not in df.columns]
+    if faltan:
+        raise ValueError(
+            f"El CSV {csv_path} no tiene las columnas requeridas: {faltan}"
+        )
+    if len(df) == 0:
+        raise ValueError(f"El CSV {csv_path} está vacío.")
+
+    identidades = []
+    for id_jugador, grupo in df.sort_values("tiempo_s").groupby("id_jugador"):
+        etiquetas = grupo["etiqueta"].mode()
+        identidades.append(
+            {
+                "id": int(id_jugador),
+                "et": str(etiquetas.iloc[0]) if len(etiquetas) else "otro",
+                "t": [round(float(v), 2) for v in grupo["tiempo_s"]],
+                "x": [round(float(v), 2) for v in grupo["x_m"]],
+                "y": [round(float(v), 2) for v in grupo["y_m"]],
+            }
+        )
+
+    t_min = float(df["tiempo_s"].min())
+    t_max = float(df["tiempo_s"].max())
+
+    html = (
+        _PLANTILLA.replace("__TITULO__", titulo)
+        .replace("__DATOS__", json.dumps(identidades, separators=(",", ":")))
+        .replace("__COLORES__", json.dumps(COLORES, separators=(",", ":")))
+        .replace("__LARGO__", str(largo))
+        .replace("__ANCHO__", str(ancho))
+        .replace("__TMIN__", str(t_min))
+        .replace("__TMAX__", str(t_max))
+        .replace("__MAX_HUECO__", str(max_hueco_s))
+    )
+
+    salida_html = Path(salida_html)
+    salida_html.parent.mkdir(parents=True, exist_ok=True)
+    salida_html.write_text(html, encoding="utf-8")
+    logger.info(
+        "Replay generado: %s (%d identidades, t=%.1f–%.1f s)",
+        salida_html,
+        len(identidades),
+        t_min,
+        t_max,
+    )
+    return salida_html
+
+
+# Plantilla autocontenida. Tokens __X__ sustituidos en generar_replay
+# (sin f-strings: las llaves de JS/CSS quedan intactas).
+_PLANTILLA = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>__TITULO__</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #f5f5f4; color: #1d1d1f; margin: 0; padding: 24px; }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 14px; }
+  .card { background: white; border-radius: 12px; padding: 18px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .controles { display: flex; align-items: center; gap: 12px; margin-top: 12px;
+               flex-wrap: wrap; }
+  button { font-size: 15px; padding: 6px 14px; border-radius: 8px; border: 1px solid #ddd;
+           background: #f8f8f7; cursor: pointer; }
+  button:hover { background: #eee; }
+  select { font-size: 13px; padding: 5px 8px; border-radius: 8px; border: 1px solid #ddd; }
+  input[type=range] { flex: 1; min-width: 200px; }
+  .reloj { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px;
+           min-width: 120px; }
+  .leyenda { display: flex; gap: 14px; font-size: 12.5px; color: #444;
+             margin-top: 10px; flex-wrap: wrap; }
+  .leyenda span { display: inline-flex; align-items: center; gap: 5px; }
+  .punto { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>__TITULO__</h1>
+  <div class="sub" id="meta"></div>
+  <div class="card">
+    <canvas id="campo"></canvas>
+    <div class="controles">
+      <button id="play">▶</button>
+      <select id="vel">
+        <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option><option value="2">2×</option>
+        <option value="4">4×</option><option value="8">8×</option>
+      </select>
+      <input type="range" id="barra" min="0" max="1000" value="0">
+      <div class="reloj"><span id="reloj">--:--</span> / <span id="fin">--:--</span></div>
+    </div>
+    <div class="leyenda">
+      <span><i class="punto" style="background:#2563eb"></i>Equipo A</span>
+      <span><i class="punto" style="background:#dc2626"></i>Equipo B</span>
+      <span><i class="punto" style="background:#1e3a8a"></i>Portero A</span>
+      <span><i class="punto" style="background:#7f1d1d"></i>Portero B</span>
+      <span><i class="punto" style="background:rgba(128,128,128,0.45)"></i>Sin equipo</span>
+    </div>
+  </div>
+</div>
+<script>
+const DATOS = __DATOS__;
+const COLORES = __COLORES__;
+const LARGO = __LARGO__, ANCHO = __ANCHO__;
+const TMIN = __TMIN__, TMAX = __TMAX__;
+const MAX_HUECO = __MAX_HUECO__;
+const PAD = 5;              // metros de margen alrededor del campo
+const ESCALA = 10;          // píxeles por metro (canvas interno)
+const RADIO_M = 1.1;        // radio del círculo del jugador, en metros
+
+const canvas = document.getElementById('campo');
+const W = (LARGO + 2 * PAD) * ESCALA, H = (ANCHO + 2 * PAD) * ESCALA;
+canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d');
+const px = (x) => (x + PAD) * ESCALA;
+const py = (y) => (y + PAD) * ESCALA;
+
+// Punteros por identidad para buscar el par de keyframes que envuelve a T
+const punteros = DATOS.map(() => 0);
+
+function dibujarCampo() {
+  ctx.fillStyle = '#2e7d46';
+  ctx.fillRect(0, 0, W, H);
+  // bandas de césped alternas
+  ctx.fillStyle = 'rgba(255,255,255,0.045)';
+  for (let i = 0; i < 12; i += 2)
+    ctx.fillRect(px(i * LARGO / 12), py(0), LARGO / 12 * ESCALA, ANCHO * ESCALA);
+  ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+  ctx.lineWidth = 2;
+  // exterior y medio campo
+  ctx.strokeRect(px(0), py(0), LARGO * ESCALA, ANCHO * ESCALA);
+  ctx.beginPath(); ctx.moveTo(px(LARGO/2), py(0)); ctx.lineTo(px(LARGO/2), py(ANCHO)); ctx.stroke();
+  // círculo central + punto
+  ctx.beginPath(); ctx.arc(px(LARGO/2), py(ANCHO/2), 9.15*ESCALA, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(px(LARGO/2), py(ANCHO/2), 3, 0, 7); ctx.fill();
+  // áreas (16.5 x 40.32) y áreas pequeñas (5.5 x 18.32), a ambos lados
+  for (const [x0, dir] of [[0, 1], [LARGO, -1]]) {
+    ctx.strokeRect(px(Math.min(x0, x0 + dir*16.5)), py(ANCHO/2 - 20.16), 16.5*ESCALA, 40.32*ESCALA);
+    ctx.strokeRect(px(Math.min(x0, x0 + dir*5.5)), py(ANCHO/2 - 9.16), 5.5*ESCALA, 18.32*ESCALA);
+    // punto de penalti y semicírculo del área
+    const pen = x0 + dir * 11;
+    ctx.beginPath(); ctx.arc(px(pen), py(ANCHO/2), 3, 0, 7); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(px(pen), py(ANCHO/2), 9.15*ESCALA, dir === 1 ? -0.93 : Math.PI - 0.93,
+            dir === 1 ? 0.93 : Math.PI + 0.93);
+    ctx.stroke();
+    // portería
+    ctx.strokeRect(px(Math.min(x0, x0 - dir*2)), py(ANCHO/2 - 3.66), 2*ESCALA, 7.32*ESCALA);
+  }
+}
+
+function posicionEn(ident, i, T) {
+  // Avanza el puntero hasta el último keyframe con t <= T (con rebobinado)
+  const ts = ident.t;
+  let p = punteros[i];
+  if (p >= ts.length || ts[p] > T) p = 0;
+  while (p + 1 < ts.length && ts[p + 1] <= T) p++;
+  punteros[i] = p;
+  if (ts[p] > T) return null;                       // aún no ha aparecido
+  if (p === ts.length - 1) return ts[p] >= T - 0.25 ? [ident.x[p], ident.y[p]] : null;
+  const dt = ts[p + 1] - ts[p];
+  if (dt > MAX_HUECO) return null;                  // hueco: no inventamos posición
+  const a = dt > 0 ? (T - ts[p]) / dt : 0;
+  return [ident.x[p] + a * (ident.x[p+1] - ident.x[p]),
+          ident.y[p] + a * (ident.y[p+1] - ident.y[p])];
+}
+
+function dibujar(T) {
+  dibujarCampo();
+  ctx.font = 'bold ' + (RADIO_M * ESCALA) + 'px -apple-system, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < DATOS.length; i++) {
+    const pos = posicionEn(DATOS[i], i, T);
+    if (!pos) continue;
+    const [relleno, borde] = COLORES[DATOS[i].et] || COLORES['otro'];
+    ctx.beginPath();
+    ctx.arc(px(pos[0]), py(pos[1]), RADIO_M * ESCALA, 0, 7);
+    ctx.fillStyle = relleno; ctx.fill();
+    ctx.strokeStyle = borde; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillText(DATOS[i].id, px(pos[0]), py(pos[1]) + 0.5);
+  }
+}
+
+// ── Reproducción ──
+// Driver con setInterval + tiempo real transcurrido (performance.now):
+// requestAnimationFrame se congela en pestañas de fondo y el replay debe
+// seguir avanzando (típico: replay en una pantalla, vídeo real en otra).
+let T = TMIN, temporizador = null, ultimo = null;
+const btn = document.getElementById('play');
+const vel = document.getElementById('vel');
+const barra = document.getElementById('barra');
+const reloj = document.getElementById('reloj');
+
+function mmss(t) {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+function refrescarUI() {
+  reloj.textContent = mmss(T);
+  barra.value = Math.round(1000 * (T - TMIN) / Math.max(TMAX - TMIN, 1e-9));
+}
+function paso() {
+  const ahora = performance.now();
+  T += (ahora - ultimo) / 1000 * parseFloat(vel.value);
+  ultimo = ahora;
+  if (T >= TMAX) { T = TMAX; alternar(false); }
+  dibujar(T); refrescarUI();
+}
+function alternar(estado) {
+  const activar = estado === undefined ? temporizador === null : estado;
+  btn.textContent = activar ? '⏸' : '▶';
+  if (activar && temporizador === null) {
+    if (T >= TMAX) T = TMIN;   // replay desde el principio si estaba al final
+    ultimo = performance.now();
+    temporizador = setInterval(paso, 33);
+  } else if (!activar && temporizador !== null) {
+    clearInterval(temporizador);
+    temporizador = null;
+  }
+}
+btn.addEventListener('click', () => alternar());
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); alternar(); }
+});
+barra.addEventListener('input', () => {
+  T = TMIN + (TMAX - TMIN) * barra.value / 1000;
+  dibujar(T); reloj.textContent = mmss(T);
+});
+
+document.getElementById('fin').textContent = mmss(TMAX);
+document.getElementById('meta').textContent =
+  DATOS.length + ' identidades · tramo ' + mmss(TMIN) + '–' + mmss(TMAX) +
+  ' (reloj del vídeo) · generado por Tactical Lens';
+dibujar(T); refrescarUI();
+</script>
+</body>
+</html>
+"""
