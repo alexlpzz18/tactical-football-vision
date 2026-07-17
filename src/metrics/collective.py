@@ -88,14 +88,29 @@ def compute_collective_metrics(
             sel = df[df["equipo"] == equipo]
             if len(sel) == 0:
                 continue
+            n_sel = len(sel)
             por_equipo[nombre] = {
-                "posiciones": int(len(sel)),
+                "posiciones": int(n_sel),
                 "centroide": {
                     "x_m": round(float(sel["x_m"].mean()), 2),
                     "y_m": round(float(sel["y_m"].mean()), 2),
                 },
                 "amplitud_m": round(float(sel["y_m"].std() * 2), 2),
                 "profundidad_m": round(float(sel["x_m"].std() * 2), 2),
+                "zonas": {
+                    "izquierda_pct": round(
+                        100 * int((sel["x_m"] < t1).sum()) / n_sel, 1
+                    ),
+                    "centro_pct": round(
+                        100
+                        * int(((sel["x_m"] >= t1) & (sel["x_m"] < t2)).sum())
+                        / n_sel,
+                        1,
+                    ),
+                    "derecha_pct": round(
+                        100 * int((sel["x_m"] >= t2).sum()) / n_sel, 1
+                    ),
+                },
             }
 
     metrics = {
