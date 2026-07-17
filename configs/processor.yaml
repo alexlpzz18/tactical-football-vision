@@ -1,0 +1,54 @@
+# Configuración del procesador end-to-end (processor.py v2).
+# La ADOPCIÓN de mejoras de tracking es una decisión de config (tracking.perfil),
+# arbitrada por la cobertura colectiva del banco — no un rewrite.
+
+pipeline: nuevo          # nuevo | legacy (flujo viejo intacto como fallback)
+modo: desde_cache        # full (vídeo→cachés→informe, Colab GPU) | desde_cache (local)
+
+# ── Detección (solo modo full; requiere GPU/Colab) ──
+deteccion:
+  modelo: models/weights/best_v3.pt
+  confianza: 0.3         # filtro validado
+  max_area_caja: 0.05    # filtro validado: cajas >5% del área del frame → fuera
+  sahi:
+    filas: 2
+    columnas: 4
+    solape: 0.2
+  device: cuda
+
+distorsion:
+  k1: -1.5
+  k2: 0.5
+
+muestreo:
+  sample_every: 3
+  # Opcionales (modo full): procesar solo una parte del vídeo. Combinables
+  # (manda el límite más corto). Los frame_idx siguen siendo GLOBALES.
+  # tramo: {min_ini: 5.0, dur_seg: 60.0}   # p. ej. minuto 5-6 (validación)
+  # max_frames: 1500                        # tope de frames originales
+
+# ── Tracking: el perfil decide el pipeline (ver src/tracking/perfiles.py) ──
+tracking:
+  perfil: candidato      # oficial | candidato
+  # DECISIÓN 12-jul-2026: candidato adoptado como default de producto.
+  # La cobertura colectiva (la métrica del informe) arbitró: 0.456 vs
+  # 0.184 del oficial (fit del clasificador con recortes cercanos). Detalle en docs/experimentos_tracking.md.
+config_tracking: configs/tracking.yaml
+
+# ── Clasificación de equipos (configs/team_classification.yaml) ──
+equipos:
+  activo: true
+
+# ── Campo (para el filtro de posiciones del export; ejes de la homografía) ──
+campo_m:
+  largo: 105.0
+  ancho: 68.0
+  margen: 8.0            # generoso: el error de proyección del fondo es real
+
+rutas:
+  video: data/raw/partido.mp4                      # solo modo full
+  cache: data/tracking/cache_detecciones_min5_60s.pkl
+  cache_colores: data/tracking/cache_colores_min5_60s.pkl
+  homografia: data/calibracion/homografia.npy
+  salida_csv: data/tracking/posiciones_v2.csv
+  salida_meta: data/tracking/posiciones_v2_meta.json

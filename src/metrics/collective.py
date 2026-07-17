@@ -32,6 +32,15 @@ def compute_collective_metrics(
         print("CSV vacío, no hay nada que calcular.")
         return None
 
+    # Exclusión honesta: equipo=2 (árbitro / sin clasificar) NO forma parte
+    # de las métricas colectivas — describen a los equipos, y el árbitro
+    # distorsionaría centroide, amplitud y heatmap. Si el CSV es antiguo y
+    # no trae columna 'equipo', se usa todo (compatibilidad).
+    if "equipo" in df.columns:
+        df_equipos = df[df["equipo"].isin([0, 1])]
+        if len(df_equipos) > 0:
+            df = df_equipos
+
     n = len(df)
 
     # ── Resumen general ──
@@ -72,6 +81,23 @@ def compute_collective_metrics(
         if cx >= 0 and cy >= 0:
             heatmap[cy, cx] += 1
 
+    # ── Desglose por equipo (0 = A, 1 = B); excluye equipo=2 por construcción ──
+    por_equipo = {}
+    if "equipo" in df.columns:
+        for equipo, nombre in ((0, "A"), (1, "B")):
+            sel = df[df["equipo"] == equipo]
+            if len(sel) == 0:
+                continue
+            por_equipo[nombre] = {
+                "posiciones": int(len(sel)),
+                "centroide": {
+                    "x_m": round(float(sel["x_m"].mean()), 2),
+                    "y_m": round(float(sel["y_m"].mean()), 2),
+                },
+                "amplitud_m": round(float(sel["y_m"].std() * 2), 2),
+                "profundidad_m": round(float(sel["x_m"].std() * 2), 2),
+            }
+
     metrics = {
         "resumen": resumen,
         "centroide": centroide,
@@ -79,6 +105,7 @@ def compute_collective_metrics(
         "profundidad_m": profundidad,
         "zonas": zonas,
         "heatmap": {"nx": grid_nx, "ny": grid_ny, "grid": heatmap.tolist()},
+        "por_equipo": por_equipo,
     }
 
     if output_json:

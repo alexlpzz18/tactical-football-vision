@@ -1,0 +1,80 @@
+# ═══════════════════════════════════════════════════════════════════════
+# PLANTILLA COMPLETA de configuración del procesador (processor.py v2).
+# Copia este archivo, ajústalo y pásalo al CLI:
+#   python scripts/procesar_partido.py --config mi_config.yaml
+# La config se VALIDA al arrancar: si falta una clave obligatoria, el
+# error la lista (nada de KeyError crípticos a mitad de proceso).
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Qué pipeline correr ──────────────────────────────────────────────
+# nuevo  = tracking en metros por perfiles (el de producto)
+# legacy = flujo viejo (SAHI + ByteTrack + clasificador antiguo), fallback
+pipeline: nuevo
+
+# ── Qué modo ─────────────────────────────────────────────────────────
+# full        = vídeo → detección SAHI → cachés → tracking → CSV
+#               (REQUIERE GPU: correr en Colab)
+# desde_cache = parte de los cachés ya generados (local, CPU)
+modo: desde_cache
+
+# ── Detección (OBLIGATORIO solo en modo full) ────────────────────────
+deteccion:
+  modelo: models/weights/best_v3.pt   # pesos YOLO (viven en Drive)
+  confianza: 0.3                      # filtro validado: conf mínima
+  max_area_caja: 0.05                 # filtro validado: cajas >5% del
+                                      # área del frame → falso positivo
+  sahi:
+    filas: 2                          # troceado del frame para SAHI
+    columnas: 4
+    solape: 0.2
+  device: cuda                        # 'cuda' en Colab; nunca en el Mac
+
+# ── Corrección de distorsión de la lente (modo full) ─────────────────
+distorsion:
+  k1: -1.5
+  k2: 0.5
+
+# ── Muestreo del vídeo (modo full) ───────────────────────────────────
+muestreo:
+  sample_every: 3          # procesar 1 de cada N frames (OBLIGATORIO)
+  # Opcionales, combinables (manda el límite más corto). Los frame_idx
+  # del caché siguen siendo GLOBALES del vídeo (min 5 → frame 7500):
+  # tramo: {min_ini: 5.0, dur_seg: 60.0}   # solo el minuto 5-6
+  # max_frames: 1500                        # tope de frames originales
+
+# ── Tracking: el perfil decide el pipeline completo ──────────────────
+# (composición en src/tracking/perfiles.py; parámetros finos en
+#  configs/tracking.yaml)
+# oficial   = goloso conservador (baseline)
+# candidato = rescate + cosido global + exclusión + cota (DEFAULT de
+#             producto: cobertura colectiva 0.376 vs 0.140)
+tracking:
+  perfil: candidato
+
+# Parámetros del tracking. OPCIONAL: si se omite, usa configs/tracking.yaml
+# config_tracking: configs/tracking.yaml
+
+# ── Clasificación de equipos ─────────────────────────────────────────
+# (clasificador + regla de porteros + agregación por cercanía; parámetros
+#  en configs/team_classification.yaml). Necesita el caché de colores;
+#  si no existe, las identidades salen sin equipo (etiqueta 'otro').
+equipos:
+  activo: true
+
+# ── Campo en metros (ejes de la homografía del partido) ──────────────
+# Filtro del export: posiciones fuera de campo+margen se descartan.
+# El margen es generoso a propósito: el error de proyección del fondo
+# es real y no queremos tirar jugadores válidos.
+campo_m:
+  largo: 105.0
+  ancho: 68.0
+  margen: 8.0
+
+# ── Rutas (OBLIGATORIAS; 'video' solo en modo full) ──────────────────
+rutas:
+  video: data/raw/partido.mp4
+  cache: data/tracking/cache_detecciones.pkl        # lo escribe el modo
+  cache_colores: data/tracking/cache_colores.pkl    # full y lo lee el local
+  homografia: data/calibracion/homografia.npy
+  salida_csv: data/tracking/posiciones.csv
+  salida_meta: data/tracking/posiciones_meta.json

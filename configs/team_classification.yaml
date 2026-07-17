@@ -1,0 +1,57 @@
+# Parámetros del clasificador de equipos por color (TeamClassifierColor).
+# Valores validados en Colab (briefing 2.3). El script de evaluación los
+# carga si este archivo existe; si no, usa los defaults del dataclass.
+
+# Regla de porteros por POSICIÓN (sobrescribe al color): identidad con
+# posición MEDIANA dentro de un área de penalti → portero del equipo que
+# defiende ese lado. Verificado en GT: portero_A mediana mx=90.9,
+# portero_B mx=15.4; ningún jugador de campo tiene mediana en las áreas.
+porteros:
+  activo: true
+  # Límites ajustados con el GT: portero_A mediana mx=90.9 (rango 85-95.5)
+  # pero los defensas de campo llegan a mediana 88.2 → corte en 88.5
+  area_mx_bajo: [0.0, 19.0]
+  area_mx_alto: [88.5, 110.0]
+  area_my: [20.0, 55.0]
+  # Qué equipo defiende cada lado en este tramo (cambia al descanso;
+  # automatizarlo es parte de la integración end-to-end)
+  equipo_mx_alto: A
+  equipo_mx_bajo: B
+
+# Entrenamiento del clasificador (fix del colapso en producción,
+# 12-jul-2026): el fit usa SOLO recortes cercanos (my < umbral_my), donde
+# el color es señal. Entrenar con todos era frágil: la masa de recortes
+# lejanos (histogramas-ruido) emborronaba la separación y la fusión podía
+# colapsar en un solo equipo (visto en Colab: A=10571/B=204/otro=0).
+# Con my<34: A=1242/B=1233 (equilibrio 0.99) y cobertura 0.376 → 0.456.
+# Si hay menos de min_features cercanas, se usa todo (con aviso en log).
+entrenamiento:
+  solo_cercanos: true
+  umbral_my: 34.0
+  min_features: 300
+
+# Agregación por identidad: si la identidad tiene recortes "cercanos"
+# (my < umbral, donde el jugador es grande y el color es señal), usar SOLO
+# esos para el color medio; si no tiene, usar todos. Medido: 0.559 → 0.603
+# de accuracy de campo (un recorte limpio vale más que muchos ruidosos).
+agregacion:
+  solo_cercanos: true
+  umbral_my: 45.0
+
+clasificador_color:
+  # Banda del pecho dentro del recorte (fracciones de alto/ancho)
+  torso_alto: [0.12, 0.45]
+  torso_ancho: [0.15, 0.85]
+  # Máscara anti-verde HSV (césped): H en rango, S y V por encima del mínimo
+  verde_h: [35, 85]
+  verde_s_min: 40
+  verde_v_min: 40
+  # Histograma HS
+  bins_h: 16
+  bins_s: 16
+  # Clustering: KMeans generoso + fusión jerárquica con umbral auto
+  k_clusters: 8
+  umbral_min: 0.5
+  umbral_max: 1.3
+  umbral_paso: 0.05
+  semilla: 0

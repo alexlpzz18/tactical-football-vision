@@ -1,0 +1,110 @@
+"""Tests de humo del pipeline v2 de processor.py (con los cachés reales)."""
+
+import json
+from pathlib import Path
+
+import pandas as pd
+import pytest
+import yaml
+
+from src.metrics.collective import compute_collective_metrics
+from src.tracking_data.processor import EQUIPO_A_ENTERO, procesar_desde_cache
+
+RUTA_CACHE = Path("data/tracking/cache_detecciones_min5_60s.pkl")
+RUTA_COLORES = Path("data/tracking/cache_colores_min5_60s.pkl")
+
+pytestmark = pytest.mark.skipif(
+    not (RUTA_CACHE.exists() and RUTA_COLORES.exists()),
+    reason="Faltan los cachés de detecciones/colores (copiar de Drive)",
+)
+
+COLUMNAS = ["frame", "tiempo_s", "id_jugador", "equipo", "etiqueta", "x_m", "y_m"]
+
+
+def _cfg(tmp_path, perfil):
+    return {
+        "pipeline": "nuevo",
+        "modo": "desde_cache",
+        "tracking": {"perfil": perfil},
+        "config_tracking": "configs/tracking.yaml",
+        "equipos": {"activo": True},
+        "campo_m": {"largo": 105.0, "ancho": 68.0, "margen": 8.0},
+        "rutas": {
+            "cache": str(RUTA_CACHE),
+            "cache_colores": str(RUTA_COLORES),
+            "homografia": "data/calibracion/homografia.npy",
+            "salida_csv": str(tmp_path / "pos.csv"),
+            "salida_meta": str(tmp_path / "pos_meta.json"),
+        },
+    }
+
+
+@pytest.fixture(scope="module")
+def salida_oficial(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("oficial")
+    cfg = _cfg(tmp, "oficial")
+    df = procesar_desde_cache(cfg)
+    return df, cfg
+
+
+def test_csv_formato_compatible(salida_oficial):
+    """Columnas del CSV: las 6 clásicas + etiqueta, tipos correctos."""
+    df, cfg = salida_oficial
+    assert list(df.columns) == COLUMNAS
+    releido = pd.read_csv(cfg["rutas"]["salida_csv"])
+    assert list(releido.columns) == COLUMNAS
+    assert set(releido["equipo"].unique()) <= {0, 1, 2}
+    assert set(releido["etiqueta"].unique()) <= set(EQUIPO_A_ENTERO)
+
+
+def test_perfil_oficial_reproduce_89_identidades(salida_oficial):
+    df, cfg = salida_oficial
+    assert df["id_jugador"].nunique() == 89
+    meta = json.loads(Path(cfg["rutas"]["salida_meta"]).read_text())
+    assert meta["n_identidades"] == 89
+    assert meta["perfil_tracking"] == "oficial"
+    assert meta["pipeline_version"] == "v2"
+    # Claves del formato viejo que el flujo aguas abajo espera
+    for clave in ("fps_original", "sample_every", "total_detecciones", "ids_unicos"):
+        assert clave in meta
+
+
+def test_perfil_candidato_reproduce_58_identidades(tmp_path):
+    cfg = _cfg(tmp_path, "candidato")
+    df = procesar_desde_cache(cfg)
+    assert df["id_jugador"].nunique() == 58
+
+
+def test_collective_consume_el_csv_nuevo(salida_oficial):
+    """El consumidor real (metrics/collective) traga el CSV v2."""
+    _, cfg = salida_oficial
+    m = compute_collective_metrics(cfg["rutas"]["salida_csv"])
+    # Claves que consume generate_report.py, intactas
+    for clave in (
+        "resumen",
+        "centroide",
+        "amplitud_m",
+        "profundidad_m",
+        "zonas",
+        "heatmap",
+    ):
+        assert clave in m
+    # Desglose nuevo por equipo, que excluye equipo=2 por construcción
+    assert set(m["por_equipo"]) <= {"A", "B"}
+    assert len(m["por_equipo"]) == 2
+
+
+def test_flujo_legacy_sigue_disponible():
+    """El fallback viejo no se ha roto: importable y con su firma."""
+    from src.tracking_data.processor import process_video
+
+    assert callable(process_video)
+
+
+def test_config_processor_valida():
+    """configs/processor.yaml parsea y trae las claves del despachador."""
+    with open("configs/processor.yaml") as f:
+        cfg = yaml.safe_load(f)
+    assert cfg["pipeline"] in ("nuevo", "legacy")
+    assert cfg["modo"] in ("full", "desde_cache")
+    assert cfg["tracking"]["perfil"] in ("oficial", "candidato")

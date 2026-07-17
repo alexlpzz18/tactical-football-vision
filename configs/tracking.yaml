@@ -1,0 +1,92 @@
+# Parámetros del tracking en metros (2 etapas), validados experimentalmente
+# en Colab sobre el tramo min 5-6 (ver briefing_claude_code.md, Parte 2).
+# NO cambiar sin medir contra el banco de evaluación (Tarea 3).
+
+etapa_a:
+  # Velocidad máxima plausible de un jugador (m/s). Define el radio de búsqueda:
+  # RADIO = v_max * dt + margen
+  v_max: 7.0
+  # Margen de ruido de detección/proyección (metros)
+  margen: 0.8
+  # Regla anti-robo: si la 2ª mejor opción está a menos de este factor de
+  # distancia extra (en radios), NO asociar (preferimos cortar el tracklet)
+  ambig_factor: 0.7
+  # Un track sin verse más de (max_gap_dts * dt) segundos se cierra
+  max_gap_dts: 3.0
+  # Filtro final: descartar tracklets con menos de estos frames
+  min_frames: 3
+
+# Contexto de plantilla (1/2): exclusión espacial dura — dos identidades
+# co-ubicadas (mediana de distancia <= dist_max en sus frames comunes) son
+# el mismo jugador y se fusionan (deduplicando por frame). No hace nada en
+# el pipeline oficial (sin duplicados paralelos); en el candidato
+# rescate+grafo: IDF1 0.225->0.287, IDSW 807->632, HOTA 0.147->0.165.
+exclusion_espacial:
+  activa: false  # sin efecto en el oficial; imprescindible con rescate
+  dist_max: 1.5
+  min_frames_comunes: 3
+
+# Contexto de plantilla (2/2): cota BLANDA de plantilla — fusión golosa de
+# identidades ENTRELAZADAS (observaciones alternadas en el tiempo,
+# espacialmente compatibles por interpolación) hasta acercar la
+# concurrencia de identidades activas a la plantilla real (~23). Blanda:
+# se para cuando no quedan pares con coste <= coste_max.
+cota_plantilla:
+  activa: false  # solo tiene sentido sobre rescate+grafo+exclusion
+  cota: 23
+  coste_max: 4.0
+
+# Tarea 3c: segunda pasada de cosido sobre las identidades ya cosidas
+# (fusionadas en super-tracklets), para cerrar huecos largos. Tolerancia
+# más conservadora que la 1ª pasada: con huecos de >6 s la extrapolación
+# lineal es poco fiable, así que la tolerancia crece más despacio.
+segunda_pasada:
+  activa: false  # se decide tras medir contra el banco
+  max_hueco: 12.0
+  tol_base: 1.5
+  tol_por_seg: 1.5
+  peso_hueco: 0.3
+  color_max_dist: 1.2
+  peso_color: 0.15
+
+# Tarea 3b: rescate de tracklets cortos. La Etapa A se corre con
+# min_frames=1 (todo entra al cosido) y el filtro se aplica después a
+# nivel de identidad: se conservan las que suman al menos
+# min_frames_identidad observaciones en total.
+rescate_cortos:
+  activo: false  # se decide tras medir contra el banco
+  min_frames_identidad: 3
+
+# Tarea 3a: interpolación de huecos DENTRO de identidades cosidas.
+# Solo entre dos posiciones reales (nunca extrapolar), solo en frames del
+# caché, y solo si el hueco no supera max_hueco segundos.
+interpolacion:
+  activa: false  # se decide tras medir contra el banco (docs/experimentos_tracking.md)
+  max_hueco: 6.0
+
+cosido:
+  # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
+  max_hueco: 6.0
+  # Tolerancia de distancia para coser: tol = tol_base + tol_por_seg * hueco
+  tol_base: 1.2
+  tol_por_seg: 3.0
+  # Peso del término de hueco en el coste del candidato
+  peso_hueco: 0.3
+  # Veto suave de color: distancia de histogramas mayor que esto → no coser.
+  # (El color en esta cámara es señal débil: mediana entre pares legítimos
+  # = 0.90, p90 = 1.16.)
+  color_max_dist: 1.2
+  # Peso del término de color en el coste del candidato
+  peso_color: 0.15
+  # Selección de uniones: "goloso" (original validado) o "global"
+  # (asignación de coste mínimo en grafo; Tarea 3, ver experimentos)
+  metodo: goloso
+  # Solo para metodo=global: coste de dejar un tracklet sin continuación
+  # (> coste máximo de un candidato real, ~1.45)
+  coste_no_union: 2.0
+  # Consistencia de velocidad en la unión (Tarea 3, ver experimentos):
+  # veto físico si la velocidad implicada por el salto supera v_max_salto
+  # (null = off) y término de coste peso_vel * ||v_salto - vel_A|| / v_ref
+  v_max_salto: null
+  peso_vel: 0.0
+  v_ref: 7.0

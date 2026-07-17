@@ -5,18 +5,27 @@ por recortes), los trackea, clasifica equipos y proyecta posiciones a metros
 con la homografía. Produce una tabla de posiciones (CSV) + metadatos (JSON).
 """
 
-import cv2
 import json
+import logging
+import pickle
+from datetime import datetime
+from pathlib import Path
+
+import cv2
 import numpy as np
 import pandas as pd
 import supervision as sv
-from pathlib import Path
-from datetime import datetime
+import yaml
 
-from sahi import AutoDetectionModel
-from sahi.predict import get_sliced_prediction
-
+# SAHI se importa de forma perezosa dentro de las funciones que detectan:
+# el modo desde-caché (local, sin GPU) no debe requerirlo.
 from src.team_classification.classifier import TeamClassifier
+
+logger = logging.getLogger(__name__)
+
+# Convención de equipo del CSV (la misma de TEAM_COLORS en pipeline.py);
+# los porteros cuentan con su equipo para el informe colectivo
+EQUIPO_A_ENTERO = {"A": 0, "portero_A": 0, "B": 1, "portero_B": 1, "otro": 2}
 
 
 def _build_camera_matrix(w, h, focal_factor=1.0):
@@ -87,6 +96,8 @@ def process_video(
         device: 'cuda' en Colab con GPU, 'cpu' en local
     """
     # ── Cargar homografía, modelo SAHI, tracker y clasificador ──
+    from sahi import AutoDetectionModel
+
     H = np.load(homography_path)
 
     modelo_sahi = AutoDetectionModel.from_pretrained(
@@ -150,6 +161,8 @@ def process_video(
         frame = cv2.undistort(frame, K, dist)
 
         # 2. Detectar con SAHI
+        from sahi.predict import get_sliced_prediction
+
         sahi_result = get_sliced_prediction(
             frame,
             modelo_sahi,
@@ -240,3 +253,373 @@ def process_video(
     print(f"✓ Metadatos en {output_meta}")
     print(f"  IDs únicos detectados: {meta['ids_unicos']}")
     return df
+
+
+# ══════════════════════════════════════════════════════════════════════
+# PIPELINE V2 (integración end-to-end)
+# vídeo → [detección SAHI + caché]  →  tracking por PERFIL  →  equipos
+# → CSV + meta. El tramo de detección solo corre en Colab (GPU); en local
+# se parte de los cachés. El flujo viejo (process_video) queda intacto
+# como fallback (pipeline: legacy en configs/processor.yaml).
+# ══════════════════════════════════════════════════════════════════════
+
+
+# Claves obligatorias de la config por modo (rutas con puntos). Se validan
+# al arrancar para fallar con un mensaje claro en vez de un KeyError críptico
+# a mitad de proceso. Plantilla completa: configs/processor_ejemplo.yaml
+_CLAVES_DESDE_CACHE = (
+    "rutas.cache",
+    "rutas.cache_colores",
+    "rutas.homografia",
+    "rutas.salida_csv",
+    "rutas.salida_meta",
+    "tracking.perfil",
+    "campo_m.largo",
+    "campo_m.ancho",
+    "campo_m.margen",
+)
+_CLAVES_FULL = (
+    "rutas.video",
+    "rutas.cache",
+    "rutas.cache_colores",
+    "rutas.homografia",
+    "deteccion.modelo",
+    "deteccion.confianza",
+    "deteccion.max_area_caja",
+    "deteccion.sahi.filas",
+    "deteccion.sahi.columnas",
+    "deteccion.sahi.solape",
+    "deteccion.device",
+    "distorsion.k1",
+    "distorsion.k2",
+    "muestreo.sample_every",
+)
+
+
+def _obtener_clave(cfg: dict, ruta: str):
+    """Navega una clave con puntos ('rutas.cache') o devuelve None."""
+    nodo = cfg
+    for parte in ruta.split("."):
+        if not isinstance(nodo, dict) or parte not in nodo:
+            return None
+        nodo = nodo[parte]
+    return nodo
+
+
+def validar_config(cfg: dict, claves_obligatorias: tuple) -> None:
+    """Valida la config al arrancar y aplica defaults razonables.
+
+    Defaults (se aplican in-place, con aviso en el log):
+    - config_tracking → configs/tracking.yaml (el archivo canónico de
+      parámetros de tracking; no tiene sentido obligar a repetirlo).
+    - equipos.activo → true.
+
+    Raises:
+        ValueError: con la LISTA COMPLETA de claves obligatorias ausentes
+            y la referencia a la plantilla, en vez de un KeyError críptico
+            en mitad del procesado.
+    """
+    if "config_tracking" not in cfg:
+        cfg["config_tracking"] = "configs/tracking.yaml"
+        logger.info("config_tracking no especificado → configs/tracking.yaml")
+    cfg.setdefault("equipos", {"activo": True})
+
+    faltan = [c for c in claves_obligatorias if _obtener_clave(cfg, c) is None]
+    if faltan:
+        raise ValueError(
+            "Config del procesador incompleta. Faltan estas claves "
+            f"obligatorias: {faltan}. Usa configs/processor_ejemplo.yaml "
+            "como plantilla."
+        )
+
+
+def _rango_de_frames(cfg_muestreo: dict, fps: float) -> tuple[int, int | None]:
+    """Rango [frame_ini, frame_fin) de frames ORIGINALES a procesar.
+
+    Soporta dos límites combinables en configs/processor.yaml (muestreo):
+    - tramo: {min_ini, dur_seg} → procesar solo esa ventana del partido
+      (caso real: saltar el descanso, validar con un tramo corto).
+    - max_frames: tope de frames originales a recorrer desde el inicio
+      del tramo (o del vídeo si no hay tramo).
+
+    Los frame_idx resultantes siguen siendo GLOBALES del vídeo (el formato
+    del caché los usa así: min 5 a 25 fps → frame 7500), por eso el tramo
+    solo posiciona el lector, nunca renumera.
+
+    Returns:
+        (frame_ini, frame_fin): fin exclusivo, None = hasta el final.
+    """
+    frame_ini = 0
+    frame_fin = None
+    tramo = cfg_muestreo.get("tramo") or {}
+    if tramo:
+        frame_ini = int(round(tramo["min_ini"] * 60.0 * fps))
+        frame_fin = frame_ini + int(round(tramo["dur_seg"] * fps))
+    max_frames = cfg_muestreo.get("max_frames")
+    if max_frames is not None:
+        fin_por_max = frame_ini + int(max_frames)
+        frame_fin = fin_por_max if frame_fin is None else min(frame_fin, fin_por_max)
+    return frame_ini, frame_fin
+
+
+def _filtrar_detecciones_v2(dets, confianza_min, max_area_frac, area_frame):
+    """Filtros validados: confianza mínima y descarte de cajas gigantes.
+
+    dets: lista de (mx, my, x1, y1, x2, y2, conf). Las cajas que ocupan
+    más de max_area_frac del frame son falsos positivos (gradas, bancos).
+    """
+    filtradas = []
+    for d in dets:
+        mx, my, x1, y1, x2, y2, conf = d
+        if conf < confianza_min:
+            continue
+        if (x2 - x1) * (y2 - y1) > max_area_frac * area_frame:
+            continue
+        filtradas.append(d)
+    return filtradas
+
+
+def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
+    """Modo FULL (Colab GPU): vídeo → detección SAHI → cachés en disco.
+
+    Produce EXACTAMENTE los artefactos que consume el modo desde-caché:
+    - caché de detecciones {cache, fps, sample, wh} (formato de cache_io)
+    - caché de colores {(frame_idx, det_idx): feature 256}
+
+    Returns:
+        (datos_cache, colores)
+    """
+    from sahi import AutoDetectionModel
+    from sahi.predict import get_sliced_prediction
+
+    from src.team_classification.color_classifier import extraer_color_torso
+
+    validar_config(cfg, _CLAVES_FULL)
+    cfg_det = cfg["deteccion"]
+    H = np.load(cfg["rutas"]["homografia"])
+
+    modelo = AutoDetectionModel.from_pretrained(
+        model_type="ultralytics",
+        model_path=cfg_det["modelo"],
+        confidence_threshold=cfg_det["confianza"],
+        device=cfg_det["device"],
+    )
+
+    cap = cv2.VideoCapture(cfg["rutas"]["video"])
+    if not cap.isOpened():
+        raise FileNotFoundError(f"No se puede abrir {cfg['rutas']['video']}")
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    sample = cfg["muestreo"]["sample_every"]
+    K = _build_camera_matrix(w, h)
+    dist_lente = np.array(
+        [cfg["distorsion"]["k1"], cfg["distorsion"]["k2"], 0, 0, 0], dtype=np.float64
+    )
+    filas_sahi = cfg_det["sahi"]["filas"]
+    cols_sahi = cfg_det["sahi"]["columnas"]
+
+    # Tramo/límite opcional (muestreo.tramo / muestreo.max_frames)
+    frame_ini, frame_fin = _rango_de_frames(cfg["muestreo"], fps)
+    if frame_ini > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ini)
+        logger.info(
+            "Tramo: arrancando en el frame %d (t=%.1f s)%s",
+            frame_ini,
+            frame_ini / fps,
+            f", hasta el {frame_fin}" if frame_fin is not None else "",
+        )
+
+    cache, colores = [], {}
+    frame_idx = frame_ini
+    while True:
+        if frame_fin is not None and frame_idx >= frame_fin:
+            break
+        ret, frame = cap.read()
+        if not ret:
+            break
+        if frame_idx % sample != 0:
+            frame_idx += 1
+            continue
+        frame = cv2.undistort(frame, K, dist_lente)
+        resultado = get_sliced_prediction(
+            frame,
+            modelo,
+            slice_height=h // filas_sahi,
+            slice_width=w // cols_sahi,
+            overlap_height_ratio=cfg_det["sahi"]["solape"],
+            overlap_width_ratio=cfg_det["sahi"]["solape"],
+            verbose=0,
+        )
+        dets = []
+        for pred in resultado.object_prediction_list:
+            b = pred.bbox
+            mx, my = project_point((b.minx + b.maxx) / 2.0, b.maxy, H)
+            dets.append((mx, my, b.minx, b.miny, b.maxx, b.maxy, pred.score.value))
+        dets = _filtrar_detecciones_v2(
+            dets, cfg_det["confianza"], cfg_det["max_area_caja"], w * h
+        )
+        # Feature de color de cada recorte (misma feature que el caché de Colab)
+        for det_idx, d in enumerate(dets):
+            x1, y1, x2, y2 = (int(v) for v in d[2:6])
+            y1, x1 = max(y1, 0), max(x1, 0)
+            crop = frame[y1:y2, x1:x2]
+            if crop.size > 0:
+                # ÚNICA función de extracción del repo (normalización L2,
+                # la escala en la que están calibrados todos los umbrales)
+                feat = extraer_color_torso(crop)
+                if feat.sum() > 0:
+                    colores[(frame_idx, det_idx)] = feat
+        cache.append({"frame_idx": frame_idx, "t": frame_idx / fps, "dets": dets})
+        frame_idx += 1
+    cap.release()
+
+    datos = {"cache": cache, "fps": fps, "sample": sample, "wh": (w, h)}
+    Path(cfg["rutas"]["cache"]).parent.mkdir(parents=True, exist_ok=True)
+    with open(cfg["rutas"]["cache"], "wb") as f:
+        pickle.dump(datos, f)
+    with open(cfg["rutas"]["cache_colores"], "wb") as f:
+        pickle.dump(colores, f)
+    logger.info(
+        "Detección cacheada: %d frames, %d features de color", len(cache), len(colores)
+    )
+    return datos, colores
+
+
+def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
+    """Modo DESDE-CACHÉ (local, CPU): cachés → tracking → equipos → CSV+meta."""
+    from src.team_classification.pipeline_equipos import (
+        cargar_config_equipos,
+        clasificar_identidades,
+        entrenar_clasificador,
+    )
+    from src.tracking.cache_io import cargar_cache
+    from src.tracking.perfiles import correr_perfil
+
+    validar_config(cfg, _CLAVES_DESDE_CACHE)
+    with open(cfg["config_tracking"]) as f:
+        cfg_tracking = yaml.safe_load(f)
+
+    datos = cargar_cache(cfg["rutas"]["cache"])
+    ruta_colores = Path(cfg["rutas"]["cache_colores"])
+    colores = None
+    if ruta_colores.exists():
+        with open(ruta_colores, "rb") as f:
+            colores = pickle.load(f)
+
+    clasificador = None
+    cfg_equipos = {}
+    if colores is not None and cfg.get("equipos", {}).get("activo", True):
+        cfg_equipos = cargar_config_equipos()
+        clasificador = entrenar_clasificador(colores, cfg_equipos, datos["cache"])
+
+    identidades = correr_perfil(
+        datos["cache"],
+        datos["fps"],
+        datos["sample"],
+        cfg_tracking,
+        perfil=cfg["tracking"]["perfil"],
+        colores=colores,
+        clasificador=clasificador,
+    )
+
+    equipos: dict[int, str] = {}
+    if clasificador is not None:
+        equipos = clasificar_identidades(
+            identidades, colores, clasificador, cfg_equipos
+        )
+
+    return exportar_posiciones(identidades, equipos, datos, cfg)
+
+
+def exportar_posiciones(
+    identidades, equipos: dict[int, str], datos: dict, cfg: dict
+) -> pd.DataFrame:
+    """Escribe el CSV de posiciones y el meta JSON (formato compatible).
+
+    Columnas: frame, tiempo_s, id_jugador, equipo (0=A, 1=B, 2=otro;
+    porteros con su equipo) y etiqueta (A/B/portero_A/portero_B/otro).
+    """
+    fps = datos["fps"]
+    largo, ancho = cfg["campo_m"]["largo"], cfg["campo_m"]["ancho"]
+    margen = cfg["campo_m"]["margen"]
+
+    filas = []
+    for id_identidad, identidad in enumerate(identidades, start=1):
+        etiqueta = equipos.get(id_identidad, "otro")
+        entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
+        for tracklet in identidad:
+            for pos, (frame_idx, _det) in zip(tracklet.pos, tracklet.det_idxs):
+                mx, my = float(pos[0]), float(pos[1])
+                if not (-margen <= mx <= largo + margen):
+                    continue
+                if not (-margen <= my <= ancho + margen):
+                    continue
+                filas.append(
+                    {
+                        "frame": int(frame_idx),
+                        "tiempo_s": round(frame_idx / fps, 2),
+                        "id_jugador": id_identidad,
+                        "equipo": entero,
+                        "etiqueta": etiqueta,
+                        "x_m": round(mx, 2),
+                        "y_m": round(my, 2),
+                    }
+                )
+    df = pd.DataFrame(filas).sort_values(["frame", "id_jugador"])
+
+    Path(cfg["rutas"]["salida_csv"]).parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(cfg["rutas"]["salida_csv"], index=False)
+
+    meta = {
+        "fecha_proceso": datetime.now().isoformat(timespec="seconds"),
+        "fps_original": datos["fps"],
+        "sample_every": datos["sample"],
+        "fps_efectivo": round(datos["fps"] / datos["sample"], 2),
+        "resolucion": list(datos["wh"]),
+        "frames_procesados": len(datos["cache"]),
+        "homografia": Path(cfg["rutas"]["homografia"]).name,
+        "campo_m": [largo, ancho],
+        "total_detecciones": len(filas),
+        "ids_unicos": int(df["id_jugador"].nunique()) if len(df) else 0,
+        # Campos nuevos del pipeline v2
+        "pipeline_version": "v2",
+        "perfil_tracking": cfg["tracking"]["perfil"],
+        "n_identidades": len(identidades),
+        "equipos": {
+            etiqueta: sum(1 for e in equipos.values() if e == etiqueta)
+            for etiqueta in sorted(set(equipos.values()))
+        },
+    }
+    with open(cfg["rutas"]["salida_meta"], "w") as f:
+        json.dump(meta, f, indent=2)
+    logger.info(
+        "Exportadas %d posiciones de %d identidades (%s)",
+        len(filas),
+        len(identidades),
+        cfg["rutas"]["salida_csv"],
+    )
+    return df
+
+
+def procesar_partido(config_path: str = "configs/processor.yaml") -> pd.DataFrame:
+    """Punto de entrada único: despacha según configs/processor.yaml."""
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+
+    if cfg["pipeline"] == "legacy":
+        logger.info("Pipeline LEGACY (fallback) — process_video clásico")
+        return process_video(
+            video_path=cfg["rutas"]["video"],
+            model_path=cfg["deteccion"]["modelo"],
+            homography_path=cfg["rutas"]["homografia"],
+            output_csv=cfg["rutas"]["salida_csv"],
+            output_meta=cfg["rutas"]["salida_meta"],
+            sample_every=cfg["muestreo"]["sample_every"],
+            confidence=cfg["deteccion"]["confianza"],
+            device=cfg["deteccion"]["device"],
+        )
+
+    if cfg["modo"] == "full":
+        detectar_y_cachear(cfg)  # deja los cachés en disco y sigue
+    return procesar_desde_cache(cfg)
