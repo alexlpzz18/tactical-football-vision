@@ -264,6 +264,75 @@ def process_video(
 # ══════════════════════════════════════════════════════════════════════
 
 
+# Claves obligatorias de la config por modo (rutas con puntos). Se validan
+# al arrancar para fallar con un mensaje claro en vez de un KeyError críptico
+# a mitad de proceso. Plantilla completa: configs/processor_ejemplo.yaml
+_CLAVES_DESDE_CACHE = (
+    "rutas.cache",
+    "rutas.cache_colores",
+    "rutas.homografia",
+    "rutas.salida_csv",
+    "rutas.salida_meta",
+    "tracking.perfil",
+    "campo_m.largo",
+    "campo_m.ancho",
+    "campo_m.margen",
+)
+_CLAVES_FULL = (
+    "rutas.video",
+    "rutas.cache",
+    "rutas.cache_colores",
+    "rutas.homografia",
+    "deteccion.modelo",
+    "deteccion.confianza",
+    "deteccion.max_area_caja",
+    "deteccion.sahi.filas",
+    "deteccion.sahi.columnas",
+    "deteccion.sahi.solape",
+    "deteccion.device",
+    "distorsion.k1",
+    "distorsion.k2",
+    "muestreo.sample_every",
+)
+
+
+def _obtener_clave(cfg: dict, ruta: str):
+    """Navega una clave con puntos ('rutas.cache') o devuelve None."""
+    nodo = cfg
+    for parte in ruta.split("."):
+        if not isinstance(nodo, dict) or parte not in nodo:
+            return None
+        nodo = nodo[parte]
+    return nodo
+
+
+def validar_config(cfg: dict, claves_obligatorias: tuple) -> None:
+    """Valida la config al arrancar y aplica defaults razonables.
+
+    Defaults (se aplican in-place, con aviso en el log):
+    - config_tracking → configs/tracking.yaml (el archivo canónico de
+      parámetros de tracking; no tiene sentido obligar a repetirlo).
+    - equipos.activo → true.
+
+    Raises:
+        ValueError: con la LISTA COMPLETA de claves obligatorias ausentes
+            y la referencia a la plantilla, en vez de un KeyError críptico
+            en mitad del procesado.
+    """
+    if "config_tracking" not in cfg:
+        cfg["config_tracking"] = "configs/tracking.yaml"
+        logger.info("config_tracking no especificado → configs/tracking.yaml")
+    cfg.setdefault("equipos", {"activo": True})
+
+    faltan = [c for c in claves_obligatorias if _obtener_clave(cfg, c) is None]
+    if faltan:
+        raise ValueError(
+            "Config del procesador incompleta. Faltan estas claves "
+            f"obligatorias: {faltan}. Usa configs/processor_ejemplo.yaml "
+            "como plantilla."
+        )
+
+
 def _rango_de_frames(cfg_muestreo: dict, fps: float) -> tuple[int, int | None]:
     """Rango [frame_ini, frame_fin) de frames ORIGINALES a procesar.
 
@@ -325,6 +394,7 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
 
     from src.team_classification.color_classifier import TeamClassifierColor
 
+    validar_config(cfg, _CLAVES_FULL)
     cfg_det = cfg["deteccion"]
     H = np.load(cfg["rutas"]["homografia"])
     extractor_color = TeamClassifierColor()  # solo para _color_torso
@@ -425,6 +495,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     from src.tracking.cache_io import cargar_cache
     from src.tracking.perfiles import correr_perfil
 
+    validar_config(cfg, _CLAVES_DESDE_CACHE)
     with open(cfg["config_tracking"]) as f:
         cfg_tracking = yaml.safe_load(f)
 
