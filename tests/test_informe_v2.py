@@ -55,8 +55,9 @@ def test_informe_dos_columnas_y_heatmaps(tmp_path):
     salida = generar_informe_v2(_csv(tmp_path), tmp_path / "informe.html")
     html = salida.read_text()
     assert "Equipo A" in html and "Equipo B" in html
-    assert html.count("data:image/png;base64,") == 2  # un heatmap por equipo
-    for kpi in ("Amplitud", "Profundidad", "Centroide", "Presencia por zonas"):
+    # un heatmap por equipo + la gráfica de basculación
+    assert html.count("data:image/png;base64,") == 3
+    for kpi in ("Amplitud", "Profundidad", "Centroide", "Pasillos", "Basculación"):
         assert kpi in html
     assert "suavizado gaussiano" in html  # leyenda del heatmap
 
