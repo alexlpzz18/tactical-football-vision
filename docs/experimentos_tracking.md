@@ -590,6 +590,58 @@ mejores cajas, o suavizado/filtrado de posiciones antes de asociar).
 
 ---
 
+## Tanda "ventana" tras el diagnóstico replay-vs-vídeo (17-jul-2026)
+
+**Diagnóstico previo (con GT), corrigiendo los IDs del feedback visual:**
+- El "duplicado 51/39" no existe (25 m de mediana); el par sombra real es
+  **51/19**: 2.84 m de mediana en 22 frames comunes, zona lejana (my≈54)
+  — duplicado de SAHI separado por el ruido de proyección del fondo, por
+  encima del dist_max=1.5 de la exclusión.
+- Los "delanteros en equipos distintos" son **identidades QUIMERA**:
+  id 39 mapea a GT 21 (A, 25 votos) Y GT 20 (B, 18 votos); id 10 va 5/5
+  entre un A y un B. Cadenas contaminadas en el cosido secuencial: el
+  clasificador les pone UNA etiqueta necesariamente errónea a tramos.
+  No es clasificación errónea de identidades estables.
+- Métrica nueva de seguimiento: **quimeras** = identidades con ≥10 votos
+  GT cuyo track dominante es <60 % de los votos. Candidato actual: 29/47.
+
+**Variantes medidas (cobertura manda; tasa IDSW no empeora):**
+
+| variante | nIds | cobertura | IDF1 | tasa IDSW | quimeras |
+|---|---|---|---|---|---|
+| candidato actual | 58 | **0.456** | 0.330 | **0.341** | 29/47 |
+| 3j exclusión por co-observación (k=3-5, cm 4-8) | 75-87 | 0.457-0.460 | 0.284-0.287 | 0.416-0.422 | 37-38 |
+| dedup dos niveles 1.5/2.0-3.0 (my>45) | 56-58 | 0.451-0.458 | 0.328-0.330 | 0.335-0.343 | 26-29 |
+| 3k veto de firmas en el cosido | 64 | 0.437 | 0.335 | 0.347 | 25/45 |
+
+**Decisiones (timebox ejecutado): NINGUNA se adopta.**
+- **3j RECHAZADA**: la co-observación también está corrompida — los pares
+  co-observados son mayoritariamente duplicados de SAHI del fondo
+  separados >1.5 m por ruido (el fenómeno 51/19), así que la exclusión
+  bloquea fusiones correctas de la cota v1.
+- **Dedup dos niveles NEUTRO**: fusionaría al par 51/19 (2.84 ≤ 3.0) pero
+  el efecto neto es ±0.005 — fusiona sombras y también algún par real.
+- **3k RECHAZADA por cobertura** (0.456→0.437) aunque confirma la
+  dirección (quimeras 29→25, IDF1 +0.005): las etiquetas por tracklet
+  siguen siendo ruido y vetan cosidos correctos.
+
+**Cierre de la veta (cuarta confirmación, ahora con diagnóstico visual):**
+toda señal disponible a nivel de fragmento (color, velocidad, distancia
+co-observada, co-observación pura, firmas por tracklet) está por debajo
+del suelo de ruido del fondo del campo. Las quimeras del centro se crean
+en el cosido secuencial y no hay señal fiable para vetarlas a esta
+resolución. El desbloqueo real sigue siendo aguas arriba: modelo v4 /
+mejores cajas / suavizado de posiciones antes de asociar. Los mecanismos
+3j (excl_coobservacion) y 3k (etiquetas_veto) quedan implementados,
+testeados y en off.
+
+**Banco visual (nuevo criterio de entrega):** sin variante adoptada, el
+CSV del candidato no cambia → el replay actual sigue siendo el vigente
+(outputs/replay.html). No hay comparación que mostrar: eso también es un
+resultado del criterio.
+
+---
+
 ## Variante 3f — Consistencia de velocidad en la unión del cosido
 
 **Qué:** dos mecanismos sobre la velocidad implicada por el salto

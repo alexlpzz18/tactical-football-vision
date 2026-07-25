@@ -120,6 +120,7 @@ class TrackletStitcher:
         self,
         tracklets: list[Tracklet],
         color_medio: dict[int, np.ndarray] | None = None,
+        etiquetas_veto: dict[int, str] | None = None,
     ) -> list[list[Tracklet]]:
         """Une tracklets en cadenas (identidades).
 
@@ -138,7 +139,7 @@ class TrackletStitcher:
         p = self.params
         orden = sorted(tracklets, key=lambda tr: tr.ts[0])
 
-        candidatos = self._generar_candidatos(orden, color_medio)
+        candidatos = self._generar_candidatos(orden, color_medio, etiquetas_veto)
 
         if p.metodo == "global":
             union = self._seleccion_global(candidatos, len(orden))
@@ -168,6 +169,7 @@ class TrackletStitcher:
         self,
         orden: list[Tracklet],
         color_medio: dict[int, np.ndarray] | None,
+        etiquetas_veto: dict[int, str] | None = None,
     ) -> list[tuple[float, int, int]]:
         """Genera los candidatos (coste, i, j): B podría continuar a A.
 
@@ -196,6 +198,17 @@ class TrackletStitcher:
                 # La tolerancia crece con el hueco (más tiempo = más incertidumbre)
                 tol = p.tol_base + p.tol_por_seg * hueco
                 if dist > tol:
+                    continue
+                # Veto de firmas (anti-quimera, variante 3k): si AMBOS
+                # tracklets tienen etiqueta de equipo FIABLE (de recortes
+                # cercanos) y difieren, no se cosen — una cadena A→B es una
+                # identidad quimera que contamina equipos y métricas.
+                if (
+                    etiquetas_veto is not None
+                    and tr_a.id in etiquetas_veto
+                    and tr_b.id in etiquetas_veto
+                    and etiquetas_veto[tr_a.id] != etiquetas_veto[tr_b.id]
+                ):
                     continue
                 # Consistencia de velocidad: velocidad implicada por el salto
                 v_salto = (tr_b.pos[0] - tr_a.pos[-1]) / hueco

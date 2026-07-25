@@ -217,3 +217,19 @@ def test_coste_velocidad_penaliza_saltos_bruscos():
     assert len(sin_vel) == len(con_vel) == 1
     # v_salto - vel_A ≈ (0, 5) → término ≈ 0.6 * 5/7 ≈ 0.43 de coste extra
     assert con_vel[0][0] > sin_vel[0][0] + 0.3
+
+
+def test_veto_de_etiquetas_en_cosido():
+    """Tracklets con etiquetas fiables DISTINTAS no se cosen (variante 3k, en off)."""
+    tr_a = _tracklet_recto(1, t0=0.0, x0=0.0, vx=3.0, n_frames=10)
+    hueco = 0.5
+    tr_b = _tracklet_recto(
+        2, t0=tr_a.ts[-1] + hueco, x0=tr_a.pos[-1][0] + 1.5, vx=3.0, n_frames=10
+    )
+    st = TrackletStitcher(ParametrosCosido())
+    assert len(st.coser([tr_a, tr_b])) == 1  # sin veto: se cosen
+    # Con etiquetas distintas: cadena A→B sería una quimera → veto
+    assert len(st.coser([tr_a, tr_b], etiquetas_veto={1: "A", 2: "B"})) == 2
+    # Etiquetas iguales o una sin etiqueta: se cosen
+    assert len(st.coser([tr_a, tr_b], etiquetas_veto={1: "A", 2: "A"})) == 1
+    assert len(st.coser([tr_a, tr_b], etiquetas_veto={1: "A"})) == 1

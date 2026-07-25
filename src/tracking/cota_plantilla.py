@@ -48,6 +48,7 @@ def _coste_entrelazado(
     ventana_s: float | None = None,
     excl_dist: float | None = None,
     excl_min_comunes: int = 3,
+    excl_coobservacion: int | None = None,
 ) -> float:
     """Compatibilidad espacial de dos identidades entrelazadas.
 
@@ -67,6 +68,17 @@ def _coste_entrelazado(
     """
     ts_a, pos_a, frames_a = obs_a
     ts_b, pos_b, frames_b = obs_b
+
+    # Exclusión mutua por CO-OBSERVACIÓN PURA (variante 3j): si ambas
+    # identidades están detectadas en >= excl_coobservacion frames a la
+    # vez, son jugadores DISTINTOS — dos fragmentos del mismo jugador se
+    # alternan, no coexisten (los duplicados de SAHI ya se fusionaron
+    # antes en la exclusión espacial). A diferencia del criterio por
+    # distancia (3i, rechazado), esta señal no la corrompe el ruido de
+    # localización del fondo.
+    if excl_coobservacion is not None:
+        if len(frames_a.keys() & frames_b.keys()) >= excl_coobservacion:
+            return float("inf")
 
     # Exclusión mutua explícita por co-observación
     if excl_dist is not None:
@@ -126,6 +138,7 @@ def fusionar_hasta_cota(
     ventana_s: float | None = None,
     excl_dist: float | None = None,
     excl_min_comunes: int = 3,
+    excl_coobservacion: int | None = None,
 ) -> list[list[Tracklet]]:
     """Fusiona golosamente pares entrelazados hasta acercarse a la cota.
 
@@ -148,6 +161,7 @@ def fusionar_hasta_cota(
                     ventana_s=ventana_s,
                     excl_dist=excl_dist,
                     excl_min_comunes=excl_min_comunes,
+                    excl_coobservacion=excl_coobservacion,
                 )
                 if coste < mejor[0]:
                     mejor = (coste, i, j)
