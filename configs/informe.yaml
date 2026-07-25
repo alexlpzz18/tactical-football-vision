@@ -9,6 +9,13 @@
 # (el informe falla claro si una métrica 'activa' no tiene calculadora:
 # la config no puede prometer lo que el código no sabe hacer).
 
+# Análisis táctico con IA (paso 6 del MVP2): el código calcula las
+# métricas; el LLM SOLO redacta a partir de esos números. Una llamada a
+# la API por informe. La clave va en .env (NUNCA aquí ni en el código).
+analisis_ia:
+  modelo: claude-sonnet-4-6
+  max_tokens: 1024
+
 parametros:
   # Nº de jugadores más retrasados que definen la línea defensiva
   # (excluido el portero) y más adelantados que definen la de ataque

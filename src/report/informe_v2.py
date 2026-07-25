@@ -14,6 +14,7 @@ como legacy.
 """
 
 import base64
+import html as html_mod
 import io
 import logging
 from pathlib import Path
@@ -210,6 +211,36 @@ def _tarjetas_proximamente(catalogo):
     return "".join(tarjetas)
 
 
+def _seccion_analisis_ia(texto: str | None, modelo: str) -> str:
+    """Tarjeta "Análisis táctico con IA": rellena o con placeholder.
+
+    Sin texto (sin --con-ia, sin API key o fallo de la llamada) el
+    informe sale igual con el hueco marcado: degradación limpia.
+    """
+    if texto is None:
+        cuerpo = (
+            '<div class="ia-placeholder">Sección pendiente: genera el informe '
+            "con <code>--con-ia</code> y una <code>ANTHROPIC_API_KEY</code> "
+            "configurada (ver <code>.env.example</code>) para rellenarla.</div>"
+        )
+    else:
+        parrafos = [
+            f"<p>{html_mod.escape(p.strip())}</p>".replace("\n", "<br>")
+            for p in texto.split("\n\n")
+            if p.strip()
+        ]
+        nota = (
+            f'<div class="ia-nota">Redactado automáticamente por IA ({modelo}) '
+            "exclusivamente a partir de las métricas de este informe; no ha "
+            "visto el vídeo ni eventos del partido.</div>"
+        )
+        cuerpo = "".join(parrafos) + nota
+    return (
+        '<div class="card"><h2>Análisis táctico con IA</h2>'
+        f'<div class="ia-cuerpo">{cuerpo}</div></div>'
+    )
+
+
 def _definiciones(catalogo):
     filas = []
     for metrica in catalogo["metricas"]:
@@ -229,6 +260,8 @@ def generar_informe_v2(
     largo: float = 105.0,
     ancho: float = 68.0,
     partido: str = "Partido",
+    categoria: str = "fútbol base",
+    con_ia: bool = False,
     ruta_catalogo: Path = RUTA_CATALOGO,
 ) -> Path:
     """Genera el informe v2 (HTML autocontenido) desde el CSV de posiciones."""
@@ -348,6 +381,41 @@ def generar_informe_v2(
 
     basculacion_png = _basculacion_png(metricas_eq, ancho, t_min, t_max)
 
+    # ── Análisis táctico con IA (opcional; nunca rompe el informe) ──
+    cfg_ia = catalogo.get("analisis_ia", {})
+    modelo_ia = cfg_ia.get("modelo", "claude-sonnet-4-6")
+    analisis_texto = None
+    if con_ia:
+        try:
+            from src.report import analisis_ia
+
+            contexto_partido = {
+                "partido": partido,
+                "categoria": categoria,
+                "tramo_inicio_video": _mmss(t_min),
+                "duracion_tramo_s": round(t_max - t_min, 1),
+                "pct_posiciones_sin_equipo": round(pct_otro, 1),
+            }
+            definiciones_ia = {
+                m["clave"]: m["definicion"].strip()
+                for m in catalogo["metricas"]
+                if m["estado"] == "activa"
+            }
+            analisis_texto = analisis_ia.generar_analisis(
+                analisis_ia.construir_json_metricas(colectivas, metricas_eq, contextos),
+                definiciones_ia,
+                contexto_partido,
+                modelo=modelo_ia,
+                max_tokens=cfg_ia.get("max_tokens", 1024),
+            )
+        except Exception as e:
+            logger.warning(
+                "Análisis con IA no disponible (%s); el informe sale con "
+                "placeholder.",
+                e,
+            )
+    seccion_ia = _seccion_analisis_ia(analisis_texto, modelo_ia)
+
     html = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -387,6 +455,13 @@ def generar_informe_v2(
   .leyenda-hm {{ font-size: 12px; color: #777; margin-top: 6px; }}
   .definiciones {{ font-size: 12.5px; color: #555; }}
   .definiciones li {{ margin-bottom: 6px; }}
+  .ia-cuerpo p {{ font-size: 14.5px; margin: 0 0 12px; }}
+  .ia-placeholder {{ color: #888; font-style: italic; font-size: 13.5px;
+                     background: #f8f8f7; border: 1px dashed #ddd;
+                     border-radius: 8px; padding: 14px 16px; }}
+  .ia-placeholder code {{ font-style: normal; background: #eee;
+                          padding: 1px 5px; border-radius: 4px; }}
+  .ia-nota {{ font-size: 11.5px; color: #999; margin-top: 10px; }}
 </style>
 </head>
 <body>
@@ -410,6 +485,8 @@ def generar_informe_v2(
     <h2>Basculación lateral del bloque</h2>
     <img src="data:image/png;base64,{basculacion_png}" alt="Basculación lateral">
   </div>
+
+  {seccion_ia}
 
   <div class="card">
     <h2>Próximamente</h2>

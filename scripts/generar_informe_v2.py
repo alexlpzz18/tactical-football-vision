@@ -5,6 +5,11 @@ Uso:
     python scripts/generar_informe_v2.py [--csv data/tracking/posiciones_v2.csv]
                                          [--salida outputs/informe_v2.html]
                                          [--partido "Partido X"]
+                                         [--con-ia]
+
+--con-ia rellena la sección "Análisis táctico con IA" llamando a la API
+de Anthropic (necesita ANTHROPIC_API_KEY en .env; ver .env.example). Sin
+el flag o sin clave, el informe sale igual con un placeholder.
 """
 
 import argparse
@@ -24,12 +29,24 @@ def main() -> None:
     parser.add_argument("--largo", type=float, default=105.0)
     parser.add_argument("--ancho", type=float, default=68.0)
     parser.add_argument("--partido", default="Partido")
+    parser.add_argument("--categoria", default="fútbol base")
+    parser.add_argument(
+        "--con-ia",
+        action="store_true",
+        help="Rellenar la sección de análisis táctico con IA (API de Anthropic)",
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
     )
     ruta = generar_informe_v2(
-        args.csv, args.salida, largo=args.largo, ancho=args.ancho, partido=args.partido
+        args.csv,
+        args.salida,
+        largo=args.largo,
+        ancho=args.ancho,
+        partido=args.partido,
+        categoria=args.categoria,
+        con_ia=args.con_ia,
     )
     print(f"✓ Informe v2 en {ruta}")
 
