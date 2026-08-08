@@ -18,7 +18,16 @@ pytestmark = pytest.mark.skipif(
     reason="Faltan los cachés de detecciones/colores (copiar de Drive)",
 )
 
-COLUMNAS = ["frame", "tiempo_s", "id_jugador", "equipo", "etiqueta", "x_m", "y_m"]
+COLUMNAS = [
+    "frame",
+    "tiempo_s",
+    "id_jugador",
+    "equipo",
+    "etiqueta",
+    "x_m",
+    "y_m",
+    "es_real",
+]
 
 
 def _cfg(tmp_path, perfil):
@@ -107,11 +116,31 @@ def test_perfil_candidato_reproduce_58_identidades():
     assert len(identidades) == 58
 
 
-def test_consolidacion_reduce_las_fichas_exportadas(tmp_path):
-    """Con la consolidación activa, el CSV lleva MENOS ids que el perfil."""
+def test_postproceso_consolida_y_corta(tmp_path):
+    """El CSV exportado pasa por consolidación + corte por velocidad.
+
+    La consolidación fusiona fichas montadas (menos ids) y el corte parte
+    las que teletransportan (más ids, más cortas): el número final no es
+    comparable con las 58 del perfil, pero sí lo son las dos invariantes
+    que importan — el CSV marca qué posiciones son reales y ninguna
+    identidad conserva un salto por encima del umbral de teletransporte.
+    """
+    import numpy as np
+
     cfg = _cfg(tmp_path, "candidato")
     df = procesar_desde_cache(cfg)
-    assert df["id_jugador"].nunique() < 58
+    assert set(df["es_real"].unique()) <= {0, 1}
+    assert 0 < df["es_real"].mean() < 1  # hay reales e interpoladas
+
+    for _id_jugador, grupo in df.groupby("id_jugador"):
+        grupo = grupo.sort_values("tiempo_s")
+        dt = np.diff(grupo["tiempo_s"].to_numpy())
+        dd = np.hypot(
+            np.diff(grupo["x_m"].to_numpy()), np.diff(grupo["y_m"].to_numpy())
+        )
+        validos = dt > 0
+        if validos.any():
+            assert (dd[validos] / dt[validos]).max() <= 60.0 + 1e-6
 
 
 def test_collective_consume_el_csv_nuevo(salida_oficial):

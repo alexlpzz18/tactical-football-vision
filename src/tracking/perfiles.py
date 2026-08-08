@@ -137,6 +137,7 @@ def postprocesar(
         consolidación fusiona identidades.
     """
     from src.tracking.consolidacion import consolidar_colocadas
+    from src.tracking.corte_velocidad import cortar_por_velocidad
     from src.tracking.interpolacion import (
         identidades_a_trayectorias,
         interpolar_trayectorias,
@@ -151,6 +152,20 @@ def postprocesar(
             equipos,
             dist_max=cfg_consol.get("dist_max", 6.0),
             min_frames_comunes=cfg_consol.get("min_frames_comunes", 20),
+        )
+
+    # Corte de teletransportes: va DESPUÉS de consolidar (una fusión puede
+    # crear un salto) y ANTES de interpolar (para no rellenar el salto).
+    cfg_corte = cfg_tracking.get("corte_velocidad", {})
+    if cfg_corte.get("activo", False):
+        trayectorias, equipos = cortar_por_velocidad(
+            trayectorias,
+            equipos,
+            dict(frames_ts),
+            v_max=cfg_corte.get("v_max", 8.5),
+            duracion_min=cfg_corte.get("duracion_min", 0.5),
+            min_observaciones=cfg_corte.get("min_observaciones", 3),
+            v_teleport=cfg_corte.get("v_teleport", 60.0),
         )
 
     cfg_interp = cfg_tracking.get("interpolacion", {})

@@ -932,3 +932,82 @@ cambiarlo en una línea de config.
   `outputs/replay_v4pre.html` sin consolidar y `outputs/replay.html` del v3).
 - Banner del informe: separa "sin equipo asignable" de "personal no
   jugador" para no mezclar dos cosas distintas.
+
+---
+
+## Objetivo "replay creíble" (08-ago-2026)
+
+**Objetivo medible fijado por producto** (no receta): concurrencia p50
+≤ 26, cero transiciones >8,5 m/s sostenidas, y cobertura del CSV del
+informe ≥ 0,55. Presupuesto: 5 variantes; parar si dos consecutivas no
+acercan.
+
+### Métrica nueva: transiciones imposibles
+
+`transiciones_imposibles` (src/evaluation/metricas.py) cuenta RACHAS de
+velocidad > `v_max` que duran ≥ `duracion_min`, e informa de la velocidad
+máxima observada. Un salto de un frame es ruido; media ficha cruzando el
+campo medio segundo es lo que destruye la credibilidad.
+
+**Diagnóstico de partida:** 94 rachas y v_max **309 m/s**. Y el dato que
+decide el enfoque: las rachas son **las mismas con y sin interpolación**
+(962 de los pasos imposibles son entre dos observaciones REALES). No las
+crea la interpolación: son cadenas quimera del cosido.
+
+### Variantes medidas
+
+| # | variante | conc p50 | rachas | cob. informe | v_max |
+|---|---|---|---|---|---|
+| — | punto de partida (consolid + interp 6 s) | 36 | 94 | 0.557 | 309 |
+| 1 | **corte por velocidad imposible sostenida** | 35 | **0** | 0.553 | 309 |
+| 2 | replay: interpolado ≤ X s de un real (0,6-2 s) | 27-33 | 0 | 0.553 | 309 |
+| 3 | **+ replay: fichas efímeras fuera (vida ≥ 2 s)** | **26** | 0 | 0.553 | 309 |
+| 4 | **+ corte de saltos instantáneos (60 m/s)** | **24** | **0** | **0.551** | **60** |
+
+**V1 — corte por velocidad (hipótesis (a) de Alex): ADOPTADA.** Parte la
+identidad donde teletransporta de forma sostenida. Detalle de
+implementación que costó una iteración: cortar *por el medio* de la racha
+deja media racha en cada trozo (94 → 27 rachas); hay que **escindir el
+tramo entero** (94 → 0). Coste nulo en concurrencia: cortar parte en el
+TIEMPO, así que en cada frame sigue viva una sola pieza.
+
+**V2+V3 — el replay no pinta ficción (hipótesis (b) de Alex): ADOPTADAS.**
+El informe y el replay tienen necesidades opuestas: el informe agrega
+posiciones (quiere cobertura) y el replay muestra jugadores (quiere
+credibilidad). Se separan los consumidores, no los datos: el CSV lleva
+una columna `es_real` y el replay descarta (a) posiciones interpoladas a
+más de 0,6 s de una detección real y (b) identidades cuya vida real es
+< 2 s (confeti de fragmentos). La cobertura del informe no se toca por
+construcción. Añadido de credibilidad: las fichas se **desvanecen** con
+la antigüedad en vez de desaparecer de golpe.
+
+**V4 — saltos instantáneos: ADOPTADA.** La verificación de V3 destapó que
+seguía habiendo saltos de hasta 37 m en un frame (v_max 309 m/s) que no
+formaban racha y eran lo más visible del replay. Diagnóstico: **ya vienen
+del perfil** (443 pasos >20 m/s antes de consolidar; la consolidación
+añade hasta 710 pero no los origina), y endurecer la consolidación con un
+criterio de p90 no los toca. Se corta en cualquier paso > `v_teleport`.
+Umbral 60 m/s = 7,2 m en un frame, 3× el ruido del fondo (p90 2,45 m ≈
+20 m/s a dt=0,12 s): por debajo de 40 m/s la cobertura ya cae de 0,55.
+
+### Resultado final (artefactos reales)
+
+| | CSV del informe | replay |
+|---|---|---|
+| filas / identidades | 16.643 / 243 | 12.191 / 108 |
+| concurrencia p50 / p90 | 34 / 36 | **24 / 29** |
+| rachas >8,5 m/s sostenidas | **0** | **0** |
+| v_max | 60 m/s | 60 m/s |
+| cobertura colectiva | **0.551** | — |
+
+**Los tres criterios se cumplen.** Coste honesto: el CSV tiene 243
+identidades (fragmentación del corte) y el replay muestra 236 cortes
+visuales en 60 s (≈2,5 por ficha y minuto) — el precio de no pintar lo
+que no se sabe. La verificación que manda es visual.
+
+**Aprendizaje transferible:** ante un defecto visual, la palanca no
+estaba en el sitio esperado ni por Alex ni por el sistema. Las tres
+métricas clásicas (IDF1/HOTA/cobertura) eran ciegas a los dos defectos
+reales — exceso de fichas y teletransportes — porque puntúan por posición
+emparejada. Instrumentar primero el defecto (concurrencia, transiciones)
+y solo después buscar la palanca evitó optimizar a ciegas.

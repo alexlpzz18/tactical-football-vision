@@ -84,6 +84,24 @@ consolidacion:
   dist_max: 6.0           # distancia mediana máxima entre las dos fichas (m)
   min_frames_comunes: 20  # "sostenida": no un cruce puntual
 
+# Corte de TELETRANSPORTES (objetivo "replay creíble", 08-ago-2026):
+# parte la identidad donde la velocidad es imposible de forma SOSTENIDA
+# (cadenas quimera que saltan de un jugador a otro). Medido: 94 rachas de
+# >8,5 m/s → 0, con la cobertura casi intacta (0.557 → 0.553) y sin coste
+# de concurrencia (el corte parte en el tiempo, no añade fichas).
+# El criterio es sostenido y no por paso suelto porque a dt=0,12 s el
+# ruido del fondo (1,16 m de mediana) ya simula 9-10 m/s.
+corte_velocidad:
+  activo: true
+  v_max: 8.5          # m/s (sprint de élite) — criterio de racha SOSTENIDA
+  duracion_min: 0.5   # s que debe durar la racha imposible para cortar
+  min_observaciones: 3  # trozos más cortos se descartan (parpadeo)
+  # Criterio de SALTO INSTANTÁNEO (un solo frame): 60 m/s son 7,2 m en
+  # 0,12 s, 3× el ruido de localización del fondo (p90 2,45 m ≈ 20 m/s).
+  # Sin este criterio quedaban saltos de hasta 37 m en un frame (v_max
+  # 309 m/s) que no formaban racha pero eran lo más visible del replay.
+  v_teleport: 60.0
+
 cosido:
   # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
   max_hueco: 6.0

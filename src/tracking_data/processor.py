@@ -572,16 +572,13 @@ def exportar_posiciones(
     largo, ancho = cfg["campo_m"]["largo"], cfg["campo_m"]["ancho"]
     margen = cfg["campo_m"]["margen"]
 
-    # Observaciones (frame, pos) por identidad: interpoladas o crudas
+    # Observaciones (frame, pos, es_real) por identidad
     if trayectorias is not None:
-        observaciones = [
-            [(frame_idx, pos) for frame_idx, pos, _es_real in tray]
-            for tray in trayectorias
-        ]
+        observaciones = [list(tray) for tray in trayectorias]
     else:
         observaciones = [
             [
-                (frame_idx, pos)
+                (frame_idx, pos, True)
                 for tracklet in identidad
                 for pos, (frame_idx, _det) in zip(tracklet.pos, tracklet.det_idxs)
             ]
@@ -592,7 +589,7 @@ def exportar_posiciones(
     for id_identidad, obs_identidad in enumerate(observaciones, start=1):
         etiqueta = equipos.get(id_identidad, "otro")
         entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
-        for frame_idx, pos in obs_identidad:
+        for frame_idx, pos, es_real in obs_identidad:
             mx, my = float(pos[0]), float(pos[1])
             if not (-margen <= mx <= largo + margen):
                 continue
@@ -607,6 +604,10 @@ def exportar_posiciones(
                     "etiqueta": etiqueta,
                     "x_m": round(mx, 2),
                     "y_m": round(my, 2),
+                    # 1 = detección real; 0 = posición interpolada. El
+                    # informe las usa todas (cobertura); el replay filtra
+                    # las interpoladas "viejas" para no pintar ficción.
+                    "es_real": int(bool(es_real)),
                 }
             )
     df = pd.DataFrame(filas).sort_values(["frame", "id_jugador"])

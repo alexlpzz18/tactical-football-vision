@@ -23,6 +23,7 @@ import json
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,58 @@ COLORES = {
 }
 
 
+def _filtrar_creible(
+    df: pd.DataFrame, max_edad_interp_s: float, min_vida_s: float
+) -> pd.DataFrame:
+    """Deja solo lo que un entrenador puede creerse (ver generar_replay).
+
+    1. Fichas EFÍMERAS fuera: una identidad cuyas detecciones reales
+       abarcan menos de `min_vida_s` no es un jugador, es un fragmento.
+    2. Interpolado VIEJO fuera: una posición inventada a más de
+       `max_edad_interp_s` de la detección real más cercana de esa misma
+       identidad es ficción; mejor que la ficha desaparezca a que pasee
+       sola por el campo.
+
+    Requiere la columna `es_real`; sin ella devuelve el CSV tal cual (los
+    CSV antiguos no la tienen y siguen funcionando).
+    """
+    if "es_real" not in df.columns:
+        logger.info("CSV sin columna 'es_real': el replay pinta todo el CSV.")
+        return df
+
+    conservar = []
+    for _id_jugador, grupo in df.groupby("id_jugador"):
+        grupo = grupo.sort_values("tiempo_s")
+        tiempos_reales = grupo.loc[grupo["es_real"] == 1, "tiempo_s"].to_numpy()
+        if len(tiempos_reales) == 0:
+            continue
+        if tiempos_reales[-1] - tiempos_reales[0] < min_vida_s:
+            continue
+        edades = np.min(
+            np.abs(grupo["tiempo_s"].to_numpy()[:, None] - tiempos_reales[None, :]),
+            axis=1,
+        )
+        conservar.append(grupo[(grupo["es_real"] == 1) | (edades <= max_edad_interp_s)])
+
+    if not conservar:
+        raise ValueError(
+            "Tras el filtro de credibilidad no queda ninguna ficha: revisa "
+            "max_edad_interp_s / min_vida_s."
+        )
+    filtrado = pd.concat(conservar)
+    logger.info(
+        "Filtro de credibilidad: %d → %d posiciones, %d → %d identidades "
+        "(interpolado ≤ %.1f s de un real, vida ≥ %.1f s)",
+        len(df),
+        len(filtrado),
+        df["id_jugador"].nunique(),
+        filtrado["id_jugador"].nunique(),
+        max_edad_interp_s,
+        min_vida_s,
+    )
+    return filtrado
+
+
 def generar_replay(
     csv_path: str | Path,
     salida_html: str | Path,
@@ -50,18 +103,31 @@ def generar_replay(
     ancho: float = 68.0,
     max_hueco_s: float = 3.0,
     titulo: str = "Replay táctico",
+    max_edad_interp_s: float = 0.6,
+    min_vida_s: float = 2.0,
 ) -> Path:
     """Genera el HTML del replay desde el CSV de posiciones.
+
+    El replay NO pinta todo el CSV: el informe necesita cobertura (agrega
+    posiciones en heatmaps y medias) mientras que el replay necesita
+    credibilidad (un entrenador que ve una ficha inventada pasear sola
+    deja de creerse el resto). Por eso filtra — el mismo CSV sirve a los
+    dos consumidores con criterios distintos.
 
     Args:
         csv_path: CSV con columnas frame, tiempo_s, id_jugador, etiqueta,
             x_m, y_m (equipo es opcional; el color sale de la etiqueta).
+            Si trae `es_real`, se aplica el filtro de credibilidad.
         salida_html: dónde escribir el HTML autocontenido.
         largo, ancho: dimensiones del campo en metros (ejes de la
             homografía: x = portería a portería).
         max_hueco_s: hueco máximo (s) que la animación interpola; huecos
             mayores se muestran como desaparición.
         titulo: título de la página.
+        max_edad_interp_s: antigüedad máxima de una posición interpolada
+            respecto a una detección real de la misma identidad.
+        min_vida_s: duración mínima (detecciones reales) para pintar una
+            identidad.
     """
     df = pd.read_csv(csv_path)
     faltan = [c for c in COLUMNAS_REQUERIDAS if c not in df.columns]
@@ -72,9 +138,28 @@ def generar_replay(
     if len(df) == 0:
         raise ValueError(f"El CSV {csv_path} está vacío.")
 
+    df = _filtrar_creible(df, max_edad_interp_s, min_vida_s)
+
     identidades = []
     for id_jugador, grupo in df.sort_values("tiempo_s").groupby("id_jugador"):
         etiquetas = grupo["etiqueta"].mode()
+        # Opacidad por antigüedad: las posiciones interpoladas se
+        # desvanecen conforme se alejan de una detección real, para que la
+        # ficha no aparezca y desaparezca de golpe.
+        if "es_real" in grupo.columns:
+            tiempos_reales = grupo.loc[grupo["es_real"] == 1, "tiempo_s"].to_numpy()
+            edades = np.min(
+                np.abs(grupo["tiempo_s"].to_numpy()[:, None] - tiempos_reales[None, :]),
+                axis=1,
+            )
+            alfas = [
+                round(
+                    float(max(0.35, 1.0 - 0.65 * (e / max(max_edad_interp_s, 1e-6)))), 2
+                )
+                for e in edades
+            ]
+        else:
+            alfas = [1.0] * len(grupo)
         identidades.append(
             {
                 "id": int(id_jugador),
@@ -82,6 +167,7 @@ def generar_replay(
                 "t": [round(float(v), 2) for v in grupo["tiempo_s"]],
                 "x": [round(float(v), 2) for v in grupo["x_m"]],
                 "y": [round(float(v), 2) for v in grupo["y_m"]],
+                "a": alfas,
             }
         )
 
@@ -228,12 +314,16 @@ function posicionEn(ident, i, T) {
   while (p + 1 < ts.length && ts[p + 1] <= T) p++;
   punteros[i] = p;
   if (ts[p] > T) return null;                       // aún no ha aparecido
-  if (p === ts.length - 1) return ts[p] >= T - 0.25 ? [ident.x[p], ident.y[p]] : null;
+  const alfa = ident.a ? ident.a[p] : 1;
+  if (p === ts.length - 1)
+    return ts[p] >= T - 0.25 ? [ident.x[p], ident.y[p], alfa] : null;
   const dt = ts[p + 1] - ts[p];
   if (dt > MAX_HUECO) return null;                  // hueco: no inventamos posición
   const a = dt > 0 ? (T - ts[p]) / dt : 0;
+  const alfaSig = ident.a ? ident.a[p + 1] : 1;
   return [ident.x[p] + a * (ident.x[p+1] - ident.x[p]),
-          ident.y[p] + a * (ident.y[p+1] - ident.y[p])];
+          ident.y[p] + a * (ident.y[p+1] - ident.y[p]),
+          alfa + a * (alfaSig - alfa)];
 }
 
 function dibujar(T) {
@@ -244,12 +334,20 @@ function dibujar(T) {
     const pos = posicionEn(DATOS[i], i, T);
     if (!pos) continue;
     const [relleno, borde] = COLORES[DATOS[i].et] || COLORES['otro'];
+    // Transparencia por antigüedad: cuanto más lejos está la posición de
+    // una detección real, más se desvanece la ficha (aparecer/desaparecer
+    // de golpe se lee como un fallo; el desvanecido se lee como "aquí el
+    // sistema ya no lo ve").
+    const opacidad = pos.length > 2 ? pos[2] : 1;
+    ctx.save();
+    ctx.globalAlpha = opacidad;
     ctx.beginPath();
     ctx.arc(px(pos[0]), py(pos[1]), RADIO_M * ESCALA, 0, 7);
     ctx.fillStyle = relleno; ctx.fill();
     ctx.strokeStyle = borde; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.92)';
     ctx.fillText(DATOS[i].id, px(pos[0]), py(pos[1]) + 0.5);
+    ctx.restore();
   }
 }
 

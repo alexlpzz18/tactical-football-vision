@@ -93,3 +93,98 @@ def test_csv_vacio_falla_claro(tmp_path):
     ).to_csv(ruta, index=False)
     with pytest.raises(ValueError, match="vacío"):
         generar_replay(ruta, tmp_path / "r.html")
+
+
+def test_filtro_de_credibilidad_del_replay(tmp_path):
+    """El replay no pinta interpolado viejo ni fichas efímeras."""
+    filas = []
+    # id 1: jugador sólido (reales durante 10 s)
+    for k in range(80):
+        filas.append(
+            dict(
+                frame=100 + 3 * k,
+                tiempo_s=round(0.12 * k, 2),
+                id_jugador=1,
+                equipo=0,
+                etiqueta="A",
+                x_m=20.0,
+                y_m=30.0,
+                es_real=1,
+            )
+        )
+    # id 2: efímero (reales solo 0.5 s) → fuera
+    for k in range(5):
+        filas.append(
+            dict(
+                frame=100 + 3 * k,
+                tiempo_s=round(0.12 * k, 2),
+                id_jugador=2,
+                equipo=0,
+                etiqueta="A",
+                x_m=40.0,
+                y_m=30.0,
+                es_real=1,
+            )
+        )
+    # id 3: sólido pero con una cola interpolada larga → la cola se corta
+    for k in range(40):
+        filas.append(
+            dict(
+                frame=100 + 3 * k,
+                tiempo_s=round(0.12 * k, 2),
+                id_jugador=3,
+                equipo=1,
+                etiqueta="B",
+                x_m=60.0,
+                y_m=30.0,
+                es_real=1,
+            )
+        )
+    for k in range(40, 80):
+        filas.append(
+            dict(
+                frame=100 + 3 * k,
+                tiempo_s=round(0.12 * k, 2),
+                id_jugador=3,
+                equipo=1,
+                etiqueta="B",
+                x_m=60.0,
+                y_m=30.0,
+                es_real=0,
+            )
+        )
+    ruta = tmp_path / "pos.csv"
+    pd.DataFrame(filas).to_csv(ruta, index=False)
+
+    salida = generar_replay(
+        ruta, tmp_path / "r.html", max_edad_interp_s=0.6, min_vida_s=2.0
+    )
+    html = salida.read_text()
+    datos = json.loads(html.split("const DATOS = ")[1].split(";\n")[0])
+    ids = {d["id"] for d in datos}
+    assert ids == {1, 3}  # el efímero (2) no se pinta
+    # De la cola interpolada de id 3 solo sobreviven ~0.6 s (5 puntos)
+    ident3 = next(d for d in datos if d["id"] == 3)
+    assert 40 < len(ident3["t"]) <= 46
+    # Y las posiciones interpoladas van con menos opacidad que las reales
+    assert min(ident3["a"]) < 1.0
+
+
+def test_csv_antiguo_sin_es_real_sigue_funcionando(tmp_path):
+    """Compatibilidad: sin la columna es_real se pinta todo el CSV."""
+    filas = [
+        dict(
+            frame=100 + 3 * k,
+            tiempo_s=round(0.12 * k, 2),
+            id_jugador=1,
+            equipo=0,
+            etiqueta="A",
+            x_m=20.0,
+            y_m=30.0,
+        )
+        for k in range(30)
+    ]
+    ruta = tmp_path / "viejo.csv"
+    pd.DataFrame(filas).to_csv(ruta, index=False)
+    salida = generar_replay(ruta, tmp_path / "r.html")
+    assert "const DATOS = " in salida.read_text()
