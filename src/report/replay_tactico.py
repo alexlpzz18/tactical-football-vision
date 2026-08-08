@@ -26,6 +26,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.campo import ANCHO_M, LARGO_M
+
 logger = logging.getLogger(__name__)
 
 COLUMNAS_REQUERIDAS = ["frame", "tiempo_s", "id_jugador", "etiqueta", "x_m", "y_m"]
@@ -99,8 +101,8 @@ def _filtrar_creible(
 def generar_replay(
     csv_path: str | Path,
     salida_html: str | Path,
-    largo: float = 105.0,
-    ancho: float = 68.0,
+    largo: float = LARGO_M,
+    ancho: float = ANCHO_M,
     max_hueco_s: float = 3.0,
     titulo: str = "Replay táctico",
     max_edad_interp_s: float = 0.6,

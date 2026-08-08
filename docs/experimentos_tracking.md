@@ -1011,3 +1011,88 @@ métricas clásicas (IDF1/HOTA/cobertura) eran ciegas a los dos defectos
 reales — exceso de fichas y teletransportes — porque puntúan por posición
 emparejada. Instrumentar primero el defecto (concurrencia, transiciones)
 y solo después buscar la palanca evitó optimizar a ciegas.
+
+---
+
+## Auditoría de escala y sesgo de localización (08-ago-2026)
+
+**Defecto reportado:** en el replay los jugadores se ven MÁS JUNTOS que en
+el vídeo. Dos hipótesis del encargo: (1) las medidas del campo (100×64)
+son estimadas y podrían estar mal; (2) el detector corta piernas y el pie
+proyectado se sesga con la profundidad.
+
+### Hipótesis 2 — sesgo de piernas cortadas: REFUTADA
+
+Error CON SIGNO (pred − GT) por franja, sobre 1.614 detecciones casadas
+(el GT está etiquetado con cajas completas, así que el sesgo es medible
+limpiamente):
+
+| franja my | n | sesgo my | \|err\| my | alto caja pred / GT |
+|---|---|---|---|---|
+| 0-17 | 63 | −0.14 m | 0.21 | 1.00 |
+| 17-34 | 384 | +0.17 m | 0.55 | 0.95 |
+| 34-51 | 935 | +0.21 m | 0.68 | 0.95 |
+| 51-99 | 232 | −0.37 m | 0.92 | 1.00 |
+
+**Sesgo global +0,12 m** y cajas predichas al 95-100 % del alto de las del
+GT: no hay piernas cortadas sistemáticamente. El sesgo está muy por debajo
+del error absoluto de localización, así que **no se implementa corrección**
+— habría sido optimizar ruido.
+
+### Hipótesis 1 — escala: CONFIRMADA, con otra causa raíz
+
+Proyectando los clics de calibración con la H de producción y midiendo
+marcas cuyo tamaño es REGLAMENTARIO (no depende del campo):
+
+| marca (reglamento) | medido | error |
+|---|---|---|
+| penalti → línea de fondo (11 m) | 10.85 | −1.4 % |
+| área → línea de fondo (16,5 m) | 16.50 | 0.0 % |
+| diámetro del círculo (18,30 m) | 19.14 | +4.6 % |
+| ancho área izquierda (40,32 m) | 36.18 | **−10.3 %** |
+| ancho área derecha (40,32 m) | 32.42 | **−19.6 %** |
+
+- **El eje longitudinal está validado**: las dos marcas en x salen con
+  <1,5 % de error, así que el largo de 100 m se sostiene.
+- **El transversal es inconsistente consigo mismo**: el círculo (centro de
+  la imagen) se pasa un 4,6 % y las áreas (periferia) se quedan cortas un
+  10-20 %. Eso comprime las distancias entre jugadores a los lados del
+  campo — el defecto que se ve.
+
+**Ningún tamaño de campo lo arregla.** Barrido completo de (largo, ancho)
+con validación cruzada (ajustar con el marco, medir las marcas): el error
+medio baja del 13,1 % (100×64) al 6,8 % (98×78) pero nunca cuadra círculo
+y áreas a la vez, y el óptimo se va a anchos imposibles. La firma —centro
+bien, periferia comprimida— es de **distorsión radial residual**: los
+coeficientes de lente (k1=−1.5, k2=0.5) también fueron estimados.
+
+**Reajuste conjunto (distorsión + campo): PROBADO Y RECHAZADO.** Optimizar
+(a, b, L, W) sobre las marcas reglamentarias mejora 5× su consistencia
+(círculo +1,6 %, área izq +3,4 %) y deriva un ancho de ~67 m. Pero falla
+la validación independiente: deja al **5,8 % de las posiciones del GT
+fuera del campo** (frente al 0,3 % con la calibración actual). Con 13
+clics concentrados en la franja central de la imagen el problema está
+infradeterminado. **La solución real es recalibrar** con clics repartidos
+por todo el encuadre o con un patrón; queda documentado como la deuda
+técnica que limita la precisión métrica del sistema.
+
+### Lo que sí se ADOPTA: coherencia del modelo del campo
+
+La auditoría destapó un desajuste que no era de medición sino de unidades:
+**la homografía mapea a 100×64 pero el replay, el informe, `collective.py`
+y `processor.yaml` dibujaban y analizaban sobre 105×68.** Los jugadores
+vivían en el 95 % del largo y el 94 % del ancho del campo dibujado, lo que
+(a) los junta visualmente y (b) desplaza los límites de tercios, pasillos
+y de la regla de staff.
+
+Corregido con una **única fuente de verdad** (`src/campo.py`) de la que
+tiran todos los consumidores, más un test anti-regresión que compara los
+defaults del replay, del informe, de `collective.py` y de los dos yaml.
+Ocupación del campo dibujado (p1-p99): largo 74 % → **77 %**, ancho 66 %
+→ **70 %**. Cobertura colectiva intacta (0.551).
+
+**Aprendizaje:** de las dos hipótesis, una era refutable con una medición
+de 20 líneas y la otra escondía un bug de unidades que ninguna de las dos
+predecía. Medir primero las dos y solo después tocar código evitó
+implementar una corrección de piernas que habría añadido un parámetro
+libre para compensar ruido.

@@ -28,6 +28,7 @@ import pandas as pd  # noqa: E402
 import yaml  # noqa: E402
 from scipy.ndimage import gaussian_filter  # noqa: E402
 
+from src.campo import ANCHO_M, LARGO_M  # noqa: E402
 from src.metrics.collective import compute_collective_metrics  # noqa: E402
 from src.report.metricas_informe import (  # noqa: E402
     calcular_metricas_equipo,
@@ -257,8 +258,8 @@ def _definiciones(catalogo):
 def generar_informe_v2(
     csv_path: str | Path,
     salida_html: str | Path,
-    largo: float = 105.0,
-    ancho: float = 68.0,
+    largo: float = LARGO_M,
+    ancho: float = ANCHO_M,
     partido: str = "Partido",
     categoria: str = "fútbol base",
     con_ia: bool = False,

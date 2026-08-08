@@ -41,8 +41,8 @@ equipos:
 
 # ── Campo (para el filtro de posiciones del export; ejes de la homografía) ──
 campo_m:
-  largo: 105.0
-  ancho: 68.0
+  largo: 100.0
+  ancho: 64.0
   margen: 8.0            # generoso: el error de proyección del fondo es real
 
 rutas:

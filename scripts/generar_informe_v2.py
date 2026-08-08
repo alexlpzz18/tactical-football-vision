@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.campo import ANCHO_M, LARGO_M  # noqa: E402
 from src.report.informe_v2 import generar_informe_v2  # noqa: E402
 
 
@@ -26,8 +27,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", default="data/tracking/posiciones_v2.csv")
     parser.add_argument("--salida", default="outputs/informe_v2.html")
-    parser.add_argument("--largo", type=float, default=105.0)
-    parser.add_argument("--ancho", type=float, default=68.0)
+    parser.add_argument("--largo", type=float, default=LARGO_M)
+    parser.add_argument("--ancho", type=float, default=ANCHO_M)
     parser.add_argument("--partido", default="Partido")
     parser.add_argument("--categoria", default="fútbol base")
     parser.add_argument(

@@ -216,3 +216,35 @@ def test_config_processor_valida():
     assert cfg["pipeline"] in ("nuevo", "legacy")
     assert cfg["modo"] in ("full", "desde_cache")
     assert cfg["tracking"]["perfil"] in ("oficial", "candidato")
+
+
+def test_dimensiones_del_campo_coherentes_en_todo_el_sistema():
+    """Anti-regresión del bug de escala: una sola fuente de verdad.
+
+    La homografía mapea a un modelo métrico concreto; si el replay, el
+    informe o el export usan otras dimensiones, las posiciones caen en un
+    campo que no es el suyo (los jugadores se ven más juntos y los
+    límites de tercios/pasillos quedan desplazados).
+    """
+    import inspect
+
+    from src.campo import ANCHO_M, LARGO_M
+    from src.metrics.collective import FIELD_LENGTH, FIELD_WIDTH
+    from src.report.informe_v2 import generar_informe_v2
+    from src.report.replay_tactico import generar_replay
+
+    assert (FIELD_LENGTH, FIELD_WIDTH) == (LARGO_M, ANCHO_M)
+    for funcion in (generar_replay, generar_informe_v2):
+        firma = inspect.signature(funcion).parameters
+        assert firma["largo"].default == LARGO_M, funcion.__name__
+        assert firma["ancho"].default == ANCHO_M, funcion.__name__
+
+    with open("configs/processor.yaml") as f:
+        cfg = yaml.safe_load(f)
+    assert cfg["campo_m"]["largo"] == LARGO_M
+    assert cfg["campo_m"]["ancho"] == ANCHO_M
+
+    with open("configs/team_classification.yaml") as f:
+        cfg_eq = yaml.safe_load(f)
+    assert cfg_eq["staff"]["largo"] == LARGO_M
+    assert cfg_eq["staff"]["ancho"] == ANCHO_M

@@ -26,8 +26,8 @@ porteros:
 # La tolerancia cubre el error de proyección de quien pisa la banda.
 staff:
   activo: true
-  largo: 105.0
-  ancho: 68.0
+  largo: 100.0
+  ancho: 64.0
   tolerancia_m: 2.0
   min_observaciones: 5
 

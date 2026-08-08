@@ -9,8 +9,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-FIELD_LENGTH = 100.0
-FIELD_WIDTH = 64.0
+# Dimensiones del modelo de la homografía (fuente única: src/campo.py)
+from src.campo import ANCHO_M as FIELD_WIDTH  # noqa: E402
+from src.campo import LARGO_M as FIELD_LENGTH  # noqa: E402
 
 
 def compute_collective_metrics(
