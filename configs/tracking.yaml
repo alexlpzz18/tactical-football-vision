@@ -61,7 +61,12 @@ rescate_cortos:
 # Solo entre dos posiciones reales (nunca extrapolar), solo en frames del
 # caché, y solo si el hueco no supera max_hueco segundos.
 interpolacion:
-  activa: false  # se decide tras medir contra el banco (docs/experimentos_tracking.md)
+  # ADOPTADA con el modelo v4pre (08-ago-2026): cobertura 0.453→0.566 con
+  # la tasa de IDSW bajando (0.339→0.320). Con v3 empeoraba la tasa
+  # (0.341→0.356) y estuvo en off — ver docs/experimentos_tracking.md,
+  # sección "salto v4pre". La aplican el banco y el processor DESPUÉS del
+  # perfil (produce trayectorias, no identidades de tracklets).
+  activa: true
   max_hueco: 6.0
 
 cosido:

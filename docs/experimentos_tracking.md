@@ -674,3 +674,131 @@ nivel sigue siendo posición + tolerancia. Reducir los switches del
 candidato requerirá contexto de MÁS nivel (p. ej. consistencia global de
 la plantilla: 22 jugadores, exclusión mutua espacial), no más features
 por fragmento.
+
+---
+
+## Salto v4pre — re-medición completa con el modelo nuevo (08-ago-2026)
+
+**Contexto:** modelo v4pre validado en detección (yolov8s, 478 imágenes,
+mAP50 ~0.90 vs 0.857 del v3). Cachés nuevos del mismo tramo de validación
+(`cache_detecciones_v4pre.pkl`, `cache_colores_v4pre.pkl`; 500 frames,
+11.404 detecciones vs 11.350). Banco con `configs/evaluation_v4pre.yaml`.
+
+### Radiografía aguas arriba: qué cambió de verdad en este tramo
+
+| señal (sin tracking) | v3 | v4pre |
+|---|---|---|
+| recall de detección vs GT (umbral prof.) | 0.724 | 0.728 |
+| recall en el fondo (my>45) | 0.598 | 0.607 |
+| error de localización mediana, my 51+ | 1.18 m (p90 2.32) | 1.16 m (p90 2.45) |
+| dets sin GT por frame | 6.6 | 6.4 |
+| tracklets Etapa A (min_frames=3) | 309 (longitud p90 18) | **212 (longitud p90 30)** |
+| obs en tracklets ≥30 frames | 49 % | **60 %** |
+
+**Hallazgo honesto:** la subida de mAP50 NO se traduce en este tramo en
+más recall ni en menos ruido de localización (el techo diagnosticado del
+fondo sigue intacto). Lo que SÍ cambia es la **consistencia temporal**:
+las mismas detecciones forman tracklets más largos y menos parpadeantes.
+Esa es la palanca que desbloquea la interpolación (ver más abajo).
+
+### Perfiles v3 vs v4pre (banco completo)
+
+| métrica | oficial v3 | oficial v4pre | candidato v3 | candidato v4pre |
+|---|---|---|---|---|
+| nº identidades | 89 | 82 | 58 | 52 |
+| cobertura colectiva | 0.184 | 0.141 | **0.456** | **0.453** |
+| IDF1 (propia, umbral prof.) | 0.229 | 0.158 | 0.330 | 0.334 |
+| IDSW / tasa | 130 / — | 114 / — | 512 / 0.341 | 508 / 0.339 |
+| recall/frame | 0.259 | 0.188 | 0.677 | 0.675 |
+| HOTA (TrackEval) | 0.106 | 0.056 | 0.171 | 0.157 |
+| quimeras | — | — | 29/47 | 24/41 |
+| accuracy equipos campo / porteros | 0.559 / 1.000 | 0.621 / 1.000 | 0.654 / 1.000 | 0.750 / 1.000 |
+
+- El **oficial EMPEORA** con v4pre: con min_frames=3 entran un 27 % menos
+  de observaciones (2.840 vs 3.869) — menos tracklets pero más largos; el
+  perfil goloso vive de la masa de fragmentos y la pierde.
+- El **candidato queda igual** en cobertura (0.453 vs 0.456) con quimeras
+  algo mejores (24/41 vs 29/47). El candidato sigue siendo el default.
+
+### Auditoría del fit de equipos (el OJO prioritario: 0 'otro', A/B 2:1)
+
+Causa raíz (no es el bug L1 de julio): con las features v4pre el barrido
+auto elige **umbral de fusión 1.00 → exactamente 2 meta-grupos
+(A=2054/B=1068, otro=0)**. Sin masa 'otro' en el fit no hay prototipo
+'otro', y `predict_color` no puede devolver 'otro' NUNCA → CSV sin
+inclasificables y desequilibrio 2:1 (el grupo A absorbe la masa dudosa).
+Con v3 la masa 'otro' cercana era pequeña (126) y no mordía; el v4pre
+recorta más jugadores cerca (3.122 vs 2.601) y la masa dudosa real es
+~805 features.
+
+¿Eligió mal el barrido? Medido con el candidato v4pre:
+
+| fit | etiquetas | cobertura | acc. campo | contaminación B→A |
+|---|---|---|---|---|
+| auto (u=1.00, sin 'otro') | 32A/16B | **0.453** | 0.750 | 9/22 ids |
+| forzado u=0.85 (equipos 1249/1068 + otro 805) | 19A/16B/13otro | 0.414 | 0.636 | 4 (y 5 B→otro) |
+| fit 0.85 pero prediciendo sin cajón 'otro' | 32A/16B | 0.455 | 0.750 | 9/22 ids |
+
+- **Por cobertura (criterio de producto) el auto NO eligió mal**: forzar
+  el cajón 'otro' pierde 4 pts de cobertura (excluye masa mayoritariamente
+  correcta). El empate 0.453/0.455 con prototipos limpios demuestra que la
+  absorción no contamina los prototipos.
+- **La contaminación B→A es real pero NO es del fit**: las 9 identidades
+  B etiquetadas A son 6 quimeras (votos GT mezclados A/B — no existe
+  etiqueta correcta) y 3 identidades del fondo con 0 recortes cercanos
+  (sin señal de color). Persisten idénticas con cualquier umbral.
+- **Decisión: el fit auto se mantiene.** Punto abierto de producto: con
+  0 % 'otro' el banner de transparencia del informe pierde sentido en
+  este tramo (no hay excluidos); el coste real es que el heatmap de A
+  arrastra posiciones de quimeras. Se re-evaluará con el v4 definitivo.
+
+### Re-apertura de variantes aparcadas (candidato v4pre como base)
+
+| variante | nIds | IDF1 | IDSW | tasa | recall | cobertura | quimeras |
+|---|---|---|---|---|---|---|---|
+| candidato v4pre (base) | 52 | 0.334 | 508 | 0.339 | 0.675 | 0.453 | 24/41 |
+| **3a interpolación (max_hueco 6 s)** | 52 | 0.227 | 617 | **0.320** | **0.869** | **0.566** | 36/46 |
+| dedup dos niveles my>45 (2.0-3.0 m) | 50-51 | 0.334 | 493-505 | 0.331 | 0.672 | 0.454 | 23/39 |
+| 3k veto de firmas en el cosido | 50 | 0.317 | 549 | 0.361 | 0.685 | 0.467 | 27/42 |
+| 3j excl. co-observación (k=3-5) | 80-81 | 0.278 | 661 | 0.413 | 0.722 | 0.478 | 36/61 |
+| 3a + dedup 3.0 (combo) | 50 | 0.235 | 607 | 0.317 | 0.864 | 0.566 | 34/44 |
+
+**Atribución de 3a (la clave del salto):** la misma interpolación sobre
+v3 sube la cobertura menos (0.456→0.532) y **EMPEORA la tasa**
+(0.341→0.356 — por eso se rechazó en su día); sobre v4pre la cobertura
+sube +0.113 (0.453→0.566) y la tasa **BAJA** (0.339→0.320). El desbloqueo
+es del modelo (tracklets más largos → huecos que se rellenan sobre
+identidades correctas), no del criterio de medida.
+
+**Decisiones (criterio: cobertura manda + tasa IDSW no empeora):**
+- **3a interpolación: ADOPTADA.** +11 pts de cobertura con la tasa
+  bajando. Contras documentados: IDF1 posicional baja (0.334→0.227, las
+  posiciones interpoladas heredan los errores de identidad) y las
+  quimeras suben (24→36) — el CSV gana continuidad, no pureza de
+  identidad.
+- **dedup dos niveles: NEUTRO otra vez (off).** Y el combo 3a+dedup solo
+  añade mejoras marginales (tasa 0.320→0.317, quimeras 36→34): fuera por
+  disciplina de una-variante.
+- **3k y 3j: RECHAZADAS de nuevo** — suben cobertura (0.467/0.478) pero
+  la tasa empeora (0.361/0.413). El ruido de las señales por fragmento
+  sigue por encima del umbral útil también con v4pre.
+
+### Adopción y cableado
+
+- `configs/tracking.yaml`: `interpolacion.activa: true` (la aplican banco
+  y processor DESPUÉS del perfil; produce trayectorias, no tracklets).
+- `src/tracking_data/processor.py`: `exportar_posiciones` acepta
+  `trayectorias` y el meta lleva `"interpolacion": true`.
+- `configs/processor.yaml`: cachés por defecto → v4pre.
+- CSV vigente regenerado: **22.680 posiciones** (9.927 sin interpolar),
+  51 identidades, reparto A/B 2.2:1 y 0 'otro' (auditado arriba).
+- Banco visual: `outputs/replay_v4pre.html` (contra `outputs/replay.html`
+  del v3 para la comparación).
+
+**Aprendizaje del salto:** un mejor detector no mueve las métricas de
+tracking por la vía esperada (recall/ruido iguales en este tramo), pero
+sí por una lateral: la consistencia temporal. La primera variante de
+post-procesado que nunca había pagado (la interpolación, rechazada en julio) paga en
+cuanto los fragmentos de debajo son estables. Prioridad siguiente: v4
+definitivo y re-medir el ruido de localización del fondo, que sigue
+siendo el techo de IDF1/quimeras.

@@ -47,8 +47,10 @@ campo_m:
 
 rutas:
   video: data/raw/partido.mp4                      # solo modo full
-  cache: data/tracking/cache_detecciones_min5_60s.pkl
-  cache_colores: data/tracking/cache_colores_min5_60s.pkl
+  # Cachés del modelo v4pre (mAP50 ~0.90; validados 08-ago-2026). Los del
+  # v3 (cache_*_min5_60s.pkl) quedan como referencia histórica del banco.
+  cache: data/tracking/cache_detecciones_v4pre.pkl
+  cache_colores: data/tracking/cache_colores_v4pre.pkl
   homografia: data/calibracion/homografia.npy
   salida_csv: data/tracking/posiciones_v2.csv
   salida_meta: data/tracking/posiciones_v2_meta.json

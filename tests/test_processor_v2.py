@@ -94,6 +94,46 @@ def test_collective_consume_el_csv_nuevo(salida_oficial):
     assert len(m["por_equipo"]) == 2
 
 
+def test_exportar_posiciones_con_trayectorias(tmp_path):
+    """Con trayectorias (3a adoptada), el CSV incluye las interpoladas."""
+    import numpy as np
+
+    from src.tracking.field_tracker import Tracklet
+    from src.tracking_data.processor import exportar_posiciones
+
+    # Una identidad con 2 observaciones reales y un hueco de 2 frames
+    tr = Tracklet(1, 0.0, np.array([10.0, 10.0]), 0, 100)
+    tr.anadir(0.36, np.array([13.0, 10.0]), 0, 109)
+    identidades = [[tr]]
+    datos = {"fps": 25.0, "sample": 3, "wh": (100, 100), "cache": []}
+    cfg = {
+        "campo_m": {"largo": 105.0, "ancho": 68.0, "margen": 8.0},
+        "tracking": {"perfil": "candidato"},
+        "rutas": {
+            "homografia": "data/calibracion/homografia.npy",
+            "salida_csv": str(tmp_path / "pos.csv"),
+            "salida_meta": str(tmp_path / "meta.json"),
+        },
+    }
+    trayectorias = [
+        [
+            (100, np.array([10.0, 10.0]), True),
+            (103, np.array([11.0, 10.0]), False),  # interpolada
+            (106, np.array([12.0, 10.0]), False),  # interpolada
+            (109, np.array([13.0, 10.0]), True),
+        ]
+    ]
+    df_crudo = exportar_posiciones(identidades, {1: "A"}, datos, cfg)
+    assert len(df_crudo) == 2
+    df_interp = exportar_posiciones(
+        identidades, {1: "A"}, datos, cfg, trayectorias=trayectorias
+    )
+    assert len(df_interp) == 4  # 2 reales + 2 interpoladas
+    assert df_interp["id_jugador"].nunique() == 1
+    meta = json.loads(Path(cfg["rutas"]["salida_meta"]).read_text())
+    assert meta["interpolacion"] is True
+
+
 def test_flujo_legacy_sigue_disponible():
     """El fallback viejo no se ha roto: importable y con su firma."""
     from src.tracking_data.processor import process_video

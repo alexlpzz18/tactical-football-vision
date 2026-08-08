@@ -529,43 +529,83 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             identidades, colores, clasificador, cfg_equipos
         )
 
-    return exportar_posiciones(identidades, equipos, datos, cfg)
+    # Interpolación de huecos (3a, adoptada con el modelo v4pre): rellena
+    # los huecos dentro de cada identidad ANTES de exportar. Se aplica
+    # después del perfil porque produce trayectorias, no tracklets.
+    trayectorias = None
+    cfg_interp = cfg_tracking.get("interpolacion", {})
+    if cfg_interp.get("activa", False):
+        from src.tracking.interpolacion import interpolar_identidades
+
+        frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
+        trayectorias = interpolar_identidades(
+            identidades, frames_ts, cfg_interp["max_hueco"]
+        )
+
+    return exportar_posiciones(
+        identidades, equipos, datos, cfg, trayectorias=trayectorias
+    )
 
 
 def exportar_posiciones(
-    identidades, equipos: dict[int, str], datos: dict, cfg: dict
+    identidades,
+    equipos: dict[int, str],
+    datos: dict,
+    cfg: dict,
+    trayectorias=None,
 ) -> pd.DataFrame:
     """Escribe el CSV de posiciones y el meta JSON (formato compatible).
 
     Columnas: frame, tiempo_s, id_jugador, equipo (0=A, 1=B, 2=otro;
     porteros con su equipo) y etiqueta (A/B/portero_A/portero_B/otro).
+
+    Args:
+        trayectorias: salida de interpolar_identidades (una lista de
+            (frame_idx, pos, es_real) por identidad, en el MISMO orden que
+            `identidades`). Si se pasa, el CSV sale de las trayectorias
+            (posiciones reales + interpoladas); si no, de los tracklets.
     """
     fps = datos["fps"]
     largo, ancho = cfg["campo_m"]["largo"], cfg["campo_m"]["ancho"]
     margen = cfg["campo_m"]["margen"]
 
+    # Observaciones (frame, pos) por identidad: interpoladas o crudas
+    if trayectorias is not None:
+        observaciones = [
+            [(frame_idx, pos) for frame_idx, pos, _es_real in tray]
+            for tray in trayectorias
+        ]
+    else:
+        observaciones = [
+            [
+                (frame_idx, pos)
+                for tracklet in identidad
+                for pos, (frame_idx, _det) in zip(tracklet.pos, tracklet.det_idxs)
+            ]
+            for identidad in identidades
+        ]
+
     filas = []
-    for id_identidad, identidad in enumerate(identidades, start=1):
+    for id_identidad, obs_identidad in enumerate(observaciones, start=1):
         etiqueta = equipos.get(id_identidad, "otro")
         entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
-        for tracklet in identidad:
-            for pos, (frame_idx, _det) in zip(tracklet.pos, tracklet.det_idxs):
-                mx, my = float(pos[0]), float(pos[1])
-                if not (-margen <= mx <= largo + margen):
-                    continue
-                if not (-margen <= my <= ancho + margen):
-                    continue
-                filas.append(
-                    {
-                        "frame": int(frame_idx),
-                        "tiempo_s": round(frame_idx / fps, 2),
-                        "id_jugador": id_identidad,
-                        "equipo": entero,
-                        "etiqueta": etiqueta,
-                        "x_m": round(mx, 2),
-                        "y_m": round(my, 2),
-                    }
-                )
+        for frame_idx, pos in obs_identidad:
+            mx, my = float(pos[0]), float(pos[1])
+            if not (-margen <= mx <= largo + margen):
+                continue
+            if not (-margen <= my <= ancho + margen):
+                continue
+            filas.append(
+                {
+                    "frame": int(frame_idx),
+                    "tiempo_s": round(frame_idx / fps, 2),
+                    "id_jugador": id_identidad,
+                    "equipo": entero,
+                    "etiqueta": etiqueta,
+                    "x_m": round(mx, 2),
+                    "y_m": round(my, 2),
+                }
+            )
     df = pd.DataFrame(filas).sort_values(["frame", "id_jugador"])
 
     Path(cfg["rutas"]["salida_csv"]).parent.mkdir(parents=True, exist_ok=True)
@@ -585,6 +625,7 @@ def exportar_posiciones(
         # Campos nuevos del pipeline v2
         "pipeline_version": "v2",
         "perfil_tracking": cfg["tracking"]["perfil"],
+        "interpolacion": trayectorias is not None,
         "n_identidades": len(identidades),
         "equipos": {
             etiqueta: sum(1 for e in equipos.values() if e == etiqueta)
