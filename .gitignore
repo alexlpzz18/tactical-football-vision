@@ -33,7 +33,12 @@ outputs/
 notebooks/
 
 # Imágenes de calibración (pesadas, van en Drive/DVC)
+# Frames de calibración (pesan y viven en Drive). El JSON de clics y la
+# homografía SÍ se versionan: son la calibración del campo, no un dato.
 data/calibracion/*.png
+data/calibracion/*.jpg
+data/calibracion_benja/*.png
+data/calibracion_benja/*.jpg
 
 # Modelos entrenados (van por DVC, no a GitHub)
 *.pt

@@ -1096,3 +1096,77 @@ de 20 líneas y la otra escondía un bug de unidades que ninguna de las dos
 predecía. Medir primero las dos y solo después tocar código evitó
 implementar una corrección de piernas que habría añadido un parámetro
 libre para compensar ruido.
+
+---
+
+## Caso nuevo: campo de FÚTBOL 7 (benjamines) — 08-ago-2026
+
+Segundo caso de uso, **aditivo**: cámara normal (sin distorsión) detrás de
+portería, campo de F7. Todo lo de Villaviciosa (modelo F11 100×64,
+homografía, cachés, GT, banco y configs) queda intacto; el F7 se
+selecciona por config y usa sus propios archivos.
+
+### Modelo de campo parametrizable
+
+`src/campo_modelo.py` saca la geometría a datos: un `ModeloCampo`
+(nombre, largo, ancho) + unas `MarcasReglamentarias` (área, penalti,
+círculo, portería). La distinción importante es **qué es reglamento y qué
+es medida**: las marcas interiores las fija la modalidad y no dependen del
+tamaño del campo — son justo las que permiten auditar la escala—, mientras
+que largo y ancho son estimaciones hasta que se miden.
+
+| | F11 (IFAB) | F7 (Fed. Madrid) |
+|---|---|---|
+| área (ancho × profundidad) | 40,32 × 16,5 | **26 × 12** |
+| penalti | 11 | **9** |
+| círculo (radio) | 9,15 | **6** |
+| portería | 7,32 | **6** |
+| dimensiones | 100 × 64 (calibrado) | 62 × 40 (estimado) |
+
+Los puntos clicables se **generan del modelo** en vez de estar
+hardcodeados: centro, círculo (4 puntos), medios de banda, penaltis,
+esquinas interiores de área, cortes del área con la línea de fondo,
+postes y esquinas — 25 puntos para cualquier campo. `marcar_puntos.py` y
+`calcular_homografia.py` aceptan `--campo f7` o `--config`, con los
+**defaults del F11 sin cambios** (rutas y comportamiento de siempre).
+
+Los 15 puntos históricos del F11 salen del modelo con la coordenada
+idéntica al decimal — hay un test que lo fija contra la lista original y
+otro que comprueba que el JSON de clics de Villaviciosa sigue encajando.
+El modelo añade 10 puntos opcionales (círculo horizontal, cortes de área
+con el fondo, postes) que van justo en la dirección que pedía la auditoría
+de ayer: más clics repartidos por el encuadre.
+
+### Auditoría de escala generalizada
+
+`scripts/auditar_escala.py` aplica a cualquier modelo el método que
+destapó el problema del F11: proyectar los clics, medir las marcas
+reglamentarias y reportar el error **por eje**. Corriéndolo sobre
+Villaviciosa reproduce los números de ayer (longitudinal 0,7 % de error
+medio, transversal 11,5 %; ancho medido 67,0 m vs 64 asumidos) y ahora
+además separa los dos diagnósticos posibles: error concentrado en un eje =
+dimensión mal; error que cambia con la posición en la imagen = distorsión
+de lente, que cambiar las medidas NO arregla.
+
+### Física de la cámara tras portería (medida, no estimada)
+
+Ensayo con cámara sintética equivalente (3 m de altura, 12 m tras la
+portería, campo 62×40):
+
+| distancia a cámara | m/píxel | factor |
+|---|---|---|
+| 15 m (área cercana) | 0.062 | 1× |
+| 32 m (medio campo) | 0.282 | 4,5× |
+| 57 m (área lejana) | 0.888 | 14× |
+| 71 m (fondo) | 1.373 | **22×** |
+
+**La mitad lejana ocupa el 14 % de los píxeles que ocupa la cercana.** Con
+ruido de clic de 2 px, el error de calibración es 0,27 m en la mitad
+cercana y 0,94 m en la lejana. Es física de la proyección: el factor va
+con el cuadrado de la distancia. Consecuencias registradas en
+`data/calibracion_benja/README.md`: saltar los puntos del fondo al marcar,
+recalibrar los umbrales por profundidad para este campo y asumir que el
+análisis será progresivamente peor con la distancia.
+
+A favor de este caso: **sin distorsión de lente**, así que se evita el
+residuo radial que impide cuadrar círculo y áreas en Villaviciosa.
