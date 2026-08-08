@@ -29,6 +29,7 @@ import yaml  # noqa: E402
 from scipy.ndimage import gaussian_filter  # noqa: E402
 
 from src.campo import ANCHO_M, LARGO_M  # noqa: E402
+from src.campo_modelo import MODELO_F11, ModeloCampo  # noqa: E402
 from src.metrics.collective import compute_collective_metrics  # noqa: E402
 from src.report.metricas_informe import (  # noqa: E402
     calcular_metricas_equipo,
@@ -76,15 +77,14 @@ def cargar_catalogo(ruta: Path = RUTA_CATALOGO) -> dict:
 # ────────────────────────── gráficos (PNG base64) ──────────────────────────
 
 
-def _heatmap_png(
-    df_equipo, largo, ancho, colormap, celdas_por_metro=0.5, sigma_celdas=1.6
-):
+def _heatmap_png(df_equipo, modelo, colormap, celdas_por_metro=0.5, sigma_celdas=1.6):
     """Mapa de calor suavizado de un equipo → PNG en base64.
 
     Rejilla fina (2 m por celda) + filtro gaussiano + interpolación
     bilineal: presencia continua, sin celdas duras. Intensidad RELATIVA
     al máximo del propio equipo.
     """
+    largo, ancho = modelo.largo, modelo.ancho
     nx = max(int(largo * celdas_por_metro), 10)
     ny = max(int(ancho * celdas_por_metro), 8)
     rejilla, _, _ = np.histogram2d(
@@ -108,7 +108,7 @@ def _heatmap_png(
         vmin=0,
         vmax=1,
     )
-    _dibujar_lineas_campo(ax, largo, ancho)
+    _dibujar_lineas_campo(ax, modelo)
     ax.set_xlim(-2, largo + 2)
     ax.set_ylim(ancho + 2, -2)
     ax.set_xticks([])
@@ -146,22 +146,37 @@ def _basculacion_png(metricas_por_equipo, ancho, t_min, t_max):
     return _fig_a_base64(fig, "white")
 
 
-def _dibujar_lineas_campo(ax, largo, ancho):
-    """Líneas reglamentarias del campo sobre el heatmap (en metros)."""
+def _dibujar_lineas_campo(ax, modelo):
+    """Líneas del campo sobre el heatmap, DERIVADAS del modelo.
+
+    Antes estaban hardcodeadas a F11 (círculo 9,15, área 16,5×40,32): en
+    un campo de F7 dibujaban un campo que no era el del partido.
+    """
     blanco = dict(color="white", lw=1.3, alpha=0.9)
-    ax.plot([0, largo, largo, 0, 0], [0, 0, ancho, ancho, 0], **blanco)
-    ax.plot([largo / 2, largo / 2], [0, ancho], **blanco)
-    ax.add_patch(plt.Circle((largo / 2, ancho / 2), 9.15, fill=False, **blanco))
-    for x0, direccion in ((0, 1), (largo, -1)):
-        for profundo, mitad in ((16.5, 20.16), (5.5, 9.16)):
-            xs = [x0, x0 + direccion * profundo, x0 + direccion * profundo, x0]
-            ys = [
-                ancho / 2 - mitad,
-                ancho / 2 - mitad,
-                ancho / 2 + mitad,
-                ancho / 2 + mitad,
-            ]
-            ax.plot(xs, ys, **blanco)
+    geo = modelo.geometria_dibujo()
+    for (x1, y1), (x2, y2) in geo["lineas"]:
+        ax.plot([x1, x2], [y1, y2], **blanco)
+    for circulo in geo["circulos"]:
+        ax.add_patch(
+            plt.Circle(
+                (circulo["cx"], circulo["cy"]), circulo["r"], fill=False, **blanco
+            )
+        )
+    for arco in geo["arcos"]:
+        angulos = np.linspace(arco["desde"], arco["hasta"], 24)
+        ax.plot(
+            arco["cx"] + arco["r"] * np.cos(angulos),
+            arco["cy"] + arco["r"] * np.sin(angulos),
+            **blanco,
+        )
+    for x, y in geo["puntos"]:
+        ax.plot([x], [y], marker="o", markersize=2.2, color="white", alpha=0.9)
+    for p in geo["porterias"]:
+        ax.plot(
+            [p["x"], p["x"] + p["ancho"], p["x"] + p["ancho"], p["x"]],
+            [p["y"], p["y"], p["y"] + p["alto"], p["y"] + p["alto"]],
+            **blanco,
+        )
 
 
 def _fig_a_base64(fig, color_fondo):
@@ -258,14 +273,27 @@ def _definiciones(catalogo):
 def generar_informe_v2(
     csv_path: str | Path,
     salida_html: str | Path,
-    largo: float = LARGO_M,
-    ancho: float = ANCHO_M,
+    largo: float | None = None,
+    ancho: float | None = None,
     partido: str = "Partido",
+    modelo: "ModeloCampo | None" = None,
     categoria: str = "fútbol base",
     con_ia: bool = False,
     ruta_catalogo: Path = RUTA_CATALOGO,
 ) -> Path:
     """Genera el informe v2 (HTML autocontenido) desde el CSV de posiciones."""
+    # El MODELO manda: de él salen las dimensiones y las marcas que se
+    # pintan. Sin modelo, el F11 de Villaviciosa con las dimensiones de
+    # src/campo.py (comportamiento histórico); largo/ancho sueltos siguen
+    # aceptándose y ajustan el modelo.
+    modelo = modelo or MODELO_F11.con_dimensiones(LARGO_M, ANCHO_M)
+    if largo is not None or ancho is not None:
+        modelo = modelo.con_dimensiones(
+            largo if largo is not None else modelo.largo,
+            ancho if ancho is not None else modelo.ancho,
+        )
+    largo, ancho = modelo.largo, modelo.ancho
+
     catalogo = cargar_catalogo(ruta_catalogo)
     params = catalogo.get("parametros", {})
 
@@ -318,7 +346,7 @@ def generar_informe_v2(
         met = metricas_eq[nombre]
         colormap, acento = ESTILO_EQUIPO[nombre]
         png = _heatmap_png(
-            df[df["equipo"] == (0 if nombre == "A" else 1)], largo, ancho, colormap
+            df[df["equipo"] == (0 if nombre == "A" else 1)], modelo, colormap
         )
         centroide_txt = f"({eq['centroide']['x_m']:.0f}, {eq['centroide']['y_m']:.0f})"
         sin_orientacion = contextos[nombre].x_porteria is None

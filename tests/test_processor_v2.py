@@ -228,16 +228,45 @@ def test_dimensiones_del_campo_coherentes_en_todo_el_sistema():
     """
     import inspect
 
+    import pandas as pd
+
     from src.campo import ANCHO_M, LARGO_M
     from src.metrics.collective import FIELD_LENGTH, FIELD_WIDTH
     from src.report.informe_v2 import generar_informe_v2
     from src.report.replay_tactico import generar_replay
 
     assert (FIELD_LENGTH, FIELD_WIDTH) == (LARGO_M, ANCHO_M)
+
+    # Desde que el campo es parametrizable, el default ya no es un número
+    # suelto sino el MODELO: se comprueba que el modelo por defecto trae
+    # las dimensiones de src/campo.py, que es lo que de verdad importa.
     for funcion in (generar_replay, generar_informe_v2):
         firma = inspect.signature(funcion).parameters
-        assert firma["largo"].default == LARGO_M, funcion.__name__
-        assert firma["ancho"].default == ANCHO_M, funcion.__name__
+        assert firma["modelo"].default is None, funcion.__name__
+        assert firma["largo"].default is None, funcion.__name__
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ruta = Path(tmp) / "pos.csv"
+        pd.DataFrame(
+            [
+                dict(
+                    frame=100 + 3 * k,
+                    tiempo_s=round(0.12 * k, 2),
+                    id_jugador=1,
+                    equipo=0,
+                    etiqueta="A",
+                    x_m=50.0,
+                    y_m=32.0,
+                    es_real=1,
+                )
+                for k in range(40)
+            ]
+        ).to_csv(ruta, index=False)
+        html = generar_replay(ruta, Path(tmp) / "r.html").read_text()
+        campo = json.loads(html.split("const CAMPO = ")[1].split(";\n")[0])
+        assert (campo["largo"], campo["ancho"]) == (LARGO_M, ANCHO_M)
 
     with open("configs/processor.yaml") as f:
         cfg = yaml.safe_load(f)

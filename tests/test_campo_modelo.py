@@ -379,3 +379,157 @@ def test_tracking_del_benja_ajusta_lo_que_depende_del_campo():
     # Lo que es físico (velocidad) o temporal (hueco) sí se hereda
     assert benja["corte_velocidad"]["v_max"] == f11["corte_velocidad"]["v_max"]
     assert benja["interpolacion"]["max_hueco"] == f11["interpolacion"]["max_hueco"]
+
+
+# ── dibujo del campo desde el modelo ──────────────────────────────────
+
+
+def test_geometria_dibujo_f7_no_tiene_medidas_de_f11():
+    """Un campo de F7 se pinta con SU círculo y SUS áreas."""
+    geo = MODELO_F7.geometria_dibujo()
+    assert geo["largo"] == 62.0 and geo["ancho"] == 40.0
+    assert geo["circulos"][0]["r"] == 6.0  # no 9.15
+    assert geo["circulos"][0]["cx"] == 31.0
+    # Penaltis a 9 m de cada fondo (más el punto central)
+    xs_puntos = sorted(x for x, _y in geo["puntos"])
+    assert xs_puntos == pytest.approx([9.0, 31.0, 53.0])
+    # Porterías de 6 m
+    assert geo["porterias"][0]["alto"] == 6.0
+    # F7 no tiene área pequeña: solo las líneas del área grande
+    assert MODELO_F7.marcas.area_pequena_ancho is None
+    ys_lineas = {round(y, 2) for seg in geo["lineas"] for _x, y in seg}
+    assert 7.0 in ys_lineas and 33.0 in ys_lineas  # área 26 m de ancho
+    assert 9.16 not in ys_lineas  # el área pequeña del F11 no aparece
+
+
+def test_geometria_dibujo_f11_conserva_sus_marcas():
+    geo = MODELO_F11.geometria_dibujo()
+    assert geo["circulos"][0]["r"] == 9.15
+    assert MODELO_F11.marcas.area_pequena_ancho == 18.32
+    xs_puntos = sorted(x for x, _y in geo["puntos"])
+    assert xs_puntos == pytest.approx([11.0, 50.0, 89.0])
+    assert geo["porterias"][0]["alto"] == pytest.approx(7.32)
+
+
+def test_geometria_es_serializable_para_el_replay():
+    """El replay embebe la geometría como JSON en el HTML."""
+    json.dumps(MODELO_F7.geometria_dibujo())
+    json.dumps(MODELO_F11.geometria_dibujo())
+
+
+def test_todo_lo_dibujado_cae_dentro_del_campo():
+    for modelo in (MODELO_F11, MODELO_F7):
+        geo = modelo.geometria_dibujo()
+        for seg in geo["lineas"]:
+            for x, y in seg:
+                assert -1e-9 <= x <= modelo.largo + 1e-9
+                assert -1e-9 <= y <= modelo.ancho + 1e-9
+        for x, y in geo["puntos"]:
+            assert 0 <= x <= modelo.largo and 0 <= y <= modelo.ancho
+
+
+def test_replay_del_benja_pinta_el_campo_f7(tmp_path):
+    """El HTML del replay lleva la geometría F7, no la del F11."""
+    import pandas as pd
+
+    from src.report.replay_tactico import generar_replay
+
+    filas = [
+        dict(
+            frame=100 + 3 * k,
+            tiempo_s=round(0.12 * k, 2),
+            id_jugador=1,
+            equipo=0,
+            etiqueta="A",
+            x_m=20.0,
+            y_m=20.0,
+            es_real=1,
+        )
+        for k in range(40)
+    ]
+    ruta = tmp_path / "benja.csv"
+    pd.DataFrame(filas).to_csv(ruta, index=False)
+
+    salida = generar_replay(ruta, tmp_path / "r.html", modelo=MODELO_F7)
+    html = salida.read_text()
+    campo = json.loads(html.split("const CAMPO = ")[1].split(";\n")[0])
+    assert campo["largo"] == 62.0 and campo["ancho"] == 40.0
+    assert campo["circulos"][0]["r"] == 6.0
+    assert "const LARGO = 62.0" in html
+    # El dibujo ya no lleva constantes del F11 en el JS
+    assert "9.15*ESCALA" not in html
+    assert "20.16" not in html
+
+
+def test_informe_del_benja_usa_las_dimensiones_f7(tmp_path):
+    """El informe calcula tercios/pasillos sobre el campo del modelo."""
+    import pandas as pd
+
+    from src.report.informe_v2 import generar_informe_v2
+
+    filas = []
+    for k in range(40):
+        t = round(0.12 * k, 2)
+        filas.append(
+            dict(
+                frame=100 + 3 * k,
+                tiempo_s=t,
+                id_jugador=1,
+                equipo=0,
+                etiqueta="A",
+                x_m=15.0,
+                y_m=20.0,
+                es_real=1,
+            )
+        )
+        filas.append(
+            dict(
+                frame=100 + 3 * k,
+                tiempo_s=t,
+                id_jugador=2,
+                equipo=1,
+                etiqueta="B",
+                x_m=45.0,
+                y_m=20.0,
+                es_real=1,
+            )
+        )
+    ruta = tmp_path / "benja.csv"
+    pd.DataFrame(filas).to_csv(ruta, index=False)
+
+    salida = generar_informe_v2(ruta, tmp_path / "i.html", modelo=MODELO_F7)
+    assert salida.exists()  # el heatmap se dibuja sobre 62x40 sin reventar
+
+
+def test_los_defaults_siguen_siendo_los_del_f11(tmp_path):
+    """Sin --campo, replay e informe pintan Villaviciosa como siempre."""
+    import inspect
+
+    import pandas as pd
+
+    from src.campo import ANCHO_M, LARGO_M
+    from src.report.informe_v2 import generar_informe_v2
+    from src.report.replay_tactico import generar_replay
+
+    for funcion in (generar_replay, generar_informe_v2):
+        assert inspect.signature(funcion).parameters["modelo"].default is None
+
+    filas = [
+        dict(
+            frame=100 + 3 * k,
+            tiempo_s=round(0.12 * k, 2),
+            id_jugador=1,
+            equipo=0,
+            etiqueta="A",
+            x_m=50.0,
+            y_m=32.0,
+            es_real=1,
+        )
+        for k in range(40)
+    ]
+    ruta = tmp_path / "v.csv"
+    pd.DataFrame(filas).to_csv(ruta, index=False)
+    html = generar_replay(ruta, tmp_path / "r.html").read_text()
+    campo = json.loads(html.split("const CAMPO = ")[1].split(";\n")[0])
+    assert (campo["largo"], campo["ancho"]) == (LARGO_M, ANCHO_M)
+    assert campo["circulos"][0]["r"] == 9.15

@@ -44,6 +44,9 @@ class MarcasReglamentarias:
     penalti: float  # distancia del punto de penalti a la línea de fondo
     circulo_radio: float  # radio del círculo central
     porteria_ancho: float  # distancia entre postes
+    # Área pequeña: existe en F11, no en el F7 de Madrid (None = no dibujar)
+    area_pequena_ancho: float | None = None
+    area_pequena_profundidad: float | None = None
 
 
 # Reglamento F11 (IFAB): área 40.32 x 16.5, penalti a 11, círculo r=9.15,
@@ -54,6 +57,8 @@ MARCAS_F11 = MarcasReglamentarias(
     penalti=11.0,
     circulo_radio=9.15,
     porteria_ancho=7.32,
+    area_pequena_ancho=18.32,
+    area_pequena_profundidad=5.5,
 )
 
 # Reglamento F7 (Federación de Fútbol de Madrid): área 26 x 12, penalti a
@@ -160,6 +165,89 @@ class ModeloCampo:
             ((x_der, y_lo), (x_der, y_hi)),
             ((x_der, y_hi), (largo, y_hi)),
         ]
+
+    def geometria_dibujo(self) -> dict:
+        """Todo lo que hace falta para PINTAR el campo, en primitivas.
+
+        Sale del modelo, no de constantes: así el replay y el informe
+        dibujan el campo del partido que están mostrando (un círculo de
+        9,15 m sobre un campo de F7 delata que algo no cuadra) y el mismo
+        código sirve para las dos modalidades.
+
+        El diccionario es serializable a JSON tal cual, porque el replay
+        lo embebe en su HTML y lo dibuja en canvas.
+
+        Returns:
+            {
+              "largo", "ancho",
+              "lineas":   [[[x1,y1],[x2,y2]], ...]   segmentos rectos
+              "circulos": [{"cx","cy","r"}]          círculo central
+              "puntos":   [[x,y], ...]               centro y penaltis
+              "arcos":    [{"cx","cy","r","desde","hasta"}]  frontal del área
+              "porterias":[{"x","y","ancho","alto"}] rectángulos de portería
+            }
+        """
+        import numpy as np
+
+        largo, ancho = self.largo, self.ancho
+        m = self.marcas
+        cy = ancho / 2
+
+        lineas = [[list(p1), list(p2)] for p1, p2 in self.lineas()]
+        puntos = [[largo / 2, cy]]
+        arcos = []
+        porterias = []
+        profundidad_porteria = min(2.0, largo * 0.03)
+
+        for x0, direccion in ((0.0, 1), (largo, -1)):
+            # Área pequeña (si la modalidad la tiene)
+            if m.area_pequena_ancho and m.area_pequena_profundidad:
+                mitad = m.area_pequena_ancho / 2
+                x1 = x0 + direccion * m.area_pequena_profundidad
+                lineas.extend(
+                    [
+                        [[x0, cy - mitad], [x1, cy - mitad]],
+                        [[x1, cy - mitad], [x1, cy + mitad]],
+                        [[x1, cy + mitad], [x0, cy + mitad]],
+                    ]
+                )
+            # Punto de penalti
+            x_pen = x0 + direccion * m.penalti
+            puntos.append([x_pen, cy])
+            # Frontal del área: el trozo del círculo del penalti que sobresale
+            if m.penalti + m.circulo_radio > m.area_profundidad:
+                dentro = (m.area_profundidad - m.penalti) / m.circulo_radio
+                media_apertura = float(np.arccos(max(-1.0, min(1.0, dentro))))
+                centro_angulo = 0.0 if direccion == 1 else float(np.pi)
+                arcos.append(
+                    {
+                        "cx": x_pen,
+                        "cy": cy,
+                        "r": m.circulo_radio,
+                        "desde": centro_angulo - media_apertura,
+                        "hasta": centro_angulo + media_apertura,
+                    }
+                )
+            # Portería (hacia fuera del campo)
+            mitad_porteria = m.porteria_ancho / 2
+            porterias.append(
+                {
+                    "x": min(x0, x0 - direccion * profundidad_porteria),
+                    "y": cy - mitad_porteria,
+                    "ancho": profundidad_porteria,
+                    "alto": m.porteria_ancho,
+                }
+            )
+
+        return {
+            "largo": largo,
+            "ancho": ancho,
+            "lineas": lineas,
+            "circulos": [{"cx": largo / 2, "cy": cy, "r": m.circulo_radio}],
+            "puntos": puntos,
+            "arcos": arcos,
+            "porterias": porterias,
+        }
 
     def circulo(self, n_puntos: int = 40) -> list[tuple[float, float]]:
         """Polilínea del círculo central, para la validación visual."""

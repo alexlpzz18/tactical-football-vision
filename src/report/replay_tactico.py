@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from src.campo import ANCHO_M, LARGO_M
+from src.campo_modelo import MODELO_F11, ModeloCampo
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +102,10 @@ def _filtrar_creible(
 def generar_replay(
     csv_path: str | Path,
     salida_html: str | Path,
-    largo: float = LARGO_M,
-    ancho: float = ANCHO_M,
+    largo: float | None = None,
+    ancho: float | None = None,
     max_hueco_s: float = 3.0,
+    modelo: "ModeloCampo | None" = None,
     titulo: str = "Replay táctico",
     max_edad_interp_s: float = 0.6,
     min_vida_s: float = 2.0,
@@ -131,6 +133,17 @@ def generar_replay(
         min_vida_s: duración mínima (detecciones reales) para pintar una
             identidad.
     """
+    # El MODELO decide qué campo se pinta. Sin él, el F11 de Villaviciosa
+    # con las dimensiones de src/campo.py (comportamiento histórico);
+    # largo/ancho sueltos siguen aceptándose y ajustan el modelo.
+    modelo = modelo or MODELO_F11.con_dimensiones(LARGO_M, ANCHO_M)
+    if largo is not None or ancho is not None:
+        modelo = modelo.con_dimensiones(
+            largo if largo is not None else modelo.largo,
+            ancho if ancho is not None else modelo.ancho,
+        )
+    largo, ancho = modelo.largo, modelo.ancho
+
     df = pd.read_csv(csv_path)
     faltan = [c for c in COLUMNAS_REQUERIDAS if c not in df.columns]
     if faltan:
@@ -185,6 +198,10 @@ def generar_replay(
         .replace("__TMIN__", str(t_min))
         .replace("__TMAX__", str(t_max))
         .replace("__MAX_HUECO__", str(max_hueco_s))
+        .replace(
+            "__CAMPO__",
+            json.dumps(modelo.geometria_dibujo(), separators=(",", ":")),
+        )
     )
 
     salida_html = Path(salida_html)
@@ -261,6 +278,7 @@ _PLANTILLA = """<!DOCTYPE html>
 const DATOS = __DATOS__;
 const COLORES = __COLORES__;
 const LARGO = __LARGO__, ANCHO = __ANCHO__;
+const CAMPO = __CAMPO__;
 const TMIN = __TMIN__, TMAX = __TMAX__;
 const MAX_HUECO = __MAX_HUECO__;
 const PAD = 5;              // metros de margen alrededor del campo
@@ -277,6 +295,9 @@ const py = (y) => (y + PAD) * ESCALA;
 // Punteros por identidad para buscar el par de keyframes que envuelve a T
 const punteros = DATOS.map(() => 0);
 
+// El campo se dibuja de la GEOMETRÍA del modelo (CAMPO), no de
+// constantes: así un partido de F7 sale con su círculo de 6 m y sus
+// áreas de 26x12, y no con las medidas de un campo de F11.
 function dibujarCampo() {
   ctx.fillStyle = '#2e7d46';
   ctx.fillRect(0, 0, W, H);
@@ -285,26 +306,22 @@ function dibujarCampo() {
   for (let i = 0; i < 12; i += 2)
     ctx.fillRect(px(i * LARGO / 12), py(0), LARGO / 12 * ESCALA, ANCHO * ESCALA);
   ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
   ctx.lineWidth = 2;
-  // exterior y medio campo
-  ctx.strokeRect(px(0), py(0), LARGO * ESCALA, ANCHO * ESCALA);
-  ctx.beginPath(); ctx.moveTo(px(LARGO/2), py(0)); ctx.lineTo(px(LARGO/2), py(ANCHO)); ctx.stroke();
-  // círculo central + punto
-  ctx.beginPath(); ctx.arc(px(LARGO/2), py(ANCHO/2), 9.15*ESCALA, 0, 7); ctx.stroke();
-  ctx.beginPath(); ctx.arc(px(LARGO/2), py(ANCHO/2), 3, 0, 7); ctx.fill();
-  // áreas (16.5 x 40.32) y áreas pequeñas (5.5 x 18.32), a ambos lados
-  for (const [x0, dir] of [[0, 1], [LARGO, -1]]) {
-    ctx.strokeRect(px(Math.min(x0, x0 + dir*16.5)), py(ANCHO/2 - 20.16), 16.5*ESCALA, 40.32*ESCALA);
-    ctx.strokeRect(px(Math.min(x0, x0 + dir*5.5)), py(ANCHO/2 - 9.16), 5.5*ESCALA, 18.32*ESCALA);
-    // punto de penalti y semicírculo del área
-    const pen = x0 + dir * 11;
-    ctx.beginPath(); ctx.arc(px(pen), py(ANCHO/2), 3, 0, 7); ctx.fill();
-    ctx.beginPath();
-    ctx.arc(px(pen), py(ANCHO/2), 9.15*ESCALA, dir === 1 ? -0.93 : Math.PI - 0.93,
-            dir === 1 ? 0.93 : Math.PI + 0.93);
-    ctx.stroke();
-    // portería
-    ctx.strokeRect(px(Math.min(x0, x0 - dir*2)), py(ANCHO/2 - 3.66), 2*ESCALA, 7.32*ESCALA);
+  for (const [[x1, y1], [x2, y2]] of CAMPO.lineas) {
+    ctx.beginPath(); ctx.moveTo(px(x1), py(y1)); ctx.lineTo(px(x2), py(y2)); ctx.stroke();
+  }
+  for (const c of CAMPO.circulos) {
+    ctx.beginPath(); ctx.arc(px(c.cx), py(c.cy), c.r * ESCALA, 0, 7); ctx.stroke();
+  }
+  for (const a of CAMPO.arcos) {
+    ctx.beginPath(); ctx.arc(px(a.cx), py(a.cy), a.r * ESCALA, a.desde, a.hasta); ctx.stroke();
+  }
+  for (const [x, y] of CAMPO.puntos) {
+    ctx.beginPath(); ctx.arc(px(x), py(y), 3, 0, 7); ctx.fill();
+  }
+  for (const p of CAMPO.porterias) {
+    ctx.strokeRect(px(p.x), py(p.y), p.ancho * ESCALA, p.alto * ESCALA);
   }
 }
 
