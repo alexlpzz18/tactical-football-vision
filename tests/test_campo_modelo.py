@@ -240,3 +240,142 @@ def test_el_error_metrico_crece_con_la_profundidad():
     cerca = metros_por_pixel(modelo.largo * 0.1)
     lejos = metros_por_pixel(modelo.largo * 0.9)
     assert lejos > cerca * 5, (cerca, lejos)
+
+
+# ── áreas de portería y eje de profundidad ────────────────────────────
+
+
+def test_areas_porteria_derivadas_del_modelo_f7():
+    """En F7 el área va de x=0 a 12 y de x=50 a 62, con y de 7 a 33."""
+    areas = MODELO_F7.areas_porteria()
+    assert areas["bajo"][0] == pytest.approx((0.0, 12.0))
+    assert areas["alto"][0] == pytest.approx((50.0, 62.0))
+    assert areas["bajo"][1] == pytest.approx((7.0, 33.0))
+    assert areas["alto"][1] == areas["bajo"][1]
+
+
+def test_areas_porteria_con_margen():
+    areas = MODELO_F7.areas_porteria(margen=2.0)
+    assert areas["bajo"][0] == pytest.approx((-2.0, 14.0))
+    assert areas["alto"][0] == pytest.approx((48.0, 64.0))
+    assert areas["bajo"][1] == pytest.approx((5.0, 35.0))
+
+
+def test_regla_porteros_desde_modelo_no_usa_cortes_del_f11():
+    """El corte mx=88.5 del F11 no existe en un campo de 62 m."""
+    from src.team_classification.porteros import ReglaPorteros
+
+    regla = ReglaPorteros.desde_modelo(MODELO_F7, margen=2.0)
+    assert regla.area_mx_alto[0] == pytest.approx(48.0)
+    assert regla.area_mx_alto[1] == pytest.approx(64.0)
+    assert regla.area_mx_bajo[0] == pytest.approx(-2.0)
+    assert 88.5 not in regla.area_mx_alto  # el hardcode del F11 no aparece
+    # y el rango de ancho es el del área F7, no el 20-55 del F11
+    assert regla.area_my == pytest.approx((5.0, 35.0))
+
+
+def test_eje_profundidad_villaviciosa_es_el_ancho():
+    """Cámara en banda: la profundidad es y, y no cambia el default."""
+    from src.campo_modelo import EjeProfundidad
+
+    eje = EjeProfundidad.desde_dict(None)  # sin config = comportamiento viejo
+    assert (eje.eje, eje.creciente) == ("y", True)
+    assert eje.de((50.0, 40.0), MODELO_F11) == 40.0
+
+
+def test_eje_profundidad_benja_es_el_largo():
+    """Cámara tras la portería x=0: la profundidad es x."""
+    from src.campo_modelo import EjeProfundidad
+
+    eje = EjeProfundidad.desde_dict({"eje": "x", "creciente": True})
+    assert eje.de((50.0, 20.0), MODELO_F7) == 50.0  # lejos
+    assert eje.de((5.0, 20.0), MODELO_F7) == 5.0  # cerca
+
+
+def test_eje_profundidad_decreciente_mide_desde_la_camara():
+    """Cámara tras la portería contraria: la profundidad se invierte."""
+    from src.campo_modelo import EjeProfundidad
+
+    eje = EjeProfundidad.desde_dict({"eje": "x", "creciente": False})
+    assert eje.de((62.0, 20.0), MODELO_F7) == pytest.approx(0.0)  # pegado a cámara
+    assert eje.de((2.0, 20.0), MODELO_F7) == pytest.approx(60.0)  # al fondo
+
+
+def test_eje_profundidad_rechaza_ejes_invalidos():
+    from src.campo_modelo import EjeProfundidad
+
+    with pytest.raises(ValueError, match="eje de profundidad"):
+        EjeProfundidad.desde_dict({"eje": "z"})
+
+
+# ── los configs del benja son coherentes ──────────────────────────────
+
+
+def test_config_equipos_del_benja_es_coherente():
+    """El config del benja usa el eje y las áreas correctos para F7."""
+    import yaml
+
+    from src.team_classification.pipeline_equipos import _profundidad_configurada
+
+    with open("configs/team_classification_benja.yaml") as f:
+        cfg = yaml.safe_load(f)
+    modelo, profundidad = _profundidad_configurada(cfg)
+    assert (modelo.largo, modelo.ancho) == (62.0, 40.0)
+    assert profundidad.eje == "x"  # cámara tras portería
+    assert cfg["porteros"]["desde_modelo"] is True
+    # Los umbrales están dentro del campo (no heredados del F11)
+    assert cfg["entrenamiento"]["umbral_profundidad_m"] < modelo.largo
+    assert cfg["agregacion"]["umbral_profundidad_m"] < modelo.largo
+
+
+def test_config_equipos_del_f11_no_cambia_de_comportamiento():
+    """Sin secciones nuevas, el config viejo da el comportamiento viejo."""
+    import yaml
+
+    from src.team_classification.pipeline_equipos import _profundidad_configurada
+
+    with open("configs/team_classification.yaml") as f:
+        cfg = yaml.safe_load(f)
+    modelo, profundidad = _profundidad_configurada(cfg)
+    assert (modelo.largo, modelo.ancho) == (100.0, 64.0)
+    assert (profundidad.eje, profundidad.creciente) == ("y", True)
+    assert cfg["porteros"].get("desde_modelo", False) is False  # áreas a mano
+
+
+def test_processor_benja_tiene_las_claves_del_modo_full():
+    """El config del benja arranca en Colab sin KeyError."""
+    import yaml
+
+    from src.tracking_data.processor import _CLAVES_FULL, validar_config
+
+    with open("configs/processor_benja.yaml") as f:
+        cfg = yaml.safe_load(f)
+    validar_config(cfg, _CLAVES_FULL)  # lanza si falta alguna
+    assert cfg["modo"] == "full"
+    assert cfg["distorsion"] == {"k1": 0.0, "k2": 0.0}  # cámara sin distorsión
+    assert cfg["campo_m"] == {"largo": 62.0, "ancho": 40.0, "margen": 5.0}
+    assert "benja" in cfg["rutas"]["homografia"]
+    assert cfg["config_equipos"] == "configs/team_classification_benja.yaml"
+    # Ninguna ruta pisa a Villaviciosa
+    for ruta in cfg["rutas"].values():
+        assert "data/tracking/" not in ruta
+        assert ruta != "data/calibracion/homografia.npy"
+
+
+def test_tracking_del_benja_ajusta_lo_que_depende_del_campo():
+    """La cota de plantilla y la consolidación no pueden heredarse del F11."""
+    import yaml
+
+    with open("configs/tracking_benja.yaml") as f:
+        benja = yaml.safe_load(f)
+    with open("configs/tracking.yaml") as f:
+        f11 = yaml.safe_load(f)
+
+    # F7 son 7+7 jugadores + árbitro; con la cota del F11 (23) nunca actúa
+    assert benja["cota_plantilla"]["cota"] == 15
+    assert f11["cota_plantilla"]["cota"] == 23  # el F11 no se toca
+    # La distancia de consolidación escala con el largo del campo
+    assert benja["consolidacion"]["dist_max"] < f11["consolidacion"]["dist_max"]
+    # Lo que es físico (velocidad) o temporal (hueco) sí se hereda
+    assert benja["corte_velocidad"]["v_max"] == f11["corte_velocidad"]["v_max"]
+    assert benja["interpolacion"]["max_hueco"] == f11["interpolacion"]["max_hueco"]

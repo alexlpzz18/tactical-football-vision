@@ -176,6 +176,77 @@ class ModeloCampo:
         """Copia del modelo con otras medidas (las marcas no cambian)."""
         return replace(self, largo=largo, ancho=ancho)
 
+    def areas_porteria(
+        self, margen: float = 0.0
+    ) -> dict[str, tuple[tuple[float, float], tuple[float, float]]]:
+        """Rectángulos de las dos áreas de penalti, DERIVADOS del modelo.
+
+        Los usa la regla de porteros: una identidad cuya posición mediana
+        cae dentro de un área es el portero de ese lado. Antes estos
+        números estaban a mano en el YAML (16,5 / 88,5 / 20-55 del F11),
+        que en un campo de 62 m no significan nada.
+
+        Args:
+            margen: metros de holgura alrededor del área. Un portero sale a
+                achicar, y la mediana de su posición puede quedar algo
+                fuera del área dibujada.
+
+        Returns:
+            {"bajo": ((x_min, x_max), (y_min, y_max)), "alto": (...)},
+            donde "bajo" es el área del lado x pequeño.
+        """
+        m = self.marcas
+        cy = self.ancho / 2
+        media_area = m.area_ancho / 2
+        rango_y = (cy - media_area - margen, cy + media_area + margen)
+        return {
+            "bajo": ((-margen, m.area_profundidad + margen), rango_y),
+            "alto": (
+                (self.largo - m.area_profundidad - margen, self.largo + margen),
+                rango_y,
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class EjeProfundidad:
+    """De qué eje del campo se aleja la cámara.
+
+    No es un detalle: casi todo el sistema trata la PROFUNDIDAD de forma
+    especial (el color solo es señal de cerca, el error de localización
+    crece con la distancia, los umbrales de asociación dependen de ella).
+    Con la cámara en la banda —Villaviciosa— la profundidad es el eje
+    ANCHO; con la cámara detrás de una portería —benjamines— es el eje
+    LARGO. Dar por supuesto el eje equivocado hace que "quedarse con los
+    recortes cercanos" seleccione por una coordenada que no tiene nada
+    que ver con la distancia, y el clasificador de color colapsa (es el
+    mismo fallo que tumbó el fit en producción en julio).
+
+    Attributes:
+        eje: 'x' (largo) o 'y' (ancho).
+        creciente: True si alejarse de la cámara aumenta la coordenada.
+    """
+
+    eje: str = "y"
+    creciente: bool = True
+
+    def de(self, pos, modelo: "ModeloCampo") -> float:
+        """Distancia (m) del punto a la cámara, medida sobre su eje."""
+        valor = float(pos[0] if self.eje == "x" else pos[1])
+        if self.creciente:
+            return valor
+        limite = modelo.largo if self.eje == "x" else modelo.ancho
+        return limite - valor
+
+    @classmethod
+    def desde_dict(cls, d: dict | None) -> "EjeProfundidad":
+        if not d:
+            return cls()
+        eje = d.get("eje", "y")
+        if eje not in ("x", "y"):
+            raise ValueError(f"eje de profundidad inválido: {eje!r} (usa 'x' o 'y')")
+        return cls(eje=eje, creciente=bool(d.get("creciente", True)))
+
 
 # ─────────────────────────── modelos predefinidos ───────────────────────────
 

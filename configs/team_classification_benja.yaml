@@ -1,0 +1,90 @@
+# Clasificación de equipos del partido de BENJAMINES (fútbol 7).
+#
+# NO comparte nada con configs/team_classification.yaml (Villaviciosa,
+# F11): las áreas, el eje de profundidad y las dimensiones son distintos.
+
+# ── El campo: de aquí salen las áreas y las dimensiones ──────────────
+campo:
+  config: configs/campo_benja.yaml # 62x40, marcas F7
+
+# ── DÓNDE ESTÁ LA CÁMARA (lo más importante de este archivo) ─────────
+#
+# Casi todo el sistema trata la PROFUNDIDAD de forma especial: el color
+# solo es señal de cerca, el error de localización crece con la distancia
+# y los umbrales se expresan en metros a cámara. Con la cámara en la
+# banda (Villaviciosa) la profundidad es el eje ANCHO; aquí la cámara
+# está DETRÁS DE LA PORTERÍA x=0, así que la profundidad es el eje LARGO
+# y crece con x.
+#
+# Verificado con data/calibracion_benja/homografia_benja.npy: la parte
+# baja de la imagen (lo más cercano) cae en x≈8 m y sube hacia x grande.
+#
+# ⚠️ Si el eje fuese el equivocado, "quedarse con los recortes cercanos"
+# seleccionaría por una coordenada que no mide la distancia, y el fit del
+# clasificador colapsaría en un solo equipo (el fallo de julio-2026).
+profundidad:
+  eje: x
+  creciente: true # lejos = x grande (la cámara está en x=0)
+
+# ── Entrenamiento del clasificador de color ──────────────────────────
+#
+# Umbrales en METROS DESDE LA CÁMARA. Medido sobre la homografía del
+# benja, los metros por píxel son 0.021 (x=5), 0.059 (x=15), 0.161
+# (x=31), 0.290 (x=45) y 0.444 (x=58): la señal de color sobrevive en el
+# primer tercio y poco más.
+#
+# 25 m es el punto de partida (equivale a ~0.12 m/píxel, comparable a la
+# zona donde el color funcionaba en Villaviciosa). Si el log avisa de
+# "solo N recortes cercanos", subirlo; si el fit sale desequilibrado,
+# bajarlo. Revisa SIEMPRE en el log que los tamaños de A y B queden
+# parecidos.
+entrenamiento:
+  solo_cercanos: true
+  umbral_profundidad_m: 25.0
+  min_features: 300
+
+# Agregación por identidad: más generoso que el fit (una identidad con
+# algún recorte decente vale más que ninguno).
+agregacion:
+  solo_cercanos: true
+  umbral_profundidad_m: 35.0
+
+# ── Regla de porteros: áreas DERIVADAS del modelo F7 ─────────────────
+#
+# `desde_modelo` calcula las áreas del campo (12 m de profundidad, 26 m
+# de ancho → x 0-12 y 50-62, y 7-33) en vez de usar números a mano. Los
+# del F11 (corte en mx=88.5) no existen en un campo de 62 m.
+#
+# ⚠️ equipo_mx_alto / equipo_mx_bajo hay que AJUSTARLOS al partido: qué
+# equipo defiende cada portería en este tramo. Con la cámara tras la
+# portería x=0, "bajo" es la portería cercana a cámara.
+porteros:
+  activo: true
+  desde_modelo: true
+  margen_m: 2.0 # holgura: el portero sale a achicar
+  equipo_mx_alto: A # equipo que defiende la portería LEJANA (x=62)
+  equipo_mx_bajo: B # equipo que defiende la portería CERCANA (x=0)
+
+# ── Regla de staff: dimensiones del modelo (62x40) ───────────────────
+#
+# Sin `largo`/`ancho` explícitos, los toma del campo de arriba. Marca
+# como no-jugador a quien viva fuera del rectángulo.
+staff:
+  activo: true
+  tolerancia_m: 2.0
+  min_observaciones: 5
+
+# ── Extracción de color: igual que en el F11 (no depende del campo) ──
+clasificador_color:
+  torso_alto: [0.12, 0.45]
+  torso_ancho: [0.15, 0.85]
+  verde_h: [35, 85]
+  verde_s_min: 40
+  verde_v_min: 40
+  bins_h: 16
+  bins_s: 16
+  k_clusters: 8
+  umbral_min: 0.5
+  umbral_max: 1.3
+  umbral_paso: 0.05
+  semilla: 0

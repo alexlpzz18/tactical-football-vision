@@ -1,0 +1,107 @@
+# Procesador end-to-end del partido de BENJAMINES (fútbol 7).
+# Caso independiente: no comparte ninguna ruta con Villaviciosa (F11).
+#
+# ─────────────────────── CÓMO CORRERLO EN COLAB ───────────────────────
+#
+#   from google.colab import drive; drive.mount('/content/drive')
+#   %cd /content/tactical-football-vision
+#   !python scripts/procesar_partido.py --config configs/processor_benja.yaml
+#
+# Las rutas de abajo asumen que el repo está clonado en Colab y que los
+# archivos pesados (vídeo, modelo) vienen de Drive por enlace simbólico:
+#
+#   !mkdir -p data/raw models/weights data/calibracion_benja
+#   !ln -sf "/content/drive/MyDrive/tactical/benja/partido_benja.mp4" data/raw/
+#   !ln -sf "/content/drive/MyDrive/tactical/benja/best_v4pre.pt" models/weights/
+#
+# Si prefieres no usar enlaces, pon las rutas de Drive directamente en la
+# sección `rutas` (aceptan rutas absolutas).
+#
+# ────────────────────────────────────────────────────────────────────
+
+pipeline: nuevo
+modo: full # vídeo → cachés → CSV. En local, cambiar a desde_cache.
+
+# ── Detección (GPU) ──────────────────────────────────────────────────
+deteccion:
+  modelo: models/weights/best_v4pre.pt
+  confianza: 0.3 # el mismo filtro validado en Villaviciosa
+  max_area_caja: 0.05 # cajas > 5 % del frame → fuera (bulto, no jugador)
+  sahi:
+    filas: 2
+    columnas: 4
+    solape: 0.2
+  device: cuda
+
+# ── Distorsión: NINGUNA ──────────────────────────────────────────────
+# La cámara del benja es normal (no gran angular). Con k1=k2=0,
+# cv2.undistort es la identidad y el frame pasa tal cual — que es
+# exactamente sobre lo que se calibró la homografía.
+distorsion:
+  k1: 0.0
+  k2: 0.0
+
+# ── Muestreo ─────────────────────────────────────────────────────────
+muestreo:
+  sample_every: 3 # 1 de cada 3 frames (a 25 fps → dt=0.12 s)
+  # Tramo a procesar. RECOMENDADO para la primera pasada: un minuto,
+  # para validar la clasificación antes de gastar GPU en el partido
+  # entero. Comenta el bloque para procesarlo completo.
+  tramo:
+    min_ini: 5.0 # minuto de inicio
+    dur_seg: 60.0 # duración en segundos
+  # max_frames: 1500      # tope alternativo (manda el límite más corto)
+
+# ── Tracking ─────────────────────────────────────────────────────────
+tracking:
+  perfil: candidato # oficial | candidato (ver src/tracking/perfiles.py)
+config_tracking: configs/tracking_benja.yaml
+
+# ── Clasificación de equipos ─────────────────────────────────────────
+# ⚠️ Config PROPIA del benja: áreas de portería derivadas del modelo F7 y
+# eje de profundidad = LARGO (cámara tras portería). Usar la del F11 aquí
+# haría colapsar el clasificador.
+equipos:
+  activo: true
+config_equipos: configs/team_classification_benja.yaml
+
+# ── Campo ────────────────────────────────────────────────────────────
+# 62×40 confirmado por la auditoría de escala (19/19 puntos aceptados por
+# RANSAC, mediana 0.91 m, dimensiones dentro del ±2 %).
+#
+# El margen es 5 m (no los 8 del F11): aquí el error no viene de una
+# lente mal corregida sino de la compresión en profundidad, y un margen
+# grande dejaría entrar posiciones del fondo lejano donde 1 píxel vale
+# casi medio metro.
+campo_m:
+  largo: 62.0
+  ancho: 40.0
+  margen: 5.0
+
+rutas:
+  video: data/raw/partido_benja.mp4
+  cache: data/tracking_benja/cache_detecciones_benja.pkl
+  cache_colores: data/tracking_benja/cache_colores_benja.pkl
+  homografia: data/calibracion_benja/homografia_benja.npy
+  salida_csv: data/tracking_benja/posiciones_benja.csv
+  salida_meta: data/tracking_benja/posiciones_benja_meta.json
+# ─────────────────── QUÉ ESPERAR DE ESTE CAMPO ───────────────────────
+#
+# La cámara está baja y detrás de la portería x=0, así que el eje largo
+# se aleja del objetivo. Medido sobre la homografía de este campo:
+#
+#   x = 5 m  → 0.021 m/píxel      x = 31 m → 0.161 m/píxel
+#   x = 15 m → 0.059 m/píxel      x = 45 m → 0.290 m/píxel
+#                                 x = 58 m → 0.444 m/píxel
+#
+# Es un factor 21× entre el área cercana y la lejana, y es física de la
+# proyección, no un fallo. Implicaciones para leer los resultados:
+#
+#   - La mitad cercana (x < 30) será fiable; la lejana, progresivamente
+#     peor. El portero lejano estará mal localizado.
+#   - Los umbrales por profundidad de este campo están en
+#     team_classification_benja.yaml y son un PUNTO DE PARTIDA: hay que
+#     revisarlos con el primer tramo procesado.
+#   - configs/tracking_benja.yaml ya ajusta lo que depende del campo
+#     (cota de plantilla 15 en vez de 23, consolidación 4 m en vez de 6);
+#     el resto se hereda del F11 y se revisa tras ver el primer replay.

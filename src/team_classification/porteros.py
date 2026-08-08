@@ -46,6 +46,31 @@ class ReglaPorteros:
                 d[clave] = tuple(d[clave])
         return cls(**d)
 
+    @classmethod
+    def desde_modelo(
+        cls,
+        modelo,
+        margen: float = 2.0,
+        equipo_mx_alto: str = "A",
+        equipo_mx_bajo: str = "B",
+    ) -> "ReglaPorteros":
+        """Deriva las áreas del MODELO de campo en vez de hardcodearlas.
+
+        Los valores por defecto de esta clase son los del F11 de
+        Villaviciosa, ajustados a mano contra su ground truth. En un campo
+        de otra medida no significan nada: un corte en mx=88,5 no existe
+        en un campo de 62 m de largo. Con esto, la regla sale del
+        reglamento de la modalidad y de las dimensiones reales del campo.
+        """
+        areas = modelo.areas_porteria(margen=margen)
+        return cls(
+            area_mx_bajo=areas["bajo"][0],
+            area_mx_alto=areas["alto"][0],
+            area_my=areas["bajo"][1],
+            equipo_mx_alto=equipo_mx_alto,
+            equipo_mx_bajo=equipo_mx_bajo,
+        )
+
 
 def aplicar_regla_porteros(
     equipos: dict[int, str],

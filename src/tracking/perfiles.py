@@ -48,6 +48,7 @@ def correr_perfil(
     perfil: str = "oficial",
     colores: dict | None = None,
     clasificador=None,
+    cfg_equipos: dict | None = None,
 ) -> list[list[Tracklet]]:
     """Corre el pipeline de tracking completo según el perfil.
 
@@ -86,7 +87,7 @@ def correr_perfil(
             identidades, cfg_rescate.get("min_frames_identidad", 3)
         )
 
-        firmas = _firmas_de_marcaje(identidades, colores, clasificador)
+        firmas = _firmas_de_marcaje(identidades, colores, clasificador, cfg_equipos)
         cfg_excl = cfg_tracking.get("exclusion_espacial", {})
         identidades = fusionar_identidades_duplicadas(
             identidades,
@@ -181,6 +182,7 @@ def _firmas_de_marcaje(
     identidades: list[list[Tracklet]],
     colores: dict | None,
     clasificador,
+    cfg_equipos: dict | None = None,
 ) -> dict[int, tuple[str, np.ndarray]] | None:
     """Firma fiable por identidad para la salvaguarda de marcaje.
 
@@ -190,13 +192,24 @@ def _firmas_de_marcaje(
     """
     if colores is None or clasificador is None:
         return None
+    # El eje de PROFUNDIDAD depende de dónde esté la cámara (banda vs
+    # detrás de portería): con el eje equivocado, "recorte cercano"
+    # selecciona por una coordenada que no mide la distancia.
+    from src.team_classification.pipeline_equipos import _profundidad_configurada
+
+    modelo, profundidad = _profundidad_configurada(cfg_equipos or {})
+    umbral = (
+        (cfg_equipos or {})
+        .get("agregacion", {})
+        .get("umbral_profundidad_m", _UMBRAL_MY_FIRMA)
+    )
     firmas = {}
     for indice, identidad in enumerate(identidades):
         cercanos = [
             colores[par]
             for tracklet in identidad
             for pos, par in zip(tracklet.pos, tracklet.det_idxs)
-            if par in colores and pos[1] < _UMBRAL_MY_FIRMA
+            if par in colores and profundidad.de(pos, modelo) < umbral
         ]
         if cercanos:
             media = np.mean(cercanos, axis=0)

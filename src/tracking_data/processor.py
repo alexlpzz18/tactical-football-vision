@@ -519,7 +519,11 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     clasificador = None
     cfg_equipos = {}
     if colores is not None and cfg.get("equipos", {}).get("activo", True):
-        cfg_equipos = cargar_config_equipos()
+        # Ruta configurable: cada campo tiene su propia config de equipos
+        # (áreas de portería, eje de profundidad, dimensiones).
+        cfg_equipos = cargar_config_equipos(
+            cfg.get("config_equipos", "configs/team_classification.yaml")
+        )
         clasificador = entrenar_clasificador(colores, cfg_equipos, datos["cache"])
 
     identidades = correr_perfil(
@@ -530,6 +534,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         perfil=cfg["tracking"]["perfil"],
         colores=colores,
         clasificador=clasificador,
+        cfg_equipos=cfg_equipos,
     )
 
     equipos: dict[int, str] = {}

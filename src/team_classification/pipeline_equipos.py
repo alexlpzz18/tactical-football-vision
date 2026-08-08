@@ -19,6 +19,7 @@ from src.team_classification.color_classifier import (
     ParametrosClasificadorColor,
     TeamClassifierColor,
 )
+from src.campo_modelo import MODELO_F11, EjeProfundidad, cargar_modelo
 from src.team_classification.porteros import ReglaPorteros, aplicar_regla_porteros
 from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
 from src.tracking.field_tracker import Tracklet
@@ -36,6 +37,25 @@ def cargar_config_equipos(ruta: str | Path = RUTA_CONFIG_DEFECTO) -> dict:
         return {}
     with open(ruta) as f:
         return yaml.safe_load(f)
+
+
+def _profundidad_configurada(cfg_equipos: dict):
+    """(modelo de campo, eje de profundidad) según el config de equipos.
+
+    Sin sección `campo` ni `profundidad`, devuelve el F11 de Villaviciosa
+    con la profundidad en el eje ancho: exactamente el comportamiento
+    histórico.
+    """
+    cfg_campo = cfg_equipos.get("campo", {})
+    if "config" in cfg_campo:
+        modelo = cargar_modelo(config=cfg_campo["config"])
+    elif "tipo" in cfg_campo:
+        modelo = cargar_modelo(cfg_campo["tipo"])
+        if "largo" in cfg_campo and "ancho" in cfg_campo:
+            modelo = modelo.con_dimensiones(cfg_campo["largo"], cfg_campo["ancho"])
+    else:
+        modelo = MODELO_F11
+    return modelo, EjeProfundidad.desde_dict(cfg_equipos.get("profundidad"))
 
 
 def entrenar_clasificador(
@@ -73,8 +93,11 @@ def entrenar_clasificador(
 
     cfg_fit = cfg_equipos.get("entrenamiento", {})
     solo_cercanos = cfg_fit.get("solo_cercanos", True)
-    umbral_my = cfg_fit.get("umbral_my", 34.0)
+    # `umbral_profundidad_m` es el nombre nuevo (metros DESDE LA CÁMARA);
+    # `umbral_my` se acepta por compatibilidad con el config del F11.
+    umbral = cfg_fit.get("umbral_profundidad_m", cfg_fit.get("umbral_my", 34.0))
     min_features = cfg_fit.get("min_features", 300)
+    modelo, profundidad = _profundidad_configurada(cfg_equipos)
 
     features = np.array(list(colores.values()))
     if solo_cercanos:
@@ -85,8 +108,8 @@ def entrenar_clasificador(
                 "de detecciones para conocer la profundidad de cada recorte. "
                 "Pásalo (cache=datos['cache']) o desactiva el filtro."
             )
-        my_por_clave = {
-            (entrada["frame_idx"], det_idx): det[1]
+        prof_por_clave = {
+            (entrada["frame_idx"], det_idx): profundidad.de((det[0], det[1]), modelo)
             for entrada in cache
             for det_idx, det in enumerate(entrada["dets"])
         }
@@ -94,16 +117,17 @@ def entrenar_clasificador(
             [
                 feature
                 for clave, feature in colores.items()
-                if my_por_clave.get(clave, float("inf")) < umbral_my
+                if prof_por_clave.get(clave, float("inf")) < umbral
             ]
         )
         if len(cercanas) >= min_features:
             features = cercanas
             logger.info(
-                "Fit del clasificador con %d recortes cercanos (my<%.0f) "
-                "de %d totales",
+                "Fit del clasificador con %d recortes a menos de %.0f m "
+                "de la cámara (eje %s) de %d totales",
                 len(cercanas),
-                umbral_my,
+                umbral,
+                profundidad.eje,
                 len(colores),
             )
         else:
@@ -133,7 +157,8 @@ def clasificar_identidades(
     cfg_equipos = cfg_equipos or {}
     cfg_agg = cfg_equipos.get("agregacion", {})
     solo_cercanos = cfg_agg.get("solo_cercanos", True)
-    umbral_my = cfg_agg.get("umbral_my", 45.0)
+    umbral = cfg_agg.get("umbral_profundidad_m", cfg_agg.get("umbral_my", 45.0))
+    modelo, profundidad = _profundidad_configurada(cfg_equipos)
 
     equipos: dict[int, str] = {}
     for id_identidad, identidad in enumerate(identidades, start=1):
@@ -143,7 +168,7 @@ def clasificar_identidades(
                 if par not in colores:
                     continue
                 todos.append(colores[par])
-                if pos[1] < umbral_my:
+                if profundidad.de(pos, modelo) < umbral:
                     cercanos.append(colores[par])
         feats = cercanos if (solo_cercanos and cercanos) else todos
         if feats:
@@ -151,9 +176,21 @@ def clasificar_identidades(
 
     cfg_porteros = cfg_equipos.get("porteros", {})
     if cfg_porteros.get("activo", False):
-        regla = ReglaPorteros.desde_dict(
-            {k: v for k, v in cfg_porteros.items() if k != "activo"}
-        )
+        opciones = {
+            k: v
+            for k, v in cfg_porteros.items()
+            if k not in ("activo", "desde_modelo", "margen_m")
+        }
+        if cfg_porteros.get("desde_modelo", False):
+            # Áreas DERIVADAS del campo (F7 y cualquier campo no estándar):
+            # los rangos a mano del F11 no valen en otras medidas.
+            regla = ReglaPorteros.desde_modelo(
+                modelo,
+                margen=cfg_porteros.get("margen_m", 2.0),
+                **{k: v for k, v in opciones.items() if k.startswith("equipo_")},
+            )
+        else:
+            regla = ReglaPorteros.desde_dict(opciones)
         equipos = aplicar_regla_porteros(equipos, identidades, regla)
 
     # Regla de staff: quien vive FUERA del campo no juega (línier, cuerpo
@@ -162,9 +199,11 @@ def clasificar_identidades(
     # como la última palabra.
     cfg_staff = cfg_equipos.get("staff", {})
     if cfg_staff.get("activo", False):
-        regla_staff = ReglaStaff.desde_dict(
-            {k: v for k, v in cfg_staff.items() if k != "activo"}
-        )
+        opciones_staff = {k: v for k, v in cfg_staff.items() if k != "activo"}
+        # Si el YAML no fija las dimensiones, salen del modelo de campo
+        opciones_staff.setdefault("largo", modelo.largo)
+        opciones_staff.setdefault("ancho", modelo.ancho)
+        regla_staff = ReglaStaff.desde_dict(opciones_staff)
         equipos = aplicar_regla_staff(equipos, identidades, regla_staff)
 
     logger.info(
