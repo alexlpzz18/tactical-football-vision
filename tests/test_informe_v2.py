@@ -63,11 +63,26 @@ def test_informe_dos_columnas_y_heatmaps(tmp_path):
 
 
 def test_nota_de_transparencia_con_porcentaje(tmp_path):
-    """El % de posiciones sin equipo (20 de 100 = 20%) aparece en el banner."""
+    """El % de posiciones excluidas (20 de 100 = 20%) aparece en el banner."""
     salida = generar_informe_v2(_csv(tmp_path, n_otro=20), tmp_path / "i.html")
     html = salida.read_text()
     assert "Transparencia" in html
-    assert "20" in html and "no tiene equipo asignable" in html
+    assert "20" in html and "sin equipo asignable" in html
+    # Sin staff en este CSV, el desglose lo dice explícitamente
+    assert "0 de personal no jugador" in html
+
+
+def test_banner_separa_staff_de_sin_equipo(tmp_path):
+    """El staff (fuera del campo) se cuenta aparte de los inclasificables."""
+    df = pd.read_csv(_csv(tmp_path, n_otro=10))
+    staff = df[df["equipo"] == 2].head(4).copy()
+    staff["etiqueta"] = "staff"
+    staff["id_jugador"] = 99
+    ruta = tmp_path / "con_staff.csv"
+    pd.concat([df, staff]).to_csv(ruta, index=False)
+    html = generar_informe_v2(ruta, tmp_path / "i2.html").read_text()
+    assert "4 de personal no jugador" in html
+    assert "10 sin equipo asignable" in html
 
 
 def test_tramo_arbitrario_en_encabezado(tmp_path):

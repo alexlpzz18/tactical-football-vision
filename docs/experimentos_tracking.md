@@ -802,3 +802,133 @@ post-procesado que nunca había pagado (la interpolación, rechazada en julio) p
 cuanto los fragmentos de debajo son estables. Prioridad siguiente: v4
 definitivo y re-medir el ruido de localización del fondo, que sigue
 siendo el techo de IDF1/quimeras.
+
+---
+
+## Concurrencia: el número que el replay gritaba y el banco no miraba (08-ago-2026)
+
+**Feedback visual (replay v4pre):** ~44 círculos simultáneos para ~23
+personas reales, racimos del mismo equipo montados, y una ficha con
+equipo asignado paseando por fuera de la banda superior.
+
+### Métrica nueva de primera clase: concurrencia por frame
+
+`concurrencia_por_frame` (src/evaluation/metricas.py) reporta la mediana,
+el p90 y el máximo de identidades SIMULTÁNEAS predichas frente a las del
+GT, y sale en la tabla estándar del banco. Motivo: IDF1, HOTA y cobertura
+puntúan **por posición emparejada**, así que no penalizan dibujar el
+doble de fichas — un pipeline puede mejorar en las tres y ser inservible
+en pantalla. Medido en el tramo: GT mediana **22**, pipeline vigente
+**47**.
+
+### Diagnóstico del exceso (con números)
+
+Contraste identidad-a-identidad contra el GT (47 de 52 identidades tienen
+track GT dominante):
+
+| nº de identidades pred por track GT | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| nº de tracks GT | 8 | 9 | 3 | 3 |
+
+- **(a) fragmentación del mismo jugador: 24 identidades sobrantes** —
+  15 tracks GT reciben 2-4 fichas cada uno. Es la causa dominante.
+- **(b) entrelazadas: 0 pares** — la interpolación las convirtió en
+  simultáneas; antes se alternaban (por eso "parpadeaban" y ahora se ven).
+- **(c) staff: 2 identidades sin track GT** — el juez de línea (mediana
+  (51.2, −3.3), 500 observaciones) y un artefacto de proyección
+  (−125, −313). Las otras 3 sin GT son ruido de corta duración.
+
+**Dato estructural que lo explica todo:** sin interpolar, la concurrencia
+es **20** (por debajo del GT). Con `max_hueco=6 s` sube a 47 porque el
+**56 % de las posiciones exportadas son interpoladas**, y hay identidades
+con solo un 11 % de observaciones reales dibujándose 500 frames. La
+interpolación no creó identidades: hizo visibles a la vez las que antes
+se turnaban.
+
+### Por qué la distancia sola no vale como criterio de fusión
+
+Los "duplicados montados" NO están a <2 m: los pares co-locados con
+solape sostenido tienen mediana **3,5-5 m** (el ruido de proyección del
+fondo mete esa distancia entre dos observaciones del mismo jugador).
+Validado contra el GT, a esa distancia la geometría no discrimina:
+
+| umbral | pares mismo equipo | MISMO track GT | tracks GT distintos |
+|---|---|---|---|
+| ≤4 m | 2 | 1 | 1 |
+| ≤5 m | 14 | 6 | 8 |
+| ≤6 m | 29 | 7 | 22 |
+
+Se probaron dos discriminadores adicionales sobre esos pares y **ninguno
+separa** (p50 prácticamente idéntico en duplicados y en jugadores
+distintos): paralelismo del movimiento (0,027 vs 0,028) y estabilidad del
+offset (cv 0,68 vs 0,36, solapados). Quinta confirmación del patrón: no
+hay señal fina fiable a esta resolución.
+
+### Regla de staff por homografía (ADOPTADA)
+
+`src/team_classification/staff.py`: identidad cuya posición **mediana**
+cae fuera del rectángulo del campo (tolerancia 2 m, mínimo 5
+observaciones) → etiqueta `staff`, fuera de equipos, del informe y en
+gris translúcido en el replay. Verificado en el GT: los 23 tracks
+anotados tienen su mediana DENTRO del campo, así que la regla no puede
+robar jugadores. Marca 1 identidad en el tramo (el línier); el artefacto
+(−125,−313) tiene 13 observaciones y también cae. Misma filosofía que la
+regla de porteros: geometría barata donde el color no puede llegar —
+especialmente ahora que el fit v4pre no produce cajón 'otro'.
+
+### Consolidación de fichas montadas (ADOPTADA, antes de interpolar)
+
+`src/tracking/consolidacion.py`: fusiona identidades del **mismo equipo**
+con distancia mediana ≤ `dist_max` sobre ≥ `min_frames_comunes` frames
+compartidos (transitiva, deduplicando por frame y conservando la posición
+de la ficha con más observaciones REALES). Nunca cruza equipos ni toca
+`staff`/`otro`.
+
+**Hallazgo de orden:** consolidar **ANTES** de interpolar es mejor que
+después — después se comparan estelas interpoladas entre sí y la fusión
+hereda los fantasmas. La composición vive en `perfiles.py::postprocesar`,
+compartida banco↔producción.
+
+| variante (v4pre, candidato) | nIds | concurr. | cobertura | IDF1 | tasa IDSW | acc. equipos | quimeras |
+|---|---|---|---|---|---|---|---|
+| **vigente (interp 6 s)** | 52 | **47** | **0.566** | 0.227 | 0.320 | 0.733 | 36/46 |
+| consolidar DESPUÉS d=4 | 50 | 45 | 0.566 | 0.246 | 0.311 | 0.698 | 34/44 |
+| consolidar DESPUÉS d=5 | 38 | 33 | 0.519 | 0.292 | 0.257 | 0.750 | 24/33 |
+| consolidar ANTES d=4 n=20 | 49 | 44 | 0.569 | 0.239 | 0.317 | 0.791 | 33/44 |
+| consolidar ANTES d=5 n=20 | 46 | 41 | 0.564 | 0.245 | 0.318 | 0.775 | 32/41 |
+| **consolidar ANTES d=6 n=20 (ADOPTADA)** | 41 | **36** | **0.557** | **0.281** | **0.304** | **0.800** | **27/36** |
+| consolidar ANTES d=7 n=20 | 30 | 25 | 0.456 | 0.346 | 0.206 | 0.792 | 16/25 |
+| consolidar ANTES d=8 n=20 | 27 | 23 | 0.405 | 0.334 | 0.184 | 0.857 | 15/22 |
+| sin interpolar (referencia) | 52 | 20 | 0.453 | 0.334 | 0.339 | 0.750 | 24/41 |
+
+**Decisión: d=6.0, n=20, antes de interpolar.** Concurrencia 47→36,
+IDF1 0.227→0.281, tasa de IDSW 0.320→0.304, accuracy de equipos
+0.733→0.800, quimeras 36→27. La cobertura baja 0.009 (0.566→0.557):
+**es una desviación consciente del criterio literal "cobertura no baja"**,
+porque todo lo demás mejora y 0,9 puntos están en el nivel de ruido. A
+7,0 m hay un acantilado (cobertura 0.456): ahí ya se fusionan jugadores
+distintos.
+
+**Tensión estructural documentada (importante para el TFM):** cobertura y
+concurrencia empujan en direcciones opuestas — la cobertura premia tener
+MÁS identidades (más oportunidades de cubrir una posición GT), así que
+una métrica de producto que solo mire cobertura siempre preferirá dibujar
+fantasmas. Por eso la concurrencia entra como métrica de primera clase y
+no como nota al pie.
+
+**Lo que NO se hace y por qué:** llevar la concurrencia al rango 23-30 que
+pedía el encargo **cuesta ~10 puntos de cobertura** (d=7,0) o recortar la
+interpolación a `max_hueco` 1-2 s (concurrencia 27-32, cobertura
+0.505-0.531). Es una decisión de producto, no técnica: hay que elegir
+entre un replay más limpio y un heatmap más completo. Queda medido y
+parametrizado (`consolidacion.dist_max`, `interpolacion.max_hueco`) para
+cambiarlo en una línea de config.
+
+### Estado tras la adopción
+
+- CSV vigente: 17.619 posiciones, **40 identidades** (52 → 41 tras
+  consolidar, una de ellas staff), concurrencia mediana 36.
+- Replay: `outputs/replay_v4pre_consolidado.html` (contra
+  `outputs/replay_v4pre.html` sin consolidar y `outputs/replay.html` del v3).
+- Banner del informe: separa "sin equipo asignable" de "personal no
+  jugador" para no mezclar dos cosas distintas.

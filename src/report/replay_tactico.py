@@ -36,6 +36,10 @@ COLORES = {
     "portero_A": ("#1e3a8a", "#172554"),
     "portero_B": ("#7f1d1d", "#450a0a"),
     "otro": ("rgba(128,128,128,0.45)", "rgba(90,90,90,0.6)"),
+    # Staff (línier / cuerpo técnico, detectado fuera del campo por la
+    # regla posicional): gris translúcido, no compite visualmente con los
+    # jugadores pero se ve que el sistema lo detectó y lo descartó.
+    "staff": ("rgba(120,120,120,0.30)", "rgba(80,80,80,0.45)"),
 }
 
 

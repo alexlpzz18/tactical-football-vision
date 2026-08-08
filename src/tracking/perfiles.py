@@ -107,6 +107,61 @@ def correr_perfil(
     return identidades
 
 
+def postprocesar(
+    identidades: list[list[Tracklet]],
+    equipos: dict[int, str],
+    frames_ts: list[tuple[int, float]],
+    cfg_tracking: dict,
+) -> tuple[list, dict[int, str]]:
+    """Fase POST-clasificación, compartida banco↔producción.
+
+    Orden medido (docs/experimentos_tracking.md, "concurrencia"):
+      1. identidades → trayectorias crudas (todo observación real)
+      2. CONSOLIDACIÓN de fichas del mismo equipo montadas — antes de
+         interpolar, para que la fusión se decida con observaciones reales
+         y la identidad resultante llegue más densa a la interpolación
+      3. INTERPOLACIÓN de los huecos que queden
+
+    Consolidar DESPUÉS de interpolar es peor (medido): se comparan estelas
+    interpoladas entre sí y la fusión hereda los fantasmas.
+
+    Args:
+        identidades: salida de correr_perfil.
+        equipos: {id_identidad: etiqueta} ya clasificado (con porteros y
+            staff aplicados).
+        frames_ts: [(frame_idx, t), ...] de todos los frames del caché.
+        cfg_tracking: contenido de configs/tracking.yaml.
+
+    Returns:
+        (trayectorias, equipos) — los equipos se renumeran si la
+        consolidación fusiona identidades.
+    """
+    from src.tracking.consolidacion import consolidar_colocadas
+    from src.tracking.interpolacion import (
+        identidades_a_trayectorias,
+        interpolar_trayectorias,
+    )
+
+    trayectorias = identidades_a_trayectorias(identidades)
+
+    cfg_consol = cfg_tracking.get("consolidacion", {})
+    if cfg_consol.get("activa", False):
+        trayectorias, equipos = consolidar_colocadas(
+            trayectorias,
+            equipos,
+            dist_max=cfg_consol.get("dist_max", 6.0),
+            min_frames_comunes=cfg_consol.get("min_frames_comunes", 20),
+        )
+
+    cfg_interp = cfg_tracking.get("interpolacion", {})
+    if cfg_interp.get("activa", False):
+        trayectorias = interpolar_trayectorias(
+            trayectorias, frames_ts, cfg_interp.get("max_hueco", 6.0)
+        )
+
+    return trayectorias, equipos
+
+
 def _firmas_de_marcaje(
     identidades: list[list[Tracklet]],
     colores: dict | None,

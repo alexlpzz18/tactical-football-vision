@@ -25,6 +25,66 @@ from src.tracking.field_tracker import Tracklet
 logger = logging.getLogger(__name__)
 
 
+def identidades_a_trayectorias(
+    identidades: list[list[Tracklet]],
+) -> list[list[tuple[int, np.ndarray, bool]]]:
+    """Identidades (tracklets) → trayectorias crudas, todas REALES.
+
+    Formato común de la fase post-cosido: (frame_idx, pos, es_real). Sirve
+    para que la consolidación pueda trabajar sobre observaciones reales
+    ANTES de interpolar (medido: fusionar antes densifica la identidad y
+    la interpolación rellena menos — ver docs/experimentos_tracking.md).
+    """
+    trayectorias = []
+    for identidad in identidades:
+        observaciones = [
+            (frame_idx, pos, True)
+            for tracklet in identidad
+            for pos, (frame_idx, _det) in zip(tracklet.pos, tracklet.det_idxs)
+        ]
+        trayectorias.append(sorted(observaciones, key=lambda x: x[0]))
+    return trayectorias
+
+
+def interpolar_trayectorias(
+    trayectorias: list[list[tuple[int, np.ndarray, bool]]],
+    frames_ts: list[tuple[int, float]],
+    max_hueco: float,
+) -> list[list[tuple[int, np.ndarray, bool]]]:
+    """Rellena los huecos de trayectorias ya en formato (frame, pos, real).
+
+    Mismas reglas que interpolar_identidad: solo entre observaciones
+    REALES consecutivas, solo en frames del caché y solo si el hueco no
+    supera max_hueco segundos.
+    """
+    indices_frames = [f for f, _ in frames_ts]
+    t_por_frame = dict(frames_ts)
+
+    resultado = []
+    for trayectoria in trayectorias:
+        reales = sorted(
+            (t_por_frame[f], f, pos) for f, pos, es_real in trayectoria if es_real
+        )
+        salida = [(f, pos, True) for _t, f, pos in reales]
+        for (t0, f0, p0), (t1, f1, p1) in zip(reales[:-1], reales[1:]):
+            if t1 - t0 > max_hueco:
+                continue
+            inicio = bisect.bisect_right(indices_frames, f0)
+            fin = bisect.bisect_left(indices_frames, f1)
+            for frame_idx, t in frames_ts[inicio:fin]:
+                alfa = (t - t0) / (t1 - t0)
+                salida.append((frame_idx, p0 + alfa * (p1 - p0), False))
+        resultado.append(sorted(salida, key=lambda x: x[0]))
+
+    n_interp = sum(1 for t in resultado for _f, _p, real in t if not real)
+    logger.info(
+        "Interpolación de trayectorias: %d posiciones rellenadas (hueco ≤ %.1f s)",
+        n_interp,
+        max_hueco,
+    )
+    return resultado
+
+
 def interpolar_identidad(
     identidad: list[Tracklet],
     frames_ts: list[tuple[int, float]],

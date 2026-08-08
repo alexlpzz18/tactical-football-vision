@@ -20,6 +20,7 @@ from src.team_classification.color_classifier import (
     TeamClassifierColor,
 )
 from src.team_classification.porteros import ReglaPorteros, aplicar_regla_porteros
+from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
 from src.tracking.field_tracker import Tracklet
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,17 @@ def clasificar_identidades(
             {k: v for k, v in cfg_porteros.items() if k != "activo"}
         )
         equipos = aplicar_regla_porteros(equipos, identidades, regla)
+
+    # Regla de staff: quien vive FUERA del campo no juega (línier, cuerpo
+    # técnico). Va DESPUÉS de porteros: un portero está dentro del campo,
+    # así que nunca compiten, pero el orden deja la geometría de "no juega"
+    # como la última palabra.
+    cfg_staff = cfg_equipos.get("staff", {})
+    if cfg_staff.get("activo", False):
+        regla_staff = ReglaStaff.desde_dict(
+            {k: v for k, v in cfg_staff.items() if k != "activo"}
+        )
+        equipos = aplicar_regla_staff(equipos, identidades, regla_staff)
 
     logger.info(
         "Equipos por identidad: %d/%d clasificadas", len(equipos), len(identidades)

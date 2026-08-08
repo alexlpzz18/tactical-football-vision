@@ -69,6 +69,21 @@ interpolacion:
   activa: true
   max_hueco: 6.0
 
+# Consolidación FINAL (post-clasificación): fusiona fichas del MISMO
+# equipo co-locadas de forma sostenida — los racimos que se ven en el
+# replay. Se decide midiendo (concurrencia vs cobertura vs tasa IDSW);
+# ver docs/experimentos_tracking.md.
+# ADOPTADA (08-ago-2026): concurrencia 47→36 fichas por frame con la
+# cobertura plana (0.566→0.557), IDF1 0.227→0.281, tasa de IDSW
+# 0.320→0.304, accuracy de equipos 0.733→0.800 y quimeras 36→27.
+# Va ANTES de interpolar (medido: después es peor, compara estelas
+# fantasma). dist_max 6.0 es el borde del acantilado: a 7.0 la cobertura
+# se desploma a 0.456 porque empieza a fusionar jugadores distintos.
+consolidacion:
+  activa: true
+  dist_max: 6.0           # distancia mediana máxima entre las dos fichas (m)
+  min_frames_comunes: 20  # "sostenida": no un cruce puntual
+
 cosido:
   # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
   max_hueco: 6.0

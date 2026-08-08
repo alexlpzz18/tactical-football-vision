@@ -283,6 +283,55 @@ def cobertura_colectiva(
 
 
 @dataclass
+class ResultadoConcurrencia:
+    """Identidades SIMULTÁNEAS por frame: predichas vs las reales del GT.
+
+    Es el número que grita el replay y que ninguna métrica clásica mira:
+    IDF1/HOTA/cobertura pueden ser razonables con el doble de fichas en
+    pantalla, porque penalizan por posición emparejada, no por exceso de
+    identidades vivas a la vez. Si el pipeline dibuja 44 círculos para 23
+    personas, el producto es inservible aunque las métricas aguanten.
+
+    Nota: se cuentan las identidades con OBSERVACIÓN en el frame (lo que
+    el replay dibuja), no las "activas" entre su primer y último frame.
+    """
+
+    mediana_pred: float
+    p90_pred: float
+    max_pred: int
+    mediana_gt: float
+    p90_gt: float
+    exceso_mediana: float  # mediana_pred - mediana_gt (0 = perfecto)
+
+
+def concurrencia_por_frame(
+    gt: PorFrame,
+    pred: PorFrame,
+    frames: list[int],
+) -> ResultadoConcurrencia:
+    """Mediana/p90/máximo de identidades simultáneas (predichas y GT)."""
+    n_pred = np.array([len(pred.get(frame, [])) for frame in frames], dtype=float)
+    n_gt = np.array([len(gt.get(frame, [])) for frame in frames], dtype=float)
+    resultado = ResultadoConcurrencia(
+        mediana_pred=float(np.median(n_pred)) if len(n_pred) else 0.0,
+        p90_pred=float(np.percentile(n_pred, 90)) if len(n_pred) else 0.0,
+        max_pred=int(n_pred.max()) if len(n_pred) else 0,
+        mediana_gt=float(np.median(n_gt)) if len(n_gt) else 0.0,
+        p90_gt=float(np.percentile(n_gt, 90)) if len(n_gt) else 0.0,
+        exceso_mediana=(
+            float(np.median(n_pred) - np.median(n_gt)) if len(n_pred) else 0.0
+        ),
+    )
+    logger.info(
+        "Concurrencia por frame: pred mediana=%.0f p90=%.0f (GT mediana=%.0f)",
+        resultado.mediana_pred,
+        resultado.p90_pred,
+        resultado.mediana_gt,
+    )
+    return resultado
+
+
+@dataclass
 class ResumenEquipos:
     """Resumen de la clasificación de equipos con mapeo A↔B óptimo.
 

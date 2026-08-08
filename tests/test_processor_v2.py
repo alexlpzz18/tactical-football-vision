@@ -69,10 +69,49 @@ def test_perfil_oficial_reproduce_89_identidades(salida_oficial):
         assert clave in meta
 
 
-def test_perfil_candidato_reproduce_58_identidades(tmp_path):
+def test_perfil_candidato_reproduce_58_identidades():
+    """El PERFIL de tracking sigue dando 58 identidades (pin de regresión).
+
+    Se mide correr_perfil directamente: el CSV exportado lleva además la
+    fase post-clasificación (consolidación + interpolación), que fusiona
+    fichas y por tanto reduce el número — eso se comprueba aparte.
+    """
+    import pickle
+
+    import yaml
+
+    from src.tracking.cache_io import cargar_cache
+    from src.tracking.perfiles import correr_perfil
+
+    datos = cargar_cache(str(RUTA_CACHE))
+    with open(RUTA_COLORES, "rb") as f:
+        colores = pickle.load(f)
+    with open("configs/tracking.yaml") as f:
+        cfg_tracking = yaml.safe_load(f)
+    from src.team_classification.pipeline_equipos import (
+        cargar_config_equipos,
+        entrenar_clasificador,
+    )
+
+    cfg_eq = cargar_config_equipos()
+    clasificador = entrenar_clasificador(colores, cfg_eq, datos["cache"])
+    identidades = correr_perfil(
+        datos["cache"],
+        datos["fps"],
+        datos["sample"],
+        cfg_tracking,
+        perfil="candidato",
+        colores=colores,
+        clasificador=clasificador,
+    )
+    assert len(identidades) == 58
+
+
+def test_consolidacion_reduce_las_fichas_exportadas(tmp_path):
+    """Con la consolidación activa, el CSV lleva MENOS ids que el perfil."""
     cfg = _cfg(tmp_path, "candidato")
     df = procesar_desde_cache(cfg)
-    assert df["id_jugador"].nunique() == 58
+    assert df["id_jugador"].nunique() < 58
 
 
 def test_collective_consume_el_csv_nuevo(salida_oficial):

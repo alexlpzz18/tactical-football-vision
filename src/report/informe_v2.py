@@ -300,6 +300,12 @@ def generar_informe_v2(
     n_total = len(df)
     n_otro = int((df["equipo"] == 2).sum())
     pct_otro = 100 * n_otro / n_total
+    # El staff (línier / cuerpo técnico, detectado FUERA del campo) va al
+    # mismo cajón que 'otro' pero no es lo mismo: uno es una detección que
+    # el sistema descarta a propósito, el otro un jugador sin equipo
+    # asignable. Se cuentan por separado para que el banner no mienta.
+    n_staff = int((df["etiqueta"] == "staff").sum()) if "etiqueta" in df.columns else 0
+    n_sin_equipo = n_otro - n_staff
     t_min, t_max = float(df["tiempo_s"].min()), float(df["tiempo_s"].max())
 
     # ── columnas por equipo ──
@@ -472,8 +478,10 @@ def generar_informe_v2(
     {colectivas['resumen']['ids_unicos']} identidades · Tactical Lens</div>
 
   <div class="banner">Transparencia: el {pct_otro:.0f}&#8202;% de las posiciones
-    ({n_otro} de {n_total}) no tiene equipo asignable a esta distancia de cámara
-    y queda excluido de las métricas por equipo.</div>
+    ({n_otro} de {n_total}) queda excluido de las métricas por equipo —
+    {n_sin_equipo} sin equipo asignable a esta distancia de cámara y
+    {n_staff} de personal no jugador (detectado fuera de las líneas del campo:
+    juez de línea o cuerpo técnico).</div>
 
   <div class="card">
     <div class="equipos">

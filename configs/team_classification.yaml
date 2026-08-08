@@ -18,6 +18,19 @@ porteros:
   equipo_mx_alto: A
   equipo_mx_bajo: B
 
+# Regla de STAFF por POSICIÓN (sobrescribe al color): identidad cuya
+# posición MEDIANA cae fuera del rectángulo del campo → no juega (juez de
+# línea, cuerpo técnico, artefacto de proyección). Se excluye de equipos,
+# informe y métricas. Verificado en el GT: los 23 tracks anotados tienen
+# su mediana DENTRO del campo, así que la regla no puede robar jugadores.
+# La tolerancia cubre el error de proyección de quien pisa la banda.
+staff:
+  activo: true
+  largo: 105.0
+  ancho: 68.0
+  tolerancia_m: 2.0
+  min_observaciones: 5
+
 # Entrenamiento del clasificador (fix del colapso en producción,
 # 12-jul-2026): el fit usa SOLO recortes cercanos (my < umbral_my), donde
 # el color es señal. Entrenar con todos era frágil: la masa de recortes

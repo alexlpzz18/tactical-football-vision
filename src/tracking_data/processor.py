@@ -25,7 +25,16 @@ logger = logging.getLogger(__name__)
 
 # Convención de equipo del CSV (la misma de TEAM_COLORS en pipeline.py);
 # los porteros cuentan con su equipo para el informe colectivo
-EQUIPO_A_ENTERO = {"A": 0, "portero_A": 0, "B": 1, "portero_B": 1, "otro": 2}
+# 'staff' (línier/cuerpo técnico, regla posicional) va al mismo cajón que
+# 'otro': fuera de las métricas por equipo y del informe.
+EQUIPO_A_ENTERO = {
+    "A": 0,
+    "portero_A": 0,
+    "B": 1,
+    "portero_B": 1,
+    "otro": 2,
+    "staff": 2,
+}
 
 
 def _build_camera_matrix(w, h, focal_factor=1.0):
@@ -529,21 +538,15 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             identidades, colores, clasificador, cfg_equipos
         )
 
-    # Interpolación de huecos (3a, adoptada con el modelo v4pre): rellena
-    # los huecos dentro de cada identidad ANTES de exportar. Se aplica
-    # después del perfil porque produce trayectorias, no tracklets.
-    trayectorias = None
-    cfg_interp = cfg_tracking.get("interpolacion", {})
-    if cfg_interp.get("activa", False):
-        from src.tracking.interpolacion import interpolar_identidades
+    # Fase post-clasificación (consolidación + interpolación), compartida
+    # con el banco: src/tracking/perfiles.py::postprocesar.
+    from src.tracking.perfiles import postprocesar
 
-        frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
-        trayectorias = interpolar_identidades(
-            identidades, frames_ts, cfg_interp["max_hueco"]
-        )
+    frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
+    trayectorias, equipos = postprocesar(identidades, equipos, frames_ts, cfg_tracking)
 
     return exportar_posiciones(
-        identidades, equipos, datos, cfg, trayectorias=trayectorias
+        trayectorias, equipos, datos, cfg, trayectorias=trayectorias
     )
 
 
