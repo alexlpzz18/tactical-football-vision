@@ -376,9 +376,22 @@ def test_tracking_del_benja_ajusta_lo_que_depende_del_campo():
     assert f11["cota_plantilla"]["cota"] == 23  # el F11 no se toca
     # La distancia de consolidación escala con el largo del campo
     assert benja["consolidacion"]["dist_max"] < f11["consolidacion"]["dist_max"]
-    # Lo que es físico (velocidad) o temporal (hueco) sí se hereda
+    # Lo que es FÍSICO sí se hereda: un límite de velocidad humana no
+    # depende del campo
     assert benja["corte_velocidad"]["v_max"] == f11["corte_velocidad"]["v_max"]
-    assert benja["interpolacion"]["max_hueco"] == f11["interpolacion"]["max_hueco"]
+
+    # El hueco de interpolación PARECÍA temporal y heredable, pero no lo
+    # es: cuánta ficción introduce rellenar T segundos depende de cuántos
+    # metros vale un píxel. Medido en el benjamín (10-ago-2026), 6,0 s
+    # inventaban >1,6 m incluso en su mejor zona.
+    assert benja["interpolacion"]["max_hueco"] < f11["interpolacion"]["max_hueco"]
+
+    # Jitter MEDIDO sobre el caché, no estimado, y distinto para el corte
+    # (ruido real del desplazamiento) que para la consolidación (decidir
+    # identidad con todo el margen de ruido sobre-fusiona)
+    esc = benja["escalado_resolucion"]
+    assert esc["activo"] is True
+    assert esc["jitter_px_consolidacion"] < esc["jitter_px"]
 
 
 # ── dibujo del campo desde el modelo ──────────────────────────────────
@@ -533,3 +546,29 @@ def test_los_defaults_siguen_siendo_los_del_f11(tmp_path):
     campo = json.loads(html.split("const CAMPO = ")[1].split(";\n")[0])
     assert (campo["largo"], campo["ancho"]) == (LARGO_M, ANCHO_M)
     assert campo["circulos"][0]["r"] == 9.15
+
+
+# ── los configs de tracking deben ser cargables ───────────────────────
+
+
+def test_todos_los_configs_de_tracking_son_validos():
+    """Blindaje: un config con una clave inventada crashea en su 1er uso.
+
+    Pasó de verdad (10-ago-2026): `hueco_min` acabó bajo la sección
+    `cosido`, que no lo acepta, y configs/tracking_benja.yaml reventaba
+    al correr el perfil. El escalado por resolución solo cubre corte,
+    consolidación e interpolación; el cosido no.
+    """
+    import glob
+
+    import yaml
+
+    from src.tracking.field_tracker import ParametrosEtapaA
+    from src.tracking.stitcher import ParametrosCosido
+
+    rutas = glob.glob("configs/tracking*.yaml")
+    assert rutas, "no se encontró ningún config de tracking"
+    for ruta in rutas:
+        cfg = yaml.safe_load(open(ruta))
+        ParametrosCosido.desde_dict(dict(cfg["cosido"])), f"{ruta}: cosido"
+        ParametrosEtapaA.desde_dict(dict(cfg["etapa_a"])), f"{ruta}: etapa_a"

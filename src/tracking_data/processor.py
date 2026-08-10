@@ -546,9 +546,22 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     # Fase post-clasificación (consolidación + interpolación), compartida
     # con el banco: src/tracking/perfiles.py::postprocesar.
     from src.tracking.perfiles import postprocesar
+    from src.tracking.resolucion import desde_config
 
+    # Escalado por resolución local: sin él, los umbrales en m/s valen lo
+    # mismo donde 1 píxel son 2 cm que donde son 44 (ver el bloque
+    # `escalado_resolucion` de configs/tracking_benja.yaml). Es None
+    # salvo que la config lo pida, así que el F11 no cambia.
+    resolucion = desde_config(
+        cfg_tracking,
+        cfg["rutas"]["homografia"],
+        cfg["campo_m"]["largo"],
+        cfg["campo_m"]["ancho"],
+    )
     frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
-    trayectorias, equipos = postprocesar(identidades, equipos, frames_ts, cfg_tracking)
+    trayectorias, equipos = postprocesar(
+        identidades, equipos, frames_ts, cfg_tracking, resolucion=resolucion
+    )
 
     # Colores REALES de cada equipo (del prototipo del clasificador), para
     # que el replay no tenga que pintar de azul y rojo por convenio.

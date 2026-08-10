@@ -95,8 +95,16 @@ interpolacion:
   # sección "salto v4pre". La aplican el banco y el processor DESPUÉS del
   # perfil (produce trayectorias, no identidades de tracklets).
   activa: true
-  max_hueco: 6.0
-  hueco_min: 1.5   # tope en la peor zona (escalado por resolución)
+  # MEDIDO (10-ago-2026): error p90 de interpolar linealmente un hueco,
+  # por duración y zona, sobre este caché:
+  #        hueco   x 0-15m  x 15-30m  x 30-45m  x 45-62m
+  #         1,1 s    0,41 m    0,66 m    1,12 m    1,48 m
+  #         2,1 s    0,92 m    1,33 m    1,88 m    2,13 m
+  #         3,1 s    1,64 m    2,10 m    2,69 m    2,79 m
+  # Los 6,0 s heredados del F11 inventaban >1,6 m INCLUSO en la zona
+  # buena. Topes nuevos: ~1 m de ficción como máximo.
+  max_hueco: 2.5   # antes 6.0 (heredado del F11)
+  hueco_min: 1.2   # tope en la peor zona (escalado por resolución)
 
 # Consolidación FINAL (post-clasificación): fusiona fichas del MISMO
 # equipo co-locadas de forma sostenida — los racimos que se ven en el
@@ -146,15 +154,29 @@ corte_velocidad:
 #   consolidación        dist_max + jitter · (m/píxel)
 #   interpolación        el hueco máximo se REDUCE donde peor se ve
 #                        (rellenar allí inventa muchos más metros)
+#
+# ── VALORES MEDIDOS (10-ago-2026), ya no estimados ───────────────────
+# Sobre este mismo caché, con el residuo de las cajas respecto a un
+# ajuste lineal local de 5 frames (9.910 muestras):
+#   jitter del punto de pie: p50 1,06 px · rms 2,4 px · p90 4,0 px
+#   → ruido del DESPLAZAMIENTO entre 2 frames = √2 · 2,4 ≈ 3,5 px
+# El jitter es constante en píxeles a cualquier profundidad (2,2-2,8 px
+# rms en las 4 zonas), como corresponde a ruido del detector: lo que
+# cambia con la distancia es cuántos METROS vale ese píxel.
 escalado_resolucion:
   activo: true
-  jitter_px: 2.0 # vibración típica de la caja del detector
+  jitter_px: 3.5 # MEDIDO: ruido del desplazamiento caja↔caja
+  # La consolidación NO usa el mismo número, y esto se midió: pregunta
+  # "¿son la misma persona?", no "¿cabe en el ruido?". Con 3,5 en ambos
+  # sobre-fusiona, y esas quimeras las trocea después el corte: la vida
+  # mediana de las identidades del medio campo (31-45 m) caía de 30,2 s
+  # a 6,9 s. Ver src/tracking/perfiles.py::_jitter.
+  jitter_px_consolidacion: 2.0
   paso_rejilla_m: 2.0 # resolución de la rejilla precalculada
 
 cosido:
   # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
   max_hueco: 6.0
-  hueco_min: 1.5   # tope en la peor zona (escalado por resolución)
   # Tolerancia de distancia para coser: tol = tol_base + tol_por_seg * hueco
   tol_base: 1.2
   tol_por_seg: 3.0

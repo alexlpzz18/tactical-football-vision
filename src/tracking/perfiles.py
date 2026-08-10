@@ -108,9 +108,30 @@ def correr_perfil(
     return identidades
 
 
-def _jitter(cfg_tracking: dict) -> float:
-    """Vibración típica de la caja del detector, en píxeles (config)."""
-    return cfg_tracking.get("escalado_resolucion", {}).get("jitter_px", 2.0)
+def _jitter(cfg_tracking: dict, uso: str = "corte") -> float:
+    """Vibración de la caja del detector en píxeles, según para qué.
+
+    El mismo número NO sirve para las dos cosas, y medirlo lo dejó claro
+    (benjamín, 10-ago-2026):
+
+    - El **corte de velocidad** pregunta "¿este salto cabe dentro del
+      ruido?". Ahí hay que usar el ruido REAL medido (3,5 px de
+      desplazamiento entre frames), o se trocean identidades sanas.
+    - La **consolidación** pregunta algo distinto: "¿estas dos fichas son
+      la misma persona?". Ensancharla con todo el margen de ruido
+      sobre-fusiona jugadores distintos, y esas quimeras acaban
+      troceadas por el propio corte. Medido: con jitter 3,5 en ambos, la
+      vida mediana de las identidades del medio campo caía de 13,5 s a
+      6,9 s frente a usar 2,0 solo en la consolidación.
+
+    Por eso `jitter_px_consolidacion` se puede fijar aparte; si no está,
+    se hereda `jitter_px` (comportamiento de antes).
+    """
+    cfg = cfg_tracking.get("escalado_resolucion", {})
+    base = cfg.get("jitter_px", 2.0)
+    if uso == "consolidacion":
+        return cfg.get("jitter_px_consolidacion", base)
+    return base
 
 
 def postprocesar(
@@ -164,7 +185,7 @@ def postprocesar(
             dist_max=cfg_consol.get("dist_max", 6.0),
             min_frames_comunes=cfg_consol.get("min_frames_comunes", 20),
             resolucion=resolucion,
-            jitter_px=_jitter(cfg_tracking),
+            jitter_px=_jitter(cfg_tracking, "consolidacion"),
         )
 
     # Corte de teletransportes: va DESPUÉS de consolidar (una fusión puede

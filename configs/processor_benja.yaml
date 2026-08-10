@@ -11,7 +11,7 @@
 # archivos pesados (vídeo, modelo) vienen de Drive por enlace simbólico:
 #
 #   !mkdir -p data/raw models/weights data/calibracion_benja
-#   !ln -sf "/content/drive/MyDrive/tactical/benja/partido_benja.mp4" data/raw/
+#   !ln -sf "/content/drive/MyDrive/tactical/benja/benja_gredos_p1_20min.mp4" data/raw/
 #   !ln -sf "/content/drive/MyDrive/tactical/benja/best_v4pre.pt" models/weights/
 #
 # Si prefieres no usar enlaces, pon las rutas de Drive directamente en la
@@ -79,7 +79,7 @@ campo_m:
   margen: 5.0
 
 rutas:
-  video: data/raw/partido_benja.mp4
+  video: data/raw/benja_gredos_p1_20min.mp4
   cache: data/tracking_benja/cache_detecciones_benja.pkl
   cache_colores: data/tracking_benja/cache_colores_benja.pkl
   homografia: data/calibracion_benja/homografia_benja.npy

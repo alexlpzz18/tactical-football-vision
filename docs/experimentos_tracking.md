@@ -1277,3 +1277,82 @@ Nota de honestidad sobre el experimento: el caché es 1 de cada 3 frames
 dio su mejor oportunidad pasándole el fps efectivo real (fila 2) y mejora
 todavía un poco (IDF1 0,408, tasa 0,151). El resultado no es un artefacto
 del submuestreo: es a pesar de él.
+
+---
+
+## Benjamín: umbrales MEDIDOS, no estimados (10-ago-2026)
+
+El 09-ago se activó el escalado por resolución con `jitter_px: 2.0` y
+`hueco_min: 1.5` **estimados a ojo**. Aquí se miden sobre el propio caché.
+
+### Dos bugs que la medición destapó
+
+1. **`hueco_min` bajo la sección `cosido`**, que no acepta esa clave:
+   `configs/tracking_benja.yaml` **crasheaba en su primer uso real**.
+   Blindado con un test que carga todos los `configs/tracking*.yaml`.
+2. **El escalado por resolución nunca llegaba a producción**:
+   `processor.py` llamaba a `postprocesar()` sin el argumento
+   `resolucion`. Los tests unitarios pasaban porque probaban las piezas
+   sueltas. Se ve en la tabla: las variantes A, B y C daban resultados
+   IDÉNTICOS hasta conectarlo.
+
+### Jitter real de las cajas
+
+Residuo del punto de pie respecto a un ajuste lineal local de 5 frames,
+9.910 muestras: **p50 1,06 px · rms 2,4 px · p90 4,0 px**. Es constante
+en píxeles a cualquier profundidad (2,2–2,8 px rms en las cuatro zonas):
+es ruido del detector, y lo que cambia con la distancia es cuántos metros
+vale ese píxel. El ruido del *desplazamiento* entre dos frames es
+√2 · 2,4 ≈ **3,5 px**, que es el número que usa el corte.
+
+### Error de interpolar un hueco (p90, metros)
+
+| hueco | x 0-15 m | x 15-30 m | x 30-45 m | x 45-62 m |
+|---|---|---|---|---|
+| 0,30 s | 0,24 | 0,42 | 0,74 | 1,07 |
+| 1,10 s | 0,41 | 0,66 | 1,12 | 1,48 |
+| 2,10 s | 0,92 | 1,33 | 1,88 | 2,13 |
+| 3,10 s | 1,64 | 2,10 | 2,69 | 2,79 |
+
+Dos lecturas: el 1,07 m del fondo con hueco de 0,3 s **no es error de
+interpolación**, es el suelo de ruido de proyección; e `max_hueco: 6.0`,
+heredado del F11, inventaba >1,6 m **incluso en la mejor zona**. Topes
+nuevos: 2,5 s / 1,2 s (≈1 m de ficción máxima).
+
+### Variantes medidas (tramo min 5-6, sin GT: métricas de estabilidad)
+
+| variante | ids | cortes | conc | % interp | vida p50 | ids <2 s | 31-45 m: n / vida |
+|---|---|---|---|---|---|---|---|
+| A. sin escalado (baseline) | 89 | 138 | 27 | 48,6 | 7,2 s | 24 | 42 / 8,0 s |
+| B. escalado, jitter 2,0 estimado | 81 | 107 | 16 | 17,7 | 8,6 s | 19 | 34 / 13,5 s |
+| C. escalado, jitter 3,5 medido | 83 | 124 | 15 | 16,4 | 7,0 s | 26 | 38 / 6,9 s |
+| D. C + huecos medidos | 83 | 124 | 15 | 13,2 | 7,0 s | 26 | 38 / 6,9 s |
+| **E. corte 3,5 / consol 2,0 + huecos** | **72** | **93** | **16** | **14,7** | **9,5 s** | **16** | **31 / 30,2 s** |
+| F. E con consolidación 1,5 | 72 | 93 | 16 | 14,7 | 9,5 s | 16 | 31 / 30,2 s |
+| *referencia F7* | *~15* | *0* | *15* | | | | |
+
+### El hallazgo: el jitter medido empeoraba las cosas
+
+C (jitter 3,5 medido) sale **peor** que B (2,0 estimado) en toda métrica
+de estabilidad. No es que la medición esté mal: es que `jitter_px`
+alimentaba dos umbrales que hacen preguntas distintas.
+
+- El **corte de velocidad** pregunta *"¿este salto cabe dentro del
+  ruido?"*. Necesita el ruido real (3,5 px) o trocea identidades sanas.
+- La **consolidación** pregunta *"¿estas dos fichas son la misma
+  persona?"*. Ensancharla con todo el margen de ruido sobre-fusiona
+  jugadores distintos, y el corte trocea después esas quimeras.
+
+Separarlos (`jitter_px_consolidacion`) es la variante E, adoptada: en la
+franja 31-45 m las identidades pasan de **38 de 6,9 s a 31 de 30,2 s**
+(×4 de vida), los cortes de 138 a 93 y la concurrencia de 27 a 16 —
+la plantilla real de F7 es 14 jugadores + árbitro.
+
+Honestidad sobre el alcance: **el benjamín no tiene ground truth**, así
+que aquí no hay cobertura ni IDF1, solo métricas de estabilidad y la
+plantilla conocida como referencia. Son proxies; el veredicto es visual.
+
+### Entregables
+
+`outputs/detecciones_benja.mp4` (600 frames, 10.904 cajas, 18,2/frame,
+codec avc1) y los cuatro replays `replay_benja_{normal,x,y,xy}.html`.
