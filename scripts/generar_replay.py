@@ -9,6 +9,7 @@ Uso:
 """
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -40,6 +41,24 @@ def main() -> None:
     )
     parser.add_argument("--titulo", default="Replay táctico")
     parser.add_argument(
+        "--espejar",
+        choices=["x", "y", "xy"],
+        default=None,
+        help="Voltea la VISTA para casarla con la orientación de la cámara "
+        "(no toca los datos).",
+    )
+    parser.add_argument(
+        "--meta",
+        default=None,
+        help="JSON de metadatos del processor, del que se leen los colores "
+        "reales de cada equipo. Por defecto se busca junto al CSV.",
+    )
+    parser.add_argument(
+        "--sin-colores-reales",
+        action="store_true",
+        help="Ignora los colores del meta y usa azul/rojo por convenio.",
+    )
+    parser.add_argument(
         "--max-edad-interp",
         type=float,
         default=0.6,
@@ -63,10 +82,28 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
     )
+
+    # Colores reales de equipo: del meta indicado o del que acompañe al CSV
+    colores_equipo = None
+    if not args.sin_colores_reales:
+        ruta_meta = (
+            Path(args.meta)
+            if args.meta
+            else Path(str(Path(args.csv).with_suffix("")) + "_meta.json")
+        )
+        if ruta_meta.exists():
+            colores_equipo = json.loads(ruta_meta.read_text()).get("colores_equipo")
+            if colores_equipo:
+                print(f"Colores de equipo del clasificador: {colores_equipo}")
+        elif args.meta:
+            print(f"AVISO: no existe {ruta_meta}; se usan los colores por convenio.")
+
     ruta = generar_replay(
         args.csv,
         args.salida,
         modelo=modelo,
+        espejar=args.espejar,
+        colores_equipo=colores_equipo,
         max_edad_interp_s=args.max_edad_interp,
         min_vida_s=args.min_vida,
         largo=args.largo,

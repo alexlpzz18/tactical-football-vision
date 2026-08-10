@@ -129,6 +129,35 @@ def extraer_color_torso(
     return hist / norma if norma > 0 else hist
 
 
+def color_dominante(feature: np.ndarray, params=None) -> tuple[int, int, int]:
+    """Color RGB representativo de una feature de torso (histograma HS).
+
+    La feature es un histograma 2D de tono×saturación normalizado. El bin
+    con más masa es el color que más veces aparece en el pecho de esos
+    jugadores: convertido a RGB, es literalmente el color de la camiseta.
+
+    Sirve para que el replay pinte a cada equipo de SU color (naranja y
+    blanco, si eso es lo que llevan) en vez de un azul y un rojo fijos que
+    obligan al entrenador a mirar la leyenda.
+
+    El valor (brillo) no está en la feature —el histograma es solo H y S—
+    así que se fija alto: interesa un color legible en pantalla, no
+    reproducir la iluminación del campo.
+    """
+    p = params or ParametrosClasificadorColor()
+    hist = np.asarray(feature, dtype=np.float64).reshape(p.bins_h, p.bins_s)
+    if not np.isfinite(hist).any() or hist.sum() <= 0:
+        return (128, 128, 128)
+    bin_h, bin_s = np.unravel_index(int(np.argmax(hist)), hist.shape)
+    # Centro del bin, en la escala HSV de OpenCV (H 0-179, S 0-255)
+    h = (bin_h + 0.5) * 180.0 / p.bins_h
+    sat = (bin_s + 0.5) * 256.0 / p.bins_s
+    # Saturación mínima para que un blanco/gris no salga negro en pantalla
+    hsv = np.uint8([[[h, min(sat, 255), 235]]])
+    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0]
+    return (int(bgr[2]), int(bgr[1]), int(bgr[0]))
+
+
 class TeamClassifierColor:
     """Clasificador de equipos por color, 100 % automático (sin etiquetas)."""
 
@@ -231,6 +260,22 @@ class TeamClassifierColor:
             # Todos los umbrales fusionan en 1 grupo: usar el mínimo del barrido
             mejor_umbral = p.umbral_min
         return mejor_umbral
+
+    def colores_equipos(self) -> dict[str, str]:
+        """{'A': '#rrggbb', 'B': '#rrggbb'} de los prototipos aprendidos.
+
+        Es el color con el que el replay pinta cada equipo. Si el
+        clasificador no está entrenado, devuelve {} y quien llame usa sus
+        colores por defecto.
+        """
+        if self._prototipos is None:
+            return {}
+        salida = {}
+        for etiqueta, proto in (("A", self._prototipos.a), ("B", self._prototipos.b)):
+            r, g, b = color_dominante(proto, self.params)
+            salida[etiqueta] = f"#{r:02x}{g:02x}{b:02x}"
+        logger.info("Colores de equipo derivados del clasificador: %s", salida)
+        return salida
 
     # ------------------------------------------------------------- predict
     def predict_color(self, feat: np.ndarray) -> str:

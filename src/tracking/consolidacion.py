@@ -54,6 +54,8 @@ def consolidar_colocadas(
     equipos: dict[int, str],
     dist_max: float = 4.0,
     min_frames_comunes: int = 100,
+    resolucion=None,
+    jitter_px: float = 2.0,
 ) -> tuple[list[Trayectoria], dict[int, str]]:
     """Fusiona identidades del mismo equipo co-locadas de forma sostenida.
 
@@ -63,6 +65,11 @@ def consolidar_colocadas(
         dist_max: distancia MEDIANA máxima (m) en los frames comunes.
         min_frames_comunes: mínimo de frames compartidos para decidir. Alto
             a propósito: "sostenida", no un cruce.
+        resolucion: ResolucionCampo opcional. Dos fichas del MISMO jugador
+            se separan tanto más cuanto peor es la resolución de su zona,
+            así que el umbral se amplía con ella (dist_max + jitter · m/px)
+            en vez de ser el mismo en todo el campo.
+        jitter_px: vibración típica de la caja del detector, en píxeles.
 
     Returns:
         (trayectorias nuevas, equipos nuevos) con los ids renumerados 1..M.
@@ -98,7 +105,14 @@ def consolidar_colocadas(
             distancias = [
                 np.linalg.norm(posiciones[i][f] - posiciones[j][f]) for f in comunes
             ]
-            if float(np.median(distancias)) <= dist_max:
+            umbral = dist_max
+            if resolucion is not None:
+                # La zona la marca el punto medio del par
+                medio = np.mean(
+                    [(posiciones[i][f] + posiciones[j][f]) / 2 for f in comunes], axis=0
+                )
+                umbral += jitter_px * resolucion.metros_por_pixel(medio)
+            if float(np.median(distancias)) <= umbral:
                 if raiz(i) != raiz(j):
                     padre[raiz(i)] = raiz(j)
                     n_fusiones += 1

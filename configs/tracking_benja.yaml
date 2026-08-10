@@ -96,6 +96,7 @@ interpolacion:
   # perfil (produce trayectorias, no identidades de tracklets).
   activa: true
   max_hueco: 6.0
+  hueco_min: 1.5   # tope en la peor zona (escalado por resolución)
 
 # Consolidación FINAL (post-clasificación): fusiona fichas del MISMO
 # equipo co-locadas de forma sostenida — los racimos que se ven en el
@@ -130,9 +131,30 @@ corte_velocidad:
   # 309 m/s) que no formaban racha pero eran lo más visible del replay.
   v_teleport: 60.0
 
+# ── ESCALADO POR RESOLUCIÓN (clave en este encuadre) ─────────────────
+#
+# Diagnóstico (09-ago-2026): el corte de velocidad hizo 138 cortes en un
+# minuto, frente a un puñado en Villaviciosa. No es que los niños
+# teletransporten: los umbrales estaban en m/s FIJOS y aquí la resolución
+# no es uniforme — un píxel vale 0,02 m junto al área cercana y 0,44 m en
+# el fondo. Con un jitter de caja de 2 px y dt=0,12 s, ese mismo temblor
+# vale 0,35 m/s cerca y 7,4 m/s lejos, así que un umbral de 8,5 m/s se
+# dispara en el fondo con ruido puro.
+#
+# Con esto activo, cada umbral se calcula en la zona donde ocurre:
+#   corte de velocidad   v_max + jitter · (m/píxel) / dt
+#   consolidación        dist_max + jitter · (m/píxel)
+#   interpolación        el hueco máximo se REDUCE donde peor se ve
+#                        (rellenar allí inventa muchos más metros)
+escalado_resolucion:
+  activo: true
+  jitter_px: 2.0 # vibración típica de la caja del detector
+  paso_rejilla_m: 2.0 # resolución de la rejilla precalculada
+
 cosido:
   # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
   max_hueco: 6.0
+  hueco_min: 1.5   # tope en la peor zona (escalado por resolución)
   # Tolerancia de distancia para coser: tol = tol_base + tol_por_seg * hueco
   tol_base: 1.2
   tol_por_seg: 3.0

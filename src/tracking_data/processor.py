@@ -550,8 +550,17 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
     trayectorias, equipos = postprocesar(identidades, equipos, frames_ts, cfg_tracking)
 
+    # Colores REALES de cada equipo (del prototipo del clasificador), para
+    # que el replay no tenga que pintar de azul y rojo por convenio.
+    colores_equipo = clasificador.colores_equipos() if clasificador else {}
+
     return exportar_posiciones(
-        trayectorias, equipos, datos, cfg, trayectorias=trayectorias
+        trayectorias,
+        equipos,
+        datos,
+        cfg,
+        trayectorias=trayectorias,
+        colores_equipo=colores_equipo,
     )
 
 
@@ -561,6 +570,7 @@ def exportar_posiciones(
     datos: dict,
     cfg: dict,
     trayectorias=None,
+    colores_equipo: dict | None = None,
 ) -> pd.DataFrame:
     """Escribe el CSV de posiciones y el meta JSON (formato compatible).
 
@@ -635,6 +645,8 @@ def exportar_posiciones(
         "pipeline_version": "v2",
         "perfil_tracking": cfg["tracking"]["perfil"],
         "interpolacion": trayectorias is not None,
+        # Color de camiseta de cada equipo, derivado del clasificador
+        "colores_equipo": colores_equipo or {},
         "n_identidades": len(identidades),
         "equipos": {
             etiqueta: sum(1 for e in equipos.values() if e == etiqueta)

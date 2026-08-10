@@ -50,12 +50,24 @@ def interpolar_trayectorias(
     trayectorias: list[list[tuple[int, np.ndarray, bool]]],
     frames_ts: list[tuple[int, float]],
     max_hueco: float,
+    resolucion=None,
+    hueco_min: float = 1.0,
 ) -> list[list[tuple[int, np.ndarray, bool]]]:
     """Rellena los huecos de trayectorias ya en formato (frame, pos, real).
 
     Mismas reglas que interpolar_identidad: solo entre observaciones
     REALES consecutivas, solo en frames del caché y solo si el hueco no
     supera max_hueco segundos.
+
+    Con `resolucion`, el hueco máximo se REDUCE donde la resolución es
+    peor: rellenar una zona en la que un píxel vale medio metro parte de
+    anclajes mucho menos fiables. El límite baja de `max_hueco` (mejor
+    zona) a `hueco_min` (peor) con la RAÍZ del factor de resolución, no
+    con el factor entero: el error de una recta interpolada lo domina la
+    duración del hueco, y solo en parte la calidad de sus dos extremos;
+    escalar con el factor completo recortaba la interpolación casi a cero
+    a partir del primer tercio del campo. Es una heurística — el reparto
+    exacto habrá que medirlo con el primer tramo etiquetado.
     """
     indices_frames = [f for f, _ in frames_ts]
     t_por_frame = dict(frames_ts)
@@ -67,7 +79,13 @@ def interpolar_trayectorias(
         )
         salida = [(f, pos, True) for _t, f, pos in reales]
         for (t0, f0, p0), (t1, f1, p1) in zip(reales[:-1], reales[1:]):
-            if t1 - t0 > max_hueco:
+            limite = max_hueco
+            if resolucion is not None:
+                # factor 1 en la mejor zona → max_hueco; factor alto en la
+                # peor → hueco_min. Interpolación suave entre ambos.
+                factor = resolucion.factor((p0 + p1) / 2)
+                limite = max(hueco_min, max_hueco / np.sqrt(max(factor, 1.0)))
+            if t1 - t0 > limite:
                 continue
             inicio = bisect.bisect_right(indices_frames, f0)
             fin = bisect.bisect_left(indices_frames, f1)

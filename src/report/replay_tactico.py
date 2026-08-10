@@ -47,6 +47,62 @@ COLORES = {
 }
 
 
+def _oscurecer(hex_color: str, factor: float = 0.55) -> str:
+    """Versión más oscura de un color, para los porteros de ese equipo."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : (i + 2)], 16) for i in (0, 2, 4))
+    return "#%02x%02x%02x" % tuple(int(c * factor) for c in (r, g, b))
+
+
+def _borde(hex_color: str) -> str:
+    """Borde del círculo: el mismo color un poco más oscuro."""
+    return _oscurecer(hex_color, 0.75)
+
+
+def colores_con_equipos(colores_equipo: dict | None) -> dict:
+    """Paleta del replay usando los colores REALES de cada equipo.
+
+    `colores_equipo` viene del meta del processor ({'A': '#e8721c', ...}),
+    derivado del prototipo de color del clasificador. Es producto puro: si
+    un equipo juega de naranja, su ficha es naranja y el entrenador no
+    necesita leyenda. Sin ese dato, se usan los colores por convenio de
+    siempre (azul/rojo), que es lo que ocurre con los CSV antiguos.
+    """
+    paleta = dict(COLORES)
+    for equipo in ("A", "B"):
+        color = (colores_equipo or {}).get(equipo)
+        if not color:
+            continue
+        paleta[equipo] = (color, _borde(color))
+        # El portero viste distinto, pero interesa que se lea de qué
+        # equipo es: su color es el del equipo, oscurecido.
+        paleta[f"portero_{equipo}"] = (_oscurecer(color), _oscurecer(color, 0.4))
+    return paleta
+
+
+def _leyenda(paleta: dict) -> str:
+    """Leyenda del replay con los colores REALMENTE usados.
+
+    Iba con los colores por convenio escritos a mano en la plantilla: al
+    pintar los equipos de su color de camiseta, la leyenda decía azul
+    mientras las fichas eran naranjas.
+    """
+    filas = [
+        ("A", "Equipo A"),
+        ("B", "Equipo B"),
+        ("portero_A", "Portero A"),
+        ("portero_B", "Portero B"),
+        ("otro", "Sin equipo"),
+        ("staff", "No jugador"),
+    ]
+    return "\n      ".join(
+        f'<span><i class="punto" style="background:{paleta[clave][0]}"></i>'
+        f"{texto}</span>"
+        for clave, texto in filas
+        if clave in paleta
+    )
+
+
 def _filtrar_creible(
     df: pd.DataFrame, max_edad_interp_s: float, min_vida_s: float
 ) -> pd.DataFrame:
@@ -109,6 +165,8 @@ def generar_replay(
     titulo: str = "Replay táctico",
     max_edad_interp_s: float = 0.6,
     min_vida_s: float = 2.0,
+    espejar: str | None = None,
+    colores_equipo: dict | None = None,
 ) -> Path:
     """Genera el HTML del replay desde el CSV de posiciones.
 
@@ -132,7 +190,17 @@ def generar_replay(
             respecto a una detección real de la misma identidad.
         min_vida_s: duración mínima (detecciones reales) para pintar una
             identidad.
+        espejar: 'x', 'y' o 'xy' para voltear la vista y que coincida con
+            lo que se ve en el vídeo. El replay es cenital y la cámara no:
+            según dónde esté, la izquierda de la pantalla puede ser la
+            derecha del campo, y comparar replay y vídeo se vuelve un
+            ejercicio de gimnasia mental. Solo afecta al DIBUJO; los datos
+            y las métricas no se tocan.
+        colores_equipo: {'A': '#rrggbb', 'B': '#rrggbb'} del meta del
+            processor. Sin ellos, azul y rojo por convenio.
     """
+    if espejar not in (None, "", "x", "y", "xy"):
+        raise ValueError(f"espejar debe ser 'x', 'y' o 'xy' (recibido {espejar!r})")
     # El MODELO decide qué campo se pinta. Sin él, el F11 de Villaviciosa
     # con las dimensiones de src/campo.py (comportamiento histórico);
     # largo/ancho sueltos siguen aceptándose y ajustan el modelo.
@@ -188,11 +256,15 @@ def generar_replay(
 
     t_min = float(df["tiempo_s"].min())
     t_max = float(df["tiempo_s"].max())
+    paleta = colores_con_equipos(colores_equipo)
 
     html = (
         _PLANTILLA.replace("__TITULO__", titulo)
         .replace("__DATOS__", json.dumps(identidades, separators=(",", ":")))
-        .replace("__COLORES__", json.dumps(COLORES, separators=(",", ":")))
+        .replace("__COLORES__", json.dumps(paleta, separators=(",", ":")))
+        .replace("__LEYENDA__", _leyenda(paleta))
+        .replace("__ESPEJO_X__", "true" if espejar and "x" in espejar else "false")
+        .replace("__ESPEJO_Y__", "true" if espejar and "y" in espejar else "false")
         .replace("__LARGO__", str(largo))
         .replace("__ANCHO__", str(ancho))
         .replace("__TMIN__", str(t_min))
@@ -266,11 +338,7 @@ _PLANTILLA = """<!DOCTYPE html>
       <div class="reloj"><span id="reloj">--:--</span> / <span id="fin">--:--</span></div>
     </div>
     <div class="leyenda">
-      <span><i class="punto" style="background:#2563eb"></i>Equipo A</span>
-      <span><i class="punto" style="background:#dc2626"></i>Equipo B</span>
-      <span><i class="punto" style="background:#1e3a8a"></i>Portero A</span>
-      <span><i class="punto" style="background:#7f1d1d"></i>Portero B</span>
-      <span><i class="punto" style="background:rgba(128,128,128,0.45)"></i>Sin equipo</span>
+      __LEYENDA__
     </div>
   </div>
 </div>
@@ -289,8 +357,11 @@ const canvas = document.getElementById('campo');
 const W = (LARGO + 2 * PAD) * ESCALA, H = (ANCHO + 2 * PAD) * ESCALA;
 canvas.width = W; canvas.height = H;
 const ctx = canvas.getContext('2d');
-const px = (x) => (x + PAD) * ESCALA;
-const py = (y) => (y + PAD) * ESCALA;
+// Espejado de la VISTA (no de los datos): sirve para que el replay se
+// vea con la misma orientación que el vídeo y comparar sea inmediato.
+const ESPEJO_X = __ESPEJO_X__, ESPEJO_Y = __ESPEJO_Y__;
+const px = (x) => ((ESPEJO_X ? LARGO - x : x) + PAD) * ESCALA;
+const py = (y) => ((ESPEJO_Y ? ANCHO - y : y) + PAD) * ESCALA;
 
 // Punteros por identidad para buscar el par de keyframes que envuelve a T
 const punteros = DATOS.map(() => 0);

@@ -108,11 +108,17 @@ def correr_perfil(
     return identidades
 
 
+def _jitter(cfg_tracking: dict) -> float:
+    """Vibración típica de la caja del detector, en píxeles (config)."""
+    return cfg_tracking.get("escalado_resolucion", {}).get("jitter_px", 2.0)
+
+
 def postprocesar(
     identidades: list[list[Tracklet]],
     equipos: dict[int, str],
     frames_ts: list[tuple[int, float]],
     cfg_tracking: dict,
+    resolucion=None,
 ) -> tuple[list, dict[int, str]]:
     """Fase POST-clasificación, compartida banco↔producción.
 
@@ -132,6 +138,10 @@ def postprocesar(
             staff aplicados).
         frames_ts: [(frame_idx, t), ...] de todos los frames del caché.
         cfg_tracking: contenido de configs/tracking.yaml.
+        resolucion: ResolucionCampo opcional (src/tracking/resolucion.py).
+            Con ella los umbrales de corte, consolidación e interpolación
+            se adaptan a los metros-por-píxel de cada zona, en vez de ser
+            los mismos junto a la cámara y en el fondo.
 
     Returns:
         (trayectorias, equipos) — los equipos se renumeran si la
@@ -153,6 +163,8 @@ def postprocesar(
             equipos,
             dist_max=cfg_consol.get("dist_max", 6.0),
             min_frames_comunes=cfg_consol.get("min_frames_comunes", 20),
+            resolucion=resolucion,
+            jitter_px=_jitter(cfg_tracking),
         )
 
     # Corte de teletransportes: va DESPUÉS de consolidar (una fusión puede
@@ -167,12 +179,18 @@ def postprocesar(
             duracion_min=cfg_corte.get("duracion_min", 0.5),
             min_observaciones=cfg_corte.get("min_observaciones", 3),
             v_teleport=cfg_corte.get("v_teleport", 60.0),
+            resolucion=resolucion,
+            jitter_px=_jitter(cfg_tracking),
         )
 
     cfg_interp = cfg_tracking.get("interpolacion", {})
     if cfg_interp.get("activa", False):
         trayectorias = interpolar_trayectorias(
-            trayectorias, frames_ts, cfg_interp.get("max_hueco", 6.0)
+            trayectorias,
+            frames_ts,
+            cfg_interp.get("max_hueco", 6.0),
+            resolucion=resolucion,
+            hueco_min=cfg_interp.get("hueco_min", 1.0),
         )
 
     return trayectorias, equipos

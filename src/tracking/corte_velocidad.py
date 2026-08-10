@@ -35,6 +35,8 @@ def cortar_por_velocidad(
     duracion_min: float = 0.5,
     min_observaciones: int = 3,
     v_teleport: float | None = 60.0,
+    resolucion=None,
+    jitter_px: float = 2.0,
 ) -> tuple[list[Trayectoria], dict[int, str]]:
     """Parte las identidades allí donde teletransportan.
 
@@ -63,6 +65,11 @@ def cortar_por_velocidad(
             (un fragmento de 1-2 puntos no es una ficha, es un parpadeo).
         v_teleport: velocidad de un solo paso que ya se considera
             teletransporte (None = desactivar este criterio).
+        resolucion: ResolucionCampo opcional. Con ella los umbrales dejan
+            de ser fijos y se le suma a cada uno el ruido de velocidad de
+            ESA zona (jitter_px · metros-por-píxel / dt). Sin ella, los
+            umbrales son constantes: el comportamiento de siempre.
+        jitter_px: vibración típica de la caja del detector, en píxeles.
 
     Returns:
         (trayectorias nuevas, equipos nuevos) renumeradas 1..M.
@@ -86,14 +93,20 @@ def cortar_por_velocidad(
             if dt <= 0:
                 continue
             velocidad = float(np.linalg.norm(p1 - p0) / dt)
-            if v_teleport is not None and velocidad > v_teleport:
+            # Umbrales LOCALES: en las zonas de mala resolución, el jitter
+            # de la caja ya produce por sí solo una velocidad aparente
+            # grande; sumarla evita cortar identidades por puro ruido.
+            margen = 0.0
+            if resolucion is not None:
+                margen = resolucion.velocidad_ruido(p1, jitter_px, dt)
+            if v_teleport is not None and velocidad > v_teleport + margen:
                 # Salto instantáneo: se corta aquí mismo (racha de un paso)
                 if inicio_racha is not None:
                     rachas.append((inicio_racha, k))
                     inicio_racha = None
                 rachas.append((k, k + 1))
                 continue
-            if velocidad > v_max:
+            if velocidad > v_max + margen:
                 if inicio_racha is None:
                     inicio_racha = k
             elif inicio_racha is not None:
