@@ -1170,3 +1170,110 @@ análisis será progresivamente peor con la distancia.
 
 A favor de este caso: **sin distorsión de lente**, así que se evita el
 residuo radial que impide cuadrar círculo y áreas en Villaviciosa.
+
+---
+
+## ¿Aporta nuestro tracking sobre un tracker estándar? (10-ago-2026)
+
+La pregunta de fondo del proyecto, respondida con datos. ByteTrack (el de
+`supervision`, tal cual viene, sin tocar un parámetro) sobre las MISMAS
+detecciones cacheadas del tramo de validación de Villaviciosa (v4pre),
+medido con el MISMO banco, y con NUESTRO clasificador de equipos aplicado
+sobre SUS identidades. Reproducible: `scripts/comparar_tracker.py`.
+
+Solo cambia quién decide las identidades: las posiciones en metros salen
+del mismo caché en todos los casos.
+
+| pipeline | nIds | cob. | conc | IDF1 | IDSW | tasa | recall | quimeras | equipos |
+|---|---|---|---|---|---|---|---|---|---|
+| ByteTrack tal cual | 237 | 0,516 | 20 | **0,406** | 251 | 0,165 | 0,687 | **5/41** | 0,655 |
+| ByteTrack con fps real (8,3) | 262 | 0,511 | 20 | **0,408** | 230 | **0,151** | 0,688 | **4/39** | 0,650 |
+| ByteTrack + nuestro post completo | 229 | 0,441 | 19 | 0,393 | 218 | 0,163 | 0,602 | 2/33 | 0,632 |
+| ByteTrack + solo interpolación | 237 | 0,533 | **23** | 0,386 | 279 | 0,176 | 0,715 | 6/41 | 0,624 |
+| ByteTrack + interpolación + corte | 252 | 0,531 | 23 | 0,363 | 284 | 0,180 | 0,712 | 8/44 | 0,633 |
+| Nuestro candidato (sin post) | 52 | 0,453 | 20 | 0,334 | 508 | 0,339 | 0,675 | 24/41 | **0,750** |
+| Nuestro pipeline COMPLETO (producción) | 244 | **0,551** | 34 | 0,259 | 534 | 0,301 | **0,800** | 23/43 | 0,661 |
+| *referencia GT* | *23* | *1,000* | *22* | | | | | | |
+
+`conc` = mediana de identidades simultáneas · `tasa` = IDSW por posición
+emparejada · `quimeras` = identidades con ≥10 votos de GT cuyo GT
+dominante no llega al 60 %.
+
+### Veredicto: el estándar gana, y no por poco
+
+Comparando lo que hay que comparar — **ByteTrack + solo interpolación**
+frente a **nuestro pipeline completo**:
+
+- cobertura 0,533 vs 0,551 → perdemos **0,018** (un 3 %)
+- concurrencia 23 vs 34 → el GT es 22. ByteTrack **acierta el número de
+  personas en el campo**; nosotros pintamos un 50 % de fichas de más
+- IDF1 0,386 vs 0,259 → **+49 %** a favor del estándar
+- tasa de IDSW 0,176 vs 0,301 → **casi la mitad** de saltos de identidad
+- quimeras 6/41 vs 23/43 → **4× menos** identidades contaminadas
+
+Es decir: el estándar cede 3 % de cobertura y gana en TODO lo demás,
+incluidas las dos cosas que más trabajo nos ha costado arreglar a mano
+(la concurrencia del replay y las quimeras).
+
+Y el dato más incómodo: **ByteTrack tal cual, sin nada nuestro, ya cumple
+el objetivo de replay creíble** (concurrencia 20 ≤ 26) con 5 quimeras,
+cuando a nosotros nos costó cuatro variantes medidas llegar a 24 con 23
+quimeras.
+
+### Por qué perdimos: 52 identidades "limpias" no lo eran
+
+Nuestro candidato produce 52 identidades para 23 personas y ByteTrack 237.
+Durante meses leímos eso como una ventaja nuestra. Es al revés:
+
+- las 52 nuestras contienen **24 quimeras** (mezclan jugadores distintos)
+- las 237 de ByteTrack contienen **5**
+
+ByteTrack fragmenta mucho (p50 = 7 observaciones por identidad, 66 de un
+solo par de frames) pero **casi nunca mezcla**. Nosotros hacemos lo
+contrario: cosido global + exclusión espacial + cota de plantilla fuerzan
+fusiones para llegar a ~23, y esas fusiones forzadas son las quimeras.
+
+La asimetría es la clave: **fragmentar es un error recuperable**
+(dos trozos del mismo jugador se pueden coser después); **mezclar no lo
+es** (una vez que una identidad contiene a dos jugadores, ninguna métrica
+colectiva posterior es fiable). Optimizamos el número de identidades, que
+es un proxy, en vez de la pureza, que es lo que importa.
+
+### El post-proceso solo tapa nuestros propios defectos
+
+Aplicado entero a ByteTrack, el post-proceso lo **empeora**: 0,516 → 0,441
+de cobertura. La consolidación mismo-equipo y el corte de velocidad están
+calibrados para los defectos de nuestro tracker; sobre uno que no los
+tiene, solo restan. La única pieza que aporta en ambos casos es la
+**interpolación** (+0,017 sobre ByteTrack).
+
+### Lo que SÍ aporta nuestro trabajo (y hay que conservar)
+
+Nada de esto lo da un tracker estándar, y es lo que sostiene el producto:
+
+- **el tracking en METROS** y la homografía: ByteTrack decide identidades
+  en píxeles, pero todo lo demás (métricas, umbral por profundidad,
+  reglas de portero y staff, escalado por resolución) vive en el campo
+- **el banco de evaluación** — es literalmente lo que ha permitido
+  descubrir este resultado; sin cobertura colectiva, concurrencia y
+  quimeras habríamos seguido celebrando las 52 identidades
+- **el clasificador de equipos**, ortogonal al tracker (de hecho es la
+  única columna donde ganamos: 0,750 vs 0,655)
+- **la interpolación** y el filtro de credibilidad del replay
+- las reglas de **portero/staff** por geometría de campo
+
+### Decisión
+
+**Se adopta ByteTrack como base de identidades**, con nuestra
+interpolación encima, y se conserva todo lo demás (metros, banco,
+equipos, reglas, replay). Pendiente antes de sustituir en producción:
+recuperar la cobertura perdida cosiendo fragmentos de ByteTrack **con
+criterio de pureza** (no de cupo), que es exactamente el problema que
+nuestra Etapa B intentaba resolver — pero partiendo de identidades que no
+vienen ya contaminadas.
+
+Nota de honestidad sobre el experimento: el caché es 1 de cada 3 frames
+(dt = 0,12 s), lo que penaliza el modelo de movimiento de ByteTrack. Se le
+dio su mejor oportunidad pasándole el fps efectivo real (fila 2) y mejora
+todavía un poco (IDF1 0,408, tasa 0,151). El resultado no es un artefacto
+del submuestreo: es a pesar de él.
