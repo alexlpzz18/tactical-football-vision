@@ -48,6 +48,7 @@ from src.tracking_data.processor import (  # noqa: E402
     _build_camera_matrix,
     _filtrar_detecciones_v2,
     _rango_de_frames,
+    posicionar_en_frame,
     project_point,
 )
 
@@ -91,9 +92,8 @@ def _abrir_escritor(salida: Path, fps: float, w: int, h: int):
 
 
 def _hex_a_bgr(color_hex: str) -> tuple[int, int, int]:
-    color_hex = color_hex.lstrip("#")
-    r, g, b = (int(color_hex[i : (i + 2)], 16) for i in (0, 2, 4))
-    return (b, g, r)
+    r, g, b = bytes.fromhex(color_hex.lstrip("#"))
+    return (b, g, r)  # OpenCV trabaja en BGR
 
 
 def cargar_tracking(ruta_csv: Path, homografia, tolerancia_m: float = 2.0):
@@ -121,7 +121,19 @@ def cargar_tracking(ruta_csv: Path, homografia, tolerancia_m: float = 2.0):
 
 
 def dibujar_frame(frame, dets, tracking_frame, colores_equipo, mostrar_conf):
-    """Pinta las cajas y, si hay tracking, su identidad y equipo."""
+    """Pinta las cajas y, si hay tracking, su identidad y equipo.
+
+    REGLA INNEGOCIABLE de esta herramienta: la geometría que se dibuja
+    son los píxeles CRUDOS del detector (x1, y1, x2, y2 del caché), sin
+    homografía de por medio en ningún punto. Solo así el vídeo sirve para
+    juzgar la predicción: si la caja se pinta re-proyectando metros a
+    píxeles, lo que se ve es la calidad de la homografía, no la del
+    detector.
+
+    El CSV entra ÚNICAMENTE como etiqueta (identidad y equipo) sobre esa
+    caja cruda, emparejando por cercanía en metros y solo con posiciones
+    reales (`es_real == 1`, filtrado en cargar_tracking).
+    """
     for det in dets:
         mx, my, x1, y1, x2, y2, conf = det[:7]
         etiqueta, id_jugador = None, None
@@ -292,7 +304,10 @@ def main() -> None:
     sin_distorsion = cfg["distorsion"]["k1"] == 0 and cfg["distorsion"]["k2"] == 0
     frame_ini, frame_fin = _rango_de_frames(cfg["muestreo"], fps)
     if frame_ini > 0:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ini)
+        # Posicionamiento VERIFICADO: un cap.set a secas caía 301 frames
+        # más adelante en este vídeo y pintaba las cajas sobre el
+        # fotograma equivocado (ver posicionar_en_frame).
+        posicionar_en_frame(cap, frame_ini)
 
     fps_salida = args.fps_salida or (fps / sample)
     escritor, ruta_salida, codec = _abrir_escritor(Path(args.salida), fps_salida, w, h)

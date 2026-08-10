@@ -388,6 +388,58 @@ def _filtrar_detecciones_v2(dets, confianza_min, max_area_frac, area_frame):
     return filtradas
 
 
+def posicionar_en_frame(cap, objetivo: int) -> int:
+    """Deja el vídeo justo antes del frame `objetivo`. Devuelve dónde quedó.
+
+    `cap.set(CAP_PROP_POS_FRAMES, n)` NO es fiable con vídeo comprimido:
+    salta al fotograma clave más cercano, que puede estar muy lejos. En
+    el partido del benjamín, pedir el frame 8991 dejaba el vídeo en el
+    9292 — **301 frames, 10 segundos de desincronía**. El efecto es
+    traicionero porque no rompe nada: pinta cajas correctas sobre el
+    fotograma equivocado, y el desajuste se ve pequeño en los jugadores
+    lejanos (pocos píxeles por frame) y enorme en los cercanos.
+
+    Por eso el salto se VERIFICA siempre y, si no cayó donde debía, se
+    rebobina y se avanza decodificando. No se decodifica SIEMPRE porque
+    cuesta caro: llegar al minuto 5 de este partido son 27 s, y en un
+    partido entero, minutos.
+
+    Ojo con una trampa: `cap.set` acepta un frame que no existe y luego
+    `cap.get` devuelve tan campante la posición pedida, así que la
+    comprobación de POS_FRAMES por sí sola no basta y hay que mirar
+    además cuántos frames tiene el vídeo.
+    """
+    if objetivo <= 0:
+        return 0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total > 0 and objetivo >= total:
+        raise RuntimeError(
+            f"No se pudo posicionar en el frame {objetivo}: el vídeo solo "
+            f"tiene {total}. ¿El tramo (muestreo.tramo) cae fuera del vídeo?"
+        )
+    cap.set(cv2.CAP_PROP_POS_FRAMES, objetivo)
+    pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+    if pos == objetivo:
+        return pos
+    logger.warning(
+        "El salto al frame %d cayó en el %d: se reposiciona decodificando "
+        "(sin esto, las cajas irían sobre el fotograma equivocado)",
+        objetivo,
+        pos,
+    )
+    if pos > objetivo:  # se pasó: no hay marcha atrás, hay que rebobinar
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        pos = 0
+    while pos < objetivo and cap.grab():
+        pos += 1
+    if pos != objetivo:
+        raise RuntimeError(
+            f"No se pudo posicionar en el frame {objetivo} (se llegó al {pos}): "
+            "¿el vídeo es más corto que el tramo pedido?"
+        )
+    return pos
+
+
 def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     """Modo FULL (Colab GPU): vídeo → detección SAHI → cachés en disco.
 
@@ -431,7 +483,7 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     # Tramo/límite opcional (muestreo.tramo / muestreo.max_frames)
     frame_ini, frame_fin = _rango_de_frames(cfg["muestreo"], fps)
     if frame_ini > 0:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ini)
+        posicionar_en_frame(cap, frame_ini)
         logger.info(
             "Tramo: arrancando en el frame %d (t=%.1f s)%s",
             frame_ini,
@@ -677,10 +729,19 @@ def exportar_posiciones(
     return df
 
 
-def procesar_partido(config_path: str = "configs/processor.yaml") -> pd.DataFrame:
-    """Punto de entrada único: despacha según configs/processor.yaml."""
+def procesar_partido(
+    config_path: str = "configs/processor.yaml", modo: str | None = None
+) -> pd.DataFrame:
+    """Punto de entrada único: despacha según configs/processor.yaml.
+
+    `modo` sobrescribe el del yaml. Existe para poder correr en local
+    (desde_cache, sin GPU) el MISMO config que se usa en Colab (full),
+    sin duplicarlo ni editarlo cada vez.
+    """
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
+    if modo is not None:
+        cfg["modo"] = modo
 
     if cfg["pipeline"] == "legacy":
         logger.info("Pipeline LEGACY (fallback) — process_video clásico")

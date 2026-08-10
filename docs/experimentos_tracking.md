@@ -1356,3 +1356,100 @@ plantilla conocida como referencia. Son proxies; el veredicto es visual.
 
 `outputs/detecciones_benja.mp4` (600 frames, 10.904 cajas, 18,2/frame,
 codec avc1) y los cuatro replays `replay_benja_{normal,x,y,xy}.html`.
+
+---
+
+## El vídeo de diagnóstico pintaba sobre el fotograma equivocado (10-ago-2026)
+
+Feedback visual: en `outputs/detecciones_benja.mp4` **todas** las cajas
+salían desplazadas, poco en el centro y mucho en los bordes, con el
+portero cercano a metros de su caja. La hipótesis natural era una
+re-proyección (pintar metros devueltos a píxeles con H⁻¹).
+
+**No era eso.** El código ya pintaba los píxeles crudos del caché. El
+fallo estaba en el reproductor:
+
+```
+cap.set(CAP_PROP_POS_FRAMES, 8991)  →  el vídeo quedó en el frame 9292
+```
+
+**301 frames, 10 segundos de desincronía.** `cap.set` no busca el frame
+pedido en vídeo comprimido: salta al fotograma clave más cercano. Las
+cajas eran correctas; el fotograma debajo, no.
+
+### Por qué el síntoma parecía espacial
+
+Es lo que hizo el diagnóstico difícil: un desfase puramente TEMPORAL se
+ve como un desplazamiento que crece hacia los bordes. Con la cámara
+detrás de la portería, en 10 s un jugador cercano recorre cientos de
+píxeles y uno del fondo apenas unos pocos — exactamente la firma radial
+que se atribuyó a la lente o a la homografía.
+
+### Verificación (no de confianza, medida)
+
+Criterio objetivo: una caja bien alineada contiene a un jugador, es
+decir, píxeles que se apartan del fondo. Se barrió el desfase midiendo la
+energía de primer plano dentro de las cajas:
+
+| desfase | −3 | −1 | **0** | +1 | +3 |
+|---|---|---|---|---|---|
+| energía (caché vs vídeo) | 24,45 | 26,66 | **27,22** | 27,52 | 26,44 |
+| energía (MP4 regenerado) | 33,29 | 40,84 | **41,16** | 38,80 | 32,00 |
+
+El pico limpio en 0 confirma dos cosas: **el caché estaba bien
+etiquetado** (el fallo era solo de reproducción) y el MP4 regenerado ya
+va sincronizado.
+
+### Arreglo
+
+`posicionar_en_frame()` en `processor.py`: verifica el salto y, si no cayó
+donde debía, rebobina y avanza decodificando. No decodifica siempre
+porque cuesta 27 s llegar al minuto 5 de este vídeo (minutos en un
+partido entero). Ojo con la trampa que costó un test: `cap.set` acepta un
+frame inexistente y `cap.get` devuelve tan tranquilo la posición pedida,
+así que hay que comprobar además `FRAME_COUNT`.
+
+El mismo `cap.set` estaba en el modo `full` del processor (línea 434), con
+lo que el bug era latente en la generación de cachés: aquí el caché salió
+bien, pero no había nada que lo garantizara. Corregido en ambos.
+
+Test de regresión: `test_posicionar_deja_el_video_en_el_frame_pedido`,
+sobre un vídeo sintético en el que cada frame lleva su número escrito en
+su propio brillo.
+
+## Umbrales del benjamín, ya medidos y no estimados (10-ago-2026)
+
+`jitter_px: 2.0` y `hueco_min: 1.5` eran estimaciones mías. Medidos sobre
+el caché:
+
+- **Jitter de caja**: 9.910 residuos del punto de apoyo respecto a un
+  ajuste lineal local de 5 frames → p50 1,06 px, rms 2,4 px, p90 4,0 px,
+  y **prácticamente igual en las cuatro zonas de profundidad** (2,2-2,8
+  px). Correcto: el temblor es del detector y en píxeles no depende de la
+  distancia; lo que depende es cuántos metros vale ese píxel. Como el
+  umbral se aplica a un desplazamiento (diferencia de dos temblores
+  independientes), el valor es √2 · 2,4 ≈ **3,5 px**.
+- **Interpolación**: error p90 de rellenar un hueco, escondiendo
+  observaciones reales. En la zona lejana ya hay 1,07 m de error con
+  0,3 s de hueco — eso no es la interpolación, es el ruido de proyección;
+  interpolar hasta 1,2 s solo añade ~0,45 m. Y `max_hueco: 6.0` era
+  demasiado generoso **incluso cerca**: a 3,1 s ya se inventan 1,64 m.
+  → `max_hueco: 2.5`, `hueco_min: 1.2`.
+
+Resultado sobre el tramo: **138 → 93 cortes** de velocidad y 125 → 105
+identidades.
+
+### Lo que queda al descubierto (y enlaza con el baseline de ByteTrack)
+
+Los 93 cortes restantes no son ruido de umbral. En el log del tramo:
+
+```
+Cota de plantilla:  28 fusiones → 56 identidades
+Corte por velocidad: 93 cortes → 55 → 105 identidades
+```
+
+Fusionamos 28 pares para acercarnos a la plantilla de F7 y acto seguido
+cortamos 93 veces porque esas fusiones son físicamente imposibles. Es el
+mismo hallazgo del baseline de ByteTrack visto en otro campo: la cota de
+plantilla optimiza el NÚMERO de identidades a costa de su PUREZA, y el
+corte de velocidad no hace más que deshacer lo que la cota forzó.

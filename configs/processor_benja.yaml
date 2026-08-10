@@ -20,7 +20,7 @@
 # ────────────────────────────────────────────────────────────────────
 
 pipeline: nuevo
-modo: full # vídeo → cachés → CSV. En local, cambiar a desde_cache.
+modo: full # vídeo → cachés → CSV. En local: --modo desde_cache.
 
 # ── Detección (GPU) ──────────────────────────────────────────────────
 deteccion:

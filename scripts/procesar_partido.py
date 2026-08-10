@@ -21,11 +21,19 @@ from src.tracking_data.processor import procesar_partido  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/processor.yaml")
+    parser.add_argument(
+        "--modo",
+        choices=["full", "desde_cache"],
+        default=None,
+        help="Sobrescribe `modo` del yaml. Sirve para correr en local "
+        "(desde_cache, sin GPU) el MISMO config que se usa en Colab "
+        "(full), sin tener que duplicarlo ni editarlo.",
+    )
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
     )
-    df = procesar_partido(args.config)
+    df = procesar_partido(args.config, modo=args.modo)
     print(f"\n✓ {len(df)} posiciones exportadas")
 
 
