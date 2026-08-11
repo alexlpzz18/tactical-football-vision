@@ -1453,3 +1453,112 @@ cortamos 93 veces porque esas fusiones son físicamente imposibles. Es el
 mismo hallazgo del baseline de ByteTrack visto en otro campo: la cota de
 plantilla optimiza el NÚMERO de identidades a costa de su PUREZA, y el
 corte de velocidad no hace más que deshacer lo que la cota forzó.
+
+---
+
+# MIGRACIÓN A BYTETRACK (11-ago-2026, rama feature/migracion-bytetrack)
+
+Decisión adoptada tras el banco comparativo: ByteTrack pasa a ser la
+etapa de ASOCIACIÓN, y encima van nuestras piezas que ganan o son únicas.
+Nada del pipeline vigente se borra: `oficial` y `candidato` siguen
+seleccionables y el `candidato` sigue siendo el default hasta que se
+decida el cambio de producto.
+
+## Hito 1 — ByteTrack como etapa de asociación (`src/tracking/asociacion_bytetrack.py`)
+
+Los parámetros se declaran en unidades FÍSICAS (segundos), no en frames:
+un caché submuestreado 1-de-3 hace que "50 frames de buffer" signifiquen
+cosas distintas según la cámara.
+
+El `det_idx` viaja pegado a la detección (`Detections.data`), así que se
+recupera exacto al otro lado en vez de reconstruirlo reconociendo la caja
+por su geometría, como hacía el script del banco.
+
+### El parámetro que estaba interpretado al revés
+
+`minimum_matching_threshold` **no es un IoU mínimo**: es la distancia
+máxima (1 − IoU) admitida al emparejar, así que subirlo lo hace MÁS
+permisivo. Medido:
+
+| emparejamiento | nIds | % detecciones usadas | cobertura |
+|---|---|---|---|
+| 0,50 | 2.125 | 65 % | 0,443 |
+| 0,80 (default de la librería) | 262 | 89 % | 0,519 |
+| 0,95 | 186 | 92 % | 0,547 |
+| **0,98** | **183** | **93 %** | **0,549** |
+| 0,995 | 179 | 93 % | 0,549 |
+
+El default de la librería **descartaba el 11 % de nuestras detecciones**.
+Tiene sentido físico: nuestros jugadores miden 15-40 px y el IoU entre
+frames consecutivos cae mucho más rápido que en los vídeos con los que se
+calibró ByteTrack. Este solo cambio ya sube la cobertura de 0,519 a 0,549.
+
+Bajar `umbral_activacion` de 0,25 a 0,10 sube la accuracy de equipos
+(0,655 → 0,674) sin coste en el resto.
+
+## Hito 2 — Cosido por PUREZA (`src/tracking/cosido_pureza.py`)
+
+Módulo nuevo, no una variante de `stitcher.py`: aquel cose para llegar a
+un número de identidades y este cose para no contaminar ninguna. Tres
+diferencias de fondo:
+
+1. **Veto de ambigüedad** — si el segundo mejor candidato compite con el
+   mejor, no se cose. Con 22 personas parecidas, un empate significa que
+   no sabemos cuál es, y unir a ciegas es cómo se fabrica una quimera.
+2. **Mejor mutuo** — A se une a B solo si son la mejor opción el uno del
+   otro.
+3. **Prohibido el solape temporal** — dos fragmentos que coexisten en un
+   frame son dos personas.
+
+Y explícitamente **sin cota de plantilla**, que es la pieza que fabricaba
+nuestras quimeras.
+
+### Los dos vetos, justificados con medida
+
+| variante | nIds | cob. | conc | IDF1 | tasa | quimeras | equipos |
+|---|---|---|---|---|---|---|---|
+| sin veto de ambigüedad | 110 | 0,554 | 24 | 0,439 | 0,146 | **11**/38 | 0,712 |
+| sin veto de color | 125 | 0,543 | 24 | 0,436 | 0,147 | **9**/38 | 0,707 |
+| **con los dos (adoptado)** | 142 | **0,558** | 23 | 0,443 | 0,147 | **5**/40 | 0,714 |
+
+Quitar cualquiera de los dos casi duplica las quimeras sin ganar
+cobertura. No son adornos defensivos: son el motivo de que esto funcione.
+
+### Rechazado: la consolidación
+
+El encargo pedía consolidación "solo si aporta medida". No aporta: sobre
+esta base hunde la cobertura de 0,558 a **0,460**. Igual que el resto del
+post-proceso, estaba calibrada para tapar defectos de nuestra asociación
+y sobre una que no los tiene solo resta. Queda fuera del perfil.
+
+## Hito 3 — Tabla final contra el banco completo
+
+| pipeline | nIds | cob. | conc | IDF1 | tasa IDSW | quimeras | equipos |
+|---|---|---|---|---|---|---|---|
+| ByteTrack pelado (defaults librería) | 236 | 0,544 | 24 | 0,366 | 0,186 | 6/43 | 0,626 |
+| ByteTrack afinado + interpolación | 183 | 0,549 | 22 | 0,449 | 0,141 | 5/38 | 0,728 |
+| **perfil `bytetrack` (adoptado)** | 142 | **0,558** | **23** | **0,443** | **0,147** | **5**/40 | 0,714 |
+| perfil `candidato` + post (producción hoy) | 244 | 0,551 | 34 | 0,259 | 0,301 | 23/43 | 0,661 |
+| *referencia GT* | *23* | *1,000* | *22* | | | | |
+
+**Objetivo del encargo cumplido**: superar 0,533 de cobertura sin degradar
+la pureza. Se supera (0,558) y además la pureza MEJORA respecto a
+ByteTrack pelado.
+
+Frente al pipeline de producción actual, la base nueva:
+- empata en cobertura (+0,007), que era la única columna donde ganábamos
+- acierta el número de personas en el campo (23 vs 34, GT 22)
+- IDF1 +71 %, tasa de IDSW a menos de la mitad
+- **5 quimeras en vez de 23**
+
+## Hito 4 — Integración
+
+Perfil `bytetrack` en `src/tracking/perfiles.py`, seleccionable por
+config, con su sección en `configs/tracking.yaml`. No pasa por la Etapa A
+ni por el cosido/exclusión/cota del candidato. El banco y producción
+comparten el mismo código, como siempre: medido por `correr_perfil`, da
+exactamente los mismos números que el banco de la migración.
+
+Tests: `tests/test_migracion_bytetrack.py` (15), centrados en las
+propiedades de pureza — incluida la contraprueba de que es el veto de
+ambigüedad, y no otra cosa del camino, lo que impide unir ante un empate.

@@ -12,6 +12,12 @@ Perfiles:
 - "candidato": la pila de la Tarea 3 (rescate de cortos + cosido global +
   exclusión espacial con salvaguarda de marcaje + cota blanda de
   plantilla). 58 identidades, HOTA 0.172, cobertura 0.384.
+- "bytetrack": la base NUEVA (11-ago-2026). La asociación la hace
+  ByteTrack sobre nuestras detecciones y encima va el cosido por PUREZA,
+  sin cota de plantilla. Medido contra el mismo banco: cobertura 0.558,
+  concurrencia 23 (GT 22), IDF1 0.443, tasa de IDSW 0.147 y 5 quimeras,
+  frente a 0.551 / 34 / 0.259 / 0.301 / 23 del candidato. Domina al
+  candidato en todo salvo un empate técnico en cobertura.
 
 Los parámetros finos de cada pieza viven en configs/tracking.yaml; el
 perfil decide QUÉ piezas se activan y con qué overrides.
@@ -21,6 +27,11 @@ import logging
 
 import numpy as np
 
+from src.tracking.asociacion_bytetrack import (
+    ParametrosByteTrack,
+    asociar_con_bytetrack,
+)
+from src.tracking.cosido_pureza import ParametrosCosidoPureza, coser_por_pureza
 from src.tracking.cota_plantilla import fusionar_hasta_cota
 from src.tracking.exclusion_espacial import fusionar_identidades_duplicadas
 from src.tracking.field_tracker import ConservativeTracker, ParametrosEtapaA, Tracklet
@@ -32,7 +43,7 @@ from src.tracking.stitcher import (
 
 logger = logging.getLogger(__name__)
 
-PERFILES = ("oficial", "candidato")
+PERFILES = ("oficial", "candidato", "bytetrack")
 
 # Umbral de "recorte cercano" para las firmas de la salvaguarda de marcaje
 # (coherente con la agregación del clasificador de equipos)
@@ -68,6 +79,9 @@ def correr_perfil(
     """
     if perfil not in PERFILES:
         raise ValueError(f"Perfil desconocido: {perfil!r} (usa uno de {PERFILES})")
+
+    if perfil == "bytetrack":
+        return _perfil_bytetrack(cache, fps, sample, cfg_tracking, colores)
 
     params_a = dict(cfg_tracking["etapa_a"])
     params_cosido = dict(cfg_tracking["cosido"])
@@ -106,6 +120,39 @@ def correr_perfil(
 
     logger.info("Perfil %s: %d identidades", perfil, len(identidades))
     return identidades
+
+
+def _perfil_bytetrack(
+    cache: list[dict],
+    fps: float,
+    sample: int,
+    cfg_tracking: dict,
+    colores: dict | None,
+) -> list[list[Tracklet]]:
+    """Asociación con ByteTrack + cosido por pureza (sin cota de plantilla).
+
+    No pasa por la Etapa A ni por el cosido/exclusión/cota del candidato:
+    esas piezas existían para arreglar los defectos de NUESTRA asociación
+    y, medidas sobre una asociación que no los tiene, solo restan (ver
+    docs/experimentos_tracking.md, "¿Aporta nuestro tracking...?": el
+    post-proceso completo bajaba la cobertura de ByteTrack de 0.516 a
+    0.441).
+    """
+    identidades = asociar_con_bytetrack(
+        cache,
+        fps,
+        sample,
+        ParametrosByteTrack.desde_dict(cfg_tracking.get("bytetrack")),
+    )
+    resolucion = cfg_tracking.get("_resolucion")  # lo inyecta el processor
+    return coser_por_pureza(
+        identidades,
+        colores,
+        ParametrosCosidoPureza.desde_dict(cfg_tracking.get("cosido_pureza")),
+        resolucion=resolucion,
+        jitter_px=_jitter(cfg_tracking, uso="cosido"),
+        dt=sample / fps if fps else 0.12,
+    )
 
 
 def _jitter(cfg_tracking: dict, uso: str = "corte") -> float:

@@ -128,3 +128,42 @@ cosido:
   v_max_salto: null
   peso_vel: 0.0
   v_ref: 7.0
+
+# ── BASE NUEVA: asociación con ByteTrack (perfil "bytetrack") ────────
+#
+# Adoptada el 11-ago-2026 tras el banco comparativo. Solo la usa el
+# perfil "bytetrack"; los perfiles oficial y candidato siguen intactos.
+#
+# Medido en el tramo de validación (v4pre), con interpolación encima:
+#
+#   perfil       nIds  cob.   conc  IDF1   tasa   quimeras  equipos
+#   candidato     244  0.551   34   0.259  0.301   23/43     0.661
+#   bytetrack     142  0.558   23   0.443  0.147    5/40     0.714
+#   (GT)           23  1.000   22
+bytetrack:
+  # Ver el docstring de ParametrosByteTrack: `umbral_emparejamiento` NO
+  # es un IoU mínimo sino una distancia (1-IoU), así que 0.98 es MUY
+  # permisivo. Con el 0.8 de la librería se perdía el 11 % de nuestras
+  # detecciones, porque nuestros jugadores son diminutos (15-40 px) y el
+  # IoU entre frames cae a plomo.
+  umbral_activacion: 0.10
+  buffer_perdido_s: 2.0
+  umbral_emparejamiento: 0.98
+  usar_fps_efectivo: true
+
+# Cosido de los fragmentos de ByteTrack con criterio de PUREZA. Sin cota
+# de plantilla, a propósito: el número de identidades es un proxy y la
+# pureza es la métrica. Medido: quitar el veto de ambigüedad sube las
+# quimeras de 5 a 11, y quitar el de color, de 5 a 9.
+cosido_pureza:
+  activo: true
+  max_hueco: 4.0
+  tol_base: 1.5
+  tol_por_seg: 2.5
+  v_max_salto: 8.0
+  color_max_dist: 1.2
+  peso_color: 0.5
+  peso_hueco: 0.3
+  margen_ambiguedad: 0.15
+  solape_max_frames: 0
+  max_pasadas: 3
