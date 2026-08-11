@@ -64,12 +64,15 @@ class ParametrosByteTrack:
     # detecciones: sus cajas son pequeñas (jugadores de 15-40 px) y el
     # IoU entre frames consecutivos cae mucho más rápido que en los
     # vídeos con los que se calibró ByteTrack.
-    umbral_emparejamiento: float = 0.98
+    umbral_emparejamiento: float = 0.995
     # Si es True, se le dice a ByteTrack el fps EFECTIVO del caché
     # (fps/sample) en vez del fps del vídeo. Es lo físicamente correcto:
     # entre dos frames del caché pasa `sample` veces más tiempo, y su
     # filtro de Kalman necesita saberlo.
     usar_fps_efectivo: bool = True
+    # Frames seguidos que una detección debe verse para abrir identidad.
+    # Sube la pureza a costa de perder apariciones cortas.
+    min_frames_consecutivos: int = 1
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosByteTrack":
@@ -105,7 +108,13 @@ def asociar_con_bytetrack(
 
     params = params or ParametrosByteTrack()
     fps_efectivo = fps / sample if params.usar_fps_efectivo else fps
-    buffer_frames = max(1, int(round(params.buffer_perdido_s * fps_efectivo)))
+    # ⚠️ La librería NO usa `lost_track_buffer` como número de frames:
+    # calcula `max_time_lost = int(frame_rate / 30 * lost_track_buffer)`.
+    # Multiplicarlo aquí por el fps efectivo lo escalaba DOS veces, y la
+    # memoria real se quedaba en 4 frames (0,5 s) cuando se pedían 2 s.
+    # Despejando, para una memoria de T segundos hace falta T · 30,
+    # independientemente del frame_rate.
+    buffer_frames = max(1, int(round(params.buffer_perdido_s * 30)))
 
     with warnings.catch_warnings():
         # La 0.28 avisa de la deprecación en cada construcción; el aviso
@@ -116,6 +125,7 @@ def asociar_con_bytetrack(
             lost_track_buffer=buffer_frames,
             minimum_matching_threshold=params.umbral_emparejamiento,
             frame_rate=max(1, int(round(fps_efectivo))),
+            minimum_consecutive_frames=params.min_frames_consecutivos,
         )
 
     # {track_id: [(t, pos_m, det_idx, frame_idx)]}

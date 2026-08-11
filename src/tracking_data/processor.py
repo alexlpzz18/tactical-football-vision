@@ -454,6 +454,16 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     from sahi.predict import get_sliced_prediction
 
     from src.team_classification.color_classifier import extraer_color_torso
+    from src.team_classification.feature_v2 import extraer_color_torso_v2
+
+    # Versión de la feature de color. La v2 añade V (desbloquea el
+    # arquetipo negro del catálogo arbitral) y el histograma del
+    # pantalón, y sus 256 primeros valores son EXACTAMENTE la v1, así que
+    # ningún umbral calibrado cambia de escala. Se elige por config
+    # porque cambiarla obliga a regenerar los cachés.
+    version_color = int(cfg.get("deteccion", {}).get("version_color", 1))
+    extractor = extraer_color_torso_v2 if version_color >= 2 else extraer_color_torso
+    logger.info("Feature de color v%d (la v2 añade V y pantalón)", version_color)
 
     validar_config(cfg, _CLAVES_FULL)
     cfg_det = cfg["deteccion"]
@@ -528,7 +538,7 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
             if crop.size > 0:
                 # ÚNICA función de extracción del repo (normalización L2,
                 # la escala en la que están calibrados todos los umbrales)
-                feat = extraer_color_torso(crop)
+                feat = extractor(crop)
                 if feat.sum() > 0:
                     colores[(frame_idx, det_idx)] = feat
         cache.append({"frame_idx": frame_idx, "t": frame_idx / fps, "dets": dets})

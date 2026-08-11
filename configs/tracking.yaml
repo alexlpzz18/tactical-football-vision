@@ -148,7 +148,7 @@ bytetrack:
   # IoU entre frames cae a plomo.
   umbral_activacion: 0.10
   buffer_perdido_s: 2.0
-  umbral_emparejamiento: 0.98
+  umbral_emparejamiento: 0.995
   usar_fps_efectivo: true
 
 # Cosido de los fragmentos de ByteTrack con criterio de PUREZA. Sin cota

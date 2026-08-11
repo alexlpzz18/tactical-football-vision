@@ -12,14 +12,14 @@ Los árbitros visten un conjunto CERRADO y reconocible: amarillo flúor,
 verde flúor, naranja flúor, negro y azul eléctrico. Eso no se calibra por
 partido porque no cambia de un partido a otro.
 
-⚠️ LIMITACIÓN CONOCIDA — el arquetipo NEGRO no se puede evaluar con el
-caché actual. La feature de color es un histograma HS (`extraer_color_torso`
-descarta V a propósito, para ser robusta a la iluminación), y sin V el
-negro es indistinguible del blanco y del gris: los tres tienen saturación
-baja. Los arquetipos flúor sí funcionan, porque lo que los define es
-precisamente una saturación altísima en una franja concreta de tono.
-Habilitar el negro exige añadir un estadístico de V al caché, lo que
-implica regenerarlos en Colab.
+El arquetipo NEGRO depende de la VERSIÓN del caché de color, y se activa
+solo. Con la feature v1 —un histograma HS que descarta V a propósito, por
+robustez a la iluminación— el negro es indistinguible del blanco y del
+gris: los tres tienen saturación baja. Con la v2, que añade V (ver
+src/team_classification/feature_v2.py), pasa a ser evaluable, y este
+módulo lo detecta mirando si los prototipos traen brillo. Los arquetipos
+flúor funcionan con las dos versiones, porque lo que los define es una
+saturación altísima en una franja concreta de tono.
 
 REGLA DE CONFLICTO (imprescindible, no un adorno): si una de las dos
 equipaciones del partido cae dentro de un arquetipo, ese arquetipo se
@@ -33,6 +33,8 @@ import logging
 from dataclasses import dataclass
 
 import numpy as np
+
+from src.team_classification.feature_v2 import brillo_medio
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +50,21 @@ class Arquetipo:
     h_min: float
     h_max: float
     s_min: float
-    # Los arquetipos que necesitan V (el negro) quedan declarados pero
-    # inactivos hasta que el caché lo guarde.
-    necesita_v: bool = False
+    # El NEGRO no se define por el tono sino por brillo bajo y poca
+    # saturación, así que tiene su propio criterio. Darle rangos comodín
+    # de H y S y reutilizar la regla de los flúor no funciona: `contiene`
+    # devolvía True para CUALQUIER color, y entonces la regla de
+    # conflicto lo desactivaba siempre (lo cazó un test).
+    v_max: float | None = None
+    s_max: float = 255.0
 
-    def contiene(self, h: float, s: float) -> bool:
+    @property
+    def necesita_v(self) -> bool:
+        return self.v_max is not None
+
+    def contiene(self, h: float, s: float, brillo: float | None = None) -> bool:
+        if self.v_max is not None:
+            return brillo is not None and brillo < self.v_max and s <= self.s_max
         return self.h_min <= h <= self.h_max and s >= self.s_min
 
 
@@ -63,14 +75,17 @@ ARQUETIPOS = (
     Arquetipo("verde_fluor", 35.0, 85.0, 170.0),
     Arquetipo("naranja_fluor", 5.0, 20.0, 200.0),
     Arquetipo("azul_electrico", 100.0, 128.0, 180.0),
-    # Sin V en el caché no se puede evaluar (ver docstring del módulo).
-    Arquetipo("negro", 0.0, 180.0, 0.0, necesita_v=True),
+    # Brillo bajo Y poca saturación: un granate también es oscuro, pero
+    # no es negro. Solo evaluable con features v2 (la v1 no guarda V).
+    Arquetipo("negro", 0.0, 180.0, 0.0, v_max=60.0, s_max=90.0),
 )
 
 
 def tono_dominante(feature: np.ndarray) -> tuple[float, float] | None:
     """(H, S) del bin dominante del histograma, en unidades OpenCV."""
-    feature = np.asarray(feature)
+    from src.team_classification.feature_v2 import parte_camiseta_hs
+
+    feature = parte_camiseta_hs(np.asarray(feature))
     if feature.size == 0 or not np.any(feature):
         return None
     indice = int(np.argmax(feature))
@@ -91,12 +106,17 @@ def arquetipos_activos(
     Returns:
         Los arquetipos utilizables en ESTE partido.
     """
-    tonos = [t for t in (tono_dominante(p) for p in prototipos_equipo) if t]
+    equipos = []
+    for proto in prototipos_equipo:
+        tono = tono_dominante(proto)
+        if tono:
+            equipos.append((tono[0], tono[1], brillo_medio(np.asarray(proto))))
+    hay_v = any(b is not None for _h, _s, b in equipos)
     activos = []
     for arq in arquetipos:
-        if arq.necesita_v:
-            continue  # el caché no guarda V (ver docstring del módulo)
-        choca = next((t for t in tonos if arq.contiene(*t)), None)
+        if arq.necesita_v and not hay_v:
+            continue  # caché v1: no guarda V (ver docstring del módulo)
+        choca = next((e for e in equipos if arq.contiene(*e)), None)
         if choca:
             logger.info(
                 "Arquetipo '%s' DESACTIVADO en este partido: una equipación "
@@ -143,19 +163,22 @@ def identificar_arbitros(
         ]
         if len(feats) < min_observaciones:
             continue
-        tono = tono_dominante(np.mean(feats, axis=0))
+        media = np.mean(feats, axis=0)
+        tono = tono_dominante(media)
         if tono is None:
             continue
+        brillo = brillo_medio(media)
         for arq in activos:
-            if arq.contiene(*tono):
+            if arq.contiene(tono[0], tono[1], brillo):
                 encontrados[indice] = arq.nombre
                 logger.info(
                     "Identidad %d viste de árbitro (%s: H=%.0f, S=%.0f, "
-                    "%d recortes)",
+                    "V=%s, %d recortes)",
                     indice,
                     arq.nombre,
                     tono[0],
                     tono[1],
+                    f"{brillo:.0f}" if brillo is not None else "n/d",
                     len(feats),
                 )
                 break

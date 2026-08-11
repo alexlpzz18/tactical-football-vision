@@ -450,3 +450,85 @@ def test_un_equipo_de_fluor_desactiva_su_arquetipo():
     # Y el negro nunca está activo: el caché no guarda V
     assert "negro" not in nombres
     assert any(a.nombre == "negro" and a.necesita_v for a in ARQUETIPOS)
+
+
+# ── feature de color v2 (11-ago-2026) ────────────────────────────────
+
+
+def _recorte(bgr, alto=60, ancho=30):
+    crop = np.zeros((alto, ancho, 3), dtype=np.uint8)
+    crop[:, :] = bgr
+    return crop
+
+
+def test_la_v2_empieza_por_la_v1_bit_a_bit():
+    """Es lo que hace que NINGÚN umbral calibrado cambie de escala.
+
+    Todos los umbrales del sistema (fusión del fit 0,5-1,3, veto de color
+    1,2, firmas) viven en la escala de la v1. Si los 256 primeros valores
+    no fueran idénticos, cambiar de feature los invalidaría en silencio.
+    """
+    from src.team_classification.color_classifier import extraer_color_torso
+    from src.team_classification.feature_v2 import (
+        LONGITUD_V2,
+        extraer_color_torso_v2,
+        parte_camiseta_hs,
+    )
+
+    crop = _recorte((30, 140, 240))  # naranja
+    v2 = extraer_color_torso_v2(crop)
+    assert len(v2) == LONGITUD_V2
+    assert np.allclose(parte_camiseta_hs(v2), extraer_color_torso(crop))
+
+
+def test_la_v2_distingue_negro_de_blanco_y_la_v1_no():
+    """El motivo de existir de la v2: sin V, negro y blanco son lo mismo
+    (ambos tienen saturación baja), y por eso el arquetipo NEGRO del
+    catálogo arbitral estaba inactivo."""
+    from src.team_classification.color_classifier import extraer_color_torso
+    from src.team_classification.feature_v2 import (
+        brillo_medio,
+        extraer_color_torso_v2,
+    )
+
+    negro, blanco = _recorte((18, 18, 18)), _recorte((235, 235, 235))
+    # v1: indistinguibles
+    assert np.allclose(extraer_color_torso(negro), extraer_color_torso(blanco))
+    # v2: el brillo los separa sin margen de duda
+    assert brillo_medio(extraer_color_torso_v2(negro)) < 60
+    assert brillo_medio(extraer_color_torso_v2(blanco)) > 180
+
+
+def test_los_accesores_aceptan_las_dos_versiones():
+    """La compatibilidad: el código calibrado no necesita saber con qué
+    versión de caché está trabajando."""
+    from src.team_classification.color_classifier import extraer_color_torso
+    from src.team_classification.feature_v2 import (
+        brillo_medio,
+        es_v2,
+        extraer_color_torso_v2,
+        parte_camiseta_hs,
+        parte_pantalon,
+    )
+
+    crop = _recorte((30, 140, 240))
+    v1, v2 = extraer_color_torso(crop), extraer_color_torso_v2(crop)
+    assert not es_v2(v1) and es_v2(v2)
+    assert len(parte_camiseta_hs(v1)) == len(parte_camiseta_hs(v2)) == 256
+    assert parte_pantalon(v1) is None and parte_pantalon(v2) is not None
+    assert brillo_medio(v1) is None
+
+
+def test_el_arquetipo_negro_se_activa_solo_con_features_v2():
+    from src.team_classification.arbitro import arquetipos_activos
+    from src.team_classification.color_classifier import extraer_color_torso
+    from src.team_classification.feature_v2 import extraer_color_torso_v2
+
+    protos_v1 = [
+        extraer_color_torso(_recorte(c)) for c in ((30, 140, 240), (200, 190, 180))
+    ]
+    protos_v2 = [
+        extraer_color_torso_v2(_recorte(c)) for c in ((30, 140, 240), (200, 190, 180))
+    ]
+    assert "negro" not in {a.nombre for a in arquetipos_activos(protos_v1)}
+    assert "negro" in {a.nombre for a in arquetipos_activos(protos_v2)}

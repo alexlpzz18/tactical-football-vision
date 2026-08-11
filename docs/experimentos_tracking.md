@@ -1933,3 +1933,108 @@ Evaluación a IoU 0,3 (no 0,5: con 8 px, 2 px de error ya bajan de 0,5 y
 esa detección sigue siendo útil), con error en metros y continuidad
 temporal. Los frames SIN balón visible son imprescindibles en el GT: sin
 ellos no se mide el falso positivo, que es el error que más molesta.
+
+---
+
+# FRENTES DE CLASIFICACIÓN E IDS (11-ago-2026)
+
+## 1 — Barrido de ByteTrack: ADOPTADO, y con un bug de traducción por medio
+
+Antes del barrido apareció un fallo mío en la traducción de parámetros.
+La librería NO usa `lost_track_buffer` como número de frames: calcula
+`max_time_lost = int(frame_rate / 30 · lost_track_buffer)`. Como yo
+además lo multiplicaba por el fps efectivo, **se escalaba dos veces** y
+la memoria real era de 4 frames (0,5 s) cuando el config pedía 2 s.
+Despejando, para una memoria de T segundos hace falta `T · 30`,
+independientemente del frame_rate.
+
+Barrido completo (todas con cosido por pureza + interpolación):
+
+| variante | frag. ByT | nIds | Frag | IDSW | cob. | IDF1 | quimeras |
+|---|---|---|---|---|---|---|---|
+| buffer 0,5 s (lo que había) | 183 | 142 | 259 | 237 | 0,558 | 0,443 | 5/40 |
+| buffer 1,0 s | 167 | 126 | 240 | 258 | 0,574 | 0,437 | 8/37 |
+| buffer 2,0 s | 155 | 126 | 230 | 264 | 0,583 | 0,434 | 7/39 |
+| buffer 4,0 s | 148 | 122 | 231 | 279 | 0,587 | 0,424 | 7/40 |
+| buffer 8,0 s | 138 | 118 | 207 | 302 | 0,608 | 0,414 | 12/37 |
+| buffer 1,5 + empar. 0,995 | 151 | 116 | 235 | 251 | **0,586** | **0,448** | 6/38 |
+| **buffer 2,0 + empar. 0,995 (adoptado)** | 147 | **115** | **224** | 259 | 0,575 | 0,444 | **5**/37 |
+| buffer 3,0 + empar. 0,995 | 143 | 116 | 219 | 284 | 0,592 | 0,425 | 9/40 |
+| + min_frames_consecutivos 2 | 103 | 82 | 262 | 210 | 0,542 | 0,463 | 10/36 |
+| + min_frames_consecutivos 3 | 79 | 65 | 260 | 175 | 0,524 | 0,465 | 7/34 |
+
+Se adopta **buffer 2,0 s + emparejamiento 0,995**, que es la única que
+cumple el criterio de forma estricta: identidades 142 → **115** (−19 %),
+Frag 259 → **224**, cobertura +0,017 y, sobre todo, **quimeras en 5 e
+IDF1 que no baja** (0,443 → 0,444).
+
+`buffer 1,5` da más cobertura (0,586) e IDF1 (0,448) pero paga una
+quimera más; queda anotado como la opción agresiva.
+
+Dos hallazgos secundarios: **`track_activation_threshold` no tiene ningún
+efecto** (0,05 y 0,20 dan resultados idénticos) porque el caché ya viene
+filtrado a confianza ≥ 0,3; y `min_frames_consecutivos` sube mucho el
+IDF1 pero se lleva por delante la cobertura y dispara las quimeras.
+
+## 2 — Cosido, vuelta de tuerca: NEGATIVO
+
+Con la base sana, la configuración actual **ya está en el óptimo**:
+
+| cosido | nIds | Frag | cob. | IDF1 | quimeras |
+|---|---|---|---|---|---|
+| sin cosido | 147 | 249 | 0,560 | 0,441 | 4/35 |
+| **actual (hueco 4, ambig 0,15)** | 115 | **224** | **0,575** | **0,444** | 5/37 |
+| hueco 6 | 112 | 223 | 0,579 | 0,436 | 6/35 |
+| hueco 8 | 108 | 223 | 0,581 | 0,438 | 7/36 |
+| hueco 6 + ambig 0,30 | 124 | 237 | 0,570 | 0,440 | **3**/36 |
+
+Alargar el hueco a secas compra 0,005 de cobertura y cuesta dos quimeras.
+
+Se implementó además la idea concreta de **hueco largo solo con firma de
+color exigente** (`max_hueco_con_firma` + `color_estricto`). Resultado:
+**cero uniones nuevas** con cualquier combinación probada (hueco 8 y 12,
+firma 0,4 / 0,6 / 0,9 / 1,1). No es que el veto de color sea demasiado
+estricto —a 1,1 está por encima de la mediana de pares legítimos y sigue
+sin unir nada—: sencillamente no quedan pares en esa ventana temporal que
+pasen el resto de condiciones. El cosido actual ya los captura.
+
+Queda implementado y desactivado (`max_hueco_con_firma: 0`), listo para
+rebarrer si la feature v2 mejora la señal de color.
+
+## 3 — Feature de color v2: implementada, pendiente de cachés
+
+`src/team_classification/feature_v2.py`. Añade dos bloques al vector:
+
+- **canal V del pecho** (16 bins) → desbloquea el arquetipo NEGRO del
+  catálogo arbitral;
+- **histograma HS del pantalón** (8×8) → muchas equipaciones se
+  distinguen mejor abajo, y el pantalón se ocluye menos en los
+  amontonamientos, que es donde falla la clasificación.
+
+**La parte delicada es la compatibilidad**, y se resuelve así: los
+primeros 256 valores de la v2 son bit a bit la v1 (hay test que lo fija).
+Todos los umbrales calibrados en esa escala —fusión del fit 0,5-1,3, veto
+de color 1,2, firmas— siguen significando lo mismo. `parte_camiseta_hs()`
+acepta las dos longitudes, así que los cachés viejos funcionan sin tocar
+nada, y la versión viaja en el meta.
+
+Un test cazó un fallo real de diseño por el camino: el arquetipo negro
+tenía rangos comodín de H y S, así que `contiene()` devolvía True para
+CUALQUIER color y la regla de conflicto lo desactivaba siempre. Ahora
+tiene su propio criterio (brillo bajo Y saturación baja: un granate
+también es oscuro, pero no es negro).
+
+Listo para lanzar: `configs/processor_v2color.yaml` y
+`configs/processor_benja_v2color.yaml` (copias con `version_color: 2` y
+rutas nuevas, sin pisar los cachés actuales) y el plan de re-medición en
+`docs/regenerar_caches_color_v2.md`, con un **paso 0 de control**: medir
+con el caché v2 usando solo el bloque HS debe dar exactamente
+0,575 / 0,444 / 5 quimeras; si no, algo se movió y hay que parar ahí.
+
+## Efecto colateral en el benjamín
+
+Con los parámetros nuevos: 72 → **67 identidades**, y el catálogo arbitral
+marca ahora **dos** identidades de verde flúor (204 y 487 recortes) en vez
+de una. O el árbitro quedó partido en dos fragmentos, o hay un segundo
+colegiado; en ambos casos la etiqueta correcta es la que se les pone
+('otro'), pero conviene mirarlo en el vídeo.

@@ -70,6 +70,12 @@ class ParametrosCosidoPureza:
     margen_ambiguedad: float = 0.15
     # Solape temporal tolerado (en frames comunes). 0 = ninguno.
     solape_max_frames: int = 0
+    # Hueco ampliado SOLO para uniones con firma de color exigente: una
+    # oclusión larga tras un cruce deja un hueco que el hueco normal no
+    # alcanza, pero alargarlo para todo el mundo mete quimeras (medido).
+    # Con las dos firmas presentes y muy parecidas, el riesgo baja.
+    max_hueco_con_firma: float = 0.0  # 0 = desactivado
+    color_estricto: float = 0.6
     # Pasadas: tras coser, los extremos cambian y aparecen uniones nuevas.
     max_pasadas: int = 3
 
@@ -255,8 +261,19 @@ def _coste(
     t_ini_b, _t_fin_b, p_ini_b, _p_fin_b = extremos[j]
 
     hueco = t_ini_b - t_fin_a
-    if hueco <= 0 or hueco > params.max_hueco:
+    if hueco <= 0:
         return None
+    if hueco > params.max_hueco:
+        # Puerta estrecha para huecos largos: solo si AMBOS tienen firma
+        # de color y son casi el mismo color.
+        if params.max_hueco_con_firma <= params.max_hueco:
+            return None
+        if hueco > params.max_hueco_con_firma:
+            return None
+        if firmas[i] is None or firmas[j] is None:
+            return None
+        if float(np.linalg.norm(firmas[i] - firmas[j])) > params.color_estricto:
+            return None
 
     # Veto duro: dos fragmentos que coexisten son dos personas.
     if len(frames[i] & frames[j]) > params.solape_max_frames:

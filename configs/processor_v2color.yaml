@@ -1,0 +1,39 @@
+# Regeneración de los cachés con la feature de color v2.
+# Copia del config de siempre con SOLO dos cambios: version_color: 2
+# y rutas de salida nuevas, para no pisar los cachés actuales hasta
+# que la re-medición diga que la v2 gana.
+# Guía y plan de medición: docs/regenerar_caches_color_v2.md
+
+pipeline: nuevo
+modo: full
+deteccion:
+  modelo: models/weights/best_v3.pt
+  confianza: 0.3
+  max_area_caja: 0.05
+  sahi:
+    filas: 2
+    columnas: 4
+    solape: 0.2
+  device: cuda
+  version_color: 2
+distorsion:
+  k1: -1.5
+  k2: 0.5
+muestreo:
+  sample_every: 3
+tracking:
+  perfil: bytetrack
+config_tracking: configs/tracking.yaml
+equipos:
+  activo: true
+campo_m:
+  largo: 100.0
+  ancho: 64.0
+  margen: 8.0
+rutas:
+  video: data/raw/partido.mp4
+  cache: data/tracking/cache_detecciones_v4pre_v2color.pkl
+  cache_colores: data/tracking/cache_colores_v4pre_v2color.pkl
+  homografia: data/calibracion/homografia.npy
+  salida_csv: data/tracking/posiciones_v2_v2color.csv
+  salida_meta: data/tracking/posiciones_v2_meta_v2color.json
