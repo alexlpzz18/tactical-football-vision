@@ -133,3 +133,42 @@ def test_el_balon_casi_parado_no_genera_contactos_por_ruido():
     ]
     jugadores = {k: [(20.5, 20.0, 1)] for k in range(30)}
     assert detectar_contactos(tray, TIEMPOS, jugadores, None, ParametrosBalon()) == []
+
+
+# ── herramienta de mini-GT de equipos (11-ago-2026) ──────────────────
+
+
+def test_las_muestras_cubren_toda_la_vida_de_la_identidad():
+    """Repartir por tramos, y no coger las 8 mejores a secas, es lo que
+    permite VER si una identidad cambia de persona a mitad: si todas las
+    muestras salieran del momento en que mejor se ve, una quimera pasaría
+    desapercibida."""
+    from scripts.etiquetar_equipos_gt import elegir_muestras
+
+    obs = [{"frame": k, "alto": 20 + (60 if 40 <= k < 50 else 0)} for k in range(100)]
+    muestras = elegir_muestras(obs, 8)
+    frames = [m["frame"] for m in muestras]
+    assert len(muestras) == 8
+    assert frames == sorted(frames)
+    assert frames[0] < 15 and frames[-1] > 85, "debe cubrir principio y final"
+
+
+def test_de_cada_tramo_se_coge_el_recorte_mas_grande():
+    """El más grande es el más cercano a la cámara, y por tanto el más
+    nítido: con jugadores de 15-40 px, esa diferencia decide si el color
+    de la camiseta se distingue o no."""
+    from scripts.etiquetar_equipos_gt import elegir_muestras
+
+    obs = [{"frame": k, "alto": 90 if k % 10 == 3 else 20} for k in range(40)]
+    for m in elegir_muestras(obs, 4):
+        assert m["alto"] == 90
+
+
+def test_el_arbitro_marcado_como_otro_cuenta_como_acierto():
+    """El sistema no tiene etiqueta 'arbitro': sacarlo del juego COMO
+    'otro' es exactamente el comportamiento correcto, y la medida no debe
+    penalizarlo."""
+    from scripts.medir_equipos_gt import normalizar
+
+    assert normalizar("arbitro") == normalizar("staff") == "otro"
+    assert normalizar("A") == "A" and normalizar("portero_B") == "portero_B"

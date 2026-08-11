@@ -2038,3 +2038,59 @@ marca ahora **dos** identidades de verde flúor (204 y 487 recortes) en vez
 de una. O el árbitro quedó partido en dos fragmentos, o hay un segundo
 colegiado; en ambos casos la etiqueta correcta es la que se les pone
 ('otro'), pero conviene mirarlo en el vídeo.
+
+---
+
+# HERRAMIENTA VISUAL DE MINI-GT DE EQUIPOS (11-ago-2026)
+
+Sustituye a la plantilla CSV rellenable a mano, que queda borrada. El
+problema de aquella no era el formato sino el trabajo que exigía: para
+poner UNA etiqueta había que abrir el vídeo, buscar el instante, localizar
+al jugador por su posición en metros y volver al CSV. Treinta veces. Una
+tarea así no se hace, y un GT que no se rellena no mide nada.
+
+`scripts/etiquetar_equipos_gt.py` genera un HTML autocontenido donde cada
+identidad llega ya resuelta: una tira de 8 recortes REALES del jugador,
+sacados del vídeo, y seis botones. Un clic (o una tecla del 1 al 6) por
+identidad, y el propio HTML descarga el CSV.
+
+## Dos decisiones de diseño que no son cosméticas
+
+**Las muestras se reparten a lo largo de la vida de la identidad**, no se
+cogen las 8 mejores. Dentro de cada tramo sí se elige la caja más grande
+—la más cercana a la cámara, la más nítida, que con jugadores de 15-40 px
+decide si el color se distingue o no—, pero los tramos cubren de
+principio a fin. Así **una quimera se ve de un vistazo**: la tira empieza
+naranja y acaba blanca. Si todas las muestras salieran del momento en que
+mejor se ve, esa información se perdería. Hay test para las dos cosas.
+
+**Los botones llevan el color REAL de cada equipo**, leído del meta del
+processor, para que el botón se parezca a la camiseta que hay que
+reconocer y no haya que traducir "A/B" mentalmente.
+
+Un bug encontrado al verificarlo en el navegador en vez de darlo por
+bueno: los atajos de teclado salían como cuadrados negros, porque el
+`<kbd>` heredaba el color oscuro del botón sobre fondo oscuro.
+
+## Generado para el benjamín
+
+`outputs/etiquetar_equipos_benja.html`: 30 identidades con ≥25
+observaciones, 237 recortes, 0,7 MB. Ya se aprecia en la primera pantalla
+que la identidad #9 mezcla jugadores de los dos equipos en su tira — es
+una de las quimeras, visible sin abrir el vídeo.
+
+## La medición, cuando llegue el CSV
+
+`scripts/medir_equipos_gt.py`. Dos criterios, y el segundo es el que
+manda:
+
+- **accuracy por identidad**: cuántas identidades se aciertan;
+- **accuracy por OBSERVACIÓN**: ponderada por cuántas posiciones aporta
+  cada identidad. Es la que importa, porque fallar una identidad de 600
+  posiciones no cuesta lo mismo que fallar una de 30, y lo que llega al
+  informe son posiciones.
+
+Además, matriz de confusión y lista de fallos ordenada por peso, para
+saber dónde atacar. El árbitro etiquetado como `arbitro` cuenta acierto
+si el sistema lo saca del juego como `otro`: el sistema no tiene esa
+etiqueta, y sacarlo del juego ES el comportamiento correcto.

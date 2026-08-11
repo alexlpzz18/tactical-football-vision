@@ -13,7 +13,8 @@ data/raw/
 data/processed/
 models/weights/
 data/tracking/
-data/tracking_benja/   # cachés y CSVs del benjamín (viven en Drive)
+# cachés y CSVs del benjamín (viven en Drive)
+data/tracking_benja/
 data/annotations/
 
 # Outputs generados
