@@ -57,3 +57,4 @@ rutas:
 # Orientación del REPLAY para que case con la vista de la cámara.
 # Elegida visualmente por Alex (11-ago-2026) entre las cuatro variantes.
 espejar: y
+radio_ficha_m: 0.8   # feedback perceptual: la ficha grande sobrevende la precisión

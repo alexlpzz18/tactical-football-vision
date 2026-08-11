@@ -112,3 +112,23 @@ clasificador_color:
 # comportamiento (pegado a banda, no sigue el juego), no color.
 # Se deja implementado y en off: null = desactivado.
 agregacion_dist_max_prototipo_nota: ver arriba
+
+# ── Catálogo ABSOLUTO de equipaciones arbitrales ─────────────────────
+#
+# Los árbitros visten un conjunto CERRADO (amarillo/verde/naranja flúor,
+# azul eléctrico, negro), así que se reconocen sin calibrar por partido —
+# al revés que el intento anterior por distancia a los prototipos, que no
+# viajaba entre partidos. Con regla de conflicto: si una equipación del
+# partido cae en un arquetipo, ese arquetipo se desactiva solo.
+#
+# Validado en los dos cachés:
+#   benjamín      -> desactiva 'naranja_fluor' (el equipo B viste naranja)
+#                    y encuentra al árbitro: verde flúor, 493 obs, en el
+#                    centro del campo (31, 24) m. Salía como equipo B.
+#   Villaviciosa  -> 0 identidades marcadas: no roba ningún jugador.
+#
+# El arquetipo NEGRO está declarado pero inactivo: la feature de color es
+# un histograma HS y sin V el negro no se distingue del blanco.
+arbitro:
+  activo: true
+  min_observaciones: 25

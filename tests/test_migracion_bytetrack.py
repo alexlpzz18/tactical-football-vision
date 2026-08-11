@@ -329,3 +329,124 @@ def test_el_replay_no_pinta_fuera_del_campo(tmp_path):
     ).read_text()
     datos = json.loads(html.split("const DATOS = ")[1].split(";\n")[0])
     assert len(datos) == 1, "solo la identidad de dentro del campo debe pintarse"
+
+
+# ── fusión de cachés por tramos (11-ago-2026) ────────────────────────
+
+
+def _cache_parcial(desde, hasta, sample=3, fps=30.0):
+    return {
+        "fps": fps,
+        "sample": sample,
+        "wh": (1920, 1080),
+        "cache": [
+            {"frame_idx": f, "t": f / fps, "dets": [(1.0, 2.0, 10, 20, 30, 40, 0.9)]}
+            for f in range(desde, hasta, sample)
+        ],
+    }
+
+
+def test_la_fusion_ordena_y_quita_los_frames_repetidos():
+    """Los tramos se piden CON solape a propósito; el solape no debe
+    duplicar jugadores ni falsear la concurrencia."""
+    from src.tracking.fusion_caches import fusionar_caches_detecciones
+
+    # A propósito en desorden, y con 30 frames de solape entre ellos
+    fusionado = fusionar_caches_detecciones(
+        [_cache_parcial(300, 600), _cache_parcial(0, 330)]
+    )
+    frames = [e["frame_idx"] for e in fusionado["cache"]]
+    assert frames == sorted(frames), "el tracking asume orden temporal"
+    assert len(frames) == len(set(frames)), "el solape no debe duplicar frames"
+    assert frames[0] == 0 and frames[-1] == 597
+
+
+def test_la_fusion_falla_si_los_metadatos_no_cuadran():
+    """Mezclar dt distintos rompería TODOS los umbrales físicos en
+    silencio (velocidad, huecos, suavizado), así que se falla fuerte."""
+    from src.tracking.fusion_caches import fusionar_caches_detecciones
+
+    with pytest.raises(ValueError, match="dt"):
+        fusionar_caches_detecciones(
+            [_cache_parcial(0, 300, sample=3), _cache_parcial(300, 600, sample=5)]
+        )
+
+
+def test_se_detecta_el_tramo_que_falta():
+    """La comprobación que evita creer que el partido está entero cuando
+    una sesión de Colab murió por el camino."""
+    from src.tracking.fusion_caches import (
+        fusionar_caches_detecciones,
+        huecos_de_cobertura,
+    )
+
+    # Falta el tramo de en medio (300-600)
+    fusionado = fusionar_caches_detecciones(
+        [_cache_parcial(0, 300), _cache_parcial(600, 900)]
+    )
+    huecos = huecos_de_cobertura(fusionado["cache"], fusionado["sample"])
+    assert len(huecos) == 1
+    assert huecos[0] == (297, 600)
+
+    completo = fusionar_caches_detecciones(
+        [_cache_parcial(0, 300), _cache_parcial(300, 600)]
+    )
+    assert huecos_de_cobertura(completo["cache"], completo["sample"]) == []
+
+
+def test_los_colores_se_fusionan_por_clave_global():
+    from src.tracking.fusion_caches import fusionar_caches_colores
+
+    a = {(100, 0): np.ones(4), (100, 1): np.zeros(4)}
+    b = {(100, 1): np.ones(4), (200, 0): np.ones(4)}  # (100,1) repetido
+    fusionado = fusionar_caches_colores([a, b])
+    assert len(fusionado) == 3
+    assert np.array_equal(fusionado[(100, 1)], np.zeros(4))  # gana el primero
+
+
+# ── catálogo arbitral (11-ago-2026) ──────────────────────────────────
+
+
+def _hist(h, s, bins=16):
+    """Histograma HS con todo el peso en el bin (h, s) de OpenCV."""
+    f = np.zeros(bins * bins)
+    ih = min(bins - 1, int(h * bins / 180))
+    is_ = min(bins - 1, int(s * bins / 256))
+    f[ih * bins + is_] = 1.0
+    return f
+
+
+def test_encuentra_al_arbitro_de_fluor():
+    from src.tracking.field_tracker import Tracklet
+    from src.team_classification.arbitro import identificar_arbitros
+
+    identidades, colores = [], {}
+    for tid, (h, s) in enumerate([(6, 248), (118, 56), (62, 248)], start=1):
+        tr = Tracklet(tid, 0.0, np.array([30.0, 20.0]), 0, 100)
+        for k in range(1, 40):
+            tr.anadir(k * DT, np.array([30.0, 20.0]), tid, 100 + 3 * k)
+        for par in tr.det_idxs:
+            colores[par] = _hist(h, s)
+        identidades.append([tr])
+
+    # Equipos: naranja (H=6) y azulado sin saturar (H=118, S=56)
+    arbitros = identificar_arbitros(
+        identidades, colores, [_hist(6, 248), _hist(118, 56)]
+    )
+    assert list(arbitros) == [3]  # solo el verde flúor
+    assert arbitros[3] == "verde_fluor"
+
+
+def test_un_equipo_de_fluor_desactiva_su_arquetipo():
+    """Regla de conflicto: si una equipación del partido cae en un
+    arquetipo, ese arquetipo no puede usarse — si no, media plantilla
+    saldría de árbitro. Caso real: el equipo B del benjamín es naranja
+    saturado, que es exactamente el arquetipo 'naranja_fluor'."""
+    from src.team_classification.arbitro import ARQUETIPOS, arquetipos_activos
+
+    nombres = {a.nombre for a in arquetipos_activos([_hist(6, 248), _hist(118, 56)])}
+    assert "naranja_fluor" not in nombres
+    assert "verde_fluor" in nombres
+    # Y el negro nunca está activo: el caché no guarda V
+    assert "negro" not in nombres
+    assert any(a.nombre == "negro" and a.necesita_v for a in ARQUETIPOS)

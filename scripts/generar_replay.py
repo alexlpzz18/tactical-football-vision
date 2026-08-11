@@ -39,6 +39,13 @@ def main() -> None:
         help="YAML del campo (p. ej. configs/campo_benja.yaml). Tiene "
         "prioridad sobre --campo.",
     )
+    parser.add_argument(
+        "--radio",
+        type=float,
+        default=None,
+        help="Radio de la ficha en metros (por defecto 0.8; el config del "
+        "campo puede fijarlo con la clave `radio_ficha_m`)",
+    )
     parser.add_argument("--titulo", default="Replay táctico")
     parser.add_argument(
         "--espejar",
@@ -80,7 +87,10 @@ def main() -> None:
         import yaml
 
         with open(args.config_campo) as f:
-            espejar = (yaml.safe_load(f) or {}).get("espejar")
+            cfg_campo = yaml.safe_load(f) or {}
+        espejar = cfg_campo.get("espejar")
+        if args.radio is None:
+            args.radio = cfg_campo.get("radio_ficha_m")
 
     modelo = None
     if args.config_campo or args.campo:
@@ -112,6 +122,7 @@ def main() -> None:
         args.salida,
         modelo=modelo,
         espejar=espejar,
+        radio_m=args.radio if args.radio else 0.8,
         colores_equipo=colores_equipo,
         max_edad_interp_s=args.max_edad_interp,
         min_vida_s=args.min_vida,

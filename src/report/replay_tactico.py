@@ -185,6 +185,7 @@ def generar_replay(
     max_hueco_s: float = 3.0,
     modelo: "ModeloCampo | None" = None,
     titulo: str = "Replay táctico",
+    radio_m: float = 0.8,
     max_edad_interp_s: float = 0.6,
     min_vida_s: float = 2.0,
     espejar: str | None = None,
@@ -286,6 +287,7 @@ def generar_replay(
         .replace("__DATOS__", json.dumps(identidades, separators=(",", ":")))
         .replace("__COLORES__", json.dumps(paleta, separators=(",", ":")))
         .replace("__LEYENDA__", _leyenda(paleta))
+        .replace("__RADIO_M__", f"{radio_m:.2f}")
         .replace("__ESPEJO_X__", "true" if espejar and "x" in espejar else "false")
         .replace("__ESPEJO_Y__", "true" if espejar and "y" in espejar else "false")
         .replace("__LARGO__", str(largo))
@@ -374,7 +376,12 @@ const TMIN = __TMIN__, TMAX = __TMAX__;
 const MAX_HUECO = __MAX_HUECO__;
 const PAD = 5;              // metros de margen alrededor del campo
 const ESCALA = 10;          // píxeles por metro (canvas interno)
-const RADIO_M = 1.1;        // radio del círculo del jugador, en metros
+// Radio del círculo del jugador, en METROS. Bajado de 1,1 a 0,8 el
+// 11-ago-2026 por feedback perceptual: una ficha grande SOBREVENDE la
+// precisión del sistema. La incertidumbre real de una posición va de
+// ±0,11 m junto a la cámara a ±1,85 m en el fondo, así que un círculo
+// gordo y nítido promete una exactitud que no tenemos.
+const RADIO_M = __RADIO_M__;
 
 const canvas = document.getElementById('campo');
 const W = (LARGO + 2 * PAD) * ESCALA, H = (ANCHO + 2 * PAD) * ESCALA;

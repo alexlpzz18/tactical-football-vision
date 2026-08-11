@@ -1,0 +1,36 @@
+campo_m:
+  ancho: 40.0
+  largo: 62.0
+  margen: 5.0
+config_equipos: configs/team_classification_benja.yaml
+config_tracking: configs/tracking_benja.yaml
+deteccion:
+  confianza: 0.3
+  device: cuda
+  max_area_caja: 0.05
+  modelo: models/weights/best_v4pre.pt
+  sahi:
+    columnas: 4
+    filas: 2
+    solape: 0.2
+distorsion:
+  k1: 0.0
+  k2: 0.0
+equipos:
+  activo: true
+modo: full
+muestreo:
+  sample_every: 3
+  tramo:
+    min_ini: 12.0
+    dur_seg: 245.0
+pipeline: nuevo
+rutas:
+  cache: /content/drive/MyDrive/tactical/tramos/cache_t04.pkl
+  cache_colores: /content/drive/MyDrive/tactical/tramos/colores_t04.pkl
+  homografia: data/calibracion_benja/homografia_benja.npy
+  salida_csv: /content/drive/MyDrive/tactical/tramos/parcial_t04.csv
+  salida_meta: /content/drive/MyDrive/tactical/tramos/parcial_t04_meta.json
+  video: data/raw/benja_gredos_p1_20min.mp4
+tracking:
+  perfil: bytetrack

@@ -1,0 +1,65 @@
+# Entrenamiento del detector de BALÓN (modelo dedicado).
+#
+# Razonamiento completo en docs/plan_deteccion_balon.md. En corto: modelo
+# aparte y no una clase más en el de jugadores, para no poner en juego el
+# mAP50 0.90 del v4pre por un objeto que aparece 1 vez por frame frente a
+# 20 jugadores, mide 5-12 px y se desenfoca al moverse.
+#
+# NO EJECUTADO: faltan las etiquetas. Esto es la receta lista para lanzar
+# en Colab en cuanto lleguen.
+
+modelo:
+  # 'n' y no 's': el balón es un objeto de una sola clase y forma simple;
+  # lo que le falta es RESOLUCIÓN, no capacidad. Con el modelo pequeño
+  # cabe una imagen de entrada mayor en la misma GPU, que es el cambio
+  # que de verdad mueve la aguja con objetos diminutos.
+  base: yolov8n.pt
+  clases: [balon]
+
+entrenamiento:
+  epochs: 150 # más que en jugadores: hay muchísimas menos muestras
+  # 1280 en vez de 640: a 640 un balón de 8 px queda en 4 px tras el
+  # primer stride y desaparece del mapa de features.
+  imgsz: 1280
+  batch: 8 # lo que cabe con imgsz 1280 en una T4
+  patience: 30
+  # El balón se ve poco, así que conviene un umbral de confianza bajo en
+  # inferencia y filtrar después por coherencia temporal.
+  conf_validacion: 0.15
+
+# Ver la tabla razonada en docs/plan_deteccion_balon.md. La regla que
+# ordena todo: NADA que pueda dejar la imagen sin el objeto dentro.
+augmentation:
+  mosaic: 1.0 # 4 balones por batch en vez de 1: la más valiosa
+  scale: 0.5 # el balón a distintas distancias
+  translate: 0.1 # suave: más lo saca del recorte
+  fliplr: 0.5 # gratis, un balón es simétrico
+  flipud: 0.0 # la cámara nunca ve el campo del revés
+  hsv_v: 0.4 # generosa: sol y sombra cambian mucho el balón
+  hsv_s: 0.5
+  hsv_h: 0.015
+  mixup: 0.0 # dejaría balones semitransparentes: objetos que no existen
+  copy_paste: 0.0 # sin máscaras, pegaría recuadros de césped
+  erasing: 0.0 # podría borrar el ÚNICO objeto de la imagen
+  # ⚠️ Antes de entrenar: volcar 50 imágenes aumentadas y contar cuántas
+  # conservan el balón. Por debajo del 95 %, la augmentation está en
+  # contra del objetivo.
+
+# SAHI en inferencia: tiles más pequeños que para jugadores (allí 2x4).
+# Un objeto de 8 px necesita más aumento efectivo; el solape puede ser
+# menor porque el balón no se parte entre tiles como sí le pasa a un
+# jugador de pie.
+inferencia:
+  sahi:
+    filas: 3
+    columnas: 5
+    solape: 0.15
+
+evaluacion:
+  # IoU 0.3 y no 0.5: con un objeto de 8 px, 2 px de error ya bajan de
+  # 0.5, y una detección a 2 px es perfectamente útil para el producto.
+  iou_min: 0.30
+  # Criterio de adopción. Por debajo, las métricas derivadas (posesión,
+  # centro de juego) serían ficción.
+  recall_min: 0.60
+  precision_min: 0.80

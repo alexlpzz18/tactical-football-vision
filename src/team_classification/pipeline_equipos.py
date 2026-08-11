@@ -20,6 +20,7 @@ from src.team_classification.color_classifier import (
     TeamClassifierColor,
 )
 from src.campo_modelo import MODELO_F11, EjeProfundidad, cargar_modelo
+from src.team_classification.arbitro import identificar_arbitros
 from src.team_classification.oclusion import color_medio_limpio
 from src.team_classification.porteros import (
     ReglaPorteros,
@@ -186,6 +187,20 @@ def clasificar_identidades(
             equipos[id_identidad] = clasificador.predict_color(
                 media, dist_max=cfg_agg.get("dist_max_prototipo")
             )
+
+    # Catálogo ABSOLUTO de equipaciones arbitrales. Va ANTES de la regla
+    # de porteros a propósito: un portero con equipación llamativa cae en
+    # un arquetipo (en el benjamín, azul eléctrico), y quien manda sobre
+    # él es su POSICIÓN, no su color.
+    if cfg_equipos.get("arbitro", {}).get("activo", False):
+        arbitros = identificar_arbitros(
+            identidades,
+            colores,
+            [clasificador._prototipos.a, clasificador._prototipos.b],
+            min_observaciones=cfg_equipos["arbitro"].get("min_observaciones", 25),
+        )
+        for indice in arbitros:
+            equipos[indice] = "otro"
 
     cfg_porteros = cfg_equipos.get("porteros", {})
     if cfg_porteros.get("activo", False):

@@ -1823,3 +1823,113 @@ defensiva pertenece al equipo que la defiende:
 Las tres coinciden: **A defiende x=0**, que es lo que produce
 `deducir_lados`. La señal del último hombre es candidata a sustituir a la
 media si algún partido futuro sale ambiguo.
+
+---
+
+# PAQUETE AUTÓNOMO (11-ago-2026)
+
+## 1 — Corte por color contra el banco: NEGATIVO
+
+| variante | nIds | cob. | IDF1 | tasa IDSW | quimeras | equipos |
+|---|---|---|---|---|---|---|
+| **sin corte (adoptado)** | 142 | **0,563** | **0,451** | **0,119** | **4** | 0,718 |
+| pureza 0,85 / ganancia 0,08 | 152 | 0,561 | 0,446 | 0,124 | 5 | 0,716 |
+| pureza 0,90 / ganancia 0,05 | 154 | 0,559 | 0,446 | 0,125 | 5 | 0,701 |
+| pureza 0,80 / ganancia 0,12 | 150 | 0,562 | 0,447 | 0,123 | 5 | 0,720 |
+| agresivo 0,95 / 0,02 | 157 | 0,551 | 0,435 | 0,126 | 6 | 0,690 |
+
+Negativo en TODAS las configuraciones, y lo más elocuente: **sube las
+quimeras de 4 a 5**, que es exactamente lo contrario de su propósito.
+
+Se investigó por qué, sin encontrar una explicación limpia. La pureza del
+voto por identidad tiene mediana 0,93 y 27 de 47 identidades por encima
+de 0,90, así que el voto por recorte NO es basura. Y la cola de baja
+pureza no se explica por la profundidad (mediana 46,4 m en las de pureza
+< 0,75 frente a 45,1 m en las de > 0,90). No se fuerza una narrativa: el
+resultado es negativo y el módulo queda escrito y en off.
+
+**Tercera vez que cortar identidades sale mal** (velocidad, post-proceso
+completo, y ahora color). El patrón ya es difícil de ignorar: sobre una
+asociación que casi no mezcla, cualquier corte destruye más de lo que
+arregla.
+
+## 2 — Catálogo absoluto de equipaciones arbitrales: ADOPTADO
+
+El giro que lo hace funcionar: en vez de preguntar "¿está lejos de estos
+dos equipos?" (relativo, y por eso no viajaba entre partidos), preguntar
+"¿es esto una equipación de árbitro?" (absoluto, y por eso universal).
+
+Validado en los DOS cachés:
+
+| | resultado |
+|---|---|
+| benjamín | Desactiva solo `naranja_fluor` (el equipo B viste naranja, H=6 S=248) y **encuentra al árbitro**: identidad 31, verde flúor, 493 observaciones, mediana en (31, 24) m — el centro exacto del campo. Salía etiquetado como equipo B. |
+| Villaviciosa | **0 identidades marcadas**: no roba ni un jugador. Banco idéntico (0,563 / 0,451 / 0,119 / 4 quimeras). |
+
+La **regla de conflicto no es un adorno**: sin ella, en el benjamín el
+arquetipo naranja habría etiquetado a media plantilla de árbitro.
+
+También marca al portero (azul eléctrico), así que el catálogo se aplica
+ANTES de la regla de porteros: sobre un portero manda su POSICIÓN, no su
+color.
+
+**Limitación documentada**: el arquetipo NEGRO queda declarado pero
+inactivo. La feature de color es un histograma HS —`extraer_color_torso`
+descarta V a propósito, por robustez a la iluminación— y sin V el negro
+es indistinguible del blanco y del gris. Habilitarlo exige añadir un
+estadístico de V al caché, o sea regenerarlos en Colab.
+
+## 3 — Fichas más pequeñas
+
+Radio de 1,1 → 0,8 m (−27 %), parametrizable (`radio_ficha_m` en el
+config del campo, o `--radio`). El argumento es honesto: la
+incertidumbre real de una posición va de ±0,11 m a ±1,85 m según la
+zona, así que un círculo grande y nítido promete una exactitud que no
+tenemos.
+
+## 4 — Mini-GT de equipos del benjamín: plantilla lista
+
+`data/tracking_benja/mini_gt_equipos.csv` (45 identidades, 32 con ≥25
+observaciones) + instrucciones. Solo hay que rellenar `equipo_real`, y
+con las 25-30 primeras filas ya sale una medida útil. Permitirá medir la
+accuracy de equipos en el caso F7, que hoy solo se puede medir en
+Villaviciosa.
+
+## 5 — Partido entero por tramos
+
+- `src/tracking/fusion_caches.py`: fusión con orden temporal garantizado,
+  sin duplicados (los tramos se piden CON solape a propósito) y con
+  verificación de metadatos — mezclar dt distintos rompería en silencio
+  todos los umbrales físicos del sistema.
+- `huecos_de_cobertura()`: detecta el tramo que falta. Es la comprobación
+  que evita el peor final posible, creer que el partido está entero
+  cuando una sesión de Colab murió por el camino.
+- `scripts/planificar_tramos.py` + `scripts/fusionar_caches.py`. Para el
+  benjamín entero: 5 tramos de 4 min con 5 s de solape, ya escritos en
+  `configs/tramos_benja/` con su guía.
+- 4 tests sintéticos: orden, duplicados por solape, metadatos
+  incompatibles y detección de hueco.
+
+## 6 — Detector de balón: plan y config
+
+`docs/plan_deteccion_balon.md` y `configs/entrenamiento_balon.yaml`. Nada
+ejecutado (faltan etiquetas y GPU).
+
+Recomendación razonada: **modelo dedicado**, no una clase más. El
+argumento no es de precisión abstracta sino de riesgo: añadir una clase
+obliga a reentrenar el detector de jugadores y pone en juego su mAP50
+0,90, del que depende todo el sistema, por un objeto con desbalance 1:20,
+de 5-12 px y que necesita otra resolución de entrada, otro tile de SAHI y
+otro umbral. Reconsiderar si el modelo dedicado no pasa de mAP50 0,5.
+
+La augmentation sigue una sola regla —nada que pueda dejar la imagen sin
+el balón dentro— con `mosaic` a 1.0 como la pieza más valiosa (4 balones
+por batch en vez de 1) y `mixup`, `copy_paste` y `erasing` a cero.
+Comprobación obligatoria antes de entrenar: volcar 50 imágenes aumentadas
+y contar cuántas conservan el balón; por debajo del 95 %, la augmentation
+está en contra del objetivo.
+
+Evaluación a IoU 0,3 (no 0,5: con 8 px, 2 px de error ya bajan de 0,5 y
+esa detección sigue siendo útil), con error en metros y continuidad
+temporal. Los frames SIN balón visible son imprescindibles en el GT: sin
+ellos no se mide el falso positivo, que es el error que más molesta.
