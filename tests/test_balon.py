@@ -164,6 +164,19 @@ def test_de_cada_tramo_se_coge_el_recorte_mas_grande():
         assert m["alto"] == 90
 
 
+def test_una_identidad_con_recortes_discrepantes_es_quimera():
+    """El punto de la interfaz por recorte: la quimera sale sola de los
+    datos, sin que nadie tenga que localizarla a ojo."""
+    from collections import Counter
+
+    limpia = Counter(["B"] * 7)
+    mezcla = Counter(["B"] * 4 + ["A"] * 3)
+    assert len(limpia) == 1  # una sola persona
+    assert len(mezcla) > 1  # dos personas en la misma identidad
+    # La pureza dice CUÁNTAS observaciones son realmente de su dueño
+    assert mezcla.most_common(1)[0][1] / sum(mezcla.values()) < 0.6
+
+
 def test_el_arbitro_marcado_como_otro_cuenta_como_acierto():
     """El sistema no tiene etiqueta 'arbitro': sacarlo del juego COMO
     'otro' es exactamente el comportamiento correcto, y la medida no debe

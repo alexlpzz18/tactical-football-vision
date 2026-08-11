@@ -2054,6 +2054,37 @@ identidad llega ya resuelta: una tira de 8 recortes REALES del jugador,
 sacados del vídeo, y seis botones. Un clic (o una tecla del 1 al 6) por
 identidad, y el propio HTML descarga el CSV.
 
+## Etiquetado POR RECORTE (rediseño tras el feedback de Alex)
+
+La primera versión pedía UNA etiqueta por identidad. Alex la probó y dio
+con el fallo de raíz: *"el #9 a veces es blanco y otras naranja porque los
+ids están mal; así no puedo clasificarlo, no son la misma persona"*. Una
+identidad quimera no tiene una etiqueta correcta, y forzarla producía un
+GT corrupto.
+
+La solución que propuso es mejor que la que yo había intentado (una
+tijera para partir la identidad a mano): **etiquetar cada recorte**. Así
+la quimera no hay que localizarla — sale sola de los datos en cuanto dos
+recortes de la misma identidad discrepan.
+
+Coste de clics: el caso normal sigue siendo un clic gracias al atajo
+"todos =", y solo las tiras que cambian piden atención recorte a recorte.
+Lo que se gana es doble: un GT de equipos correcto Y un **ground truth de
+quimeras verificado a ojo**, que hasta ahora solo se estimaba por
+asociación con el GT de Villaviciosa y nunca se había comprobado en el
+benjamín.
+
+`scripts/medir_equipos_gt.py` explota las dos cosas: tasa de quimeras con
+su composición (`B×4, A×3`), y accuracy ponderada por observaciones donde
+las de una quimera solo cuentan **en la proporción de su persona
+dominante** — el resto pertenecen a otro jugador.
+
+Dos bugs encontrados por verificar en el navegador en vez de dar el HTML
+por bueno: los atajos de teclado salían como cuadrados negros, y un doble
+desescapado (`\n` en vez de `\\n` dentro de la plantilla) partía la
+cadena y dejaba la página **entera en blanco**. El segundo no lo habría
+visto ningún test de Python.
+
 ## Dos decisiones de diseño que no son cosméticas
 
 **Las muestras se reparten a lo largo de la vida de la identidad**, no se

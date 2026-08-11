@@ -164,7 +164,7 @@ def extraer_crops(ruta_video, identidades):
                 continue
             dato = a_base64(crop)
             if dato:
-                crops.setdefault(id_j, []).append(dato)
+                crops.setdefault(id_j, []).append({"img": dato, "frame": frame_idx})
         frame_idx += 1
     cap.release()
     logger.info(
@@ -184,107 +184,138 @@ PLANTILLA = """<!doctype html>
         font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif }
  header { position:sticky; top:0; z-index:5; background:#171a21;
           border-bottom:1px solid #262b36; padding:12px 20px;
-          display:flex; align-items:center; gap:20px; flex-wrap:wrap }
+          display:flex; align-items:center; gap:18px; flex-wrap:wrap }
  h1 { font-size:17px; margin:0; font-weight:600 }
- .progreso { flex:1; min-width:180px; height:8px; background:#262b36; border-radius:4px }
+ .progreso { flex:1; min-width:160px; height:8px; background:#262b36; border-radius:4px }
  .progreso div { height:100%; width:0; background:#4ade80; border-radius:4px;
                  transition:width .2s }
  button { font:inherit; border:0; border-radius:8px; padding:9px 14px;
           cursor:pointer; color:#0f1115; font-weight:600 }
- button.sec { background:#2a2f3a; color:#e8eaed }
- main { padding:20px; max-width:1200px; margin:0 auto }
+ main { padding:20px; max-width:1250px; margin:0 auto }
  .ficha { background:#171a21; border:1px solid #262b36; border-radius:12px;
           padding:16px; margin-bottom:16px }
- .ficha.hecha { opacity:.45 }
+ .ficha.hecha { opacity:.5 }
+ .ficha.quimera { border-color:#f472b6 }
  .cab { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
-        margin-bottom:12px }
+        margin-bottom:10px }
  .cab b { font-size:16px } .cab span { color:#9aa4b2; font-size:13px }
- .marca { margin-left:auto; font-weight:700; font-size:14px }
- .tira { display:flex; gap:6px; overflow-x:auto; padding-bottom:6px;
-         margin-bottom:12px }
- .tira img { height:120px; border-radius:6px; background:#0b0d11 }
- .botones { display:flex; gap:8px; flex-wrap:wrap }
- /* El color se declara explícito: heredado del botón salía oscuro
-    sobre oscuro y el atajo se veía como un cuadrado negro. */
- kbd { background:#0b0d11; color:#e8eaed; border:1px solid #3a4150;
-       border-radius:4px; padding:0 5px; font-size:11px; margin-left:6px;
-       font-family:ui-monospace,monospace }
- .vacio { color:#9aa4b2; font-style:italic }
+ .marca { margin-left:auto; font-weight:700; font-size:13px }
+ .todos { display:flex; align-items:center; gap:6px; margin-bottom:10px;
+          font-size:12px; color:#9aa4b2; flex-wrap:wrap }
+ .tira { display:flex; gap:10px; overflow-x:auto; padding-bottom:6px }
+ .col { display:flex; flex-direction:column; align-items:center; gap:5px }
+ .col img { height:120px; border-radius:6px; background:#0b0d11; display:block }
+ .col .t { font-size:10px; color:#6b7280 }
+ .swatches { display:flex; gap:3px }
+ .sw { width:19px; height:19px; border-radius:5px; border:2px solid transparent;
+       cursor:pointer; padding:0 }
+ .sw.on { border-color:#e8eaed; box-shadow:0 0 0 2px #0f1115 inset }
+ .sw.mini { width:15px; height:15px }
 </style></head><body>
 <header>
   <h1>__TITULO__</h1>
   <div class="progreso"><div id="barra"></div></div>
   <span id="cuenta">0 / 0</span>
+  <span id="quimeras" style="color:#f472b6; font-weight:600"></span>
   <button id="exportar">Exportar CSV</button>
+  <div style="flex-basis:100%; font-size:13px; color:#9aa4b2">
+    Etiqueta <b>cada recorte</b>. Lo normal es usar “todos =” y listo; si
+    en alguna tira cambia la persona a mitad, corrige solo esos recortes
+    y la identidad quedará marcada sola como
+    <b style="color:#f472b6">quimera</b>.
+  </div>
 </header>
 <main id="lista"></main>
 <script>
 const IDENTIDADES = __DATOS__;
 const OPCIONES = __OPCIONES__;
-const respuestas = {};
+const resp = {};                       // 'id:j' -> valor
+
+const clave = (id, j) => id + ':' + j;
+function etiquetasDe(d) {
+  return d.crops.map((_c, j) => resp[clave(d.id, j)]).filter(Boolean);
+}
+function completa(d) { return etiquetasDe(d).length === d.crops.length; }
+function esQuimera(d) {
+  const e = etiquetasDe(d);
+  return e.length > 1 && new Set(e).size > 1;
+}
+
+function swatches(id, j, mini) {
+  return OPCIONES.map(o =>
+    `<button class="sw${mini ? ' mini' : ''}${resp[clave(id,j)] === o.valor ? ' on' : ''}"
+             style="background:${o.color}" title="${o.texto}"
+             data-id="${id}" data-j="${j}" data-v="${o.valor}"></button>`).join('');
+}
 
 function pinta() {
   const lista = document.getElementById('lista');
   lista.innerHTML = '';
-  IDENTIDADES.forEach((d, i) => {
+  IDENTIDADES.forEach(d => {
+    const q = esQuimera(d);
     const ficha = document.createElement('div');
-    ficha.className = 'ficha' + (respuestas[d.id] ? ' hecha' : '');
+    ficha.className = 'ficha' + (completa(d) ? ' hecha' : '') + (q ? ' quimera' : '');
     ficha.id = 'f' + d.id;
-    const marca = respuestas[d.id]
-      ? `<span class="marca" style="color:${OPCIONES.find(o=>o.valor===respuestas[d.id]).color}">
-           ${OPCIONES.find(o=>o.valor===respuestas[d.id]).texto}</span>` : '';
-    const tira = d.crops.length
-      ? d.crops.map(c => `<img src="${c}" loading="lazy">`).join('')
-      : '<span class="vacio">sin recortes disponibles</span>';
+    const e = etiquetasDe(d);
+    const marca = q
+      ? `<span class="marca" style="color:#f472b6">QUIMERA · ${new Set(e).size} personas</span>`
+      : (e.length && completa(d)
+         ? `<span class="marca" style="color:${OPCIONES.find(o=>o.valor===e[0]).color}">
+              ${OPCIONES.find(o=>o.valor===e[0]).texto}</span>` : '');
     ficha.innerHTML = `
       <div class="cab">
         <b>#${d.id}</b>
         <span>${d.n_obs} obs · ${d.t_ini}-${d.t_fin}s · (${d.x_m}, ${d.y_m}) m</span>
         <span>predicción: ${d.prediccion}</span>${marca}
       </div>
-      <div class="tira">${tira}</div>
-      <div class="botones">${OPCIONES.map((o, k) =>
-        `<button style="background:${o.color}" data-id="${d.id}" data-v="${o.valor}">
-           ${o.texto}<kbd>${k+1}</kbd></button>`).join('')}</div>`;
+      <div class="todos">todos =
+        ${OPCIONES.map(o =>
+          `<button class="sw" style="background:${o.color}" title="${o.texto}"
+                   data-todos="${d.id}" data-v="${o.valor}"></button>`).join('')}
+      </div>
+      <div class="tira">${d.crops.map((c, j) => `
+        <div class="col">
+          <img src="${c.img}" loading="lazy">
+          <div class="t">${c.t}s</div>
+          <div class="swatches">${swatches(d.id, j, true)}</div>
+        </div>`).join('')}</div>`;
     lista.appendChild(ficha);
   });
-  document.querySelectorAll('.botones button').forEach(b => {
-    b.onclick = () => responder(+b.dataset.id, b.dataset.v);
+
+  lista.querySelectorAll('button[data-v]').forEach(b => {
+    b.onclick = () => {
+      if (b.dataset.todos !== undefined) {
+        const d = IDENTIDADES.find(x => x.id === +b.dataset.todos);
+        d.crops.forEach((_c, j) => resp[clave(d.id, j)] = b.dataset.v);
+        const sig = IDENTIDADES.find(x => !completa(x));
+        pinta();
+        if (sig) document.getElementById('f' + sig.id)
+          .scrollIntoView({behavior:'smooth', block:'center'});
+      } else {
+        resp[clave(+b.dataset.id, +b.dataset.j)] = b.dataset.v;
+        const y = window.scrollY; pinta(); window.scrollTo(0, y);
+      }
+    };
   });
   actualiza();
 }
 
-function responder(id, valor) {
-  respuestas[id] = valor;
-  const siguiente = IDENTIDADES.find(d => !respuestas[d.id]);
-  pinta();
-  if (siguiente) document.getElementById('f' + siguiente.id)
-    .scrollIntoView({behavior:'smooth', block:'center'});
-}
-
 function actualiza() {
-  const n = Object.keys(respuestas).length, total = IDENTIDADES.length;
+  const n = IDENTIDADES.filter(completa).length, total = IDENTIDADES.length;
   document.getElementById('cuenta').textContent = n + ' / ' + total;
   document.getElementById('barra').style.width = (100*n/total) + '%';
+  const q = IDENTIDADES.filter(esQuimera).length;
+  document.getElementById('quimeras').textContent = q ? q + ' quimeras' : '';
 }
 
-// Teclado: 1-6 etiquetan la primera identidad SIN responder
-document.addEventListener('keydown', e => {
-  const k = parseInt(e.key);
-  if (!k || k < 1 || k > OPCIONES.length) return;
-  const pendiente = IDENTIDADES.find(d => !respuestas[d.id]);
-  if (pendiente) responder(pendiente.id, OPCIONES[k-1].valor);
-});
-
 document.getElementById('exportar').onclick = () => {
-  const filas = ['id_jugador,equipo_real,prediccion,n_obs'];
-  IDENTIDADES.forEach(d => {
-    if (respuestas[d.id])
-      filas.push([d.id, respuestas[d.id], d.prediccion, d.n_obs].join(','));
-  });
+  const filas = ['id_jugador,t_s,equipo_real,prediccion,n_obs'];
+  IDENTIDADES.forEach(d => d.crops.forEach((c, j) => {
+    const r = resp[clave(d.id, j)];
+    if (r) filas.push([d.id, c.t, r, d.prediccion, d.n_obs].join(','));
+  }));
   if (filas.length === 1) { alert('Todavía no has etiquetado nada.'); return; }
-  const url = URL.createObjectURL(
-    new Blob([filas.join('\\n')], {type:'text/csv'}));
+  const url = URL.createObjectURL(new Blob([filas.join('\\n')], {type:'text/csv'}));
   const a = document.createElement('a');
   a.href = url; a.download = '__NOMBRE_CSV__'; a.click();
   URL.revokeObjectURL(url);
@@ -351,6 +382,7 @@ def main() -> None:
         {"texto": "Otro / No sé", "valor": "otro", "color": "#9ca3af"},
     ]
 
+    fps = datos["fps"]
     payload = []
     for datos_id in identidades.values():
         payload.append(
@@ -362,7 +394,10 @@ def main() -> None:
                 "t_ini": datos_id["t_ini"],
                 "t_fin": datos_id["t_fin"],
                 "prediccion": datos_id["prediccion"],
-                "crops": crops.get(datos_id["id"], []),
+                "crops": [
+                    {"img": c["img"], "t": round(c["frame"] / fps, 1)}
+                    for c in crops.get(datos_id["id"], [])
+                ],
             }
         )
 
