@@ -41,7 +41,7 @@ rutas:
   cache_balon: data/tracking_benja/cache_balon_piloto.pkl
 balon:
   modelo: models/weights/best_balon_v1.pt
-  confianza: 0.35
+  confianza: 0.35  # ELEGIDO por barrido: P 0.958 / R 0.836 / F0.5 0.931 (meseta con 0.40)
   imgsz: 1280
   sample_every: 2
   sahi:

@@ -37,6 +37,7 @@ import os
 os.makedirs('data/raw', exist_ok=True)
 os.makedirs('models/weights', exist_ok=True)
 D = '/content/drive/MyDrive/tactical'
+# ⚠️ El nombre de destino DEBE ser el que pide el config (rutas.video).
 !ln -sf {D}/benja/partido_benja.mp4        data/raw/benja_gredos_p1_20min.mp4
 !ln -sf {D}/benja/best_balon_v1.pt         models/weights/
 !ln -sf {D}/modelos/best_v4pre.pt          models/weights/
@@ -46,6 +47,17 @@ D = '/content/drive/MyDrive/tactical'
 
 ⚠️ La homografía y los configs vienen en el repo; el vídeo y los pesos NO
 (están en .gitignore a propósito), por eso los enlaces.
+
+---
+
+> **Comprobación de 10 segundos antes de seguir.** Si esto no imprime
+> `True` y el número de frames, no sigas: el resto de pasos fallará.
+>
+> ```python
+> import cv2
+> cap = cv2.VideoCapture('data/raw/benja_gredos_p1_20min.mp4')
+> print(cap.isOpened(), cap.get(cv2.CAP_PROP_FRAME_COUNT))
+> ```
 
 ---
 
@@ -71,10 +83,9 @@ for c in (0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60):
 print(f"\n→ pon balon.confianza = {mejor[0]} en configs/processor_benja_balon.yaml")
 ```
 
-```python
-# Aplícalo (sustituye 0.35 por el que salga)
-!sed -i 's/^  confianza: 0.35/  confianza: {}/' configs/processor_benja_balon.yaml
-```
+Ya está fijado a **0,35** del barrido que corriste (P 0,958 / R 0,836 /
+F0,5 0,931, con meseta hasta 0,40), así que este paso solo hay que
+repetirlo si cambias de modelo o de partido.
 
 ---
 
@@ -112,6 +123,12 @@ sin drama, pero un toque de balón entre muestras se pierde para siempre.
 ```python
 !python scripts/procesar_partido.py --config configs/processor_benja_balon.yaml
 ```
+
+⚠️ Este paso usa el mismo posicionamiento por salto que le falló al
+detector de balón en Colab. Ahí ya está blindado; aquí todavía no. Si el
+CSV sale con 0 posiciones, es el mismo problema — avísame y lo arreglo
+igual, pero **no des por bueno un caché sin mirar el número de frames**
+que imprime.
 
 ---
 

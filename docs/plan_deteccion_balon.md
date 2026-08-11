@@ -167,3 +167,44 @@ script de detección, config del piloto de 5 min y guía de Colab.
 Pendiente de la pasada de GPU: el caché de balón, y con él el CSV
 conjunto, el vídeo con cajas de los dos modelos, el replay con balón y
 los números (% de frames con balón, % en fase aérea, nº de contactos).
+
+## Bug del piloto: 0 frames en Colab (11-ago-2026)
+
+`detectar_balon.py` procesaba **0 frames en los dos modos**, escribía un
+caché vacío, imprimía un `✓ Caché de balón` engañoso y reventaba con una
+división por cero en el resumen. Costó una sesión de GPU.
+
+**La causa no era la selección de frames**: el mismo bucle, con el mismo
+vídeo y el mismo config, lee correctamente en local. Es el
+posicionamiento: `cap.set` da el salto por bueno —`cap.get` devuelve la
+posición pedida— y deja el lector inservible, de modo que el primer
+`read()` devuelve False, el bucle sale a la primera y el resultado es
+cero frames sin un solo mensaje de error. Depende del build de OpenCV, y
+por eso en local no se reproducía.
+
+Es la tercera vez que `cap.set` muerde en este proyecto, y esta vez la
+lección es más fina que las anteriores: **verificar la posición
+DECLARADA no basta; hay que verificar LEYENDO**. Ahora `iter_frames()`
+lee un fotograma de prueba y, si no llega, rebobina y decodifica desde el
+principio.
+
+Cambios, todos con test (`tests/test_detectar_balon.py`, con un
+VideoCapture falso que reproduce el fallo):
+
+- posicionamiento verificado por lectura, con rebobinado de emergencia;
+- validación de rutas de vídeo y modelo **antes** de cargar la red, para
+  que un fallo de config no cueste medio minuto de GPU y aparezca donde
+  no es;
+- "0 frames" es ahora un error con diagnóstico (ruta, nº de frames del
+  vídeo, tramo, muestreo) **y no se escribe ningún caché**;
+- el `✓` solo se imprime después de validar el contenido. Un tick sobre
+  un archivo vacío es peor que un error, porque se cree.
+
+Riesgo abierto: el modo `full` del processor (jugadores) usa el mismo
+salto sin blindar. Queda avisado en la guía de Colab.
+
+### Umbral de operación adoptado
+
+Del barrido con F0,5 (pondera precisión, porque un balón fantasma inventa
+un pase que no existió): **conf = 0,35** — P 0,958 / R 0,836 / F0,5 0,931,
+con meseta hasta 0,40. Fijado en `configs/processor_benja_balon.yaml`.
