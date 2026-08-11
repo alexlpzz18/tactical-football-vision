@@ -2125,3 +2125,63 @@ Además, matriz de confusión y lista de fallos ordenada por peso, para
 saber dónde atacar. El árbitro etiquetado como `arbitro` cuenta acierto
 si el sistema lo saca del juego como `otro`: el sistema no tiene esa
 etiqueta, y sacarlo del juego ES el comportamiento correcto.
+
+---
+
+# MINI-GT DEL BENJAMÍN: PRIMERA MEDIDA Y FIX DE PORTEROS (11-ago-2026)
+
+Primera vez que se mide la clasificación de equipos en el caso F7. Antes
+solo se podía en Villaviciosa, que es donde hay GT de tracking.
+
+| métrica | antes del fix | tras el fix |
+|---|---|---|
+| accuracy por OBSERVACIÓN | 0,860 | **0,867** |
+| solo identidades limpias | 0,854 | **0,868** |
+| solo jugadores de campo | 0,750 (15/20) | **0,800 (16/20)** |
+| accuracy por identidad | 0,733 (22/30) | **0,767 (23/30)** |
+
+El 0,867 es MEJOR que el 0,714 de Villaviciosa, y tiene sentido: naranja
+contra blanco separa mejor que las dos equipaciones de allí.
+
+## Cuidado con el 53 % de quimeras: era mi criterio, no el dato
+
+El script marcaba quimera en cuanto UN recorte discrepaba, que no es
+comparable con el criterio del banco (dominante < 60 %). Desglosado:
+
+| pureza | ids | qué es |
+|---|---|---|
+| 1,00 | 14 | limpias |
+| 0,75-0,88 | 4 | uno o dos recortes discrepan |
+| 0,62-0,75 | 9 | mezcla clara |
+| **< 0,60** | **3** | quimera según el criterio del banco |
+
+Con el criterio del banco son **3 de 30**, comparable a las 5/40 de
+Villaviciosa. El número sólido y más duro es otro:
+
+> **El 15 % de las observaciones no pertenecen a la identidad que las
+> tiene** (1.351 de 8.765).
+
+Las 4 tiras de pureza 0,88 se mandan a revisión humana
+(`--solo-ids` + `--gt-previo` resaltan el recorte discrepante sobre las
+etiquetas ya puestas): a simple vista, la #8 repite el mismo portero en
+los 8 recortes —error de etiquetado— y la #6 empieza con un jugador
+naranja y sigue con blancos —quimera real—, pero lo decide Alex.
+
+## Fix: EXCLUSIVIDAD de porteros
+
+La regla convertía en portero a CUALQUIER identidad cuya mediana cayera
+en un área. En el benjamín reetiquetaba a **10 identidades**: defensas
+que viven ahí, delanteros que presionan, y el id 55 (jugador de campo del
+equipo B) que Alex detectó.
+
+Ahora el área tiene dueño único y lo decide la **permanencia**:
+
+```
+Identidad 55 vive en el área alto (78 obs) pero NO es portero:
+la 8 lleva 593. Se queda con su etiqueta de color
+```
+
+De 10 porteros a **2**, que es exactamente lo que hay en un F7. El id 55
+sigue fallando, pero ya por otro motivo (el color le da A y es B): el
+fallo se ha movido de la regla geométrica al clasificador, que es donde
+se puede atacar con la feature v2.

@@ -532,3 +532,43 @@ def test_el_arquetipo_negro_se_activa_solo_con_features_v2():
     ]
     assert "negro" not in {a.nombre for a in arquetipos_activos(protos_v1)}
     assert "negro" in {a.nombre for a in arquetipos_activos(protos_v2)}
+
+
+# ── exclusividad de porteros (bug del id 55 del benjamín) ────────────
+
+
+def test_solo_hay_un_portero_por_area():
+    """Regresión del id 55: un jugador de campo que pasa mucho tiempo en
+    el área rival salía reetiquetado como portero. Ahora el área tiene
+    dueño único, y lo decide la PERMANENCIA."""
+    from src.campo_modelo import MODELO_F7
+    from src.team_classification.porteros import (
+        ReglaPorteros,
+        aplicar_regla_porteros,
+    )
+
+    def vive_en(x, y, n, tid):
+        tr = Tracklet(tid, 0.0, np.array([x, y]), 0, 100)
+        for k in range(1, n):
+            tr.anadir(k * DT, np.array([x, y]), 0, 100 + 3 * k)
+        return [tr]
+
+    regla = ReglaPorteros.desde_modelo(MODELO_F7)
+    regla = type(regla)(
+        area_mx_bajo=regla.area_mx_bajo,
+        area_mx_alto=regla.area_mx_alto,
+        area_my=regla.area_my,
+        equipo_mx_bajo="A",
+        equipo_mx_alto="B",
+    )
+    identidades = [
+        vive_en(58.0, 20.0, 200, 1),  # el portero de verdad
+        vive_en(57.0, 21.0, 40, 2),  # un delantero que presiona
+        vive_en(4.0, 20.0, 200, 3),  # el otro portero
+    ]
+    equipos = {1: "A", 2: "A", 3: "B"}
+    resultado = aplicar_regla_porteros(equipos, identidades, regla)
+
+    porteros = [k for k, v in resultado.items() if str(v).startswith("portero")]
+    assert sorted(porteros) == [1, 3], "un solo portero por área"
+    assert resultado[2] == "A", "el delantero conserva su etiqueta de color"

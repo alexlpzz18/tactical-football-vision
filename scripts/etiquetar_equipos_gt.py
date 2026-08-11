@@ -205,6 +205,10 @@ PLANTILLA = """<!doctype html>
  .tira { display:flex; gap:10px; overflow-x:auto; padding-bottom:6px }
  .col { display:flex; flex-direction:column; align-items:center; gap:5px }
  .col img { height:120px; border-radius:6px; background:#0b0d11; display:block }
+ /* El recorte que NO coincide con la mayoría de su tira: es el que hay
+    que mirar para decidir si fue un error de etiquetado o una quimera. */
+ .col.discrepa img { outline:3px solid #f472b6; outline-offset:1px }
+ .col.discrepa .t { color:#f472b6; font-weight:700 }
  .col .t { font-size:10px; color:#6b7280 }
  .swatches { display:flex; gap:3px }
  .sw { width:19px; height:19px; border-radius:5px; border:2px solid transparent;
@@ -230,6 +234,7 @@ PLANTILLA = """<!doctype html>
 const IDENTIDADES = __DATOS__;
 const OPCIONES = __OPCIONES__;
 const resp = {};                       // 'id:j' -> valor
+const PREVIAS = __PREVIAS__;           // etiquetas ya puestas, por id@t
 
 const clave = (id, j) => id + ':' + j;
 function etiquetasDe(d) {
@@ -247,6 +252,15 @@ function swatches(id, j, mini) {
              style="background:${o.color}" title="${o.texto}"
              data-id="${id}" data-j="${j}" data-v="${o.valor}"></button>`).join('');
 }
+
+// Precarga: lo que ya etiquetaste vuelve marcado, para poder REVISARLO
+// en vez de repetirlo.
+(function precargar() {
+  IDENTIDADES.forEach(d => d.crops.forEach((c, j) => {
+    const v = PREVIAS[d.id + '@' + c.t];
+    if (v) resp[clave(d.id, j)] = v;
+  }));
+})();
 
 function pinta() {
   const lista = document.getElementById('lista');
@@ -274,7 +288,14 @@ function pinta() {
                    data-todos="${d.id}" data-v="${o.valor}"></button>`).join('')}
       </div>
       <div class="tira">${d.crops.map((c, j) => `
-        <div class="col">
+        <div class="col${(() => {
+             const e = etiquetasDe(d);
+             if (new Set(e).size < 2) return '';
+             const may = [...new Set(e)].sort((a,b) =>
+               e.filter(x=>x===b).length - e.filter(x=>x===a).length)[0];
+             return resp[clave(d.id, j)] && resp[clave(d.id, j)] !== may
+               ? ' discrepa' : '';
+           })()}">
           <img src="${c.img}" loading="lazy">
           <div class="t">${c.t}s</div>
           <div class="swatches">${swatches(d.id, j, true)}</div>
@@ -341,6 +362,18 @@ def main() -> None:
         help="Identidades con menos observaciones no se preguntan: su "
         "etiqueta sería tan dudosa para el humano como para el sistema",
     )
+    parser.add_argument(
+        "--solo-ids",
+        default=None,
+        help="Lista de ids separados por coma: genera SOLO esas tiras. "
+        "Sirve para revisar las dudosas sin repasar las 30.",
+    )
+    parser.add_argument(
+        "--gt-previo",
+        default=None,
+        help="CSV ya exportado: precarga tus etiquetas para revisarlas en "
+        "vez de empezar de cero.",
+    )
     parser.add_argument("--titulo", default=None)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -352,6 +385,9 @@ def main() -> None:
     df = pd.read_csv(args.csv)
 
     identidades = construir_identidades(df, cache_dets, args.muestras, args.min_obs)
+    if args.solo_ids:
+        pedidos = {int(x) for x in args.solo_ids.split(",")}
+        identidades = {k: v for k, v in identidades.items() if k in pedidos}
     if not identidades:
         raise SystemExit("Ninguna identidad supera --min-obs")
     crops = extraer_crops(cfg["rutas"]["video"], identidades)
@@ -401,12 +437,22 @@ def main() -> None:
             }
         )
 
+    # Etiquetas previas, casadas por (id, tiempo del recorte)
+    previas = {}
+    if args.gt_previo:
+        anterior = pd.read_csv(args.gt_previo)
+        for fila in anterior.itertuples():
+            previas[f"{int(fila.id_jugador)}@{round(float(fila.t_s), 1)}"] = str(
+                fila.equipo_real
+            )
+
     titulo = args.titulo or f"Ground truth de equipos — {Path(args.csv).stem}"
     html = (
         PLANTILLA.replace("__DATOS__", json.dumps(payload))
         .replace("__OPCIONES__", json.dumps(opciones, ensure_ascii=False))
         .replace("__TITULO__", titulo)
         .replace("__NOMBRE_CSV__", f"gt_equipos_{Path(args.csv).stem}.csv")
+        .replace("__PREVIAS__", json.dumps(previas))
     )
     salida = Path(args.salida)
     salida.parent.mkdir(parents=True, exist_ok=True)

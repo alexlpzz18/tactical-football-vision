@@ -204,13 +204,48 @@ def aplicar_regla_porteros(
         'portero_A' / 'portero_B'.
     """
     resultado = dict(equipos)
-    n_reetiquetadas = 0
+
+    # EXCLUSIVIDAD: un solo portero por área. Antes, cualquier identidad
+    # cuya mediana cayera en el área se convertía en portero, así que un
+    # defensa que pasa el rato ahí —o un delantero que presiona— salía
+    # reetiquetado. Caso real del benjamín: el id 55, un jugador de campo
+    # del equipo B, se lo comió la regla.
+    #
+    # El criterio para elegir entre candidatos es la PERMANENCIA: el
+    # portero es quien más observaciones acumula dentro del área, y por
+    # goleada. Los demás se quedan con su etiqueta de color.
+    candidatos: dict[str, list[tuple[int, int]]] = {"bajo": [], "alto": []}
     for id_identidad, identidad in enumerate(identidades, start=1):
         lado = _en_area(*_mediana(identidad), regla)
         if lado is None:
             continue
+        dentro = sum(
+            1
+            for tracklet in identidad
+            for pos in tracklet.pos
+            if _en_area(float(pos[0]), float(pos[1]), regla) == lado
+        )
+        candidatos[lado].append((dentro, id_identidad))
+
+    n_reetiquetadas = 0
+    for lado, lista in candidatos.items():
+        if not lista:
+            continue
+        lista.sort(reverse=True)
+        dentro, id_identidad = lista[0]
         equipo = regla.equipo_mx_bajo if lado == "bajo" else regla.equipo_mx_alto
         resultado[id_identidad] = f"portero_{equipo}"
         n_reetiquetadas += 1
+        for otros_dentro, otro_id in lista[1:]:
+            logger.info(
+                "Identidad %d vive en el área %s (%d obs) pero NO es portero: "
+                "la %d lleva %d. Se queda con su etiqueta de color (%s)",
+                otro_id,
+                lado,
+                otros_dentro,
+                id_identidad,
+                dentro,
+                resultado.get(otro_id),
+            )
     logger.info("Regla de porteros: %d identidades reetiquetadas", n_reetiquetadas)
     return resultado
