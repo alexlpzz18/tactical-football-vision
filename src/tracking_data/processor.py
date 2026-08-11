@@ -612,7 +612,12 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     )
     frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
     trayectorias, equipos = postprocesar(
-        identidades, equipos, frames_ts, cfg_tracking, resolucion=resolucion
+        identidades,
+        equipos,
+        frames_ts,
+        cfg_tracking,
+        resolucion=resolucion,
+        perfil=cfg["tracking"]["perfil"],
     )
 
     # Colores REALES de cada equipo (del prototipo del clasificador), para

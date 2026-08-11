@@ -45,6 +45,20 @@ logger = logging.getLogger(__name__)
 
 PERFILES = ("oficial", "candidato", "bytetrack")
 
+# Perfiles a los que NO se les aplica la fase reparadora del post-proceso
+# (consolidación y corte de velocidad). Esas dos piezas se construyeron
+# para tapar defectos de NUESTRA asociación —racimos de fichas duplicadas
+# y cadenas quimera que teletransportan— y sobre una asociación que no los
+# tiene solo restan. Medido sobre la base ByteTrack (11-ago-2026):
+#
+#   solo interpolación        cob. 0.558  IDF1 0.443  quimeras 5
+#   + corte de velocidad      cob. 0.553  IDF1 0.402  quimeras 5
+#   + post-proceso completo   cob. 0.459  IDF1 0.433  quimeras 2
+#
+# El corte pierde IDF1 sin ganar pureza, y la consolidación se lleva por
+# delante un 18 % de la cobertura.
+_SOLO_INTERPOLA = ("bytetrack",)
+
 # Umbral de "recorte cercano" para las firmas de la salvaguarda de marcaje
 # (coherente con la agregación del clasificador de equipos)
 _UMBRAL_MY_FIRMA = 45.0
@@ -187,6 +201,7 @@ def postprocesar(
     frames_ts: list[tuple[int, float]],
     cfg_tracking: dict,
     resolucion=None,
+    perfil: str = "candidato",
 ) -> tuple[list, dict[int, str]]:
     """Fase POST-clasificación, compartida banco↔producción.
 
@@ -210,6 +225,9 @@ def postprocesar(
             Con ella los umbrales de corte, consolidación e interpolación
             se adaptan a los metros-por-píxel de cada zona, en vez de ser
             los mismos junto a la cámara y en el fondo.
+        perfil: qué asociación produjo las identidades. Con "bytetrack"
+            se saltan la consolidación y el corte de velocidad (ver
+            _SOLO_INTERPOLA).
 
     Returns:
         (trayectorias, equipos) — los equipos se renumeran si la
@@ -223,9 +241,10 @@ def postprocesar(
     )
 
     trayectorias = identidades_a_trayectorias(identidades)
+    reparadoras = perfil not in _SOLO_INTERPOLA
 
     cfg_consol = cfg_tracking.get("consolidacion", {})
-    if cfg_consol.get("activa", False):
+    if reparadoras and cfg_consol.get("activa", False):
         trayectorias, equipos = consolidar_colocadas(
             trayectorias,
             equipos,
@@ -238,7 +257,7 @@ def postprocesar(
     # Corte de teletransportes: va DESPUÉS de consolidar (una fusión puede
     # crear un salto) y ANTES de interpolar (para no rellenar el salto).
     cfg_corte = cfg_tracking.get("corte_velocidad", {})
-    if cfg_corte.get("activo", False):
+    if reparadoras and cfg_corte.get("activo", False):
         trayectorias, equipos = cortar_por_velocidad(
             trayectorias,
             equipos,

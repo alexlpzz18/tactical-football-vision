@@ -1562,3 +1562,60 @@ exactamente los mismos números que el banco de la migración.
 Tests: `tests/test_migracion_bytetrack.py` (15), centrados en las
 propiedades de pureza — incluida la contraprueba de que es el veto de
 ambigüedad, y no otra cosa del camino, lo que impide unir ante un empate.
+
+## Hito 5 — El benjamín con la base nueva
+
+El caso F7 es la prueba independiente: cámara distinta, campo distinto,
+sin GT etiquetado. Con `perfil: bytetrack` en `configs/processor_benja.yaml`:
+
+| | candidato (antes) | bytetrack (ahora) |
+|---|---|---|
+| detecciones usadas | 89 % | **96 %** |
+| identidades | 125 → 105 | **72** |
+| cortes de velocidad | 138 → 93 | **0** (no hay nada que cortar) |
+| fichas por frame (p50) | 33 | **15** |
+
+Las **15 fichas por frame son exactamente las personas reales de un F7**
+(7+7 jugadores más el árbitro), sin haber puesto ninguna cota: sale de la
+asociación, no de un cupo. Es la confirmación más limpia de que el
+problema nunca fue el número de identidades sino cómo lo forzábamos.
+
+Los 93 cortes de velocidad desaparecen solos. No es que se hayan
+desactivado y ya: es que la cadena que los provocaba —fusionar 28 pares
+por cupo y luego trocearlos porque son imposibles— ya no existe.
+
+### El post-proceso reparador, desactivado por medida
+
+`postprocesar` ahora salta consolidación y corte para los perfiles de
+`_SOLO_INTERPOLA`. Medido sobre la base ByteTrack en Villaviciosa:
+
+| | cob. | IDF1 | quimeras |
+|---|---|---|---|
+| solo interpolación | **0,558** | **0,443** | 5 |
+| + corte de velocidad | 0,553 | 0,402 | 5 |
+| + post-proceso completo | 0,459 | 0,433 | 2 |
+
+El corte pierde IDF1 sin ganar pureza y la consolidación se lleva un 18 %
+de la cobertura.
+
+### Límite honesto que queda: la precisión en el fondo, no la identidad
+
+En el CSV del benja aparecen velocidades de hasta 158 m/s. Diagnóstico
+por zonas (mediana de velocidad y % de pasos por encima de 8,5 m/s):
+
+| zona x | v mediana | % > 8,5 m/s |
+|---|---|---|
+| 0-15 m | 0,9 m/s | 1,6 % |
+| 15-30 m | 2,1 m/s | 4,9 % |
+| 30-45 m | 2,2 m/s | 9,4 % |
+| 45-70 m | 2,3 m/s | 13,3 % |
+
+La mediana se mantiene en ~2 m/s a cualquier profundidad —físicamente
+correcto para benjamines— y lo que escala con la distancia es la cola.
+Es **ruido de proyección**, no quimeras: en el fondo un píxel vale 0,53 m,
+así que el temblor de la caja se traduce en decenas de m/s.
+
+Cortar identidades por eso sería el arreglo equivocado: destruiría
+identidades buenas para tapar un problema de precisión de medida. El
+arreglo correcto es SUAVIZAR las posiciones (que no toca la identidad),
+y queda pendiente de medir antes de adoptarse — no se añade sin banco.

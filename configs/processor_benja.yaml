@@ -54,7 +54,7 @@ muestreo:
 
 # ── Tracking ─────────────────────────────────────────────────────────
 tracking:
-  perfil: candidato # oficial | candidato (ver src/tracking/perfiles.py)
+  perfil: bytetrack # oficial | candidato | bytetrack (ver src/tracking/perfiles.py)
 config_tracking: configs/tracking_benja.yaml
 
 # ── Clasificación de equipos ─────────────────────────────────────────

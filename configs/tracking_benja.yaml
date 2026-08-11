@@ -200,3 +200,34 @@ cosido:
   v_max_salto: null
   peso_vel: 0.0
   v_ref: 7.0
+
+# ── BASE NUEVA (perfil "bytetrack") aplicada al F7 ───────────────────
+#
+# Se hereda casi todo de configs/tracking.yaml. Lo que cambia es lo que
+# depende de ESTA cámara: aquí un píxel vale de 0,009 a 0,527 m según la
+# zona, así que el veto de velocidad y la tolerancia del cosido se
+# quedarían cortos en el fondo del campo. El escalado por resolución de
+# `escalado_resolucion` ya los relaja donde toca (lo inyecta el
+# processor), y encima se parte de umbrales algo más holgados.
+bytetrack:
+  umbral_activacion: 0.10
+  buffer_perdido_s: 2.0
+  umbral_emparejamiento: 0.98
+  usar_fps_efectivo: true
+
+cosido_pureza:
+  activo: true
+  # Huecos más cortos que en el F11: el campo es la mitad de largo y la
+  # compresión en profundidad hace que una extrapolación de 4 s en el
+  # fondo se vaya metros.
+  max_hueco: 3.0
+  tol_base: 1.5
+  tol_por_seg: 2.5
+  # Benjamines: corren menos que los adultos del F11 (allí 8,0 m/s).
+  v_max_salto: 6.5
+  color_max_dist: 1.2
+  peso_color: 0.5
+  peso_hueco: 0.3
+  margen_ambiguedad: 0.15
+  solape_max_frames: 0
+  max_pasadas: 3
