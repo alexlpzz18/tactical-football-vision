@@ -97,3 +97,73 @@ plan más barato que da una medida honesta es:
 - Idealmente, otro tramo distinto para test, aunque sea más corto: medir
   en el mismo tramo con el que se ajusta cualquier umbral infla el
   resultado.
+
+---
+
+# PILOTO v1 (11-ago-2026, rama feature/balon)
+
+Modelo `best_balon_v1.pt` entrenado (mAP50 0,789; yolov8s, imgsz 1280;
+799 frames del benjamín: 502 con balón + 297 negativos, 524 cajas).
+Código listo; **el caché necesita GPU** → celdas en `docs/piloto_balon.md`.
+
+## Decisiones tomadas y por qué
+
+**Umbral de operación: NO se hereda el 0,3 de jugadores.** Para posesión
+y contactos, un falso positivo cuesta más que un fallo — un balón
+fantasma en la banda inventa un pase que no existió. La celda de Colab
+barre el umbral e imprime P, R, F1 y **F0,5** (que pondera precisión); se
+elige el que maximiza F0,5, no F1. Queda 0,35 como provisional en el
+config hasta que salga el barrido.
+
+**SAHI: se mide, no se supone.** Con imgsz 1280 puede que el frame entero
+baste, y SAHI cuesta ~10×. `--comparar-sahi` da detecciones y ms/frame de
+las dos vías sobre 60 frames. Default `activo: false`.
+
+**Muestreo independiente: balón 1/2, jugadores 1/3.** No es simetría mal
+entendida: un jugador entre dos muestras se interpola sin drama porque se
+mueve despacio y casi recto, pero el balón puede recibir un toque y
+cambiar de dirección entre muestras, y ese contacto **se pierde para
+siempre**. La fusión de cachés ya soporta frecuencias distintas.
+
+## Tracking de balón v1 (`src/balon/tracking_balon.py`)
+
+Tres problemas que no tiene un jugador, y cómo se atacan:
+
+**Puede haber varios.** En fútbol base hay balones de calentamiento
+parados en bandas y porterías, indistinguibles del bueno por apariencia.
+Lo que los separa es el comportamiento, así que se descarta un candidato
+solo si está quieto **Y** lejos de los jugadores. Las dos condiciones
+juntas, porque cada una por separado le pasa al balón bueno: se para en
+un saque de banda, y se aleja en un despeje largo.
+
+**Vuela.** La homografía proyecta suponiendo que el objeto está EN EL
+SUELO; un balón por el aire viola esa suposición y su posición se va
+metros. Eso no es ruido que suavizar, es geometría que deja de aplicar,
+así que se **marca** en vez de corregirse. Dos señales independientes:
+velocidad proyectada imposible, y —la más específica— **tamaño
+incoherente con la distancia**: un balón por el aire está más cerca de la
+cámara que el punto del suelo al que se le proyecta, así que se ve más
+grande de lo que le tocaría. Esta segunda no depende de la velocidad, así
+que caza también los globos lentos.
+
+**Los contactos son el dato.** Para el análisis táctico importa más quién
+toca el balón y cuándo que dónde está exactamente. Un contacto es un
+cambio brusco de dirección (>45°) con el balón en movimiento (>2 m/s, por
+debajo el ángulo lo decide el ruido). Si no hay jugador a menos de 3 m,
+**el contacto se registra igualmente sin dueño**: "hubo un contacto y no
+sabemos de quién" es información honesta; atribuírselo al más cercano
+esté donde esté sería inventar.
+
+9 tests fijan estas tres cosas, incluidos los casos que distinguen el
+criterio de su versión ingenua (el balón parado pero cerca no se
+descarta; un parpadeo de un frame no es un vuelo; el balón casi quieto no
+genera contactos por ruido).
+
+## Estado
+
+Hecho y testeado sin GPU: selección del activo, fases aéreas, contactos,
+script de detección, config del piloto de 5 min y guía de Colab.
+
+Pendiente de la pasada de GPU: el caché de balón, y con él el CSV
+conjunto, el vídeo con cajas de los dos modelos, el replay con balón y
+los números (% de frames con balón, % en fase aérea, nº de contactos).
