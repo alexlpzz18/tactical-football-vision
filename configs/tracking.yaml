@@ -167,3 +167,28 @@ cosido_pureza:
   margen_ambiguedad: 0.15
   solape_max_frames: 0
   max_pasadas: 3
+
+# ── SUAVIZADO de posiciones (adoptado 11-ago-2026) ───────────────────
+#
+# El diagnóstico frame-a-frame demostró que el replay se ve mal en el
+# fondo del campo CON la detección perfecta: allí 1 px vale medio metro y
+# el temblor de la caja (3,5 px medidos) da ±1,85 m, o sea ±18 m/s.
+# Cortar la identidad por eso era el arreglo equivocado; suavizar la
+# posición ataca el ruido donde está y no toca la identidad.
+#
+# Medido en el banco (base bytetrack), con el p99 de velocidad:
+#
+#   variante                     cob.   IDF1   tasa  quim  v99   %>8.5
+#   sin suavizado                0.558  0.443  0.147   5   30 m/s  —
+#   savgol 0,5 s + resolución    0.567  0.452  0.125   3   16 m/s  —
+#   media 0,5 s + resolución     0.550  0.447  0.120   4    5 m/s  0.1%
+#
+# Se adopta la MEDIA porque el objetivo del encargo era la credibilidad
+# visual: deja el 99,9 % de los pasos por debajo de 8,5 m/s, frente a los
+# 158 m/s del CSV anterior. savgol conserva 0,017 más de cobertura y está
+# a un cambio de config si se prefiere ese equilibrio.
+suavizado:
+  activo: true
+  ventana_s: 0.5
+  metodo: media # media | savgol
+  escalar_con_resolucion: 1.0

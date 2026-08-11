@@ -20,7 +20,11 @@ from src.team_classification.color_classifier import (
     TeamClassifierColor,
 )
 from src.campo_modelo import MODELO_F11, EjeProfundidad, cargar_modelo
-from src.team_classification.porteros import ReglaPorteros, aplicar_regla_porteros
+from src.team_classification.porteros import (
+    ReglaPorteros,
+    aplicar_regla_porteros,
+    deducir_lados,
+)
 from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
 from src.tracking.field_tracker import Tracklet
 
@@ -179,8 +183,32 @@ def clasificar_identidades(
         opciones = {
             k: v
             for k, v in cfg_porteros.items()
-            if k not in ("activo", "desde_modelo", "margen_m")
+            if k not in ("activo", "desde_modelo", "margen_m", "deducir_lados")
         }
+        # Qué equipo defiende cada portería NO se configura a mano: se
+        # deduce de las posiciones. Configurarlo era la causa de que en
+        # el benjamín los porteros salieran cruzados (nadie puede
+        # verificar esas dos claves mirando un replay).
+        if cfg_porteros.get("deducir_lados", True):
+            # Se construye primero una regla provisional solo para saber
+            # QUIÉN vive en un área y excluirlo del voto (un portero vota
+            # al revés que su equipo).
+            provisional = (
+                ReglaPorteros.desde_modelo(
+                    modelo, margen=cfg_porteros.get("margen_m", 2.0)
+                )
+                if cfg_porteros.get("desde_modelo", False)
+                else ReglaPorteros.desde_dict(opciones)
+            )
+            lados = deducir_lados(
+                equipos,
+                identidades,
+                modelo.largo,
+                regla=provisional,
+                ancho=modelo.ancho,
+            )
+            if lados is not None:
+                opciones["equipo_mx_bajo"], opciones["equipo_mx_alto"] = lados
         if cfg_porteros.get("desde_modelo", False):
             # Áreas DERIVADAS del campo (F7 y cualquier campo no estándar):
             # los rangos a mano del F11 no valen en otras medidas.

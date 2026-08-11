@@ -29,7 +29,7 @@ muestreo:
 
 # ── Tracking: el perfil decide el pipeline (ver src/tracking/perfiles.py) ──
 tracking:
-  perfil: candidato      # oficial | candidato
+  perfil: bytetrack      # oficial | candidato | bytetrack (DEFAULT desde 11-ago-2026)
   # DECISIÓN 12-jul-2026: candidato adoptado como default de producto.
   # La cobertura colectiva (la métrica del informe) arbitró: 0.456 vs
   # 0.184 del oficial (fit del clasificador con recortes cercanos). Detalle en docs/experimentos_tracking.md.

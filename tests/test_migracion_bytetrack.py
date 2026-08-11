@@ -192,3 +192,98 @@ def test_desactivado_devuelve_lo_mismo():
 def test_los_parametros_se_leen_del_dict(clave, valor):
     p = ParametrosCosidoPureza.desde_dict({clave: valor, "no_existe": 0})
     assert getattr(p, clave) == valor
+
+
+# ── porteros cruzados (bug del benjamín, 11-ago-2026) ─────────────────
+
+
+def _en(x, y, n=30, tid=1):
+    tr = Tracklet(tid, 0.0, np.array([x, y]), 0, 100)
+    for k in range(1, n):
+        tr.anadir(k * DT, np.array([x, y]), 0, 100 + 3 * k)
+    return [tr]
+
+
+def _escena_f7():
+    """Equipo A defiende x=0 (sus jugadores empujan hacia x=62)."""
+    from src.campo_modelo import MODELO_F7
+    from src.team_classification.porteros import ReglaPorteros
+
+    identidades, equipos = [], {}
+
+    def anadir(x, y, etiqueta):
+        identidades.append(_en(x, y, tid=len(identidades) + 1))
+        equipos[len(identidades)] = etiqueta
+
+    for x in (28.0, 32.0, 35.0, 38.0):
+        anadir(x, 20.0, "A")  # A ataca hacia x=62 → media ~33
+    for x in (34.0, 38.0, 42.0, 46.0):
+        anadir(x, 20.0, "B")  # B ataca hacia x=0 → media ~40
+    # Los porteros visten distinto, así que el clasificador de color les
+    # pone un equipo casi al azar. Aquí, como en el benjamín, cada uno
+    # cae del lado equivocado: el de la portería lejana como "A" y el de
+    # la cercana como "B". Con sus posiciones extremas, esos dos votos
+    # basura bastan para invertir el orden de las medias.
+    anadir(58.0, 20.0, "A")
+    anadir(4.0, 20.0, "B")
+    return identidades, equipos, MODELO_F7, ReglaPorteros.desde_modelo(MODELO_F7)
+
+
+def test_los_lados_se_deducen_de_las_posiciones():
+    """El equipo que ataca hacia x=62 defiende la portería x=0."""
+    from src.team_classification.porteros import deducir_lados
+
+    identidades, equipos, modelo, regla = _escena_f7()
+    assert deducir_lados(
+        equipos, identidades, modelo.largo, regla=regla, ancho=modelo.ancho
+    ) == ("A", "B")
+
+
+def test_el_voto_del_portero_no_invierte_el_resultado():
+    """Regresión directa del bug del benjamín.
+
+    Un portero viste distinto, así que su etiqueta de color es azarosa; y
+    como vive en un extremo, ese voto basura arrastra la media de quien
+    le toque y da la vuelta al signo.
+    """
+    from src.team_classification.porteros import deducir_lados
+
+    identidades, equipos, modelo, regla = _escena_f7()
+    sin_excluir = deducir_lados(
+        equipos, identidades, modelo.largo, regla=None, ancho=modelo.ancho
+    )
+    assert sin_excluir == ("B", "A")  # invertido: el fallo que se arregló
+    con_regla = deducir_lados(
+        equipos, identidades, modelo.largo, regla=regla, ancho=modelo.ancho
+    )
+    assert con_regla == ("A", "B")
+
+
+def test_el_publico_del_fondo_no_invierte_el_resultado():
+    """Segunda causa del bug: esto corre ANTES de la regla de staff, y en
+    el benjamín había gente proyectada a x=71, 80 y 95 sobre 62 m."""
+    from src.team_classification.porteros import deducir_lados
+
+    identidades, equipos, modelo, regla = _escena_f7()
+    for x in (71.0, 80.0, 95.0):
+        identidades.append(_en(x, 50.0, tid=len(identidades) + 1))
+        equipos[len(identidades)] = "A"  # público mal clasificado como A
+
+    assert deducir_lados(
+        equipos, identidades, modelo.largo, regla=regla, ancho=modelo.ancho
+    ) == ("A", "B")
+
+
+def test_sin_separacion_clara_no_se_decide():
+    """Ante la duda, manda lo configurado (y se avisa)."""
+    from src.campo_modelo import MODELO_F7
+    from src.team_classification.porteros import deducir_lados
+
+    identidades, equipos = [], {}
+    for i, etiqueta in enumerate(["A", "B"] * 4):
+        identidades.append(_en(31.0, 20.0, tid=i + 1))
+        equipos[i + 1] = etiqueta
+    assert (
+        deducir_lados(equipos, identidades, MODELO_F7.largo, ancho=MODELO_F7.ancho)
+        is None
+    )

@@ -73,6 +73,15 @@ def main() -> None:
         "identidad (fuera el confeti de fragmentos)",
     )
     args = parser.parse_args()
+    # La orientación puede venir del config del campo (es una propiedad
+    # de la CÁMARA de ese partido, no del comando que se teclee).
+    espejar = args.espejar
+    if espejar is None and args.config_campo:
+        import yaml
+
+        with open(args.config_campo) as f:
+            espejar = (yaml.safe_load(f) or {}).get("espejar")
+
     modelo = None
     if args.config_campo or args.campo:
         modelo = cargar_modelo(
@@ -102,7 +111,7 @@ def main() -> None:
         args.csv,
         args.salida,
         modelo=modelo,
-        espejar=args.espejar,
+        espejar=espejar,
         colores_equipo=colores_equipo,
         max_edad_interp_s=args.max_edad_interp,
         min_vida_s=args.min_vida,

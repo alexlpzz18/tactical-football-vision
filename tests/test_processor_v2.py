@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from src.metrics.collective import compute_collective_metrics
+from src.tracking.perfiles import PERFILES
 from src.tracking_data.processor import EQUIPO_A_ENTERO, procesar_desde_cache
 
 RUTA_CACHE = Path("data/tracking/cache_detecciones_min5_60s.pkl")
@@ -215,7 +216,9 @@ def test_config_processor_valida():
         cfg = yaml.safe_load(f)
     assert cfg["pipeline"] in ("nuevo", "legacy")
     assert cfg["modo"] in ("full", "desde_cache")
-    assert cfg["tracking"]["perfil"] in ("oficial", "candidato")
+    # bytetrack es el DEFAULT de producto desde el 11-ago-2026; oficial y
+    # candidato siguen seleccionables (no se borra nada del pipeline viejo).
+    assert cfg["tracking"]["perfil"] in PERFILES
 
 
 def test_dimensiones_del_campo_coherentes_en_todo_el_sistema():

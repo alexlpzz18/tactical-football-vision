@@ -611,6 +611,13 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         cfg["campo_m"]["ancho"],
     )
     frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
+    # El suavizado necesita el dt REAL de este caché (varía con fps y
+    # submuestreo), no un valor por defecto.
+    if cfg_tracking.get("suavizado", {}).get("activo", False):
+        cfg_tracking["suavizado"]["dt"] = (
+            datos["sample"] / datos["fps"] if datos["fps"] else 0.12
+        )
+
     trayectorias, equipos = postprocesar(
         identidades,
         equipos,

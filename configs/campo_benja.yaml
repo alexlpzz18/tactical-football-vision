@@ -53,3 +53,7 @@ rutas:
 #     residuo por punto para detectarlo).
 #   - A cambio, la cámara sin distorsión evita el problema de lente que
 #     ensucia la calibración de Villaviciosa.
+
+# Orientación del REPLAY para que case con la vista de la cámara.
+# Elegida visualmente por Alex (11-ago-2026) entre las cuatro variantes.
+espejar: y

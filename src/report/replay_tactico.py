@@ -50,7 +50,7 @@ COLORES = {
 def _oscurecer(hex_color: str, factor: float = 0.55) -> str:
     """Versión más oscura de un color, para los porteros de ese equipo."""
     hex_color = hex_color.lstrip("#")
-    r, g, b = (int(hex_color[i : (i + 2)], 16) for i in (0, 2, 4))
+    r, g, b = (int(hex_color[i : (i + 2)], 16) for i in (0, 2, 4))  # noqa: E203
     return "#%02x%02x%02x" % tuple(int(c * factor) for c in (r, g, b))
 
 
@@ -369,13 +369,25 @@ const punteros = DATOS.map(() => 0);
 // El campo se dibuja de la GEOMETRÍA del modelo (CAMPO), no de
 // constantes: así un partido de F7 sale con su círculo de 6 m y sus
 // áreas de 26x12, y no con las medidas de un campo de F11.
+// Rectángulo dado en METROS por dos esquinas. NO se puede usar
+// fillRect(px(x), py(y), ancho, alto): con el espejado activo px(x) deja
+// de ser la esquina izquierda y el rectángulo se dibuja hacia el lado
+// contrario (era el bug de las áreas en las variantes espejadas).
+// Pasando las DOS esquinas por px/py, el volteo sale coherente solo.
+function rectCampo(x, y, ancho, alto, relleno) {
+  const x1 = px(x), x2 = px(x + ancho), y1 = py(y), y2 = py(y + alto);
+  const izq = Math.min(x1, x2), arr = Math.min(y1, y2);
+  if (relleno) ctx.fillRect(izq, arr, Math.abs(x2 - x1), Math.abs(y2 - y1));
+  else ctx.strokeRect(izq, arr, Math.abs(x2 - x1), Math.abs(y2 - y1));
+}
+
 function dibujarCampo() {
   ctx.fillStyle = '#2e7d46';
   ctx.fillRect(0, 0, W, H);
   // bandas de césped alternas
   ctx.fillStyle = 'rgba(255,255,255,0.045)';
   for (let i = 0; i < 12; i += 2)
-    ctx.fillRect(px(i * LARGO / 12), py(0), LARGO / 12 * ESCALA, ANCHO * ESCALA);
+    rectCampo(i * LARGO / 12, 0, LARGO / 12, ANCHO, true);
   ctx.strokeStyle = 'rgba(255,255,255,0.92)';
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
   ctx.lineWidth = 2;
@@ -385,14 +397,23 @@ function dibujarCampo() {
   for (const c of CAMPO.circulos) {
     ctx.beginPath(); ctx.arc(px(c.cx), py(c.cy), c.r * ESCALA, 0, 7); ctx.stroke();
   }
+  // El arco se muestrea en METROS y cada punto pasa por px/py: ctx.arc
+  // conserva el sentido angular al voltear y el frontal del área salía
+  // mirando al revés.
   for (const a of CAMPO.arcos) {
-    ctx.beginPath(); ctx.arc(px(a.cx), py(a.cy), a.r * ESCALA, a.desde, a.hasta); ctx.stroke();
+    ctx.beginPath();
+    for (let k = 0; k <= 24; k++) {
+      const th = a.desde + (a.hasta - a.desde) * k / 24;
+      const X = px(a.cx + a.r * Math.cos(th)), Y = py(a.cy + a.r * Math.sin(th));
+      k ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+    }
+    ctx.stroke();
   }
   for (const [x, y] of CAMPO.puntos) {
     ctx.beginPath(); ctx.arc(px(x), py(y), 3, 0, 7); ctx.fill();
   }
   for (const p of CAMPO.porterias) {
-    ctx.strokeRect(px(p.x), py(p.y), p.ancho * ESCALA, p.alto * ESCALA);
+    rectCampo(p.x, p.y, p.ancho, p.alto, false);
   }
 }
 

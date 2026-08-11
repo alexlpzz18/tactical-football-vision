@@ -1619,3 +1619,105 @@ Cortar identidades por eso sería el arreglo equivocado: destruiría
 identidades buenas para tapar un problema de precisión de medida. El
 arreglo correcto es SUAVIZAR las posiciones (que no toca la identidad),
 y queda pendiente de medir antes de adoptarse — no se añade sin banco.
+
+---
+
+# REVISIÓN VISUAL DEL BENJA (11-ago-2026)
+
+## 0 — Diagnóstico frame-a-frame (antes de medicar)
+
+Herramienta nueva: `scripts/comparar_instante.py`. Congela un instante y
+pone lado a lado el fotograma REAL con las cajas crudas y el punto de
+apoyo, y el replay de ESE mismo frame, más una tabla por jugador con su
+posición proyectada y la incertidumbre que le corresponde por su zona.
+
+**Veredicto: confirmada la hipótesis del ruido píxel→metro, y NO hay
+sesgo sistemático.** La geometría es correcta en los tres instantes (el
+reparto de jugadores por el campo casa con el vídeo). Lo que cambia con
+la profundidad es la PRECISIÓN:
+
+| instante | cajas | en la mitad lejana | incertidumbre allí (mediana / peor) |
+|---|---|---|---|
+| 0:11 (dispersos) | 19 | 5 | ±1,85 m / ±1,85 m |
+| 0:15 (amontonados) | 19 | 13 | ±0,97 m / ±1,85 m |
+| 0:58 (mitad lejana) | 20 | 16 | ±1,26 m / ±1,85 m |
+
+La incertidumbre va de **±0,11 m junto a la cámara a ±1,85 m en el
+fondo** (jitter medido de 3,5 px × los metros-por-píxel de cada zona). A
+dt=0,1 s eso son ±18 m/s de velocidad aparente: las colas de 158 m/s.
+Un jugador puede estar detectado perfectamente y aun así aparecer a dos
+metros de donde está.
+
+Dos hallazgos que ninguna métrica agregada había enseñado, y que el
+diagnóstico sí: **dos `portero_A` a la vez** en el instante de 0:58, y
+público del fondo proyectado a x=71, 80 y 95 m sobre un campo de 62.
+Ambos acabaron siendo la misma causa (ver punto 2).
+
+## 1 — `bytetrack` promocionado a default
+
+`configs/processor.yaml` y el del benjamín. `oficial` y `candidato`
+siguen seleccionables por config; no se borra nada.
+
+## 2 — Porteros cruzados: la causa era una config imposible de verificar
+
+`equipo_mx_alto` / `equipo_mx_bajo` eran dos claves que había que
+"ajustar al partido" a mano. Nadie puede verificar eso mirando un replay,
+y en el benjamín estaban al revés.
+
+**Ahora se deducen de los datos** (`deducir_lados`): el equipo que
+defiende la portería x=0 tiene a sus jugadores, en promedio, más cerca de
+ella. En el benjamín, A 30,0 m vs B 34,1 m sobre 62 → A defiende x=0, y
+el portero cercano es `portero_A` (estaba como `portero_B`). Coincide con
+la verificación visual.
+
+Costó dos intentos, y los dos fallos son instructivos:
+
+1. **Los porteros no pueden votar.** No porque "voten al equipo
+   contrario" —eso lo refutó un test que escribí para demostrarlo— sino
+   porque visten distinto y el clasificador de color les asigna equipo
+   casi al azar; con su posición extrema, ese voto basura arrastra la
+   media. Dejándolos votar: A 42,4 vs B 34,2 (invertido).
+2. **El público tampoco.** Esto corre ANTES de la regla de staff, así que
+   los espectadores proyectados a x=71-95 seguían contando. Solo votan
+   posiciones dentro del campo.
+
+Villaviciosa: **sin cambios** (0,558 / 23 / 0,443 / 0,147 / 5 quimeras).
+La deducción coincide con lo que allí estaba ajustado a mano, pero ya no
+depende de que alguien lo acierte.
+
+## 4 — Suavizado de posiciones: adoptado
+
+| variante | cob. | IDF1 | tasa IDSW | quimeras | v99 | % > 8,5 m/s |
+|---|---|---|---|---|---|---|
+| sin suavizado | 0,558 | 0,443 | 0,147 | 5 | 30 m/s | — |
+| savgol 0,5 s + resolución | **0,567** | **0,452** | 0,125 | **3** | 16 m/s | — |
+| **media 0,5 s + resolución (adoptado)** | 0,550 | 0,447 | **0,120** | 4 | **5 m/s** | **0,1 %** |
+
+Todas las variantes MEJORAN el banco, así que la elección es entre
+cobertura y credibilidad visual. Se adopta la media porque el objetivo
+del encargo era matar las colas imposibles: deja el 99,9 % de los pasos
+por debajo de 8,5 m/s. savgol conserva 0,017 más de cobertura y está a un
+cambio de config.
+
+En el benjamín: **p99 de 34,9 → 5,9 m/s y el máximo de 158,7 → 22,9**.
+
+Detalle de diseño: el suavizado NO añade ni quita puntos (la cobertura no
+se paga por construcción) y solo toca las posiciones reales; las
+interpoladas ya son suaves.
+
+## 5 — Replay: orientación fijada y bug del espejado
+
+`espejar: y` vive ahora en `configs/campo_benja.yaml` — es una propiedad
+de la cámara de ese partido, no del comando que uno teclee.
+
+El bug del dibujo eran dos errores de la misma familia: `strokeRect`
+dibuja desde una esquina y una anchura, así que al voltear el origen la
+esquina pasaba a ser la contraria y las áreas salían hacia el lado
+equivocado; y `ctx.arc` conserva el sentido angular, así que el frontal
+del área miraba al revés. Arreglado de raíz: los rectángulos se dan por
+sus DOS esquinas y los arcos se muestrean en metros, todo pasando por
+`px`/`py`, de modo que cualquier volteo sale coherente solo.
+
+## 3 — Clasificación en cruces: PENDIENTE
+
+No se ha abordado. Es el único punto del encargo sin entregar.

@@ -240,8 +240,23 @@ def postprocesar(
         interpolar_trayectorias,
     )
 
+    from src.tracking.suavizado import ParametrosSuavizado, suavizar_trayectorias
+
     trayectorias = identidades_a_trayectorias(identidades)
     reparadoras = perfil not in _SOLO_INTERPOLA
+
+    # SUAVIZADO antes de interpolar: ataca el ruido de proyección, que es
+    # lo que hace ilegible el fondo del campo (allí 1 px vale medio metro
+    # y el temblor de la caja simula decenas de m/s). No toca la
+    # identidad ni el número de puntos, así que la cobertura no se paga.
+    cfg_suave = cfg_tracking.get("suavizado", {})
+    if cfg_suave.get("activo", False):
+        trayectorias = suavizar_trayectorias(
+            trayectorias,
+            ParametrosSuavizado.desde_dict(cfg_suave),
+            resolucion=resolucion,
+            dt=cfg_suave.get("dt", 0.12),
+        )
 
     cfg_consol = cfg_tracking.get("consolidacion", {})
     if reparadoras and cfg_consol.get("activa", False):
