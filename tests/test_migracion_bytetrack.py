@@ -287,3 +287,45 @@ def test_sin_separacion_clara_no_se_decide():
         deducir_lados(equipos, identidades, MODELO_F7.largo, ancho=MODELO_F7.ancho)
         is None
     )
+
+
+# ── el replay no pinta nada fuera del campo (11-ago-2026) ─────────────
+
+
+def test_el_replay_no_pinta_fuera_del_campo(tmp_path):
+    """Banquillos y público: la regla de staff ya los saca de las
+    métricas, pero en el replay tampoco deben existir — un entrenador
+    pintado junto a la banda se lee como un jugador mal colocado."""
+    import json
+
+    import pandas as pd
+
+    from src.report.replay_tactico import generar_replay
+
+    filas = []
+    for k in range(40):
+        for id_j, x, y, etq in (
+            (1, 30.0, 20.0, "A"),  # dentro
+            (2, 30.0, -1.5, "staff"),  # banquillo, 1,5 m fuera de la banda
+            (3, 71.0, 50.0, "B"),  # público del fondo
+        ):
+            filas.append(
+                dict(
+                    frame=100 + 3 * k,
+                    tiempo_s=round(0.12 * k, 2),
+                    id_jugador=id_j,
+                    equipo=0,
+                    etiqueta=etq,
+                    x_m=x,
+                    y_m=y,
+                    es_real=1,
+                )
+            )
+    csv = tmp_path / "pos.csv"
+    pd.DataFrame(filas).to_csv(csv, index=False)
+
+    html = generar_replay(
+        csv, tmp_path / "r.html", largo=62.0, ancho=40.0, min_vida_s=0.0
+    ).read_text()
+    datos = json.loads(html.split("const DATOS = ")[1].split(";\n")[0])
+    assert len(datos) == 1, "solo la identidad de dentro del campo debe pintarse"

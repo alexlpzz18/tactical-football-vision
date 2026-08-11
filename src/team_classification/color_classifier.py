@@ -278,8 +278,29 @@ class TeamClassifierColor:
         return salida
 
     # ------------------------------------------------------------- predict
-    def predict_color(self, feat: np.ndarray) -> str:
-        """Clasifica una feature (p. ej. color medio de una identidad)."""
+    def predict_color(self, feat: np.ndarray, dist_max: float | None = None) -> str:
+        """Clasifica una feature (p. ej. color medio de una identidad).
+
+        `dist_max` es la distancia máxima admitida a AMBOS prototipos. Con
+        solo dos cajones, un árbitro de amarillo o un entrenador en
+        chándal caen forzosamente en el menos malo — en el benjamín el
+        árbitro salía como equipo B en los tres frames revisados. Si la
+        feature está lejos de los dos, la respuesta honesta es 'otro'.
+
+        El umbral es RELATIVO a la separación entre los dos prototipos,
+        no absoluto. Medirlo enseñó por qué hace falta: calibrado a mano
+        con el caché del benjamín (jugadores p90 0,656 frente a staff p10
+        0,712, casi sin solape) el valor 0,70 parecía perfecto, y llevado
+        tal cual a Villaviciosa hundía la accuracy de equipos de 0,718 a
+        0,482. Cada partido tiene su propia escala de color, así que un
+        número en unidades de histograma no viaja. La distancia entre A y
+        B sí es una escala natural del problema: "lejos de los dos"
+        significa lejos COMPARADO con lo que separa a los dos equipos.
+
+        Los porteros superan cualquier umbral razonable —visten distinto,
+        que es justo el problema— pero no importa: la regla de área los
+        reetiqueta después por su posición.
+        """
         if self._prototipos is None:
             raise RuntimeError(
                 "El clasificador no está entrenado: llama a fit primero."
@@ -289,4 +310,9 @@ class TeamClassifierColor:
         if pr.otro is not None:
             candidatos.append(("otro", pr.otro))
         distancias = [np.linalg.norm(feat - proto) for _, proto in candidatos]
-        return candidatos[int(np.argmin(distancias))][0]
+        mejor = int(np.argmin(distancias))
+        if dist_max is not None:
+            separacion = float(np.linalg.norm(pr.a - pr.b))
+            if separacion > 0 and distancias[mejor] > dist_max * separacion:
+                return "otro"
+        return candidatos[mejor][0]

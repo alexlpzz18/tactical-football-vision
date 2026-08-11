@@ -20,6 +20,7 @@ from src.team_classification.color_classifier import (
     TeamClassifierColor,
 )
 from src.campo_modelo import MODELO_F11, EjeProfundidad, cargar_modelo
+from src.team_classification.oclusion import color_medio_limpio
 from src.team_classification.porteros import (
     ReglaPorteros,
     aplicar_regla_porteros,
@@ -152,11 +153,16 @@ def clasificar_identidades(
     colores: dict,
     clasificador: TeamClassifierColor,
     cfg_equipos: dict | None = None,
+    ocluidas: set[tuple[int, int]] | None = None,
 ) -> dict[int, str]:
     """Etiqueta cada identidad: A / B / otro / portero_A / portero_B.
 
     Ids de identidad = 1..N en el orden de la lista (el mismo criterio que
     el adaptador de evaluación y el export de producción).
+
+    `ocluidas` son los recortes que se pisan con otra detección: su color
+    es una mezcla de dos equipaciones, así que no votan (ver
+    src/team_classification/oclusion.py).
     """
     cfg_equipos = cfg_equipos or {}
     cfg_agg = cfg_equipos.get("agregacion", {})
@@ -171,12 +177,15 @@ def clasificar_identidades(
             for pos, par in zip(tracklet.pos, tracklet.det_idxs):
                 if par not in colores:
                     continue
-                todos.append(colores[par])
+                todos.append((par, colores[par]))
                 if profundidad.de(pos, modelo) < umbral:
-                    cercanos.append(colores[par])
+                    cercanos.append((par, colores[par]))
         feats = cercanos if (solo_cercanos and cercanos) else todos
-        if feats:
-            equipos[id_identidad] = clasificador.predict_color(np.mean(feats, axis=0))
+        media = color_medio_limpio(feats, ocluidas)
+        if media is not None:
+            equipos[id_identidad] = clasificador.predict_color(
+                media, dist_max=cfg_agg.get("dist_max_prototipo")
+            )
 
     cfg_porteros = cfg_equipos.get("porteros", {})
     if cfg_porteros.get("activo", False):

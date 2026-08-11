@@ -1721,3 +1721,105 @@ sus DOS esquinas y los arcos se muestrean en metros, todo pasando por
 ## 3 — Clasificación en cruces: PENDIENTE
 
 No se ha abordado. Es el único punto del encargo sin entregar.
+
+---
+
+# PUNTO 3 Y REVISIÓN FINAL (11-ago-2026)
+
+Colocación **aprobada** por revisión visual frame a frame (9321 y 9441
+perfectos; en 10728 un jugador en la esquina del área desplazado unos
+metros, dentro del ±1,85 m de esa zona). Todo lo que queda es
+clasificación y reglas.
+
+## 3a — Excluir del voto los recortes ocluidos: NEGATIVO
+
+`src/team_classification/oclusion.py` marca los recortes cuya caja se
+pisa con otra detección para que no voten color.
+
+| IoU umbral | % recortes excluidos | cob. | equipos | quimeras |
+|---|---|---|---|---|
+| off | 0 % | 0,563 | 0,718 | 4 |
+| 0,30 | 5 % | 0,561 | 0,718 | 4 |
+| 0,15 | 15 % | 0,561 | 0,718 | 4 |
+| 0,10 | 21 % | 0,561 | 0,718 | 4 |
+| 0,05 | 27 % | 0,563 | 0,718 | 4 |
+
+**Ni una décima**, ni excluyendo el 27 % de los recortes. La razón, en
+retrospectiva evidente: el voto es una MEDIA sobre cientos de recortes
+por identidad, y una minoría contaminada ya se promedia sola.
+
+El resultado negativo señaló dónde está el problema de verdad: nuestra
+clasificación es POR IDENTIDAD, una etiqueta para toda su vida, así que
+"la clasificación falla tras el cruce" solo puede significar que la
+identidad cambió de PERSONA en el cruce. No es un problema de voto sino
+de asociación. Queda escrito el módulo (en off) y planteado el ataque
+correcto —partir la identidad donde el color cambia de forma sostenida,
+`src/tracking/corte_color.py`, que en el prototipo encuentra 10 de 48
+identidades con cambio real (pureza 0,53 → 0,97 en el mejor caso)— pero
+NO está medido contra el banco todavía.
+
+La histéresis post-cruce no aplica a este diseño: no hay reasignación por
+frame que estabilizar, porque cada identidad se clasifica una sola vez.
+
+## 3b y 3c — Árbitro y entrenadores por distancia al color: NEGATIVO
+
+Ataque: si un recorte está lejos de AMBOS prototipos, es "otro".
+
+**Umbral absoluto.** Calibrado con el caché del benjamín, usando como
+control positivo el staff que la geometría ya identifica:
+
+| grupo | p10 | p50 | p90 |
+|---|---|---|---|
+| jugadores dentro del campo | 0,283 | 0,336 | 0,656 |
+| staff (fuera del campo) | 0,712 | 0,850 | 0,972 |
+| etiquetados A/B pero fuera | 0,790 | 0,907 | 0,908 |
+
+Separación casi perfecta, y 0,70 cae justo en el hueco. Llevado a
+Villaviciosa, **hunde la accuracy de equipos de 0,718 a 0,482**: cada
+partido tiene su propia escala de color y un número en unidades de
+histograma no viaja.
+
+**Umbral relativo** a la separación entre prototipos (la forma correcta
+de expresarlo, ya implementada):
+
+| umbral | Villaviciosa: equipos | benjamín: no-jugadores captados dentro del campo |
+|---|---|---|
+| 1,5 · sep | 0,718 (sin efecto) | 0 |
+| 1,2 · sep | 0,718 (sin efecto) | 0 |
+| 1,0 · sep | 0,682 | 1 |
+| 0,9 · sep | — | 2 |
+
+Donde es seguro no hace nada, y donde actúa cuesta más de lo que gana.
+
+**Conclusión, y es el límite que pedías documentar**: el amarillo del
+árbitro NO está lejos de los dos prototipos en un histograma HS de un
+torso de 15-40 px. Con esta feature, el color no separa a los
+no-jugadores. Para el árbitro y los entrenadores que se meten en el campo
+hace falta **comportamiento** (pegado a banda, no acompaña el flujo del
+juego, velocidad media muy baja), no color. Queda implementado y en off
+(`agregacion.dist_max_prototipo: null`).
+
+## 2 — El replay ya no pinta nada fuera del campo
+
+`_filtrar_fuera_del_campo`. En el tramo del benjamín deja de pintar **553
+posiciones**. La regla de staff ya las sacaba de las métricas; ahora
+tampoco existen en el dibujo, ni en gris.
+
+## 3 (bug de porteros) — Era un artefacto rancio mío
+
+Los tres PNG del diagnóstico se generaron ANTES del fix y con la paleta
+de convenio azul/rojo, no con los colores reales. La cadena estaba bien.
+
+Aprovechando la duda, se midió un discriminador mucho más fuerte que la
+media de x — el ÚLTIMO HOMBRE ante cada portería, que por geometría
+defensiva pertenece al equipo que la defiende:
+
+| señal | veredicto |
+|---|---|
+| último hombre junto a x=0 | A 96 % / B 4 % |
+| último hombre junto a x=62 | A 0 % / B 100 % |
+| media de x (la señal débil) | A 30,0 < B 34,1 |
+
+Las tres coinciden: **A defiende x=0**, que es lo que produce
+`deducir_lados`. La señal del último hombre es candidata a sustituir a la
+media si algún partido futuro sale ambiguo.

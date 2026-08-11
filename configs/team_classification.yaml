@@ -68,3 +68,27 @@ clasificador_color:
   umbral_max: 1.3
   umbral_paso: 0.05
   semilla: 0
+
+# ── Rechazo por distancia a AMBOS prototipos: MEDIDO Y DESCARTADO ────
+#
+# Idea: con solo dos cajones (A/B), un árbitro de amarillo o un
+# entrenador en chándal caen forzosamente en el menos malo. Si el color
+# está lejos de los dos, lo honesto sería decir "otro".
+#
+# No funciona con nuestra feature de color. Dos medidas:
+#
+#   - Umbral ABSOLUTO: calibrado en el benjamín parecía perfecto
+#     (jugadores p90 0,656 vs staff p10 0,712, casi sin solape), pero
+#     llevado a Villaviciosa hundía la accuracy de equipos de 0,718 a
+#     0,482. Cada partido tiene su escala de color.
+#   - Umbral RELATIVO a la separación entre prototipos (ya implementado,
+#     que es la forma correcta de expresarlo): a 1,2 no cambia nada en
+#     ninguno de los dos partidos; a 1,0 cuesta accuracy en Villaviciosa
+#     (0,718 -> 0,682) y en el benjamín solo saca del campo a UNA
+#     identidad que la regla de staff no cogiera ya.
+#
+# Conclusión: el amarillo del árbitro NO está lejos de los dos prototipos
+# en un histograma HS de un torso de 15-40 px. Para separarlo hace falta
+# comportamiento (pegado a banda, no sigue el juego), no color.
+# Se deja implementado y en off: null = desactivado.
+agregacion_dist_max_prototipo_nota: ver arriba

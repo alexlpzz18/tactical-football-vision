@@ -61,6 +61,27 @@ COLORES_EQUIPO = {
 }
 
 
+def _paleta_real(ruta_csv):
+    """Colores REALES de equipo del meta que acompaña al CSV.
+
+    Con el convenio azul/rojo no se puede juzgar si un portero está
+    pintado del equipo correcto: hay que verlo con el color de la
+    camiseta que el clasificador dedujo.
+    """
+    import json
+
+    meta = Path(str(Path(ruta_csv).with_suffix("")) + "_meta.json")
+    if not meta.exists():
+        return dict(COLORES_EQUIPO)
+    reales = json.loads(meta.read_text()).get("colores_equipo") or {}
+    paleta = dict(COLORES_EQUIPO)
+    for equipo in ("A", "B"):
+        if equipo in reales:
+            paleta[equipo] = reales[equipo]
+            paleta[f"portero_{equipo}"] = reales[equipo]
+    return paleta
+
+
 def _leer_frame(ruta_video, frame_idx):
     """El fotograma exacto (con el posicionamiento verificado)."""
     cap = cv2.VideoCapture(str(ruta_video))
@@ -93,7 +114,9 @@ def _dibujar_campo(ax, modelo):
         ax.plot(x, y, ".", color="#94a3b8", ms=3, zorder=1)
 
 
-def comparar(frame_idx, cache_dets, df, modelo, resolucion, ruta_video, dt, salida):
+def comparar(
+    frame_idx, cache_dets, df, modelo, resolucion, ruta_video, dt, salida, paleta=None
+):
     """Genera el PNG del instante y devuelve la tabla por jugador."""
     frame = _leer_frame(ruta_video, frame_idx)
     dets = cache_dets.get(frame_idx, [])
@@ -112,7 +135,7 @@ def comparar(frame_idx, cache_dets, df, modelo, resolucion, ruta_video, dt, sali
             d2 = (fichas.x_m - mx) ** 2 + (fichas.y_m - my) ** 2
             if d2.min() <= 4.0:
                 etiqueta = fichas.loc[d2.idxmin(), "etiqueta"]
-        color = COLORES_EQUIPO.get(etiqueta, "#22c55e")
+        color = (paleta or COLORES_EQUIPO).get(etiqueta, "#22c55e")
         izq.add_patch(
             plt.Rectangle(
                 (x1, y1), x2 - x1, y2 - y1, fill=False, ec=color, lw=1.4, zorder=2
@@ -130,7 +153,7 @@ def comparar(frame_idx, cache_dets, df, modelo, resolucion, ruta_video, dt, sali
     # ── derecha: el replay de ESE frame ──
     _dibujar_campo(der, modelo)
     for f in fichas.itertuples():
-        color = COLORES_EQUIPO.get(f.etiqueta, "#22c55e")
+        color = (paleta or COLORES_EQUIPO).get(f.etiqueta, "#22c55e")
         der.plot(
             f.x_m,
             f.y_m,
@@ -244,6 +267,7 @@ def main() -> None:
             cfg["rutas"]["video"],
             dt,
             png,
+            paleta=_paleta_real(args.csv),
         )
         print(f"\n{'=' * 78}\n  t={seg:g}s   frame {frame_idx}   →  {png}\n{'=' * 78}")
         print(

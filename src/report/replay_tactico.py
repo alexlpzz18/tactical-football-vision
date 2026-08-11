@@ -103,6 +103,28 @@ def _leyenda(paleta: dict) -> str:
     )
 
 
+def _filtrar_fuera_del_campo(df, largo, ancho, margen=0.0):
+    """Fuera del rectángulo del campo, fuera del replay.
+
+    Los banquillos y el público quedan a uno o dos metros de la línea, y
+    la regla de staff ya los saca de las métricas. En el replay no deben
+    existir siquiera en gris: un entrenador pintado junto a la banda se
+    lee como un jugador mal colocado.
+    """
+    dentro = df.x_m.between(-margen, largo + margen) & df.y_m.between(
+        -margen, ancho + margen
+    )
+    fuera = int((~dentro).sum())
+    if fuera:
+        logger.info(
+            "Replay: %d posiciones fuera del campo (%.0f×%.0f m) no se pintan",
+            fuera,
+            largo,
+            ancho,
+        )
+    return df[dentro]
+
+
 def _filtrar_creible(
     df: pd.DataFrame, max_edad_interp_s: float, min_vida_s: float
 ) -> pd.DataFrame:
@@ -221,6 +243,7 @@ def generar_replay(
     if len(df) == 0:
         raise ValueError(f"El CSV {csv_path} está vacío.")
 
+    df = _filtrar_fuera_del_campo(df, largo, ancho)
     df = _filtrar_creible(df, max_edad_interp_s, min_vida_s)
 
     identidades = []
