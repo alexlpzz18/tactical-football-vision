@@ -323,27 +323,50 @@ _PLANTILLA = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>__TITULO__</title>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-         background: #f5f5f4; color: #1d1d1f; margin: 0; padding: 24px; }
-  .wrap { max-width: 1000px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 0 0 2px; }
-  .sub { color: #666; font-size: 13px; margin-bottom: 14px; }
-  .card { background: white; border-radius: 12px; padding: 18px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-  canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
-  .controles { display: flex; align-items: center; gap: 12px; margin-top: 12px;
+  /* Paleta oscura: el campo es lo único luminoso de la página, así que
+     todo lo demás se aparta. En claro, el blanco de alrededor competía
+     con las líneas del campo y cansaba la vista. */
+  :root {
+    --fondo:#0e1117; --panel:#161b24; --borde:#232a36;
+    --texto:#e9edf3; --tenue:#8b95a5; --acento:#4ade80;
+  }
+  * { box-sizing: border-box }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+         sans-serif; background: var(--fondo); color: var(--texto);
+         margin: 0; padding: 28px 20px; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .cabecera { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+              margin-bottom:16px }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; letter-spacing:-0.01em }
+  .sub { color: var(--tenue); font-size: 13px; margin:0 }
+  .card { background: var(--panel); border:1px solid var(--borde);
+          border-radius: 16px; padding: 16px;
+          box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+  canvas { width: 100%; height: auto; display: block; border-radius: 10px; }
+  .controles { display: flex; align-items: center; gap: 14px; margin-top: 14px;
                flex-wrap: wrap; }
-  button { font-size: 15px; padding: 6px 14px; border-radius: 8px; border: 1px solid #ddd;
-           background: #f8f8f7; cursor: pointer; }
-  button:hover { background: #eee; }
-  select { font-size: 13px; padding: 5px 8px; border-radius: 8px; border: 1px solid #ddd; }
-  input[type=range] { flex: 1; min-width: 200px; }
-  .reloj { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px;
-           min-width: 120px; }
-  .leyenda { display: flex; gap: 14px; font-size: 12.5px; color: #444;
-             margin-top: 10px; flex-wrap: wrap; }
-  .leyenda span { display: inline-flex; align-items: center; gap: 5px; }
-  .punto { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  button { font: 600 14px/1 inherit; padding: 10px 18px; border-radius: 10px;
+           border: 0; background: var(--acento); color:#08120b;
+           cursor: pointer; transition: filter .15s, transform .05s; }
+  button:hover { filter: brightness(1.08) }
+  button:active { transform: translateY(1px) }
+  select { font: 13px/1 inherit; padding: 8px 10px; border-radius: 9px;
+           border: 1px solid var(--borde); background:#0f141c; color:var(--texto) }
+  /* La barra de tiempo: fina, con el pulgar bien visible sobre el campo */
+  input[type=range] { flex: 1; min-width: 220px; height:4px; -webkit-appearance:none;
+                      background: var(--borde); border-radius:2px; outline:none }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none;
+    width:15px; height:15px; border-radius:50%; background:var(--texto);
+    cursor:pointer; box-shadow:0 0 0 4px rgba(233,237,243,.15) }
+  /* Cifras tabulares: sin esto el reloj "baila" al pasar de 9 a 10 */
+  .reloj { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px;
+           min-width: 128px; letter-spacing:.01em }
+  .leyenda { display: flex; gap: 18px; font-size: 12.5px; color: var(--tenue);
+             margin-top: 14px; padding-top:13px; border-top:1px solid var(--borde);
+             flex-wrap: wrap; align-items:center }
+  .leyenda span { display: inline-flex; align-items: center; gap: 7px; }
+  .punto { width: 11px; height: 11px; border-radius: 50%; display: inline-block;
+           box-shadow: 0 0 0 1.5px rgba(255,255,255,.35) }
 </style>
 </head>
 <body>
@@ -412,15 +435,31 @@ function rectCampo(x, y, ancho, alto, relleno) {
 }
 
 function dibujarCampo() {
-  ctx.fillStyle = '#2e7d46';
+  // Césped con degradado suave: un verde plano se ve a plástico, y el
+  // degradado da profundidad sin robar atención a las fichas.
+  const cesped = ctx.createLinearGradient(0, 0, 0, H);
+  cesped.addColorStop(0, '#2f7d4a');
+  cesped.addColorStop(1, '#256b3e');
+  ctx.fillStyle = cesped;
   ctx.fillRect(0, 0, W, H);
-  // bandas de césped alternas
-  ctx.fillStyle = 'rgba(255,255,255,0.045)';
+  // Bandas de siega, más sutiles que antes (0.045 se veía a rayas)
+  ctx.fillStyle = 'rgba(255,255,255,0.028)';
   for (let i = 0; i < 12; i += 2)
     rectCampo(i * LARGO / 12, 0, LARGO / 12, ANCHO, true);
-  ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.lineWidth = 2;
+  // Viñeta: oscurece las esquinas y centra la mirada en el juego
+  const v = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.35,
+                                     W/2, H/2, Math.max(W,H)*0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(0,0,0,0.22)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+
+  // Líneas: blanco algo translúcido y extremos redondeados. El blanco
+  // puro a 2 px se ve duro y compite con las fichas.
+  ctx.strokeStyle = 'rgba(255,255,255,0.80)';
+  ctx.fillStyle = 'rgba(255,255,255,0.80)';
+  ctx.lineWidth = Math.max(1.4, ESCALA * 0.11);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   for (const [[x1, y1], [x2, y2]] of CAMPO.lineas) {
     ctx.beginPath(); ctx.moveTo(px(x1), py(y1)); ctx.lineTo(px(x2), py(y2)); ctx.stroke();
   }
@@ -483,10 +522,15 @@ function dibujar(T) {
     ctx.save();
     ctx.globalAlpha = opacidad;
     ctx.beginPath();
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
     ctx.arc(px(pos[0]), py(pos[1]), RADIO_M * ESCALA, 0, 7);
     ctx.fillStyle = relleno; ctx.fill();
+    // La sombra es solo del disco: sobre el borde y el número la
+    // emborronaría y el id dejaría de leerse.
+    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
     ctx.strokeStyle = borde; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
     ctx.fillText(DATOS[i].id, px(pos[0]), py(pos[1]) + 0.5);
     ctx.restore();
   }
