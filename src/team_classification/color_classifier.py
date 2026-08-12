@@ -129,6 +129,22 @@ def extraer_color_torso(
     return hist / norma if norma > 0 else hist
 
 
+def _solo_hs(feature):
+    """El bloque HS del pecho, sea la feature v1 o v2.
+
+    TODOS los umbrales del sistema están calibrados en la escala de la v1
+    (fusión del fit 0,5-1,3, veto de color 1,2, firmas). Una feature v2 es
+    más larga, así que cualquier distancia calculada sobre el vector
+    entero vive en OTRA escala y esos umbrales dejan de significar lo que
+    dicen — en silencio, que es lo peligroso. Recortando aquí, un caché
+    v2 se comporta EXACTAMENTE como uno v1, y usar los bloques nuevos
+    pasa a ser una decisión explícita en vez de un efecto colateral.
+    """
+    from src.team_classification.feature_v2 import parte_camiseta_hs
+
+    return parte_camiseta_hs(np.asarray(feature))
+
+
 def color_dominante(feature: np.ndarray, params=None) -> tuple[int, int, int]:
     """Color RGB representativo de una feature de torso (histograma HS).
 
@@ -145,7 +161,7 @@ def color_dominante(feature: np.ndarray, params=None) -> tuple[int, int, int]:
     reproducir la iluminación del campo.
     """
     p = params or ParametrosClasificadorColor()
-    hist = np.asarray(feature, dtype=np.float64).reshape(p.bins_h, p.bins_s)
+    hist = _solo_hs(feature).astype(np.float64).reshape(p.bins_h, p.bins_s)
     if not np.isfinite(hist).any() or hist.sum() <= 0:
         return (128, 128, 128)
     bin_h, bin_s = np.unravel_index(int(np.argmax(hist)), hist.shape)
@@ -183,7 +199,7 @@ class TeamClassifierColor:
         grandes por tamaño = equipos → prototipos.
         """
         p = self.params
-        features = np.asarray(features)
+        features = np.array([_solo_hs(f) for f in np.asarray(features)])
         if len(features) < p.k_clusters:
             raise ValueError(
                 f"Se necesitan al menos {p.k_clusters} features para entrenar "
@@ -305,6 +321,7 @@ class TeamClassifierColor:
             raise RuntimeError(
                 "El clasificador no está entrenado: llama a fit primero."
             )
+        feat = _solo_hs(feat)
         pr = self._prototipos
         candidatos = [("A", pr.a), ("B", pr.b)]
         if pr.otro is not None:

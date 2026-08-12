@@ -325,8 +325,10 @@ def _firmas_de_marcaje(
     )
     firmas = {}
     for indice, identidad in enumerate(identidades):
+        from src.team_classification.feature_v2 import parte_camiseta_hs
+
         cercanos = [
-            colores[par]
+            parte_camiseta_hs(colores[par])
             for tracklet in identidad
             for pos, par in zip(tracklet.pos, tracklet.det_idxs)
             if par in colores and profundidad.de(pos, modelo) < umbral

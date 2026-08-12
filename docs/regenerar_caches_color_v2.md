@@ -86,3 +86,39 @@ La v2 sustituye a la v1 si **el paso 0 sale idéntico** y al menos uno de
 los pasos 1-3 mejora sin que ninguno empeore. Si solo empata, se queda la
 v1: un vector más largo cuesta memoria y tiempo en cada pasada, y no se
 paga por elegancia.
+
+---
+
+## Bug: la v2 reventaba el processor (12-ago-2026)
+
+`color_dominante()` hacía `reshape(16,16)` sobre un vector de 336 y
+tumbaba `procesar_desde_cache` al derivar los colores de equipo.
+
+Pero el crash era lo de menos. La auditoría encontró que **ningún**
+consumidor recortaba al bloque HS, y eso es peor porque no avisa: el fit
+(KMeans + fusión jerárquica con umbral 0,5-1,3), `predict_color`, el veto
+de color del cosido (1,2) y las firmas de la salvaguarda habrían medido
+distancias sobre el vector entero, o sea **en otra escala**, y todos esos
+umbrales calibrados habrían dejado de significar lo que dicen sin que
+nada fallara.
+
+El docstring de `feature_v2.py` prometía justo eso —"cualquier código que
+compare solo ese bloque obtiene distancias idénticas"— pero era una
+promesa sin implementar: nadie llamaba a `parte_camiseta_hs`.
+
+Ahora sí lo hacen los cinco puntos de entrada: `color_dominante`,
+`fit_features`, `predict_color`, `_firma_color` del cosido y
+`_firmas_de_marcaje` de la salvaguarda. Con eso, **un caché v2 se
+comporta exactamente como uno v1**, y usar los bloques nuevos pasa a ser
+una decisión explícita en vez de un efecto colateral.
+
+`tests/test_feature_v2_integracion.py` corre el processor ENTERO con
+cachés v1 y v2 equivalentes y exige que el CSV sea idéntico
+(`assert_frame_equal`). Es el paso 0 de control de este documento,
+ejecutable sin GPU y sin cachés reales.
+
+Un detalle del propio test que conviene recordar: la primera versión
+fallaba por el fixture, no por el código — al construir las features v2
+gastaba el generador aleatorio de forma distinta y los bloques HS dejaban
+de ser equivalentes. Ahora el HS se genera una vez y lo comparten las dos
+versiones.

@@ -83,6 +83,9 @@ def color_medio_limpio(
     que ninguno, porque sin voto la identidad se queda sin equipo y sale
     de las métricas colectivas.
     """
+    from src.team_classification.feature_v2 import parte_camiseta_hs
+
+    pares_y_colores = [(par, parte_camiseta_hs(c)) for par, c in pares_y_colores]
     if not pares_y_colores:
         return None
     if ocluidas:

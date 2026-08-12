@@ -122,8 +122,15 @@ def _firma_color(identidad: list[Tracklet], colores: dict | None) -> np.ndarray 
     """Color medio de la identidad, o None si no hay recortes."""
     if colores is None:
         return None
+    # Solo el bloque HS: el veto de color (1,2) está calibrado en la
+    # escala v1 y una feature v2 lo dejaría sin significado.
+    from src.team_classification.feature_v2 import parte_camiseta_hs
+
     muestras = [
-        colores[par] for tr in identidad for par in tr.det_idxs if par in colores
+        parte_camiseta_hs(colores[par])
+        for tr in identidad
+        for par in tr.det_idxs
+        if par in colores
     ]
     return np.mean(muestras, axis=0) if muestras else None
 
