@@ -2185,3 +2185,40 @@ De 10 porteros a **2**, que es exactamente lo que hay en un F7. El id 55
 sigue fallando, pero ya por otro motivo (el color le da A y es B): el
 fallo se ha movido de la regla geométrica al clasificador, que es donde
 se puede atacar con la feature v2.
+
+---
+
+# BARRIDO COMBINADO DE LA ASOCIACIÓN (12-ago-2026)
+
+El barrido anterior movía un parámetro cada vez. Este explora la rejilla
+conjunta: buffer × emparejamiento × cosido (30 combinaciones), porque un
+buffer más largo fragmenta menos y deja al cosido menos trabajo — el
+óptimo de uno puede no serlo con el otro.
+
+**Resultado: ninguna de las 30 supera el criterio estricto** (cobertura
+sube, quimeras ≤5, IDF1 no baja, concurrencia ≈23). El punto adoptado
+sigue siendo el mejor compromiso.
+
+Referencia adoptada: buffer 2,0 · empar 0,995 · hueco 4 / ambig 0,15 →
+115 ids, cob **0,575**, conc **23**, IDF1 **0,444**, tasa 0,147, 5 quimeras.
+
+Lo más cerca que se estuvo, en dos direcciones opuestas:
+
+| combinación | cob. | conc | IDF1 | quimeras | por qué no |
+|---|---|---|---|---|---|
+| buffer 3,0 · 0,995 · hueco 4/0,15 | **0,579** | 25 | 0,425 | 9 | +0,004 de cobertura a cambio de casi doblar las quimeras |
+| buffer 1,5 · 0,995 · hueco 6/0,30 | 0,565 | 24 | 0,446 | **3** | mejor pureza que la referencia, pero −0,010 de cobertura |
+
+La lectura: hay un **frente de Pareto claro entre cobertura y pureza**, y
+el punto adoptado está sobre él. Todo lo que sube la cobertura paga en
+quimeras y todo lo que baja las quimeras paga en cobertura — no hay
+combinación que gane en las dos, ni siquiera explorando interacciones.
+
+Un patrón nuevo que el barrido de uno-en-uno no enseñaba: **la
+concurrencia sube a 24-25 en TODA la rejilla salvo en el punto adoptado**
+(23, que es el valor del GT). Es decir, el punto actual no solo está en el
+frente, sino que es el único que además clava el número de personas en el
+campo. Eso refuerza mantenerlo.
+
+Reproducible: `scripts/barrido_asociacion.py` (acepta `--config` para
+repetirlo con los cachés v2color cuando estén).
