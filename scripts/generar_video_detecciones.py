@@ -364,7 +364,16 @@ def main() -> None:
             frame = dibujar_frame(
                 frame, dets, tracking.get(frame_idx), colores_equipo, args.conf
             )
-            for b in balon_por_frame.get(frame_idx, []):
+            # El balón va a OTRA frecuencia que los jugadores (1 de cada 2
+            # frente a 1 de cada 3), así que exigir el mismo frame_idx lo
+            # dejaría visible solo 1 de cada 6 y parecería que parpadea.
+            # Se coge la detección más cercana dentro de ±2 frames.
+            cercano = None
+            for delta in (0, -1, 1, -2, 2):
+                if frame_idx + delta in balon_por_frame:
+                    cercano = balon_por_frame[frame_idx + delta]
+                    break
+            for b in cercano or []:
                 x1, y1, x2, y2 = int(b[2]), int(b[3]), int(b[4]), int(b[5])
                 cv2.circle(
                     frame,
