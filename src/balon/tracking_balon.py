@@ -49,9 +49,22 @@ class ParametrosBalon:
     # partir del cual se sospecha vuelo.
     factor_tamano_aereo: float = 1.6
     duracion_min_aerea: float = 0.15  # s: por debajo es ruido, no un vuelo
+    # Velocidad a partir de la cual la posición NO es defendible pase lo
+    # que pase. El filtro de duración mínima existe para no llamar vuelo
+    # a un parpadeo, pero desmarcaba justo los saltos de un frame — que
+    # son los que producen el zigzag "de snitch" en el replay. Por encima
+    # de esto, la observación se descarta aunque dure un solo frame.
+    v_indefendible: float = 40.0
     # ── contactos ──
-    angulo_min_contacto: float = 45.0  # grados de cambio de dirección
-    v_min_contacto: float = 2.0  # m/s: por debajo el ángulo es ruido
+    # Endurecidos tras el piloto (16-ago-2026): con 45° y 2 m/s salían
+    # 415 contactos en 5 min, o sea 83 por minuto, cuando un partido real
+    # tiene 20-30 toques por minuto. El balón se muestrea a 15 fps y su
+    # posición tiembla, así que el criterio laxo dispara con ruido.
+    angulo_min_contacto: float = 70.0  # grados de cambio de dirección
+    v_min_contacto: float = 4.0  # m/s: por debajo el ángulo es ruido
+    # El cambio debe SOSTENERSE: un giro real cambia la dirección de los
+    # siguientes frames, un pico de ruido vuelve a la trayectoria previa.
+    frames_persistencia: int = 2
     dist_max_contacto: float = 3.0  # m al jugador que se le atribuye
     # ── suavizado e interpolación ──
     ventana_suavizado_s: float = 0.2  # corta: el balón cambia rápido
@@ -192,6 +205,16 @@ def detectar_fases_aereas(
             if esperado > 0 and altos[i] / esperado > params.factor_tamano_aereo:
                 aereo[i] = True
 
+    # Los saltos indefendibles se marcan aparte y NO los toca el filtro
+    # de duración: son de un frame por naturaleza.
+    indefendible = [False] * n
+    for i in range(1, n):
+        f0, p0 = trayectoria[i - 1][0], np.array(trayectoria[i - 1][1])
+        f1, p1 = trayectoria[i][0], np.array(trayectoria[i][1])
+        dt = tiempos.get(f1, 0) - tiempos.get(f0, 0)
+        if dt > 0 and float(np.linalg.norm(p1 - p0)) / dt > params.v_indefendible:
+            indefendible[i] = True
+
     # Las rachas demasiado cortas son ruido, no un vuelo
     i = 0
     while i < n:
@@ -207,6 +230,10 @@ def detectar_fases_aereas(
             for k2 in range(i, j):
                 aereo[k2] = False
         i = j
+
+    for k in range(n):
+        if indefendible[k]:
+            aereo[k] = True
     return aereo
 
 
@@ -216,6 +243,7 @@ def detectar_contactos(
     posiciones_jugadores: dict,
     equipos_por_frame: dict | None,
     params: ParametrosBalon,
+    aereo: list[bool] | None = None,
 ) -> list[dict]:
     """Contactos: cambios BRUSCOS de dirección del balón.
 
@@ -230,6 +258,10 @@ def detectar_contactos(
     """
     contactos = []
     for i in range(1, len(trayectoria) - 1):
+        # En fase aérea la posición proyectada no es fiable, así que
+        # cualquier "cambio de dirección" ahí es paralaje, no un toque.
+        if aereo is not None and (aereo[i] or aereo[i - 1] or aereo[i + 1]):
+            continue
         f_prev, p_prev = trayectoria[i - 1][0], np.array(trayectoria[i - 1][1])
         f_act, p_act = trayectoria[i][0], np.array(trayectoria[i][1])
         f_sig, p_sig = trayectoria[i + 1][0], np.array(trayectoria[i + 1][1])
@@ -246,6 +278,21 @@ def detectar_contactos(
         angulo = float(np.degrees(np.arccos(coseno)))
         if angulo < params.angulo_min_contacto:
             continue
+
+        # Persistencia: la dirección nueva debe mantenerse. Sin esto, un
+        # solo frame ruidoso cuenta como contacto y vuelve a contar al
+        # frame siguiente al deshacerse.
+        k = params.frames_persistencia
+        if k > 0 and i + 1 + k < len(trayectoria):
+            p_fin = np.array(trayectoria[i + 1 + k][1])
+            dt3 = tiempos.get(trayectoria[i + 1 + k][0], 0) - tiempos.get(f_sig, 0)
+            if dt3 > 0:
+                v3 = (p_fin - p_sig) / dt3
+                n3 = np.linalg.norm(v3)
+                if n3 > 0:
+                    sigue = float(np.clip(np.dot(v2, v3) / (n2 * n3), -1.0, 1.0))
+                    if float(np.degrees(np.arccos(sigue))) > 60.0:
+                        continue  # no se sostiene: era ruido
 
         id_jugador, equipo, dist = None, None, None
         jugadores = posiciones_jugadores.get(f_act)
@@ -277,3 +324,87 @@ def detectar_contactos(
         sum(1 for c in contactos if c["id_jugador"] is not None),
     )
     return contactos
+
+
+def preparar_para_replay(
+    trayectoria: list[tuple],
+    aereo: list[bool],
+    tiempos: dict,
+    params: ParametrosBalon,
+) -> list[tuple]:
+    """Deja el balón listo para pintarse sin inventar coordenadas.
+
+    Tres tratamientos, y el tercero es el importante:
+
+    1. **Suavizado** de las posiciones de suelo, con ventana CORTA. El
+       balón cambia de dirección mucho más rápido que un jugador, así que
+       la ventana de 0,5 s que se usa con ellos lo aplanaría; 0,2 s quita
+       el temblor sin comerse los cambios reales.
+    2. **Interpolación** de los huecos cortos entre detecciones de suelo.
+       El parpadeo de "aparece y desaparece" se lee como un fallo, y un
+       hueco de dos frames se rellena sin inventar nada apreciable.
+    3. **En fase AÉREA no se pinta la posición proyectada.** Esto no es
+       cosmética: la homografía supone que el objeto está en el suelo, así
+       que un balón por el aire se proyecta decenas de metros más lejos y
+       da los zigzags de "snitch". La detección es correcta —la caja
+       sigue al balón por el aire—, lo que no vale es la proyección.
+
+       Entre el despegue y el bote se dibuja la RECTA que los une,
+       atenuada y marcada como no real. Se probaron las tres opciones:
+
+       - *congelar* en la última posición fiable deja al balón quieto y
+         luego teletransportado al aterrizar — el salto no desaparece,
+         solo se aplaza (medido: seguía habiendo un 5 % de pasos
+         imposibles, todos en el aterrizaje);
+       - *ocultarlo* rompe la continuidad y el entrenador pierde el hilo;
+       - la *recta* es continua y no afirma nada que no se haya medido:
+         une dos puntos REALES, y lo único que no sabemos —la curva por
+         la que pasó— es justo lo que no se dibuja como cierto, porque va
+         atenuado y con es_real=0.
+
+    Returns:
+        [(frame_idx, pos, es_aereo, es_real)] lista para el CSV.
+    """
+    if not trayectoria:
+        return []
+
+    suelo = [(i, t) for i, (t, a) in enumerate(zip(trayectoria, aereo)) if not a]
+    if not suelo:
+        return [(t[0], t[1], True, True) for t in trayectoria]
+
+    # 1. suavizado de las posiciones de suelo
+    ventana = max(3, int(round(params.ventana_suavizado_s / 0.067)))
+    if ventana % 2 == 0:
+        ventana += 1
+    puntos = np.array([t[1] for _i, t in suelo], dtype=float)
+    if len(puntos) >= ventana:
+        nucleo = np.ones(ventana) / ventana
+        suave = puntos.copy()
+        for eje in (0, 1):
+            relleno = np.pad(puntos[:, eje], ventana // 2, mode="edge")
+            suave[:, eje] = np.convolve(relleno, nucleo, mode="valid")
+        puntos = suave
+
+    posicion_suelo = {idx: puntos[k] for k, (idx, _t) in enumerate(suelo)}
+
+    # Para cada hueco aéreo, los dos extremos de suelo que lo encierran
+    indices_suelo = sorted(posicion_suelo)
+    salida = []
+    for i, (frame, _pos, _alto, _conf) in enumerate(trayectoria):
+        if i in posicion_suelo:
+            salida.append((frame, posicion_suelo[i], False, True))
+            continue
+        previos = [k for k in indices_suelo if k < i]
+        siguientes = [k for k in indices_suelo if k > i]
+        if not previos:
+            continue  # aún no hay ninguna posición fiable de la que partir
+        a = posicion_suelo[previos[-1]]
+        if not siguientes:
+            salida.append((frame, a, True, False))  # no volvió al suelo
+            continue
+        b = posicion_suelo[siguientes[0]]
+        # Recta entre despegue y bote: los dos extremos son medidas, y lo
+        # de en medio va marcado como no real.
+        alfa = (i - previos[-1]) / (siguientes[0] - previos[-1])
+        salida.append((frame, a + alfa * (b - a), True, False))
+    return salida

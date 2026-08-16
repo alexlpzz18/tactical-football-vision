@@ -93,6 +93,33 @@ _ETIQUETAS_LEYENDA = {
 }
 
 
+def buscar_meta(ruta_csv) -> "Path | None":
+    """El meta que acompaña a un CSV, aunque el nombre no siga el convenio.
+
+    El convenio es `<csv>_meta.json`, pero el processor de Colab escribió
+    `posiciones_benja_meta_piloto5min.json` — con el sufijo DESPUÉS de
+    "meta". Buscarlo solo por el convenio devolvía None, se perdían los
+    colores de equipo y el vídeo salía con todos los jugadores en verde,
+    que es un fallo que parece del tracking y no lo es.
+    """
+    from pathlib import Path as _P
+
+    ruta_csv = _P(ruta_csv)
+    convenio = _P(str(ruta_csv.with_suffix("")) + "_meta.json")
+    if convenio.exists():
+        return convenio
+    # Si no, el meta del mismo directorio cuyo nombre más se parezca
+    candidatos = [m for m in ruta_csv.parent.glob("*meta*.json") if m.suffix == ".json"]
+    if not candidatos:
+        return None
+
+    def parecido(m):
+        a, b = ruta_csv.stem, m.stem.replace("_meta", "")
+        return sum(1 for x, y in zip(a, b) if x == y)
+
+    return max(candidatos, key=parecido)
+
+
 def _leyenda(paleta: dict, presentes: set | None = None) -> str:
     """Leyenda del replay con los colores REALMENTE usados.
 

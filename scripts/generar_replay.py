@@ -105,12 +105,10 @@ def main() -> None:
     # Colores reales de equipo: del meta indicado o del que acompañe al CSV
     colores_equipo = None
     if not args.sin_colores_reales:
-        ruta_meta = (
-            Path(args.meta)
-            if args.meta
-            else Path(str(Path(args.csv).with_suffix("")) + "_meta.json")
-        )
-        if ruta_meta.exists():
+        from src.report.replay_tactico import buscar_meta
+
+        ruta_meta = Path(args.meta) if args.meta else buscar_meta(args.csv)
+        if ruta_meta and ruta_meta.exists():
             colores_equipo = json.loads(ruta_meta.read_text()).get("colores_equipo")
             if colores_equipo:
                 print(f"Colores de equipo del clasificador: {colores_equipo}")

@@ -270,9 +270,11 @@ def main() -> None:
 
     # Colores reales de equipo (mismos que el replay)
     colores_equipo = {}
+    from src.report.replay_tactico import buscar_meta
+
     ruta_meta = Path(args.meta) if args.meta else None
     if ruta_meta is None and args.csv:
-        ruta_meta = Path(str(Path(args.csv).with_suffix("")) + "_meta.json")
+        ruta_meta = buscar_meta(args.csv)
     if ruta_meta and ruta_meta.exists():
         colores_equipo = json.loads(ruta_meta.read_text()).get("colores_equipo", {})
         for equipo in ("A", "B"):

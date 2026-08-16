@@ -262,3 +262,61 @@ los contactos de 30 segundos y barrer el umbral contra eso.
   translúcido en fase aérea, con su entrada en la leyenda.
 - `outputs/detecciones_conjunto_balon.mp4` — 2.997 frames con las cajas
   crudas de jugadores y el balón rodeado en blanco.
+
+## Revisión visual del piloto (16-ago-2026)
+
+### Bug de colores: no era el balón
+
+En el vídeo conjunto los jugadores salían todos verdes. La causa no fue
+añadir el balón: el meta del tramo se llama
+`posiciones_benja_meta_piloto5min.json` —con el sufijo DESPUÉS de "meta"—
+y la herramienta buscaba `posiciones_benja_piloto5min_meta.json`. Sin
+meta no hay colores de equipo, y el verde es el color por defecto. Ahora
+`buscar_meta()` prueba el convenio y, si falla, coge el meta del mismo
+directorio cuyo nombre más se parezca.
+
+### Fase aérea: por qué la RECTA y no las otras dos
+
+Se probaron las tres opciones que planteó Alex:
+
+- **congelar** en la última posición fiable: el salto no desaparece, se
+  aplaza al aterrizaje. Medido, seguía habiendo un 5 % de pasos
+  imposibles, ahora todos concentrados en el bote;
+- **ocultar**: rompe la continuidad y se pierde el hilo del juego;
+- **recta entre despegue y bote** (adoptada): es continua y **no afirma
+  nada que no se haya medido** — une dos puntos reales. Lo único que no
+  sabemos, la curva por la que pasó, es justo lo que no se dibuja como
+  cierto: va atenuado y con `es_real=0`.
+
+El balón se exporta como UNA identidad continua (`id -1`), con una ficha
+aparte (`id -2`) solo como marcador de "en el aire".
+
+### Lo que NO está resuelto
+
+**Persiste un 5,5 % de pasos por encima de 25 m/s**, y no están en las
+fases aéreas sino **entre observaciones de suelo consecutivas**. O sea:
+el detector de fase aérea no las está marcando. Se intentó tres veces
+—marcar saltos indefendibles saltándose el filtro de duración, congelar,
+y la recta— y el porcentaje no baja, así que la hipótesis de trabajo
+(eran fases aéreas mal filtradas) es falsa o incompleta.
+
+Siguiente paso cuando se retome, y hay que hacerlo con datos y no a
+ojo: coger los 130 pasos imposibles, mirar sus cajas en el vídeo y
+responder si son (a) el mismo balón mal proyectado, (b) dos balones
+distintos que el selector de activo confunde, o (c) falsos positivos del
+detector. Cada respuesta lleva a un arreglo distinto y ahora mismo no hay
+evidencia para elegir.
+
+### Contactos: de pasarse a quedarse corto
+
+Endurecido el criterio (ángulo 45°→70°, velocidad 2→4 m/s, exigencia de
+que el cambio se sostenga 2 frames, y descarte de los contactos en fase
+aérea): **415 → 37 contactos, o sea de 83 a 7 por minuto**.
+
+Lo real son 20-30, así que ahora se queda corto. Sin GT no se puede
+afinar: es exactamente el hueco que cubre la propuesta de Alex.
+
+**Clip elegido para el GT barato: del 9:15 al 9:45** de
+`benja_gredos_p1_20min.mp4`. Es el mejor tramo de 30 s del piloto: 327
+observaciones de balón en suelo y solo 11 aéreas, o sea juego rasante
+donde los toques se ven. El sistema detecta ahí **7 contactos**.

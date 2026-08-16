@@ -80,15 +80,34 @@ def test_el_tamano_incoherente_marca_fase_aerea():
     assert not aereo[0]
 
 
-def test_un_parpadeo_no_es_un_vuelo():
-    """Una sola observación rara es ruido del detector, no una fase aérea."""
+def test_un_parpadeo_PLAUSIBLE_no_es_un_vuelo():
+    """Una observación algo desviada pero físicamente posible es ruido del
+    detector, no una fase aérea."""
     tray = [(k, np.array([10.0 + 0.3 * k, 20.0]), 8, 0.9) for k in range(20)]
     f, _p, a, c = tray[10]
-    tray[10] = (f, np.array([13.0, 24.0]), a, c)  # un salto de un frame
+    tray[10] = (f, np.array([13.0, 20.8]), a, c)  # ~12 m/s: un pase raso
     aereo = detectar_fases_aereas(
         tray, TIEMPOS, ParametrosBalon(duracion_min_aerea=0.5)
     )
     assert not any(aereo)
+
+
+def test_un_salto_INDEFENDIBLE_se_marca_aunque_dure_un_frame():
+    """Cambio de criterio (16-ago-2026), y es el que ataca el zigzag.
+
+    El filtro de duración mínima existe para no llamar vuelo a un
+    parpadeo, pero desmarcaba justo los saltos de UN frame, que son los
+    que producen el movimiento "de snitch" en el replay. Por encima de
+    `v_indefendible` la posición no es defendible dure lo que dure.
+    """
+    tray = [(k, np.array([10.0 + 0.3 * k, 20.0]), 8, 0.9) for k in range(20)]
+    f, _p, a, c = tray[10]
+    tray[10] = (f, np.array([13.0, 26.0]), a, c)  # ~90 m/s: imposible
+    aereo = detectar_fases_aereas(
+        tray, TIEMPOS, ParametrosBalon(duracion_min_aerea=0.5)
+    )
+    assert aereo[10], "un salto imposible no puede pasar por bueno"
+    assert not aereo[0] and not aereo[-1]
 
 
 # ── contactos ────────────────────────────────────────────────────────

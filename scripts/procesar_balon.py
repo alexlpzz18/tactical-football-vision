@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.balon.tracking_balon import (  # noqa: E402
     ParametrosBalon,
+    preparar_para_replay,
     detectar_contactos,
     detectar_fases_aereas,
     seleccionar_balon_activo,
@@ -91,10 +92,19 @@ def main() -> None:
     )
 
     jug_ids = {f: jugadores_en(f) for f, _p, _a, _c in trayectoria}
-    contactos = detectar_contactos(trayectoria, tiempos, jug_ids, None, params)
+    contactos = detectar_contactos(
+        trayectoria, tiempos, jug_ids, None, params, aereo=aereo
+    )
+
+    # Suavizado + fase aérea sin coordenadas inventadas
+    preparadas = preparar_para_replay(trayectoria, aereo, tiempos, params)
 
     filas = []
-    for (f, pos, _alto, conf), es_aereo in zip(trayectoria, aereo):
+    for f, pos, es_aereo, es_real in preparadas:
+        # El balón es UNA identidad continua (-1). Durante el vuelo su
+        # posición queda congelada en la última fiable, así que la serie
+        # no da saltos; el aéreo se marca además con una ficha propia
+        # (-2) en el mismo sitio, que es la que el replay atenúa.
         filas.append(
             {
                 "frame": f,
@@ -102,15 +112,29 @@ def main() -> None:
                 # Convenio: el balón no es un jugador, y el aéreo va con
                 # id propio porque el replay asigna UNA etiqueta por
                 # identidad — mezclarlos perdía la marca de "no fiable".
-                "id_jugador": -2 if es_aereo else -1,
+                "id_jugador": -1,
                 "equipo": 3,
-                "etiqueta": "balon_aereo" if es_aereo else "balon",
+                "etiqueta": "balon",
                 "x_m": round(float(pos[0]), 2),
                 "y_m": round(float(pos[1]), 2),
-                "es_real": 1,
-                "conf": round(float(conf), 3),
+                "es_real": 1 if es_real else 0,
             }
         )
+    # Marcador de "en el aire": misma posición, ficha aparte y atenuada.
+    for f, pos, es_aereo, _r in preparadas:
+        if es_aereo:
+            filas.append(
+                {
+                    "frame": f,
+                    "tiempo_s": round(tiempos[f], 2),
+                    "id_jugador": -2,
+                    "equipo": 3,
+                    "etiqueta": "balon_aereo",
+                    "x_m": round(float(pos[0]), 2),
+                    "y_m": round(float(pos[1]), 2),
+                    "es_real": 0,
+                }
+            )
     balon = pd.DataFrame(filas)
     conjunto = pd.concat([jug, balon], ignore_index=True).sort_values(
         ["tiempo_s", "id_jugador"]
