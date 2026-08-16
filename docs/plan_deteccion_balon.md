@@ -465,3 +465,65 @@ contrario del primer clip y por tanto la prueba más exigente.
 Frame de referencia para identificar jugadores: `outputs/clip2_frame_ids.jpg`
 (archivo 7:55 = YouTube 9:28), con las cajas y los ids del sistema
 pintados.
+
+## Validación FUERA de muestra (clip 2) y un fallo de método propio
+
+### El fallo: mi selector de clips no veía los parones invisibles
+
+El clip 2 que elegí (archivo 7:40-8:10) **no era válido entero**: del 9:30
+al 9:43 de YouTube el balón sale del encuadre por la esquina inferior
+izquierda y no vuelve. Trece de los treinta segundos.
+
+Mi selector lo puntuó como juego continuo perfecto —0 % de fase aérea,
+0 % de tiempo con el balón parado— porque medía "balón parado" contando
+muestras con velocidad casi nula. **Si el balón sale del plano no hay
+muestras**, así que el parón no deja rastro y la ventana sale inmaculada.
+Es un error de diseño de la métrica, no de datos: estaba midiendo lo que
+se ve e ignorando lo que falta.
+
+Corregido en `scripts/elegir_clip.py` con la señal que faltaba —la
+fracción de tiempo **SIN detección**, que pesa el doble porque es la
+única que puede esconder un parón entero. Verificado sobre los tramos
+reales:
+
+| ventana | sin balón | puntuación |
+|---|---|---|
+| clip 2 (el malo, 7:40) | **44 %** | 0,12 |
+| clip 1 (9:15) | 19 % | 0,48 |
+| nuevo elegido (5:55) | **0 %** | **0,69** |
+
+El 44 % son 13,2 s de 30: coincide con lo que Alex vio. Con el criterio
+nuevo habría quedado descartado.
+
+### Resultado de la validación (solo los 17 s analizables)
+
+| | clip 1 (ajuste) | clip 2 (validación) |
+|---|---|---|
+| toques del GT | 20 en 31 s | 17 en 17 s |
+| **velocidad: precisión** | 0,43 | **0,47** |
+| **velocidad: recall** | 0,75 | **0,82** |
+| **velocidad: F1** | 0,55 | **0,60** |
+| velocidad: equipo correcto | 5/15 | **12/14** |
+| ángulo: precisión / recall | 0,71 / 0,25 | 1,00 / 0,24 |
+
+**No cae: sube.** El umbral 3,0 estaba ajustado sobre el clip 1, así que
+lo esperable era una caída, y en cambio el recall pasa de 0,75 a 0,82 y
+la atribución de equipo de 5/15 a **12/14**. Dos lecturas:
+
+- el umbral **no estaba sobreajustado**: la aceleración del balón en un
+  toque es una señal física, no una peculiaridad de aquel tramo;
+- el clip 2 es **juego continuo puro**, y ahí el sistema funciona mejor
+  que en el juego parado del clip 1 — que es justo lo que interesa. La
+  atribución de equipo se dispara porque con el juego en marcha el balón
+  está cerca del jugador que lo toca; en un saque de puerta, no.
+
+El criterio angular se confirma inservible: precisión 1,00 pero recall
+0,24, o sea, acierta lo poco que ve.
+
+### Dato de Alex que corrige una expectativa nuestra
+
+17 toques en 17 segundos de juego continuo = **60 por minuto**, no los
+20-30 que se venían usando como referencia. Aquella cifra salía de un
+clip con muchos parones. Con 60/min como referencia real, los 38/min del
+piloto completo ya no se pasan por arriba: **se quedan cortos**, y el
+recall de 0,82 es coherente con eso.

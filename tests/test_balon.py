@@ -262,3 +262,47 @@ def test_en_fase_aerea_no_se_detectan_contactos_por_velocidad():
         )
         == []
     )
+
+
+# ── selector de clips: el parón invisible (16-ago-2026) ──────────────
+
+
+def test_un_tramo_con_el_balon_FUERA_DEL_PLANO_no_es_juego_continuo():
+    """Fallo de método que costó medio clip de etiquetado.
+
+    La primera versión puntuaba "balón parado" por la fracción de
+    muestras con velocidad casi nula. Pero si el balón SALE DEL ENCUADRE
+    no hay muestras, así que el parón no deja rastro y la ventana salía
+    inmaculada. El clip elegido tenía 13 de sus 30 segundos con el balón
+    fuera de cámara y parecía juego continuo perfecto.
+    """
+    import sys
+    from pathlib import Path
+
+    import pandas as pd
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from elegir_clip import puntuar
+
+    def ventana(n_muestras, t0=0.0):
+        filas = []
+        for k in range(n_muestras):
+            filas.append(
+                {
+                    "tiempo_s": t0 + k * 0.067,
+                    "etiqueta": "balon",
+                    "x_m": 20.0 + k * 0.3,
+                    "y_m": 20.0,
+                }
+            )
+        return pd.DataFrame(filas)
+
+    esperadas = 30 / 0.067
+    # Balón visible todo el rato: juego continuo
+    bueno = puntuar(ventana(int(esperadas)), 0.0, 30.0, esperadas)
+    # El balón desaparece a mitad: mismo movimiento, la mitad de muestras
+    malo = puntuar(ventana(int(esperadas // 2)), 0.0, 30.0, esperadas)
+
+    assert bueno["sin_deteccion"] < 0.05
+    assert malo["sin_deteccion"] > 0.45, "la ausencia de balón debe verse"
+    assert malo["punt"] < bueno["punt"] - 0.5, "y debe penalizar de verdad"
