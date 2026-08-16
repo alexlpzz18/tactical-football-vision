@@ -2222,3 +2222,67 @@ campo. Eso refuerza mantenerlo.
 
 Reproducible: `scripts/barrido_asociacion.py` (acepta `--config` para
 repetirlo con los cachés v2color cuando estén).
+
+---
+
+# RE-MEDICIÓN v2color (12-ago-2026)
+
+## Villaviciosa: el paso 0 FALLA, y por un fallo mío de config
+
+| | nIds | cob. | conc | IDF1 | quimeras | equipos |
+|---|---|---|---|---|---|---|
+| v1 (referencia) | 115 | **0,559** | 25 | **0,453** | **5**/38 | **0,671** |
+| v2color | 122 | 0,488 | 25 | 0,360 | 10/46 | 0,580 |
+
+No es la feature: **es otro detector**. `configs/processor.yaml` apunta a
+`best_v3.pt`, y yo generé `processor_v2color.yaml` copiándolo sin
+comprobar el modelo. La guía de Colab enlazaba `best_v4pre.pt`, pero el
+config pedía el viejo, así que el caché v2color de Villaviciosa está
+hecho con un detector de mAP50 0,857 en vez de 0,90.
+
+La comprobación que lo demuestra, comparando caja a caja en los 500
+frames comunes: de ~4.456 cajas del v1, **3.879 no tienen pareja** en el
+v2color, y de las 577 que sí la tienen, 360 traen un bloque HS distinto
+(distancia mediana 0,238, máxima 1,287 — sobre un veto de 1,2). Con la
+misma feature y el mismo modelo, esas cifras tendrían que ser 0.
+
+**El caché v2color de Villaviciosa no sirve** para comparar. Hay que
+regenerarlo con `best_v4pre.pt` y con el tramo del banco, no el vídeo
+entero.
+
+## Benjamín: el paso 0 SÍ pasa
+
+Su config sí usa `best_v4pre.pt`, y se nota: **detecciones idénticas**
+(10.904 en las dos versiones) y 67 identidades en ambas. La única
+diferencia es una identidad que pasa de A a B.
+
+Contra el mini-GT, los dos son **exactamente iguales**:
+
+| | v1 | v2color |
+|---|---|---|
+| accuracy por observación | 0,867 | 0,867 |
+| solo identidades limpias | 0,868 | 0,868 |
+| solo jugadores de campo | 0,800 | 0,800 |
+
+**El id 4 NO se endereza** (570 obs, sigue A→B). Tampoco los demás
+fallos, salvo que aparece uno nuevo pequeño (id 11, 38 obs).
+
+## Arquetipo NEGRO: activo y funcionando, pero no encuentra a nadie
+
+El canal V ya llega (el log imprime `V=131`, `V=49`, `V=124`), así que el
+arquetipo se activa solo, como estaba diseñado. En este tramo no marca a
+nadie: la identidad 24 tiene V=49 —oscura— pero S=248, así que es azul
+eléctrico y no negro. El criterio (V<60 **y** S<90) hace justo lo que
+debe: no confundir un azul oscuro saturado con una equipación negra.
+
+## Veredicto sobre la v2
+
+Por el criterio de adopción escrito en `docs/regenerar_caches_color_v2.md`
+—"sustituye a la v1 si el paso 0 sale idéntico y al menos uno de los
+pasos 1-3 mejora sin que ninguno empeore"— la v2 **no se adopta**: en el
+benjamín empata en todo y en Villaviciosa no se ha podido medir.
+
+Lo que sí queda demostrado es que **la v2 es inocua**: con el mismo
+detector da los mismos números, que era la garantía que prometía el
+diseño (los 256 primeros valores son bit a bit la v1). Su valor sigue
+siendo potencial —el arquetipo negro y el pantalón— y sin comprobar.
