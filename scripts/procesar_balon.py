@@ -46,11 +46,16 @@ def main() -> None:
     parser.add_argument(
         "--criterio",
         choices=["angulo", "velocidad", "ambos"],
-        default="angulo",
-        help="Cómo detectar los contactos. 'angulo' (el de siempre) solo ve "
-        "pases, tiros y rebotes; 'velocidad' ve además la conducción. "
-        "Medido contra el GT del clip: recall 0.25 → 0.75, precisión "
-        "0.71 → 0.43. Provisional hasta que Alex decida.",
+        default="velocidad",
+        help="Cómo detectar los contactos. DEFAULT 'velocidad': ve también "
+        "la conducción, que es el 30 % de los toques. Medido contra el GT "
+        "del clip, recall 0.25 → 0.75 y en juego continuo 2/11 → 8/11, a "
+        "cambio de precisión 0.71 → 0.43. Se adopta porque el uso del "
+        "balón es 'por dónde va el juego y quién lo tiene', y ahí perder "
+        "dos tercios de los toques es letal mientras que algún falso "
+        "positivo se diluye al agregar por zonas y equipos. 'angulo' "
+        "queda disponible: es prescindible (lo que ve, lo ve la "
+        "velocidad) pero no se borra.",
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

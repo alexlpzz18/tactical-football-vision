@@ -430,3 +430,38 @@ de observaciones mal atribuidas del tracking, y no se arregla desde aquí.
 `angulo` de default. **NO se adopta como default**: la precisión baja, así
 que no cumple la excepción de "mejora todo sin degradar nada" y la
 decisión es de Alex, con la tabla delante.
+
+## Adoptado: velocidad como criterio por defecto (16-ago-2026)
+
+Decisión de Alex, con la tabla delante: el uso del balón en el producto
+es *"por dónde va el juego y qué equipo lo tiene"*, no contar toques por
+jugador. Con ese objetivo, perder dos tercios de los toques es letal
+mientras que algún falso positivo de más **se diluye al agregar por zonas
+y equipos**.
+
+`--criterio` pasa a `velocidad` por defecto. `angulo` y `ambos` quedan
+disponibles: el angular es prescindible —lo que ve, lo ve la velocidad—
+pero no se borra.
+
+## Segundo clip para validar FUERA de muestra
+
+El umbral 3,0 se ajustó sobre el mismo clip que sirve de GT, así que hay
+que validarlo en otro. Elegido con criterio explícito, no a ojo:
+observaciones de balón en suelo, menos penalización por fracción aérea y
+por fracción de tiempo con el balón parado (que es lo que delata los
+saques y parones).
+
+| ventana (archivo) | obs suelo | % aéreo | v mediana | tiempo quieto |
+|---|---|---|---|---|
+| **7:40–8:10** | **239** | **0 %** | **4,3 m/s** | **0 %** |
+| 5:00–5:30 | 222 | 0 % | 4,5 | 1 % |
+| 5:20–5:50 | 285 | 10 % | 3,5 | 4 % |
+| 7:30–8:00 | 320 | 0 % | 3,4 | 20 % |
+
+**Clip 2 elegido: archivo 7:40–8:10 = YouTube 9:13–9:43.** Cero fase
+aérea y cero tiempo con el balón parado: juego continuo puro, que es lo
+contrario del primer clip y por tanto la prueba más exigente.
+
+Frame de referencia para identificar jugadores: `outputs/clip2_frame_ids.jpg`
+(archivo 7:55 = YouTube 9:28), con las cajas y los ids del sistema
+pintados.
