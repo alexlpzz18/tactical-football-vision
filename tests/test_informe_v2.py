@@ -86,9 +86,15 @@ def test_banner_separa_staff_de_sin_equipo(tmp_path):
 
 
 def test_tramo_arbitrario_en_encabezado(tmp_path):
-    """El encabezado usa el reloj absoluto del vídeo (t0=300 → 05:00)."""
-    salida = generar_informe_v2(_csv(tmp_path), tmp_path / "i.html")
-    assert "Tramo 05:00" in salida.read_text()
+    """El encabezado usa el reloj absoluto del vídeo (t0=300 → 05:00).
+
+    Se comprueba el RELOJ, no la redacción: la portada puede cambiar de
+    palabras, pero un informe que dijera 00:00 estaría mintiendo sobre
+    qué parte del partido se analizó.
+    """
+    html = generar_informe_v2(_csv(tmp_path), tmp_path / "i.html").read_text()
+    assert "05:00" in html
+    assert "00:00" not in html
 
 
 def test_csv_sin_equipos_falla_claro(tmp_path):

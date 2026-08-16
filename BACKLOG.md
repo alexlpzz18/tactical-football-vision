@@ -12,12 +12,12 @@ adopta y se marca como tal.
 | 2 | Rematar piloto del balón | ✅ **HECHO** (`c0518d8`) |
 | 3 | Muestra estética | ✅ **HECHO** (`ec65347`), 1 min en vez de 3 |
 | 4 | Pizarra táctica interactiva v1 | ⬜ pendiente |
-| 5 | Informe v2 para F7 pulido | ⬜ pendiente |
+| 5 | Informe v2 para F7 pulido | ✅ **HECHO** — muestra del benja generada |
 | 6 | Preparar el v4 final (dataset 840 + W&B) | ✅ **HECHO** — dos celdas listas |
 | 7 | Robustez: TODOs, validaciones, sed frágil | ⬜ pendiente |
 | 8 | Barrido COMBINADO de la asociación | 🔄 en curso |
-| 9 | Barrido de suavizado × interpolación | ⬜ pendiente |
-| 10 | Barrido del fit del clasificador | ⬜ pendiente |
+| 9 | Barrido de suavizado × interpolación | ✅ **HECHO** — dos presets, ninguno adoptado |
+| 10 | Barrido del fit del clasificador | ✅ **HECHO** — radio 45 adoptado |
 | 11 | Repetir 8 y 10 con cachés v2color | ⚠️ **PARCIAL** — benja OK (empate), Villaviciosa con detector equivocado |
 
 ## Detalle de los bloqueos

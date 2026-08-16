@@ -44,6 +44,12 @@ def main() -> None:
     )
     parser.add_argument("--categoria", default="fútbol base")
     parser.add_argument(
+        "--nombre-a", default=None, help="Nombre del equipo A en la portada"
+    )
+    parser.add_argument(
+        "--nombre-b", default=None, help="Nombre del equipo B en la portada"
+    )
+    parser.add_argument(
         "--con-ia",
         action="store_true",
         help="Rellenar la sección de análisis táctico con IA (API de Anthropic)",
@@ -58,6 +64,25 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
     )
+    # Colores REALES de equipo, del meta que acompaña al CSV: el mapa de
+    # calor va del blanco a la camiseta y la portada lleva su chip, así
+    # que el informe se lee sin leyenda.
+    import json
+
+    from src.report.replay_tactico import buscar_meta
+
+    colores_equipo = None
+    meta = buscar_meta(args.csv)
+    if meta and meta.exists():
+        colores_equipo = json.loads(meta.read_text()).get("colores_equipo")
+        if colores_equipo:
+            print(f"Colores de equipo del clasificador: {colores_equipo}")
+    nombres = {}
+    if args.nombre_a:
+        nombres["A"] = args.nombre_a
+    if args.nombre_b:
+        nombres["B"] = args.nombre_b
+
     ruta = generar_informe_v2(
         args.csv,
         args.salida,
@@ -67,6 +92,8 @@ def main() -> None:
         partido=args.partido,
         categoria=args.categoria,
         con_ia=args.con_ia,
+        colores_equipo=colores_equipo,
+        nombres_equipo=nombres or None,
     )
     print(f"✓ Informe v2 en {ruta}")
 

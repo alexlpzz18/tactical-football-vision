@@ -40,8 +40,44 @@ logger = logging.getLogger(__name__)
 
 RUTA_CATALOGO = Path("configs/informe.yaml")
 
-# Estética de cada equipo: (nombre de colormap, color de acento)
+# Estética por defecto de cada equipo: (colormap, color de acento). Solo
+# se usa si el meta del processor no trae los colores reales.
 ESTILO_EQUIPO = {"A": ("Blues", "#2563eb"), "B": ("Reds", "#dc2626")}
+
+
+def _colormap_de(color_hex: str):
+    """Colormap continuo que va del blanco al color REAL del equipo.
+
+    Pintar el mapa de calor del blanco a la camiseta hace que no haga
+    falta leyenda: el naranja del mapa es el naranja del equipo. Con
+    'Blues' y 'Reds' fijos había que traducir mentalmente.
+    """
+    from matplotlib.colors import LinearSegmentedColormap
+
+    return LinearSegmentedColormap.from_list("equipo", ["#ffffff", color_hex])
+
+
+def _legible(color_hex: str, minimo: float = 110.0) -> str:
+    """Oscurece un color hasta que se lea como TEXTO sobre blanco.
+
+    El color de camiseta vale para un fondo, pero no siempre para letra:
+    el equipo blanco del benjamín es #b7bbeb, y sus KPI en ese tono sobre
+    la tarjeta clara resultaban ilegibles. Se conserva el tono —para que
+    siga identificando al equipo— y se le baja la luminosidad lo justo.
+    """
+    r, g, b = bytes.fromhex(color_hex.lstrip("#"))
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    if lum <= minimo:
+        return color_hex
+    factor = minimo / max(lum, 1.0)
+    return "#%02x%02x%02x" % tuple(min(255, int(c * factor)) for c in (r, g, b))
+
+
+def _contraste(color_hex: str) -> str:
+    """Negro o blanco, el que se lea sobre ese fondo."""
+    r, g, b = bytes.fromhex(color_hex.lstrip("#"))
+    return "#111" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#fff"
+
 
 # Métricas del catálogo que este código sabe calcular y renderizar.
 # Si el yaml declara 'activa' una clave que no está aquí, el informe falla
@@ -207,9 +243,16 @@ def _barra_segmentos(segmentos, acento):
     partes = []
     for etiqueta, pct, opacidad in segmentos:
         texto = f"{etiqueta} {pct:.0f}%" if pct >= 8 else ""
+        # El texto de la barra se pinta en blanco o negro según el fondo
+        # REAL (color × opacidad): sobre una camiseta clara, el blanco no
+        # se lee.
+        r, g, b = bytes.fromhex(acento.lstrip("#"))
+        lum = (0.299 * r + 0.587 * g + 0.114 * b) * opacidad + 255 * (1 - opacidad)
+        color_txt = "#14181f" if lum > 150 else "#fff"
         partes.append(
             f'<div class="zona" title="{etiqueta} {pct:.1f}%" '
-            f'style="width:{pct}%;background:{acento};opacity:{opacidad}">{texto}</div>'
+            f'style="width:{pct}%;background:{acento};opacity:{opacidad};'
+            f'color:{color_txt}">{texto}</div>'
         )
     return '<div class="zonas">' + "".join(partes) + "</div>"
 
@@ -280,6 +323,8 @@ def generar_informe_v2(
     categoria: str = "fútbol base",
     con_ia: bool = False,
     ruta_catalogo: Path = RUTA_CATALOGO,
+    colores_equipo: dict | None = None,
+    nombres_equipo: dict | None = None,
 ) -> Path:
     """Genera el informe v2 (HTML autocontenido) desde el CSV de posiciones."""
     # El MODELO manda: de él salen las dimensiones y las marcas que se
@@ -345,6 +390,12 @@ def generar_informe_v2(
         eq = por_equipo[nombre]
         met = metricas_eq[nombre]
         colormap, acento = ESTILO_EQUIPO[nombre]
+        real = (colores_equipo or {}).get(nombre)
+        fondo = None
+        if real:
+            # `acento` va en TEXTO (KPIs, barras), así que se oscurece;
+            # `fondo` conserva el color de camiseta puro.
+            colormap, acento, fondo = _colormap_de(real), _legible(real), real
         png = _heatmap_png(
             df[df["equipo"] == (0 if nombre == "A" else 1)], modelo, colormap
         )
@@ -388,10 +439,16 @@ def generar_informe_v2(
         kpi_lineas = _kpi(
             _metros(met.distancia_lineas), "Distancia entre líneas", acento
         )
+        cab_fondo = fondo or acento
+        cab_texto = _contraste(cab_fondo)
+        cab_nombre = (nombres_equipo or {}).get(nombre, f"Equipo {nombre}")
         columnas.append(
             f"""
       <div class="col">
-        <h2 style="color:{acento}">Equipo {nombre}</h2>
+        <div class="equipo-cab"
+             style="background:{cab_fondo};color:{cab_texto}">
+          <span class="camiseta"></span>{cab_nombre}
+        </div>
         <div class="kpis">
           {_kpi(f"{eq['amplitud_m']:.1f} m", "Amplitud", acento)}
           {_kpi(f"{eq['profundidad_m']:.1f} m", "Profundidad", acento)}
@@ -415,6 +472,21 @@ def generar_informe_v2(
         )
 
     basculacion_png = _basculacion_png(metricas_eq, ancho, t_min, t_max)
+
+    # Chips de la portada: el color de camiseta identifica al equipo sin
+    # que haya que leer ninguna leyenda.
+    partes = []
+    for letra in ("A", "B"):
+        color = (colores_equipo or {}).get(letra, ESTILO_EQUIPO[letra][1])
+        nombre_eq = (nombres_equipo or {}).get(letra, "Equipo " + letra)
+        partes.append(
+            '<span class="chip"><span class="camiseta" style="background:'
+            + color
+            + '"></span>'
+            + nombre_eq
+            + "</span>"
+        )
+    chips_equipos = partes[0] + '<span class="vs">VS</span>' + partes[1]
 
     # ── Análisis táctico con IA (opcional; nunca rompe el informe) ──
     cfg_ia = catalogo.get("analisis_ia", {})
@@ -458,53 +530,105 @@ def generar_informe_v2(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Informe v2 — {partido}</title>
 <style>
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          background: #f5f5f4; color: #1d1d1f; margin: 0; padding: 32px; line-height: 1.6; }}
-  .wrap {{ max-width: 1100px; margin: 0 auto; }}
-  h1 {{ font-size: 26px; margin-bottom: 4px; }}
-  h2 {{ font-size: 18px; margin: 0 0 14px; }}
-  h3 {{ font-size: 13.5px; margin: 18px 0 6px; color: #555; text-transform: uppercase;
-        letter-spacing: .4px; }}
-  .sub {{ color: #666; font-size: 14px; margin-bottom: 20px; }}
-  .banner {{ background: #fff4ed; border: 1px solid #f4d9c6; color: #9a5520;
-             padding: 12px 16px; border-radius: 8px; font-size: 13.5px; margin-bottom: 24px; }}
-  .card {{ background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px;
-           box-shadow: 0 1px 3px rgba(0,0,0,0.06); }}
-  .card > h2 {{ font-size: 17px; }}
-  .equipos {{ display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }}
-  @media (max-width: 760px) {{ .equipos {{ grid-template-columns: 1fr; }} }}
-  .kpis {{ display: flex; gap: 12px; flex-wrap: wrap; }}
-  .kpi {{ flex: 1; min-width: 100px; background: #f8f8f7; border-radius: 8px;
-          padding: 12px; text-align: center; }}
-  .kpi .v {{ font-size: 20px; font-weight: 700; }}
-  .kpi .l {{ font-size: 12px; color: #666; margin-top: 2px; }}
-  .kpi.future {{ opacity: 0.6; min-width: 190px; }}
-  .kpi.future .v {{ color: #777; font-size: 14.5px; padding: 3px 0; }}
-  .kpi.future .l {{ font-size: 11px; }}
-  .kpi.future .badge {{ font-size: 9px; background: #e0e0e0; color: #777; padding: 2px 6px;
-                        border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; }}
-  .zonas {{ display: flex; height: 36px; border-radius: 8px; overflow: hidden; }}
-  .zona {{ display: flex; align-items: center; justify-content: center; color: white;
-           font-size: 12px; font-weight: 600; }}
-  img {{ width: 100%; border-radius: 8px; display: block; }}
-  .leyenda-hm {{ font-size: 12px; color: #777; margin-top: 6px; }}
-  .definiciones {{ font-size: 12.5px; color: #555; }}
-  .definiciones li {{ margin-bottom: 6px; }}
-  .ia-cuerpo p {{ font-size: 14.5px; margin: 0 0 12px; }}
-  .ia-placeholder {{ color: #888; font-style: italic; font-size: 13.5px;
-                     background: #f8f8f7; border: 1px dashed #ddd;
-                     border-radius: 8px; padding: 14px 16px; }}
-  .ia-placeholder code {{ font-style: normal; background: #eee;
-                          padding: 1px 5px; border-radius: 4px; }}
-  .ia-nota {{ font-size: 11.5px; color: #999; margin-top: 10px; }}
+  /* Documento pensado para leerse e imprimirse. La jerarquía la marcan el
+     tamaño y el peso; el color se reserva para los equipos, que es la
+     única información que debe distinguirse de un vistazo. */
+  * {{ box-sizing: border-box }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          sans-serif; background: #eef0f3; color: #14181f; margin: 0;
+          padding: 0 0 48px; line-height: 1.6;
+          -webkit-font-smoothing: antialiased; }}
+  .wrap {{ max-width: 1080px; margin: 0 auto; padding: 0 24px; }}
+  .portada {{ background: linear-gradient(135deg, #10233a 0%, #1c3f5e 100%);
+              color: #fff; padding: 52px 0 44px; margin-bottom: 28px; }}
+  .portada .wrap {{ display: flex; flex-direction: column; gap: 6px }}
+  .marca {{ font-size: 12px; letter-spacing: 2.4px; text-transform: uppercase;
+            color: #7fb2d9; font-weight: 600 }}
+  .portada h1 {{ font-size: 34px; margin: 6px 0 2px; font-weight: 680;
+                 letter-spacing: -0.02em; line-height: 1.15 }}
+  .portada .meta {{ color: #b9cde0; font-size: 14.5px }}
+  .enfrentamiento {{ display: flex; align-items: center; gap: 14px;
+                     margin-top: 22px; flex-wrap: wrap }}
+  .chip {{ display: inline-flex; align-items: center; gap: 9px;
+           background: rgba(255,255,255,.10);
+           border: 1px solid rgba(255,255,255,.18);
+           padding: 9px 16px; border-radius: 999px; font-weight: 600;
+           font-size: 15px }}
+  .chip .camiseta {{ width: 13px; height: 13px; border-radius: 3px;
+                     box-shadow: 0 0 0 1.5px rgba(255,255,255,.55) }}
+  .vs {{ color: #7fb2d9; font-size: 13px; letter-spacing: 1.5px }}
+  h2 {{ font-size: 18px; margin: 0 0 16px; font-weight: 650;
+        letter-spacing: -0.01em }}
+  h3 {{ font-size: 11.5px; margin: 22px 0 8px; color: #6b7280;
+        text-transform: uppercase; letter-spacing: .9px; font-weight: 700 }}
+  .banner {{ background: #fff8ee; border-left: 3px solid #e0a458;
+             color: #7a4f18; padding: 14px 18px; border-radius: 10px;
+             font-size: 13.5px; margin-bottom: 22px }}
+  .card {{ background: #fff; border-radius: 14px; padding: 26px;
+           margin-bottom: 20px; box-shadow: 0 1px 2px rgba(16,35,58,.06),
+           0 8px 24px rgba(16,35,58,.05) }}
+  .equipos {{ display: grid; grid-template-columns: 1fr 1fr; gap: 30px }}
+  @media (max-width: 800px) {{ .equipos {{ grid-template-columns: 1fr }} }}
+  .equipo-cab {{ display: flex; align-items: center; gap: 10px;
+                 padding: 11px 16px; border-radius: 10px; font-weight: 700;
+                 font-size: 16px; margin-bottom: 16px }}
+  .equipo-cab .camiseta {{ width: 12px; height: 12px; border-radius: 3px;
+                           background: currentColor; opacity: .55 }}
+  .kpis {{ display: flex; gap: 10px; flex-wrap: wrap }}
+  .kpi {{ flex: 1; min-width: 104px; background: #f7f8fa;
+          border: 1px solid #eaedf1; border-radius: 10px; padding: 13px 12px;
+          text-align: center }}
+  /* Cifras tabulares: si no, comparar el KPI de un equipo con el del otro
+     baila porque los dígitos tienen anchos distintos. */
+  .kpi .v {{ font-size: 21px; font-weight: 700;
+             font-variant-numeric: tabular-nums; letter-spacing: -0.02em }}
+  .kpi .l {{ font-size: 11.5px; color: #6b7280; margin-top: 3px;
+             line-height: 1.35 }}
+  .kpi.future {{ opacity: .75; min-width: 200px; background: #fbfbfc;
+                 border-style: dashed }}
+  .kpi.future .v {{ color: #6b7280; font-size: 13.5px; font-weight: 600;
+                    padding: 3px 0 }}
+  .kpi.future .l {{ font-size: 11px }}
+  .kpi.future .badge {{ font-size: 9px; background: #e7eaee; color: #6b7280;
+                        padding: 2px 7px; border-radius: 10px;
+                        text-transform: uppercase; letter-spacing: .6px;
+                        font-weight: 700 }}
+  .zonas {{ display: flex; height: 38px; border-radius: 9px; overflow: hidden }}
+  .zona {{ display: flex; align-items: center; justify-content: center;
+           color: #fff; font-size: 12px; font-weight: 700;
+           font-variant-numeric: tabular-nums }}
+  img {{ width: 100%; border-radius: 10px; display: block }}
+  .leyenda-hm {{ font-size: 11.5px; color: #8a919c; margin-top: 7px }}
+  .definiciones {{ font-size: 13px; color: #4b5563 }}
+  .definiciones li {{ margin-bottom: 7px }}
+  .ia-cuerpo p {{ font-size: 15px; margin: 0 0 13px }}
+  .ia-placeholder {{ color: #8a919c; font-style: italic; font-size: 13.5px;
+                     background: #f7f8fa; border: 1px dashed #dde1e6;
+                     border-radius: 10px; padding: 15px 17px }}
+  .ia-placeholder code {{ font-style: normal; background: #eaedf1;
+                          padding: 1px 6px; border-radius: 4px }}
+  .ia-nota {{ font-size: 11.5px; color: #9aa1ac; margin-top: 11px }}
+  .pie {{ text-align: center; color: #8a919c; font-size: 12px; margin-top: 30px }}
+  @media print {{
+    body {{ background: #fff }}
+    .card {{ box-shadow: none; border: 1px solid #e5e8ec; break-inside: avoid }}
+    .portada {{ -webkit-print-color-adjust: exact; print-color-adjust: exact }}
+  }}
 </style>
 </head>
 <body>
+<header class="portada">
+  <div class="wrap">
+    <div class="marca">Tactical Lens · Informe táctico</div>
+    <h1>{partido}</h1>
+    <div class="meta">{categoria} · tramo {_mmss(t_min)}–{_mmss(t_max)} del vídeo ·
+      {colectivas['resumen']['frames_con_deteccion']} frames analizados ·
+      {colectivas['resumen']['ids_unicos']} identidades</div>
+    <div class="enfrentamiento">{chips_equipos}</div>
+  </div>
+</header>
+
 <div class="wrap">
-  <h1>Informe táctico — {partido}</h1>
-  <div class="sub">Tramo {_mmss(t_min)}–{_mmss(t_max)} (reloj del vídeo) ·
-    {colectivas['resumen']['frames_con_deteccion']} frames ·
-    {colectivas['resumen']['ids_unicos']} identidades · Tactical Lens</div>
 
   <div class="banner">Transparencia: el {pct_otro:.0f}&#8202;% de las posiciones
     ({n_otro} de {n_total}) queda excluido de las métricas por equipo —
@@ -538,6 +662,9 @@ def generar_informe_v2(
       {_definiciones(catalogo)}
     </ul>
   </div>
+
+  <div class="pie">Generado por Tactical Lens · las métricas salen de la
+    detección automática de este vídeo, sin intervención manual</div>
 </div>
 </body>
 </html>
