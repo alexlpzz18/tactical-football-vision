@@ -527,3 +527,61 @@ El criterio angular se confirma inservible: precisión 1,00 pero recall
 clip con muchos parones. Con 60/min como referencia real, los 38/min del
 piloto completo ya no se pasan por arriba: **se quedan cortos**, y el
 recall de 0,82 es coherente con eso.
+
+## Clip 3: primera medida de atribución POR JUGADOR (16-ago-2026)
+
+Alex anotó el clip con el **id del sistema en el instante de cada toque**,
+que es lo que hace fiable la atribución: con un frame estático el mapeo
+caduca, porque los ids no son estables.
+
+Nota de conversión: el vídeo sale a 5 fps para 10 fps reales, así que su
+reloj va a la mitad — `t_archivo = 355 + t_reproducción / 2`.
+
+### Resultado
+
+| | con los 17 | solo los 13 que Alex fechó |
+|---|---|---|
+| precisión | 0,56 | 0,50 |
+| recall | 0,53 | **0,62** |
+| equipo correcto | 5/9 | 4/8 |
+| **jugador correcto** | **5/9** | **4/8** |
+
+Los 4 toques del portero entre 0:16 y 0:29 no llevaban hora individual y
+**los repartí yo**; son justo cuatro de los no detectados, así que
+inflaban la caída. La segunda columna es la honesta.
+
+**El recall cae de 0,82 (clip 2) a 0,62.** Y la causa se ve en el detalle:
+se pierden **los toques del portero** (0:22, 0:24, 0:26, 0:29, 0:32). Un
+portero que controla y toquetea el balón no lo acelera por encima de los
+3 m/s que exige el criterio.
+
+O sea, la simetría del problema anterior: **el criterio angular era ciego
+a los toques rectos y el de velocidad es ciego a los toques lentos.** Uno
+ve pases y tiros; el otro, conducción y golpeos. Los toques suaves —
+control, protección del balón, un portero con el balón en los pies — no
+los ve ninguno de los dos.
+
+**Atribución por jugador: 5 de 9** (56 %). Cuando el jugador es correcto
+el equipo también, así que no hay un problema añadido de clasificación
+aquí. De los 4 fallos, **3 son `None`**: no había ningún jugador a menos
+de 3 m de la posición proyectada del balón. Con el portero eso delata que
+la posición del balón junto a la portería está mal proyectada, no que
+falte el jugador.
+
+### Dos hallazgos que Alex aportó sin que se los pidiera
+
+**El id 4 y el id 19 son el mismo jugador.** Un cambio de identidad
+verificado a ojo, el primero que tenemos fechado. Es exactamente el
+material que faltaba para medir el cosido en el benjamín: no "esta
+identidad está sucia", sino "estas dos son la misma persona".
+
+**El id 32 está mal etiquetado**: es naranja (B) y el sistema lo da como
+A. Se suma a la lista de fallos de clasificación con nombre.
+
+### Qué NO hay que hacer con esto
+
+Bajar el umbral de aceleración para cazar los toques del portero. Ya se
+midió en el clip 1: a 2,0 la precisión cae a 0,33 sin ganar recall. El
+toque lento necesita una tercera señal —proximidad sostenida del balón a
+un jugador mientras cambia de velocidad, aunque sea poco—, no un umbral
+más bajo del mismo criterio.
