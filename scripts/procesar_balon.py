@@ -54,11 +54,13 @@ def main() -> None:
     reales = jug[jug.es_real == 1]
     # Los jugadores van a otra frecuencia: se indexan por tiempo para
     # poder emparejar con el balón, que se muestrea más denso.
-    por_tiempo = {}
+    por_tiempo, equipo_de = {}, {}
     for t, g in reales.groupby("tiempo_s"):
         por_tiempo[round(float(t), 2)] = [
             (float(r.x_m), float(r.y_m), int(r.id_jugador)) for r in g.itertuples()
         ]
+        for r in g.itertuples():
+            equipo_de[int(r.id_jugador)] = str(r.etiqueta)
 
     def jugadores_en(frame):
         t = round(tiempos.get(frame, 0.0), 2)
@@ -92,8 +94,11 @@ def main() -> None:
     )
 
     jug_ids = {f: jugadores_en(f) for f, _p, _a, _c in trayectoria}
+    # El equipo del jugador al que se atribuye el contacto. Sin esto la
+    # columna salía vacía y no se podía medir la atribución.
+    equipos_por_frame = {f: equipo_de for f in jug_ids}
     contactos = detectar_contactos(
-        trayectoria, tiempos, jug_ids, None, params, aereo=aereo
+        trayectoria, tiempos, jug_ids, equipos_por_frame, params, aereo=aereo
     )
 
     # Suavizado + fase aérea sin coordenadas inventadas

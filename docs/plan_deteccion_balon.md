@@ -320,3 +320,66 @@ afinar: es exactamente el hueco que cubre la propuesta de Alex.
 `benja_gredos_p1_20min.mp4`. Es el mejor tramo de 30 s del piloto: 327
 observaciones de balón en suelo y solo 11 aéreas, o sea juego rasante
 donde los toques se ven. El sistema detecta ahí **7 contactos**.
+
+## GT de contactos: el criterio del ángulo es ESTRUCTURALMENTE ciego (16-ago-2026)
+
+Alex etiquetó a mano el clip 9:15-9:45 del archivo (10:48-11:18 de
+YouTube; el archivo va 1:33 por detrás), con quién toca, de qué equipo y
+qué tipo de acción. **20 toques**, 12 del equipo blanco y 8 del naranja.
+
+### Resultado
+
+| tolerancia | TP | precision | recall | F1 | equipo correcto |
+|---|---|---|---|---|---|
+| ±0,5 s | 4 | 0,57 | 0,20 | 0,30 | 1/4 |
+| **±1,0 s** | **5** | **0,71** | **0,25** | **0,37** | **2/5** |
+| ±1,5 s | 6 | 0,86 | 0,30 | 0,44 | 2/6 |
+
+Y lo peor está donde importa: en **juego continuo detecta 2 de 11**; en
+juego parado, 3 de 9. Justo al revés de lo deseable.
+
+### La causa, y no es de calibración
+
+Los 6 toques de la conducción del #10 (10:50-10:54) se pierden **todos**.
+Midiendo el balón en esos 6 segundos (74 muestras):
+
+- ángulo entre pasos consecutivos: **mediana 5°**, p90 18°
+- pasos que superan el umbral de 70°: **2 de 72**
+
+O sea: **durante una conducción el balón va prácticamente recto**, porque
+el jugador lo empuja hacia delante una y otra vez en la misma dirección.
+Un criterio basado en el cambio de dirección no puede verlo, y bajar el
+umbral a 5° dispararía con todo.
+
+**El detector de contactos por ángulo solo puede ver pases, tiros y
+rebotes.** La conducción —6 de los 20 toques de este clip, un 30 %— le es
+invisible por construcción. Eso pone un techo estructural al recall que
+ningún ajuste de umbral levanta, y explica por qué endurecerlo llevó de
+83 contactos/min a 7 sin acercarse a los 20-30 reales: se estaba
+recortando ruido y precisión a la vez que se dejaba intacto el agujero.
+
+### Qué hace falta (diseño, no ajuste)
+
+Un segundo criterio para la conducción, basado en una señal distinta:
+
+- **oscilación de velocidad**: cada toque acelera el balón y entre toques
+  se frena. Es medible y no depende de la dirección.
+- **posesión por proximidad**: el balón se mantiene a 1-2 m del mismo
+  jugador mientras avanza; los toques son los mínimos de distancia.
+
+El de velocidad parece el más barato y el más independiente de la calidad
+del tracking de jugadores, que hoy es el eslabón débil.
+
+### Atribución de equipo: 2 de 5
+
+Peor que una moneda. Pero es un problema aguas abajo: hereda el 15 % de
+observaciones mal atribuidas del tracking, y con solo 5 aciertos la cifra
+tampoco es concluyente. No se puede arreglar la atribución antes que el
+recall.
+
+### Nota metodológica de Alex, que hay que respetar al leer esto
+
+El clip tiene mucho juego parado (saque de puerta pitado, portero con la
+mano, saque en corto), así que **la tasa real de toques en juego continuo
+es más alta** que los 20/30 s de este clip. La cifra de contactos por
+minuto del piloto (7) es aún peor de lo que parece.
