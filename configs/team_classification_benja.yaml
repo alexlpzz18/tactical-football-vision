@@ -47,7 +47,13 @@ entrenamiento:
 # algún recorte decente vale más que ninguno).
 agregacion:
   solo_cercanos: true
-  umbral_profundidad_m: 35.0
+  # BARRIDO del 16-ago-2026: este dial manda en la accuracy del benjamín
+  # y el 35 se quedaba corto. Medido contra el mini-GT (radio del fit
+  # fijo en 25, que es lo que manda en Villaviciosa):
+  #     agregación 25 → 0,830 · 35 → 0,867 · 45 → 0,883
+  # Villaviciosa no se entera: con radio de fit 25, 28 o 30 da cifras
+  # IDÉNTICAS (0,559 / 0,453 / 5 quimeras / 0,671).
+  umbral_profundidad_m: 45.0
 
 # ── Regla de porteros: áreas DERIVADAS del modelo F7 ─────────────────
 #

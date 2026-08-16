@@ -2286,3 +2286,77 @@ Lo que sí queda demostrado es que **la v2 es inocua**: con el mismo
 detector da los mismos números, que era la garantía que prometía el
 diseño (los 256 primeros valores son bit a bit la v1). Su valor sigue
 siendo potencial —el arquetipo negro y el pantalón— y sin comprobar.
+
+---
+
+# BARRIDO DEL FIT DEL CLASIFICADOR (16-ago-2026)
+
+Primer barrido que mide las DOS patas a la vez: GT de tracking de
+Villaviciosa y mini-GT de equipos del benjamín. Hasta ahora un ajuste
+podía enderezar un caso y romper el otro sin que nadie lo viera.
+
+## Hallazgo 1: dos de los cuatro diales no hacen nada
+
+24 combinaciones de umbral de fusión × mínimo de features × radio, y
+**todas las filas con el mismo radio dan cifras idénticas**. Es decir:
+
+- el **rango y paso del barrido automático de fusión** (0,5-1,3/0,05 vs
+  0,4-1,6/0,05 vs 0,6-1,1/0,02) no cambia el resultado: el barrido
+  converge al mismo umbral se le dé el rango que se le dé;
+- el **mínimo de features** (100 vs 300) tampoco: nunca llega a morder,
+  siempre hay recortes de sobra.
+
+Dos diales menos que tocar, y dos que no hay que volver a barrer.
+
+## Hallazgo 2: el id 4 NO es un problema del fit
+
+De 24 combinaciones, 12 "enderezan" el id 4. Todas son las de radio 20 y
+35 — justo aquellas en las que **el clasificador colapsa**:
+
+| radio | Villaviciosa cob. | equipos | benja acc | id 4 |
+|---|---|---|---|---|
+| 20 | 0,359 | 0,434 | 0,247 | ✅ |
+| 25 | 0,543 | 0,645 | 0,830 | ❌ |
+| 30 | 0,556 | 0,671 | 0,822 | ❌ |
+| 35 | 0,550 | 0,658 | 0,190 | ✅ |
+
+Acierta el id 4 por accidente, porque casi todo se etiqueta del mismo
+equipo. **No hay ninguna configuración sana del fit que lo arregle**: su
+fallo está en otro sitio (probablemente en el propio recorte o en una
+mezcla de identidad), no en cómo se entrena el clasificador.
+
+## Hallazgo 3: eran DOS diales, no uno — y uno de ellos estaba corto
+
+El primer barrido movía a la vez el radio del **fit** y el de la
+**agregación**. Separados, cada uno manda en una pata distinta:
+
+| r. fit | r. agregación | Villaviciosa cob. | equipos | benja acc |
+|---|---|---|---|---|
+| 22 | 45 | 0,368 | 0,447 | 0,883 |
+| 25 | 25 | 0,543 | 0,645 | 0,830 |
+| 25 | 35 | 0,550 | 0,658 | 0,867 |
+| **25** | **45** | **0,559** | **0,671** | **0,883** |
+| 28 | 45 | 0,559 | 0,671 | 0,883 |
+
+- El **radio del fit** manda en Villaviciosa: por debajo de 25 colapsa,
+  y entre 25 y 30 da cifras **idénticas** (0,559 / 0,453 / 5 quimeras /
+  0,671), así que ahí no hay riesgo.
+- El **radio de agregación** manda en el benjamín, de forma monótona:
+  25 → 0,830, 35 → 0,867, 45 → **0,883**. El 35 que tenía configurado se
+  quedaba corto.
+
+## ADOPTADO por la excepción vigente
+
+Se sube el radio de agregación del benjamín de 35 a **45 m**. Mejora
+todas las métricas medidas y no degrada ninguna:
+
+| benjamín | antes | después |
+|---|---|---|
+| accuracy por OBSERVACIÓN | 0,867 | **0,883** |
+| solo identidades limpias | 0,868 | **0,903** |
+| solo jugadores de campo | 0,800 (16/20) | **0,850 (17/20)** |
+| accuracy por identidad | 0,767 (23/30) | **0,800 (24/30)** |
+
+Villaviciosa queda **intacta** (su config ya usaba 45 en agregación).
+
+Reproducible: `scripts/barrido_fit.py`.
