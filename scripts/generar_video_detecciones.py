@@ -240,6 +240,12 @@ def main() -> None:
         action="store_true",
         help="Ignora el caché y vuelve a detectar con SAHI (necesita GPU)",
     )
+    parser.add_argument(
+        "--cache-balon",
+        default=None,
+        help="Caché de balón: lo pinta encima, en su propio color y con "
+        "su propia frecuencia de muestreo",
+    )
     parser.add_argument("--conf", action="store_true", help="Escribir la confianza")
     parser.add_argument(
         "--fps-salida",
@@ -275,6 +281,17 @@ def main() -> None:
         logger.info("Colores de equipo: %s", colores_equipo)
 
     tracking = cargar_tracking(Path(args.csv), H) if args.csv else {}
+
+    # El balón va en su propio caché y a otra frecuencia, así que se
+    # indexa por frame y se pinta el que toque (o ninguno).
+    balon_por_frame = {}
+    if args.cache_balon:
+        import pickle as _pickle
+
+        with open(args.cache_balon, "rb") as f:
+            _d = _pickle.load(f)
+        balon_por_frame = {e["frame_idx"]: e["dets"] for e in _d["cache"] if e["dets"]}
+        logger.info("Balón: %d frames con detección", len(balon_por_frame))
 
     cache_dets = None if args.sin_cache else dets_del_cache(cfg)
     if cache_dets is None:
@@ -345,6 +362,15 @@ def main() -> None:
             frame = dibujar_frame(
                 frame, dets, tracking.get(frame_idx), colores_equipo, args.conf
             )
+            for b in balon_por_frame.get(frame_idx, []):
+                x1, y1, x2, y2 = int(b[2]), int(b[3]), int(b[4]), int(b[5])
+                cv2.circle(
+                    frame,
+                    ((x1 + x2) // 2, (y1 + y2) // 2),
+                    max(6, (x2 - x1) // 2 + 4),
+                    (255, 255, 255),
+                    2,
+                )
             # Reloj y contador, para poder citar un instante concreto
             cv2.putText(
                 frame,

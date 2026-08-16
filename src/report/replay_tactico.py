@@ -44,6 +44,13 @@ COLORES = {
     # regla posicional): gris translúcido, no compite visualmente con los
     # jugadores pero se ve que el sistema lo detectó y lo descartó.
     "staff": ("rgba(120,120,120,0.30)", "rgba(80,80,80,0.45)"),
+    # El balón: blanco y pequeño, para que se distinga de cualquier ficha
+    # de jugador sin competir con ellas.
+    "balon": ("#ffffff", "#1a1a1a"),
+    # En fase aérea la posición proyectada NO es fiable (la homografía
+    # supone suelo), así que se pinta translúcido: se ve dónde está el
+    # juego sin afirmar unos metros que no tenemos.
+    "balon_aereo": ("rgba(255,255,255,0.35)", "rgba(120,120,120,0.5)"),
 }
 
 
@@ -80,7 +87,13 @@ def colores_con_equipos(colores_equipo: dict | None) -> dict:
     return paleta
 
 
-def _leyenda(paleta: dict) -> str:
+_ETIQUETAS_LEYENDA = {
+    "balon": "Balón",
+    "balon_aereo": "Balón (aéreo, posición no fiable)",
+}
+
+
+def _leyenda(paleta: dict, presentes: set | None = None) -> str:
     """Leyenda del replay con los colores REALMENTE usados.
 
     Iba con los colores por convenio escritos a mano en la plantilla: al
@@ -94,7 +107,13 @@ def _leyenda(paleta: dict) -> str:
         ("portero_B", "Portero B"),
         ("otro", "Sin equipo"),
         ("staff", "No jugador"),
+        ("balon", "Balón"),
+        ("balon_aereo", "Balón por el aire (posición no fiable)"),
     ]
+    # Solo se listan las etiquetas que aparecen de verdad: una leyenda
+    # con entradas que no están en el campo confunde más que ayuda.
+    if presentes is not None:
+        filas = [f for f in filas if f[0] in presentes]
     return "\n      ".join(
         f'<span><i class="punto" style="background:{paleta[clave][0]}"></i>'
         f"{texto}</span>"
@@ -286,7 +305,7 @@ def generar_replay(
         _PLANTILLA.replace("__TITULO__", titulo)
         .replace("__DATOS__", json.dumps(identidades, separators=(",", ":")))
         .replace("__COLORES__", json.dumps(paleta, separators=(",", ":")))
-        .replace("__LEYENDA__", _leyenda(paleta))
+        .replace("__LEYENDA__", _leyenda(paleta, set(df["etiqueta"].unique())))
         .replace("__RADIO_M__", f"{radio_m:.2f}")
         .replace("__ESPEJO_X__", "true" if espejar and "x" in espejar else "false")
         .replace("__ESPEJO_Y__", "true" if espejar and "y" in espejar else "false")
@@ -524,14 +543,18 @@ function dibujar(T) {
     ctx.beginPath();
     ctx.shadowColor = 'rgba(0,0,0,0.45)';
     ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
-    ctx.arc(px(pos[0]), py(pos[1]), RADIO_M * ESCALA, 0, 7);
+    // El balón se pinta a la mitad de radio: es un objeto, no una persona
+    const esBalon = DATOS[i].et === 'balon' || DATOS[i].et === 'balon_aereo';
+    ctx.arc(px(pos[0]), py(pos[1]), RADIO_M * ESCALA * (esBalon ? 0.5 : 1), 0, 7);
     ctx.fillStyle = relleno; ctx.fill();
     // La sombra es solo del disco: sobre el borde y el número la
     // emborronaría y el id dejaría de leerse.
     ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
     ctx.strokeStyle = borde; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.fillText(DATOS[i].id, px(pos[0]), py(pos[1]) + 0.5);
+    if (!esBalon) {
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(DATOS[i].id, px(pos[0]), py(pos[1]) + 0.5);
+    }
     ctx.restore();
   }
 }

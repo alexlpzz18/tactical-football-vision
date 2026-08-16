@@ -208,3 +208,57 @@ salto sin blindar. Queda avisado en la guía de Colab.
 Del barrido con F0,5 (pondera precisión, porque un balón fantasma inventa
 un pase que no existió): **conf = 0,35** — P 0,958 / R 0,836 / F0,5 0,931,
 con meseta hasta 0,40. Fijado en `configs/processor_benja_balon.yaml`.
+
+---
+
+# PILOTO COMPLETADO — 5 min del benjamín (16-ago-2026)
+
+Con el modelo v1 (mAP50 0,789) a conf 0,35, 1 de cada 2 frames.
+
+## Números
+
+| | |
+|---|---|
+| frames del tramo | 4.495 |
+| con balón detectado | **2.373 (53 %)** |
+| tras seleccionar el activo | 2.373 (100 % de los detectados) |
+| en **fase aérea** | 447 (**19 %** de las observaciones de balón) |
+| contactos detectados | 415 |
+| con jugador atribuido | 289 (70 %) |
+
+## Lectura honesta
+
+**El 53 % de detección es el techo del piloto, y es bajo para posesión.**
+Casi la mitad del tiempo no sabemos dónde está el balón. Para "por dónde
+va el juego" sirve; para medir posesión con rigor, no.
+
+**El selector de balón activo no descartó nada** (2.373 de 2.373). O no
+había balones de calentamiento en el tramo, o el criterio —quieto **y**
+lejos— es demasiado estricto para cazarlos. No se puede saber sin mirar
+el vídeo, así que queda como pendiente de verificación visual, no como
+"funciona".
+
+**El 19 % de fase aérea confirma lo que se esperaba** de fútbol base: uno
+de cada cinco instantes con balón tiene la posición proyectada no fiable,
+porque la homografía supone suelo. Se marcan en vez de corregirse, y en
+el replay se pintan translúcidos.
+
+**415 contactos son demasiados: 83 por minuto.** Un partido real tiene
+del orden de 20-30 toques por minuto, así que el detector está disparando
+con ruido. El criterio (>45° con el balón a >2 m/s) es demasiado laxo
+para un balón muestreado a 15 fps cuya posición tiembla. Antes de usar
+los contactos para nada hay que endurecerlo y medirlo — con qué, es el
+problema: no hay GT de contactos. La vía barata sería etiquetar a mano
+los contactos de 30 segundos y barrer el umbral contra eso.
+
+## Entregables
+
+- `data/tracking_benja/posiciones_conjunto.csv` — jugadores y balón en el
+  mismo CSV. El balón va con `id_jugador` −1 (raso) y −2 (aéreo): el
+  replay asigna UNA etiqueta por identidad, así que separarlos es lo que
+  conserva la marca de "no fiable".
+- `..._contactos.csv` — timestamp, posición, ángulo y jugador más cercano.
+- `outputs/replay_conjunto_balon.html` — balón blanco a medio radio,
+  translúcido en fase aérea, con su entrada en la leyenda.
+- `outputs/detecciones_conjunto_balon.mp4` — 2.997 frames con las cajas
+  crudas de jugadores y el balón rodeado en blanco.
