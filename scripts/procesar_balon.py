@@ -28,6 +28,8 @@ from src.balon.tracking_balon import (  # noqa: E402
     ParametrosBalon,
     preparar_para_replay,
     detectar_contactos,
+    detectar_contactos_por_velocidad,
+    fusionar_contactos,
     detectar_fases_aereas,
     seleccionar_balon_activo,
 )
@@ -41,6 +43,15 @@ def main() -> None:
     parser.add_argument("--csv-jugadores", required=True)
     parser.add_argument("--salida", required=True)
     parser.add_argument("--salida-contactos", default=None)
+    parser.add_argument(
+        "--criterio",
+        choices=["angulo", "velocidad", "ambos"],
+        default="angulo",
+        help="Cómo detectar los contactos. 'angulo' (el de siempre) solo ve "
+        "pases, tiros y rebotes; 'velocidad' ve además la conducción. "
+        "Medido contra el GT del clip: recall 0.25 → 0.75, precisión "
+        "0.71 → 0.43. Provisional hasta que Alex decida.",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -100,6 +111,15 @@ def main() -> None:
     contactos = detectar_contactos(
         trayectoria, tiempos, jug_ids, equipos_por_frame, params, aereo=aereo
     )
+    if args.criterio in ("velocidad", "ambos"):
+        por_vel = detectar_contactos_por_velocidad(
+            trayectoria, tiempos, jug_ids, equipos_por_frame, params, aereo=aereo
+        )
+        contactos = (
+            por_vel
+            if args.criterio == "velocidad"
+            else fusionar_contactos(contactos, por_vel)
+        )
 
     # Suavizado + fase aérea sin coordenadas inventadas
     preparadas = preparar_para_replay(trayectoria, aereo, tiempos, params)

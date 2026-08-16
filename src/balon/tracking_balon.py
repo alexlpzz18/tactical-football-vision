@@ -66,6 +66,14 @@ class ParametrosBalon:
     # siguientes frames, un pico de ruido vuelve a la trayectoria previa.
     frames_persistencia: int = 2
     dist_max_contacto: float = 3.0  # m al jugador que se le atribuye
+    # ── contactos por OSCILACIÓN DE VELOCIDAD ──
+    # El criterio del ángulo solo ve pases, tiros y rebotes: medido en el
+    # GT de Alex, durante una conducción el balón va prácticamente recto
+    # (ángulo mediano entre pasos: 5°, y solo 2 de 72 pasos superan los
+    # 70°). Los toques de conducción necesitan otra señal, y la evidente
+    # es que cada toque ACELERA el balón y entre toques se frena.
+    aceleracion_min: float = 3.0  # m/s de subida en un paso
+    separacion_min_contacto: float = 0.20  # s entre dos toques del mismo pie
     # ── suavizado e interpolación ──
     ventana_suavizado_s: float = 0.2  # corta: el balón cambia rápido
     max_hueco_interp_s: float = 0.4  # huecos cortos; el balón acelera
@@ -408,3 +416,104 @@ def preparar_para_replay(
         alfa = (i - previos[-1]) / (siguientes[0] - previos[-1])
         salida.append((frame, a + alfa * (b - a), True, False))
     return salida
+
+
+def detectar_contactos_por_velocidad(
+    trayectoria: list[tuple],
+    tiempos: dict,
+    posiciones_jugadores: dict,
+    equipos_por_frame: dict | None,
+    params: ParametrosBalon,
+    aereo: list[bool] | None = None,
+) -> list[dict]:
+    """Contactos por ACELERACIÓN del balón, no por cambio de dirección.
+
+    Complementa a `detectar_contactos`, que es ciego a la conducción: un
+    jugador que lleva el balón lo empuja repetidamente en la MISMA
+    dirección, así que el ángulo no se entera. Lo que sí cambia en cada
+    toque es la velocidad — sube de golpe y luego decae por rozamiento.
+
+    Se buscan los picos de subida de velocidad: pasos donde el balón
+    acelera más de `aceleracion_min` y esa subida es un máximo local. La
+    separación mínima entre contactos evita contar dos veces el mismo
+    toque cuando el pico dura dos muestras.
+    """
+    contactos = []
+    if len(trayectoria) < 4:
+        return contactos
+
+    vel, ts = [], []
+    for i in range(1, len(trayectoria)):
+        f0, p0 = trayectoria[i - 1][0], np.array(trayectoria[i - 1][1])
+        f1, p1 = trayectoria[i][0], np.array(trayectoria[i][1])
+        dt = tiempos.get(f1, 0) - tiempos.get(f0, 0)
+        vel.append(float(np.linalg.norm(p1 - p0)) / dt if dt > 0 else 0.0)
+        ts.append(i)
+
+    subidas = [0.0] + [vel[k] - vel[k - 1] for k in range(1, len(vel))]
+    ultimo_t = -1e9
+    for k in range(1, len(subidas) - 1):
+        i = ts[k]
+        if aereo is not None and (aereo[i] or aereo[i - 1]):
+            continue  # en el aire la velocidad proyectada no significa nada
+        if subidas[k] < params.aceleracion_min:
+            continue
+        if subidas[k] < subidas[k - 1] or subidas[k] < subidas[k + 1]:
+            continue  # no es el pico: el toque está en el paso vecino
+        frame = trayectoria[i][0]
+        t = tiempos.get(frame, 0.0)
+        if t - ultimo_t < params.separacion_min_contacto:
+            continue
+        ultimo_t = t
+
+        pos = np.array(trayectoria[i][1])
+        id_jugador, equipo, dist = None, None, None
+        jugadores = posiciones_jugadores.get(frame)
+        if jugadores:
+            arr = np.array([j[:2] for j in jugadores])
+            d = np.linalg.norm(arr - pos, axis=1)
+            j = int(np.argmin(d))
+            if d[j] <= params.dist_max_contacto:
+                dist = float(d[j])
+                if len(jugadores[j]) > 2:
+                    id_jugador = jugadores[j][2]
+                if equipos_por_frame:
+                    equipo = equipos_por_frame.get(frame, {}).get(id_jugador)
+        contactos.append(
+            {
+                "frame": frame,
+                "t": t,
+                "x_m": float(pos[0]),
+                "y_m": float(pos[1]),
+                "angulo": None,
+                "aceleracion": float(subidas[k]),
+                "criterio": "velocidad",
+                "id_jugador": id_jugador,
+                "equipo": equipo,
+                "dist_m": dist,
+            }
+        )
+    logger.info("Contactos por velocidad: %d", len(contactos))
+    return contactos
+
+
+def fusionar_contactos(por_angulo, por_velocidad, separacion=0.20):
+    """Une los dos criterios sin contar dos veces el mismo toque.
+
+    Un pase fuerte dispara los dos —cambia de dirección Y acelera—, así
+    que sumarlos a secas inflaría el conteo justo en las acciones que ya
+    se detectaban bien.
+    """
+    todos = sorted(
+        [dict(c, criterio=c.get("criterio", "angulo")) for c in por_angulo]
+        + list(por_velocidad),
+        key=lambda c: c["t"],
+    )
+    fusionados = []
+    for c in todos:
+        if fusionados and c["t"] - fusionados[-1]["t"] < separacion:
+            if fusionados[-1]["criterio"] != c["criterio"]:
+                fusionados[-1]["criterio"] = "ambos"
+            continue
+        fusionados.append(c)
+    return fusionados

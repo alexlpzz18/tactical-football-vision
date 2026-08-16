@@ -383,3 +383,50 @@ El clip tiene mucho juego parado (saque de puerta pitado, portero con la
 mano, saque en corto), así que **la tasa real de toques en juego continuo
 es más alta** que los 20/30 s de este clip. La cifra de contactos por
 minuto del piloto (7) es aún peor de lo que parece.
+
+## Segundo criterio: oscilación de velocidad (16-ago-2026)
+
+Implementado tras el hallazgo anterior. Cada toque ACELERA el balón y
+entre toques se frena por rozamiento; se buscan los picos de subida de
+velocidad. Es una señal independiente de la dirección, que es justo lo
+que le faltaba al criterio angular.
+
+### Medido contra el GT de Alex (20 toques del clip)
+
+| criterio | n | precisión | recall | F1 | equipo ok | juego continuo |
+|---|---|---|---|---|---|---|
+| **ángulo (actual)** | 7 | **0,71** | 0,25 | 0,37 | 2/5 | 2/11 |
+| velocidad, acel 2,0 | 45 | 0,33 | **0,75** | 0,46 | 6/15 | 8/11 |
+| **velocidad, acel 3,0** | 35 | 0,43 | **0,75** | **0,55** | 5/15 | **8/11** |
+| velocidad, acel 4,0 | 24 | 0,38 | 0,45 | 0,41 | 2/9 | 5/11 |
+| velocidad, acel 6,0 | 15 | 0,53 | 0,40 | 0,46 | 2/8 | 4/11 |
+| fusión ángulo+vel 3,0 | 37 | 0,41 | 0,75 | 0,53 | 5/15 | 8/11 |
+
+**Triplica el recall** (0,25 → 0,75) y **cuadruplica la detección en
+juego continuo** (2/11 → 8/11), que es la parte que importa. El precio
+es la precisión: 0,71 → 0,43.
+
+En el piloto entero, el ritmo pasa de **7 a 38 contactos por minuto**.
+Lo real son 20-30, así que ahora se pasa por arriba en vez de por abajo
+— pero por primera vez está en el orden de magnitud correcto.
+
+La **fusión no aporta** (F1 0,53 vs 0,55 del criterio de velocidad solo):
+los pases y tiros que veía el ángulo ya los ve la velocidad, porque
+también aceleran el balón.
+
+### Dos avisos honestos
+
+**El umbral 3,0 está AJUSTADO sobre el mismo clip que sirve de GT.** No
+es una validación, es un ajuste: con 20 toques de un solo tramo, elegir
+el valor que maximiza F1 sobre esos mismos 20 es sobreajustar. Hace falta
+un segundo clip para validarlo, y ahí es donde el número puede caer.
+
+**La atribución de equipo sigue mal**: 5 de 15. Es aguas abajo del 15 %
+de observaciones mal atribuidas del tracking, y no se arregla desde aquí.
+
+### Estado
+
+`--criterio angulo|velocidad|ambos` en `scripts/procesar_balon.py`, con
+`angulo` de default. **NO se adopta como default**: la precisión baja, así
+que no cumple la excepción de "mejora todo sin degradar nada" y la
+decisión es de Alex, con la tabla delante.

@@ -204,3 +204,61 @@ def test_el_arbitro_marcado_como_otro_cuenta_como_acierto():
 
     assert normalizar("arbitro") == normalizar("staff") == "otro"
     assert normalizar("A") == "A" and normalizar("portero_B") == "portero_B"
+
+
+# ── contactos por oscilación de velocidad (16-ago-2026) ──────────────
+
+
+def test_la_conduccion_recta_la_ve_la_velocidad_y_no_el_angulo():
+    """El hallazgo del GT de Alex, fijado como test.
+
+    Un jugador que conduce empuja el balón repetidamente en la MISMA
+    dirección: el ángulo entre pasos es de unos pocos grados (medido:
+    mediana 5°, p90 18°), así que el criterio angular es ciego. Lo que sí
+    cambia en cada toque es la velocidad.
+    """
+    from src.balon.tracking_balon import detectar_contactos_por_velocidad
+
+    # Balón conducido en línea recta: cada toque lo acelera y luego frena
+    tray, x = [], 10.0
+    for k in range(40):
+        paso = 0.5 if k % 5 == 0 else 0.12  # un toque cada 5 muestras
+        x += paso
+        tray.append((k, np.array([x, 20.0]), 8, 0.9))
+    jug = {k: [(x, 20.5, 7)] for k in range(40)}
+
+    por_angulo = detectar_contactos(tray, TIEMPOS, jug, None, ParametrosBalon())
+    assert por_angulo == [], "el ángulo no puede ver una conducción recta"
+
+    por_vel = detectar_contactos_por_velocidad(
+        tray, TIEMPOS, jug, None, ParametrosBalon(aceleracion_min=2.0)
+    )
+    assert len(por_vel) >= 5, "la velocidad sí ve los toques"
+
+
+def test_la_fusion_no_cuenta_dos_veces_el_mismo_toque():
+    """Un pase fuerte dispara los DOS criterios —cambia de dirección y
+    acelera—, así que sumarlos a secas inflaría justo las acciones que ya
+    se detectaban bien."""
+    from src.balon.tracking_balon import fusionar_contactos
+
+    a = [{"t": 10.0, "criterio": "angulo"}, {"t": 20.0, "criterio": "angulo"}]
+    v = [{"t": 10.05, "criterio": "velocidad"}, {"t": 30.0, "criterio": "velocidad"}]
+    fus = fusionar_contactos(a, v, separacion=0.20)
+    assert len(fus) == 3
+    assert fus[0]["criterio"] == "ambos"
+
+
+def test_en_fase_aerea_no_se_detectan_contactos_por_velocidad():
+    """La velocidad proyectada de un balón por el aire es paralaje."""
+    from src.balon.tracking_balon import detectar_contactos_por_velocidad
+
+    tray = [(k, np.array([10.0 + k * 2.0, 20.0]), 8, 0.9) for k in range(20)]
+    jug = {k: [(10.0 + k * 2.0, 20.5, 7)] for k in range(20)}
+    aereo = [True] * 20
+    assert (
+        detectar_contactos_por_velocidad(
+            tray, TIEMPOS, jug, None, ParametrosBalon(), aereo=aereo
+        )
+        == []
+    )
