@@ -187,8 +187,43 @@ cosido_pureza:
 # visual: deja el 99,9 % de los pasos por debajo de 8,5 m/s, frente a los
 # 158 m/s del CSV anterior. savgol conserva 0,017 más de cobertura y está
 # a un cambio de config si se prefiere ese equilibrio.
+# BARRIDO del 16-ago-2026 (scripts/barrido_suavizado.py, 24 combinaciones):
+# el informe y el replay NO quieren lo mismo, y hasta ahora se les servía
+# la misma configuración.
+#
+#   preset          ventana  hueco  método  cobertura  saltos imposibles
+#   informe          0,5 s   4,0 s  savgol    0,569         2,9 %
+#   replay           0,8 s   4,0 s  media     0,537         0,2 %
+#   (actual)         0,5 s   2,5 s  media     0,538         0,4 %
+#
+# El patrón que lo explica: savgol conserva los picos —para eso está— y
+# entre esos picos están los del ruido, así que da más cobertura y 3× más
+# saltos. La media los aplana: replay limpio, algo menos de cobertura.
+#
+# NO se cambia el default sin el OK de Alex, y aquí hay un motivo extra:
+# subir la ventana a 0,8 altera el perfil legacy `oficial` (89 → 96
+# identidades), porque el suavizado corre ANTES del corte de velocidad y
+# cambia qué rachas resultan imposibles. El default se queda en lo
+# calibrado; los dos presets están declarados abajo para elegirlos
+# explícitamente.
 suavizado:
   activo: true
   ventana_s: 0.5
   metodo: media # media | savgol
   escalar_con_resolucion: 1.0
+
+# Preset alternativo para el INFORME, que agrega en mapas de calor y
+# métricas colectivas: ahí interesa la cobertura y el temblor individual
+# no se ve. Lo consume quien genere el informe pasándolo a postprocesar.
+presets:
+  # Agrega en mapas de calor y métricas colectivas: interesa la cobertura
+  # y el temblor individual no se ve.
+  informe:
+    suavizado: {activo: true, ventana_s: 0.5, metodo: savgol,
+                escalar_con_resolucion: 1.0}
+    interpolacion_max_hueco: 4.0
+  # Se mira jugada a jugada: manda que nada dé saltos imposibles.
+  replay:
+    suavizado: {activo: true, ventana_s: 0.8, metodo: media,
+                escalar_con_resolucion: 1.0}
+    interpolacion_max_hueco: 4.0

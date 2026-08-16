@@ -2360,3 +2360,47 @@ todas las métricas medidas y no degrada ninguna:
 Villaviciosa queda **intacta** (su config ya usaba 45 en agregación).
 
 Reproducible: `scripts/barrido_fit.py`.
+
+---
+
+# BARRIDO DE SUAVIZADO × INTERPOLACIÓN (16-ago-2026)
+
+24 combinaciones (ventana 0,3/0,5/0,8/1,2 s × hueco 1,5/2,5/4 s ×
+media/savgol), juzgadas con DOS varas: las del banco y las tres del
+replay (concurrencia, v99, % de pasos imposibles).
+
+**La hipótesis de Alex se confirma: los dos óptimos son distintos.**
+
+| preset | ventana | hueco | método | cobertura | IDF1 | quimeras | % saltos |
+|---|---|---|---|---|---|---|---|
+| **informe** | 0,5 s | 4,0 s | savgol | **0,569** | 0,450 | 6 | 2,9 % |
+| **replay** | 0,8 s | 4,0 s | media | 0,537 | 0,446 | 7 | **0,2 %** |
+| *(default actual)* | 0,5 s | 2,5 s | media | 0,538 | 0,445 | 8 | 0,4 % |
+
+El informe compra **32 milésimas de cobertura** a cambio de **+2,7 puntos
+de saltos imposibles**. Para un mapa de calor eso es un buen negocio; para
+un replay que se mira jugada a jugada, no.
+
+## El patrón que lo explica
+
+**Savitzky-Golay conserva los picos** —para eso está, es su virtud— y
+entre esos picos están los del ruido: da sistemáticamente más cobertura y
+**3× más saltos** (v99 de 15-20 m/s frente a 5-8 de la media). La media
+los aplana: replay limpio, algo menos de cobertura.
+
+Y la ventana se comporta como se espera: alargarla con media limpia más
+(1,2 s deja el v99 en 4,7 m/s) pero se come la cobertura (0,510). Con
+savgol, alargarla no limpia — porque el pico sobrevive de todos modos.
+
+## Adopción: NINGUNA, y hay un motivo extra
+
+Ninguno de los dos presets mejora todas las métricas, así que la decisión
+es de Alex. Pero además apareció un efecto colateral que conviene no meter
+por la puerta de atrás: **subir la ventana a 0,8 altera el perfil legacy
+`oficial`**, que pasa de 89 a 96 identidades. El suavizado corre ANTES del
+corte de velocidad, así que cambiar la ventana cambia qué rachas resultan
+imposibles y por tanto dónde se corta.
+
+El default se queda en lo calibrado (0,5 · 2,5 · media) y los dos presets
+quedan **declarados en `configs/tracking.yaml` bajo `presets`** para
+elegirlos explícitamente al generar informe o replay.
