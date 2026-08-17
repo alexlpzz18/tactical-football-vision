@@ -17,6 +17,7 @@ import warnings
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -39,8 +40,8 @@ EQUIV = {"arbitro": "otro", "staff": "otro"}
 CASOS = {4: "A", 32: "B"}
 
 
-def evaluar_benja(ruta_cache, ruta_colores):
-    """Mini-GT de equipos + los casos con nombre."""
+def _identidades_y_etiquetas(ruta_cache, ruta_colores):
+    """(identidades, etiquetas) del benjamín con el caché que se le dé."""
     cfg = yaml.safe_load(open("configs/processor_benja.yaml"))
     cfg_eq = cargar_config_equipos(cfg["config_equipos"])
     cfg_tr = yaml.safe_load(open(cfg["config_tracking"]))
@@ -61,7 +62,69 @@ def evaluar_benja(ruta_cache, ruta_colores):
     eq = clasificar_identidades(ids, colores, clf, cfg_eq)
     frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
     _tr, eq2 = postprocesar(ids, dict(eq), frames_ts, cfg_tr, perfil="bytetrack")
-    pred = {i: EQUIV.get(str(v), str(v)) for i, v in eq2.items()}
+    return ids, {i: EQUIV.get(str(v), str(v)) for i, v in eq2.items()}
+
+
+def _traspasar_etiquetas(ids_origen, ids_destino):
+    """{id_destino: id_origen} emparejando por solape ESPACIO-TEMPORAL.
+
+    Imprescindible, y es un fallo que costó una medición: el mini-GT de
+    equipos está etiquetado sobre los ids del v4pre, y esos ids NO
+    sobreviven a un cambio de detector. Medido: 27 de las 30 identidades
+    del mini-GT caen a más de 5 m de donde estaba la misma id con el v4
+    (mediana 38 m) — el id 8 era el portero lejano y pasa a estar en la
+    portería contraria.
+
+    Comparar por número de id es comparar personas distintas. Lo que sí
+    sobrevive es DÓNDE y CUÁNDO estuvo cada identidad, así que la
+    correspondencia se hace por ahí.
+    """
+
+    def por_frame(identidades):
+        indice = {}
+        for i, ident in enumerate(identidades, start=1):
+            for tr in ident:
+                for pos, (f, _d) in zip(tr.pos, tr.det_idxs):
+                    indice.setdefault(f, []).append((i, np.asarray(pos)))
+        return indice
+
+    origen, destino = por_frame(ids_origen), por_frame(ids_destino)
+    votos: dict[int, Counter] = {}
+    for f, lista_d in destino.items():
+        for i_d, pos_d in lista_d:
+            mejor, dmin = None, 2.0  # 2 m: la misma persona en el mismo frame
+            for i_o, pos_o in origen.get(f, []):
+                dist = float(np.linalg.norm(pos_o - pos_d))
+                if dist < dmin:
+                    mejor, dmin = i_o, dist
+            if mejor is not None:
+                votos.setdefault(i_d, Counter())[mejor] += 1
+    return {i_d: c.most_common(1)[0][0] for i_d, c in votos.items() if c}
+
+
+def evaluar_benja(ruta_cache, ruta_colores, ruta_cache_ref=None, ruta_colores_ref=None):
+    """Mini-GT de equipos + los casos con nombre.
+
+    `ruta_cache_ref` son los cachés SOBRE LOS QUE se etiquetó el mini-GT.
+    Se necesitan porque los ids no sobreviven a un cambio de detector
+    (ver _traspasar_etiquetas): sin ellos se compararían personas
+    distintas y el resultado no significaría nada.
+    """
+    ids, pred_por_id = _identidades_y_etiquetas(ruta_cache, ruta_colores)
+    if ruta_cache_ref:
+        ids_ref, _ = _identidades_y_etiquetas(ruta_cache_ref, ruta_colores_ref)
+        mapa = _traspasar_etiquetas(ids_ref, ids)
+        pred = {}
+        for i_nuevo, etiqueta in pred_por_id.items():
+            i_viejo = mapa.get(i_nuevo)
+            if i_viejo is not None:
+                pred[i_viejo] = etiqueta
+        print(
+            f"  (etiquetas trasladadas por posición: {len(pred)} de "
+            f"{len(pred_por_id)} identidades encontraron su equivalente)"
+        )
+    else:
+        pred = pred_por_id
 
     gt = pd.read_csv("data/tracking_benja/gt_equipos_benja.csv")
     gt = gt[gt.equipo_real.notna() & (gt.equipo_real != "")]
@@ -133,7 +196,12 @@ def main() -> None:
 
     if args.cache_benja_v4:
         print("\n── PATA 2: benjamín (mini-GT de equipos) ──")
-        b4 = evaluar_benja(args.cache_benja_v4, args.colores_benja_v4)
+        b4 = evaluar_benja(
+            args.cache_benja_v4,
+            args.colores_benja_v4,
+            ruta_cache_ref="data/tracking_benja/cache_detecciones_benja.pkl",
+            ruta_colores_ref="data/tracking_benja/cache_colores_benja.pkl",
+        )
         print(f"  accuracy por observación: {b4['acc']:.3f}  (v4pre: 0.883)")
         print(f"  identidades: {b4['n_ids']}  (v4pre: 67)")
         print("\n── CASOS CON NOMBRE ──")

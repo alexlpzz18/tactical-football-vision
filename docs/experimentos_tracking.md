@@ -2404,3 +2404,90 @@ imposibles y por tanto dónde se corta.
 El default se queda en lo calibrado (0,5 · 2,5 · media) y los dos presets
 quedan **declarados en `configs/tracking.yaml` bajo `presets`** para
 elegirlos explícitamente al generar informe o replay.
+
+---
+
+# EL v4 CONTRA EL BANCO (16-ago-2026)
+
+`best_v4.pt` — yolov8m, 837 imágenes (328 + 150 de Alex + 359 del
+ayudante), 224 épocas. Detección: **mAP50 0,944** frente a 0,900 del
+v4pre, mAP50-95 0,619, precisión 0,965, recall 0,914.
+
+## Villaviciosa: mejora en todo menos en lo que se preguntaba
+
+| | nIds | cob. | conc | IDF1 | tasa IDSW | quimeras | equipos |
+|---|---|---|---|---|---|---|---|
+| v4pre | 115 | 0,559 | 25 | 0,453 | 0,123 | **5**/38 | 0,671 |
+| **v4** | **83** | **0,598** | **23** | **0,484** | **0,100** | 8/38 | **0,758** |
+
+Cobertura +0,039, IDF1 +0,031, tasa de IDSW −0,023, concurrencia de 25 a
+**23** (el GT es 22) y accuracy de equipos +0,087. Todo mejor.
+
+**Menos las quimeras, que suben de 5 a 8.**
+
+## La respuesta a la pregunta grande: NO
+
+*¿Caen las quimeras de cruce con mejor detección?* **No: suben.** Y la
+explicación es coherente con todo lo demás que se ve en la tabla.
+
+El v4 fragmenta mucho menos: 115 → **83 identidades** con más cobertura,
+o sea identidades más largas y más completas. Pero una identidad larga
+tiene más ocasiones de contener a dos personas que una corta. Mejor
+detección compra continuidad, y la continuidad es exactamente lo que
+convierte un cruce mal resuelto en una quimera con recorrido.
+
+Dicho de otro modo: **la quimera de cruce no es un problema de
+detección**, y ya no queda dónde esconderlo. Es de asociación en el
+instante del cruce, que es donde ByteTrack decide con IoU en píxeles
+sobre dos cajas superpuestas.
+
+## Benjamín: empeora, y el número está medido dos veces
+
+| | v4pre | v4 |
+|---|---|---|
+| accuracy por observación | **0,883** | 0,727 |
+| identidades | 67 | 86 |
+
+Con la salvedad de que solo 35 de las 84 identidades del v4 encontraron
+equivalente en el mini-GT, así que la cifra cubre un subconjunto.
+
+## Un fallo de medición propio, y la lección
+
+La primera pasada dio **0,178** en el benjamín. No era real: el mini-GT
+de equipos está etiquetado sobre los **ids del v4pre**, y los ids no
+sobreviven a un cambio de detector. Comprobado: **27 de las 30
+identidades del mini-GT caen a más de 5 m de donde estaba la misma id con
+el v4**, con mediana de 38 m. El id 8 era el portero lejano y con el v4
+está en la portería contraria.
+
+Comparar por número de id era comparar personas distintas. Ahora
+`medir_v4.py` traslada las etiquetas por **solape espacio-temporal**, que
+es lo que sí sobrevive a un cambio de modelo.
+
+Lo incómodo del fallo: es exactamente el argumento que se le dio a Alex
+para aplazar el GT de parejas de ids —"hoy caducarían"— y no se aplicó al
+mini-GT de equipos, que sí se reutilizó. **Cualquier GT indexado por id
+del sistema caduca al cambiar el detector**; los que sobreviven son los
+indexados por posición y tiempo.
+
+## Casos con nombre
+
+| caso | v4pre | v4 |
+|---|---|---|
+| id 32 (naranja etiquetado A) | ✗ | ✅ **arreglado** |
+| id 4 (570 obs, A→B) | ✗ | ✗ sigue |
+
+El id 4 resiste al barrido del fit **y** al detector nuevo. Ya no es
+plausible que sea del clasificador ni de la detección: queda el recorte o
+la asociación.
+
+## Decisión
+
+**NO se adopta automáticamente**: la excepción exige mejorar todo sin
+degradar nada, y las quimeras empeoran en Villaviciosa (5 → 8) y la
+accuracy en el benjamín (0,883 → 0,727). La decisión es de Alex.
+
+Lectura para decidir: en Villaviciosa el v4 es netamente mejor en las
+métricas de producto (cobertura, concurrencia, equipos) y solo pierde en
+pureza; el benjamín va en dirección contraria y merece mirarse antes de
+adoptar.
