@@ -2654,3 +2654,54 @@ La puerta se ABSTIENE si no hay al menos `min_obs_firma` (3)
 observaciones con color a cada lado. Con una o dos muestras la firma es
 ruido y el corte sería aleatorio, que es exactamente cómo se estropearon
 los intentos anteriores.
+
+
+---
+
+# ¿EL PROBLEMA DEL BENJAMÍN ES DE DETECCIÓN? NO (17-ago-2026)
+
+`scripts/comparar_deteccion_benja.py`. La pregunta decide dónde va el
+esfuerzo de etiquetado, así que se responde con datos y no con intuición.
+No hay GT de detección en este tramo —no se puede medir mAP— pero sí se
+puede medir cuántas cajas salen, con cuánta confianza, y sobre todo
+**dónde caen**.
+
+| | frames | dets | /frame | conf media | % <0,5 |
+|---|---|---|---|---|---|
+| v4pre | 600 | 10.904 | 18,2 | 0,819 | 4,6 % |
+| v4 | 600 | 12.120 | 20,2 | 0,814 | 11,8 % |
+
+**Dentro del campo** (lo que de verdad importa: en un F7 hay ~15
+personas, 7v7 + árbitro):
+
+| | dentro/frame | % fuera del campo | % de las tiradas por el filtro 0,45 |
+|---|---|---|---|
+| v4pre | 14,1 | 22,6 % | 83,3 % |
+| v4 | **14,4** | 28,5 % | 80,7 % |
+
+## Las tres conclusiones
+
+1. **El v4 no detecta peor en el benjamín: detecta algo mejor.** 14,4
+   jugadores en campo por frame frente a 14,1, con ~15 personas
+   presentes. La detección está prácticamente completa en los dos.
+
+2. **La confianza es la misma** (0,819 vs 0,814). Si el v4 estuviera
+   perdido en un dominio que no conoce, dudaría aquí — y no duda. Las 2
+   cajas/frame extra caen **fuera del campo** (28,5 % vs 22,6 %): son
+   banquillo y público, no jugadores.
+
+3. **El filtro de 0,45 quita público, no jugadores lejanos.** El 80,7 %
+   de lo que tira está fuera del campo. Esto despeja la sospecha
+   razonable de que el filtro se estuviera comiendo a los del fondo.
+
+## Consecuencia para el esfuerzo
+
+**El cuello de botella del F7 no es la detección.** Etiquetar más frames
+del benjamín no arreglaría lo que se ve mal en el vídeo: las mezclas de
+identidad y los errores de equipo nacen aguas abajo, en la asociación y
+en el clasificador. Ahí es donde tiene retorno el trabajo.
+
+Matiz honesto de la medición: cuenta cajas y confianza, no corrección.
+Sin GT de detección no se puede descartar que las cajas del v4 estén peor
+ajustadas aunque sean igual de numerosas. Lo que sí descarta, con
+holgura, es la hipótesis de "el v4 está ciego en el benjamín".

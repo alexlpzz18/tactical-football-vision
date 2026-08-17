@@ -120,6 +120,12 @@ def construir_identidades(df, cache_dets, n_muestras, min_obs):
                     "frame": int(fila.frame),
                     "caja": (d[2], d[3], d[4], d[5]),
                     "alto": d[5] - d[3],
+                    # ANCLA: dónde estaba, en metros. Es lo que hace que
+                    # esta etiqueta sobreviva a un cambio de detector —
+                    # los ids no lo hacen (medido: 27 de 30 identidades
+                    # del mini-GT anterior eran otra persona con el v4).
+                    "x": round(float(d[0]), 2),
+                    "y": round(float(d[1]), 2),
                 }
             )
         if not observaciones:
@@ -142,7 +148,9 @@ def extraer_crops(ruta_video, identidades):
     necesarios = {}
     for datos in identidades.values():
         for m in datos["muestras"]:
-            necesarios.setdefault(m["frame"], []).append((datos["id"], m["caja"]))
+            necesarios.setdefault(m["frame"], []).append(
+                (datos["id"], m["caja"], m.get("x", ""), m.get("y", ""))
+            )
     if not necesarios:
         return {}
 
@@ -158,13 +166,17 @@ def extraer_crops(ruta_video, identidades):
         ok, frame = cap.read()
         if not ok:
             break
-        for id_j, caja in necesarios.get(frame_idx, []):
+        for id_j, caja, x_m, y_m in necesarios.get(frame_idx, []):
             crop = recortar(frame, caja)
             if crop is None:
                 continue
             dato = a_base64(crop)
             if dato:
-                crops.setdefault(id_j, []).append({"img": dato, "frame": frame_idx})
+                # El ancla viaja con el recorte hasta el CSV: sin ella la
+                # etiqueta solo sirve mientras los ids no cambien.
+                crops.setdefault(id_j, []).append(
+                    {"img": dato, "frame": frame_idx, "x": x_m, "y": y_m}
+                )
         frame_idx += 1
     cap.release()
     logger.info(
@@ -330,10 +342,11 @@ function actualiza() {
 }
 
 document.getElementById('exportar').onclick = () => {
-  const filas = ['id_jugador,t_s,equipo_real,prediccion,n_obs'];
+  const filas = ['id_jugador,t_s,frame,x_m,y_m,equipo_real,prediccion,n_obs'];
   IDENTIDADES.forEach(d => d.crops.forEach((c, j) => {
     const r = resp[clave(d.id, j)];
-    if (r) filas.push([d.id, c.t, r, d.prediccion, d.n_obs].join(','));
+    if (r) filas.push(
+      [d.id, c.t, c.f, c.x, c.y, r, d.prediccion, d.n_obs].join(','));
   }));
   if (filas.length === 1) { alert('Todavía no has etiquetado nada.'); return; }
   const url = URL.createObjectURL(new Blob([filas.join('\\n')], {type:'text/csv'}));
@@ -431,7 +444,13 @@ def main() -> None:
                 "t_fin": datos_id["t_fin"],
                 "prediccion": datos_id["prediccion"],
                 "crops": [
-                    {"img": c["img"], "t": round(c["frame"] / fps, 1)}
+                    {
+                        "img": c["img"],
+                        "t": round(c["frame"] / fps, 1),
+                        "f": c["frame"],
+                        "x": c.get("x", ""),
+                        "y": c.get("y", ""),
+                    }
                     for c in crops.get(datos_id["id"], [])
                 ],
             }
