@@ -2445,7 +2445,7 @@ sobre dos cajas superpuestas.
 
 | | v4pre | v4 |
 |---|---|---|
-| accuracy por observación | **0,883** | 0,727 |
+| accuracy por observación | **0,883** | 0,740 |
 | identidades | 67 | 86 |
 
 Con la salvedad de que solo 35 de las 84 identidades del v4 encontraron
@@ -2474,12 +2474,28 @@ indexados por posición y tiempo.
 
 | caso | v4pre | v4 |
 |---|---|---|
-| id 32 (naranja etiquetado A) | ✗ | ✅ **arreglado** |
 | id 4 (570 obs, A→B) | ✗ | ✗ sigue |
+| id 32 (naranja etiquetado A) | ✗ | ✗ sigue |
+| id 19→4 (misma persona, dos ids) | ✗ | ✗ sigue (19→[42], 4→[2,31,33,54,63]) |
 
-El id 4 resiste al barrido del fit **y** al detector nuevo. Ya no es
-plausible que sea del clasificador ni de la detección: queda el recorte o
+Los tres resisten al barrido del fit **y** al detector nuevo. Ya no es
+plausible que sean del clasificador ni de la detección: queda el recorte o
 la asociación.
+
+**Y el id 4 explica la subida de quimeras mejor que cualquier promedio.**
+El id 4 del v4pre lo cubren **cinco identidades del v4**, cuando la
+mediana es 1. O sea: donde el v4pre tenía una identidad larga y sucia, el
+v4 ve cinco tramos. La quimera del v4pre era real y el v4 la parte —
+solo que al partirla no la resuelve, la reparte.
+
+### Un artefacto propio, cazado a tiempo
+
+La primera pasada con traslado daba 0,727 y **id 32 ✅ arreglado**. Era
+falso: cuando varias identidades nuevas caen sobre una vieja, el traslado
+asignaba "la última gana", que con cinco candidatas es echar a suertes.
+Con **voto mayoritario ponderado por observaciones** el número es 0,740 y
+el id 32 **sigue mal**. La versión que daba la buena noticia era la que
+estaba mal implementada.
 
 ## Decisión
 

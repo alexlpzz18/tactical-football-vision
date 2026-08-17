@@ -114,11 +114,18 @@ def evaluar_benja(ruta_cache, ruta_colores, ruta_cache_ref=None, ruta_colores_re
     if ruta_cache_ref:
         ids_ref, _ = _identidades_y_etiquetas(ruta_cache_ref, ruta_colores_ref)
         mapa = _traspasar_etiquetas(ids_ref, ids)
-        pred = {}
+        # Varias identidades nuevas pueden caer sobre una vieja (medido: el
+        # id 4 del v4pre lo cubren CINCO del v4, que es justo lo que se
+        # espera de una quimera al mejorar la deteccion). Con "la ultima
+        # gana" la etiqueta seria arbitraria, asi que vota la mayoria
+        # ponderada por observaciones.
+        votos: dict[int, Counter] = {}
         for i_nuevo, etiqueta in pred_por_id.items():
             i_viejo = mapa.get(i_nuevo)
             if i_viejo is not None:
-                pred[i_viejo] = etiqueta
+                n_obs = sum(len(tr.pos) for tr in ids[i_nuevo - 1])
+                votos.setdefault(i_viejo, Counter())[etiqueta] += n_obs
+        pred = {i: c.most_common(1)[0][0] for i, c in votos.items() if c}
         print(
             f"  (etiquetas trasladadas por posición: {len(pred)} de "
             f"{len(pred_por_id)} identidades encontraron su equivalente)"
