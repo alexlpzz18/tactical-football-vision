@@ -41,18 +41,20 @@ ser 100% AUTOMÁTICO (sin intervención humana por partido).
 - Logging con el módulo `logging` (no prints) en el código de src/.
 
 ## Hallazgo que ordena el trabajo de tracking (17-ago-2026)
-La QUIMERA DE CRUCE (dos jugadores en una identidad) **no es un problema
-de detección**: está descartado empíricamente. El v4 (mAP50 0,944 vs
-0,900) mejoró cobertura, IDF1, tasa de IDSW y concurrencia, y aun así
-subió las quimeras de 5 a 8 — porque al fragmentar menos produce
-identidades más largas, y una identidad larga tiene más ocasiones de
-contener a dos personas. Tampoco es del clasificador (resistió el barrido
-del fit). Es de ASOCIACIÓN, en el instante del cruce, donde ByteTrack
-decide solo con IoU en píxeles, que es justo la magnitud que deja de
-distinguir cuando dos cajas se solapan.
-Línea de trabajo abierta: meter la APARIENCIA en la asociación y no solo
-en el cosido posterior (lo que hace BoT-SORT con ReID). Diseño y caminos
-en `docs/apariencia_en_asociacion.md`.
+**La DETECCIÓN deja de ser la palanca** (decisión de Alex, 17-ago-2026):
+su esfuerzo de etiquetado se para aquí. El frente es ASOCIACIÓN y
+CLASIFICACIÓN. El v4 (mAP50 0,944 vs 0,900) no movió la aguja del
+producto lo que costó.
+Al cambiar de detector hay que RE-BARRER la asociación: los parámetros
+van pegados al detector. Medido — con la caja de cambios del v4pre el v4
+daba 8 quimeras; con la suya (`conf 0.45 · buffer 1.5 · empar 0.995 ·
+minf 2 · hueco 4 · color 0.9`) da 3, y bate al v4pre en todo en
+Villaviciosa. En el benjamín sigue por debajo, así que NO está adoptado.
+Dónde nacen las quimeras (`scripts/diagnostico_quimeras.py`): el solape
+de cajas es factor débil (1,8×) y minoritario; la señal limpia es la
+RE-ENTRADA tras perder el track (3,0×). Línea abierta: meter la
+apariencia en la asociación, con la puerta en la re-entrada. Diseño en
+`docs/apariencia_en_asociacion.md`.
 
 Corolario práctico: **un GT indexado por id del sistema caduca al cambiar
 el detector** (medido: 27 de 30 identidades del mini-GT del benjamín son

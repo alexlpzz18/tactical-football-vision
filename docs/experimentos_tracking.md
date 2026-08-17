@@ -2507,3 +2507,95 @@ Lectura para decidir: en Villaviciosa el v4 es netamente mejor en las
 métricas de producto (cobertura, concurrencia, equipos) y solo pierde en
 pureza; el benjamín va en dirección contraria y merece mirarse antes de
 adoptar.
+
+
+---
+
+# RE-BARRIDO DEL v4 CON SU PROPIA CAJA DE CAMBIOS (17-ago-2026)
+
+Crítica de Alex, y era correcta: toda la configuración —buffer, umbral de
+emparejamiento, cosido, confianza— se ajustó sobre las detecciones del
+**v4pre**. Se cambió el detector y se dejó puesta la caja de cambios del
+anterior. Declarar peor al v4 así era comparar el v4 mal ajustado contra
+el v4pre bien ajustado.
+
+`scripts/barrido_v4.py`. Aviso: el caché del v4 se generó con
+`confianza: 0.3`, así que solo se puede SUBIR el umbral. Probar 0,25
+exigiría otra pasada de Colab.
+
+## El punto ganador, y gana a los dos en TODO
+
+| | nIds | cob. | conc | IDF1 | tasa | quim |
+|---|---|---|---|---|---|---|
+| v4pre (adoptado) | 115 | 0,559 | 25 | 0,453 | 0,123 | 5 |
+| v4 con caja del v4pre | 83 | 0,598 | 23 | 0,484 | 0,100 | 8 |
+| **v4 con la suya** | **64** | **0,612** | **21** | **0,537** | **0,069** | **3** |
+
+Ganador: `conf 0.45 · buffer 1.5 · empar 0.995 · minf 2 · hueco 4 ·
+color 0.9`. Cobertura, IDF1, tasa de IDSW y quimeras, todo mejor que los
+dos. Concurrencia 21 con GT 22 (el v4pre daba 25).
+
+No es un pico aislado: a conf 0,45 con `minf 2` toda la vecindad da 3-4
+quimeras y cobertura ~0,60. Es una meseta.
+
+## El control que da valor a la cifra
+
+**El v4pre NO gana subiendo la confianza**: a 0,5 su cobertura se hunde a
+0,477 y sus quimeras suben a 6. La palanca es específica del v4, que es
+lo que cabía esperar de un detector con recall 0,914 — tiene margen para
+tirar detecciones dudosas sin quedarse ciego. Sin este control, el
+barrido no probaría nada.
+
+## Corrección de la lectura anterior
+
+Lo de "el v4 sube las quimeras de 5 a 8" era **un artefacto de medirlo
+con los parámetros del v4pre**. Con los suyos baja a 3. La conclusión de
+que la detección no es la palanca sigue en pie —el salto grande no vino
+de mAP50— pero el v4 **no es peor**: estaba mal ajustado.
+
+Lo que NO cambia: en la pata del benjamín el v4 mejora con los
+parámetros nuevos (0,740 → **0,802**) pero **sigue por debajo del v4pre
+(0,883)**, y Alex vio mezcla a ojo. Por eso no se adopta por la
+excepción: no mejora todo en las dos patas.
+
+## Aviso de sobreajuste, dicho antes de que lo pregunte nadie
+
+El ganador se eligió sobre el MISMO tramo con el que se mide. 36 combinaciones
+sobre un tramo de 500 frames encuentran buenos números por azar. Lo que
+lo hace algo más creíble es la meseta y que la pata del benjamín también
+sube. Lo que lo confirmaría es un tramo distinto.
+
+---
+
+# PASO 0: ¿DÓNDE NACEN LAS QUIMERAS? (17-ago-2026)
+
+`scripts/diagnostico_quimeras.py`, sobre el v4 ya bien ajustado (32
+identidades con más de una persona, 195 observaciones de cambio contra
+1.462 normales). El control es lo que da valor: se compara el cambio
+contra las observaciones normales **de las mismas identidades**.
+
+| señal previa al cambio | en CAMBIOS | en normales | ratio |
+|---|---|---|---|
+| caja solapada (IoU>0,1, ventana 3) | 39,0 % | 21,1 % | **1,8×** |
+| pérdida real (hueco > 15 frames) | 19,5 % | 6,4 % | **3,0×** |
+
+## Veredicto: la hipótesis original es solo PARCIALMENTE cierta
+
+El solape existe como factor pero es **débil y minoritario**: 6 de cada
+10 cambios de persona ocurren **sin** solape apreciable cerca, y con
+1,8× un veto ahí tendría muchos falsos positivos.
+
+**La señal más limpia es otra: la re-entrada tras perder el track (3,0×).**
+El salto no ocurre tanto en el instante del cruce como al RECUPERAR una
+identidad que se había perdido y engancharla a la persona equivocada.
+
+Esto es exactamente para lo que servía el paso 0. El camino A tal como
+estaba escrito —"veto de color solo en el instante de cruce"— cubriría
+la señal más débil de las dos. **Hay que reescribirlo**: la puerta de
+apariencia debe ponerse en la RE-ENTRADA (cuando el buffer devuelve un
+track perdido), y secundariamente en el solape.
+
+Nota de método: la primera versión de esta medición daba "100 % en ambos
+grupos" para el hueco previo. No era un hallazgo: aquí solo hay
+observaciones en frames con GT (1 de cada 15), así que dos consecutivas
+distan 15 por construcción y el umbral de 9 lo cumplía todo.
