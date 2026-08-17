@@ -742,9 +742,14 @@ def exportar_posiciones(
     }
     with open(cfg["rutas"]["salida_meta"], "w") as f:
         json.dump(meta, f, indent=2)
+    # Las identidades escritas NO son todas las que salieron del tracker:
+    # el export descarta las que no dejan ninguna fila válida. Decirlo con
+    # `len(identidades)` engaña —86 frente a 40 en el benjamín del v4—, y
+    # es la cifra que uno lee para juzgar si hay exceso de fragmentos.
     logger.info(
-        "Exportadas %d posiciones de %d identidades (%s)",
+        "Exportadas %d posiciones de %d identidades (de %d que dio el tracker) (%s)",
         len(filas),
+        meta["ids_unicos"],
         len(identidades),
         cfg["rutas"]["salida_csv"],
     )

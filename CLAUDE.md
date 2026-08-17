@@ -40,6 +40,25 @@ ser 100% AUTOMÁTICO (sin intervención humana por partido).
   p. ej. `configs/tracking.yaml`), nunca números mágicos hardcodeados.
 - Logging con el módulo `logging` (no prints) en el código de src/.
 
+## Hallazgo que ordena el trabajo de tracking (17-ago-2026)
+La QUIMERA DE CRUCE (dos jugadores en una identidad) **no es un problema
+de detección**: está descartado empíricamente. El v4 (mAP50 0,944 vs
+0,900) mejoró cobertura, IDF1, tasa de IDSW y concurrencia, y aun así
+subió las quimeras de 5 a 8 — porque al fragmentar menos produce
+identidades más largas, y una identidad larga tiene más ocasiones de
+contener a dos personas. Tampoco es del clasificador (resistió el barrido
+del fit). Es de ASOCIACIÓN, en el instante del cruce, donde ByteTrack
+decide solo con IoU en píxeles, que es justo la magnitud que deja de
+distinguir cuando dos cajas se solapan.
+Línea de trabajo abierta: meter la APARIENCIA en la asociación y no solo
+en el cosido posterior (lo que hace BoT-SORT con ReID). Diseño y caminos
+en `docs/apariencia_en_asociacion.md`.
+
+Corolario práctico: **un GT indexado por id del sistema caduca al cambiar
+el detector** (medido: 27 de 30 identidades del mini-GT del benjamín son
+otra persona con el v4, mediana 38 m). Los GT deben indexarse por
+posición y tiempo.
+
 ## Qué NO hacer
 - NO commitear datos, vídeos, modelos (.pt), caches (.pkl) ni exports de CVAT
   (están/deben estar en .gitignore; viven en Google Drive).

@@ -53,3 +53,17 @@ disparan apuntando a `configs/evaluation_v4pre_v2color.yaml`.
 Se entregó con **1 minuto** (5:00–5:59 del vídeo), no 3, por el mismo
 motivo que el punto 2: no hay cachés de 5 min. Cuando lleguen, regenerar
 es un comando.
+
+## 12. Apariencia en la ASOCIACIÓN (abierta 17-ago-2026)
+Diseño en `docs/apariencia_en_asociacion.md`. Es donde viven las 5-8
+quimeras que resisten al detector nuevo y al barrido del fit.
+- [ ] Paso 0 — DIAGNÓSTICO: ¿las 8 quimeras de Villaviciosa nacen en
+      frames con solape de cajas? Si la mayoría no nace ahí, toda la
+      hipótesis es falsa y no hay que construir nada encima.
+- [ ] Camino A — veto de color SOLO en el instante de cruce (no global:
+      cortar con señales ruidosas en todos los frames ya salió mal tres
+      veces).
+- [ ] Camino B — asociación propia con coste mixto IoU+color, solo si A
+      confirma la hipótesis.
+Criterio: quimeras 8 → menos SIN degradar cobertura 0,598, IDF1 0,484 ni
+concurrencia 23.
