@@ -67,17 +67,32 @@ def elegir_muestras(observaciones, n_muestras, alto_min=18):
 
 
 def recortar(frame, caja, margen=MARGEN_CROP):
-    """Recorte con holgura, en color, listo para embeber."""
+    """Recorte con holgura, con la caja del jugador MARCADA, listo para embeber.
+
+    La marca no es decoración. El recorte lleva holgura para dar contexto,
+    y esa misma holgura mete a menudo a otro jugador dentro del cuadro:
+    sin señalar cuál es, quien etiqueta tiene que adivinar a quién se
+    refiere la pregunta. Lo pidió Alex tras etiquetar la primera tanda.
+    """
     h, w = frame.shape[:2]
-    x1, y1, x2, y2 = caja
-    dx, dy = (x2 - x1) * margen, (y2 - y1) * margen
-    x1 = max(0, int(x1 - dx))
-    y1 = max(0, int(y1 - dy))
-    x2 = min(w, int(x2 + dx))
-    y2 = min(h, int(y2 + dy))
+    ox1, oy1, ox2, oy2 = caja
+    dx, dy = (ox2 - ox1) * margen, (oy2 - oy1) * margen
+    x1 = max(0, int(ox1 - dx))
+    y1 = max(0, int(oy1 - dy))
+    x2 = min(w, int(ox2 + dx))
+    y2 = min(h, int(oy2 + dy))
     if x2 <= x1 or y2 <= y1:
         return None
-    crop = frame[y1:y2, x1:x2]
+    crop = frame[y1:y2, x1:x2].copy()
+    # Rectángulo en coordenadas del recorte. Verde lima: no coincide con
+    # ninguna equipación que hayamos visto, así que no confunde al ojo.
+    cv2.rectangle(
+        crop,
+        (int(ox1 - x1), int(oy1 - y1)),
+        (int(ox2 - x1), int(oy2 - y1)),
+        (60, 230, 160),
+        1,
+    )
     # Altura fija para que la tira se lea de un vistazo; el ancho sigue
     # la proporción real del recorte.
     alto_destino = 120

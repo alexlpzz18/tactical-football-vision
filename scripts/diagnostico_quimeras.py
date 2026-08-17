@@ -75,8 +75,16 @@ def main() -> None:
     # Cajas por frame, para poder medir el solape en cualquier instante
     cajas = {e["frame_idx"]: [d[2:6] for d in e["dets"]] for e in banco.datos["cache"]}
 
+    # Equipo de cada id del GT, para saber si la quimera mezcla dos
+    # jugadores del MISMO equipo — esas la puerta de color no las ve.
+    equipo_gt = {}
+    for g in banco.gt.values():
+        for o in g:
+            equipo_gt.setdefault(o.obj_id, o.team)
+
     # A quién pertenece cada observación según el GT (el más cercano en metros)
     cambios, normales, n_quimeras = [], [], 0
+    quim_mismo_equipo = quim_distinto = 0
     huecos_cam, huecos_nor = [], []
     for ident in ids:
         obs = []
@@ -93,8 +101,17 @@ def main() -> None:
                 if mejor is not None:
                     obs.append((f, di, mejor))
         obs.sort()
-        if len({o[2] for o in obs}) > 1:
+        personas = {o[2] for o in obs}
+        if len(personas) > 1:
             n_quimeras += 1
+            equipos = {equipo_gt.get(i) for i in personas}
+            # Normalizamos portero_A → A: un portero y un jugador de campo
+            # del mismo equipo visten distinto, así que cuentan como
+            # colores distintos aunque el GT los agrupe.
+            if len(equipos) == 1:
+                quim_mismo_equipo += 1
+            else:
+                quim_distinto += 1
         for k in range(1, len(obs)):
             # La oclusión EMPIEZA antes del salto: el track se pierde
             # mientras dos cuerpos se tapan y se recupera ya sobre el
@@ -121,6 +138,16 @@ def main() -> None:
     cam, nor = np.array(cambios), np.array(normales)
     u = args.umbral_solape
     print(f"\nIdentidades con más de una persona del GT: {n_quimeras}")
+    if n_quimeras:
+        pct = 100 * quim_mismo_equipo / n_quimeras
+        print(
+            f"  del MISMO equipo: {quim_mismo_equipo} ({pct:.0f} %)  |  "
+            f"de equipos distintos: {quim_distinto}"
+        )
+        print(
+            "  ← las del mismo equipo son INVISIBLES para una puerta de color:\n"
+            "    los dos jugadores visten igual, así que la firma casa."
+        )
     print(f"Observaciones: {len(cam)} de CAMBIO, {len(nor)} normales\n")
     cab = f"{'':<12}{'n':>7}{'IoU medio':>11}{'mediana':>10}{f'  % con IoU>{u}':>16}"
     print(cab)

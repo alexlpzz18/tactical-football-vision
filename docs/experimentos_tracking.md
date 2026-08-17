@@ -2705,3 +2705,56 @@ Matiz honesto de la medición: cuenta cajas y confianza, no corrección.
 Sin GT de detección no se puede descartar que las cajas del v4 estén peor
 ajustadas aunque sean igual de numerosas. Lo que sí descarta, con
 holgura, es la hipótesis de "el v4 está ciego en el benjamín".
+
+
+---
+
+# EL TECHO DE LA PUERTA DE COLOR: LA QUIMERA DEL MISMO EQUIPO
+
+Hallazgo de Alex etiquetando el mini-GT (17-ago-2026), identidad #43 del
+benjamín: **todo naranja de principio a fin, pero en el sexto recorte se
+cruza con otro naranja y a partir de ahí sigue al otro.**
+
+Es una quimera perfecta y la puerta de re-entrada **no puede verla por
+diseño**: compara firmas de color, y los dos jugadores visten igual. La
+firma casa porque es la misma camiseta; simplemente no es la misma
+persona.
+
+Esto pone un techo a toda la línea de la apariencia, y conviene tenerlo
+escrito antes de invertir más en ella. Para el cruce entre compañeros los
+únicos criterios que quedan son geométricos —continuidad de trayectoria,
+velocidad, dirección— porque no hay nada que distinguir en el aspecto.
+Es, literalmente, el caso difícil que el proyecto eligió a propósito:
+"equipaciones idénticas entre compañeros" está en la definición del
+producto.
+
+## Cuánto pesa (Villaviciosa, medido)
+
+`scripts/diagnostico_quimeras.py` ahora lo cuenta:
+
+| | quimeras |
+|---|---|
+| mezclan jugadores de EQUIPOS DISTINTOS | 31 (97 %) |
+| mezclan jugadores del MISMO equipo | 1 (3 %) |
+
+En Villaviciosa el techo está lejos: 31 de 32 quimeras son entre equipos
+y la puerta de color **sí** podría verlas. Que solo baje de 5 a 3 dice
+que el problema es el umbral y la cobertura de la puerta, no su
+principio — hay margen para afinarla.
+
+**Ojo con extrapolar esto al benjamín**: la proporción está medida en
+Villaviciosa, y el caso que vio Alex es del benjamín. Cuando esté su
+mini-GT se podrá contar allí, y si en el F7 dominan las del mismo equipo,
+la conclusión cambia y hay que ir a criterios geométricos.
+
+## Mejora de la herramienta que salió de aquí
+
+Los recortes llevan holgura para dar contexto, y esa holgura mete a
+menudo a otro jugador en el cuadro: quien etiqueta no sabe a cuál se
+refiere la pregunta. Ahora `recortar()` dibuja el rectángulo del jugador
+en cuestión sobre el recorte.
+
+Detalle que un test cazó: hay que recortar sobre una **copia** del frame.
+Sin ella, la marca de un jugador se quedaría pintada en los recortes de
+todos los demás del mismo instante — un fallo silencioso que habría
+envenenado el etiquetado sin dar ningún error.
