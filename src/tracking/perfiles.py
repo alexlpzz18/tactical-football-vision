@@ -35,6 +35,10 @@ from src.tracking.cosido_pureza import ParametrosCosidoPureza, coser_por_pureza
 from src.tracking.cota_plantilla import fusionar_hasta_cota
 from src.tracking.exclusion_espacial import fusionar_identidades_duplicadas
 from src.tracking.field_tracker import ConservativeTracker, ParametrosEtapaA, Tracklet
+from src.tracking.puerta_reentrada import (
+    ParametrosPuertaReentrada,
+    aplicar_puerta_reentrada,
+)
 from src.tracking.stitcher import (
     ParametrosCosido,
     TrackletStitcher,
@@ -158,6 +162,16 @@ def _perfil_bytetrack(
         sample,
         ParametrosByteTrack.desde_dict(cfg_tracking.get("bytetrack")),
     )
+    dt = sample / fps if fps else 0.12
+    # Puerta de apariencia en la RE-ENTRADA, ANTES del cosido: aquí se
+    # parte lo que ByteTrack recuperó sobre la persona equivocada, y el
+    # cosido de abajo es quien puede volver a unirlo si se equivocó.
+    identidades = aplicar_puerta_reentrada(
+        identidades,
+        colores,
+        dt,
+        ParametrosPuertaReentrada.desde_dict(cfg_tracking.get("puerta_reentrada")),
+    )
     resolucion = cfg_tracking.get("_resolucion")  # lo inyecta el processor
     return coser_por_pureza(
         identidades,
@@ -165,7 +179,7 @@ def _perfil_bytetrack(
         ParametrosCosidoPureza.desde_dict(cfg_tracking.get("cosido_pureza")),
         resolucion=resolucion,
         jitter_px=_jitter(cfg_tracking, uso="cosido"),
-        dt=sample / fps if fps else 0.12,
+        dt=dt,
     )
 
 

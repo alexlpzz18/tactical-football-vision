@@ -565,6 +565,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         entrenar_clasificador,
     )
     from src.tracking.cache_io import cargar_cache
+    from src.tracking.filtro_confianza import filtrar_por_confianza
     from src.tracking.perfiles import correr_perfil
 
     validar_config(cfg, _CLAVES_DESDE_CACHE)
@@ -577,6 +578,15 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     if ruta_colores.exists():
         with open(ruta_colores, "rb") as f:
             colores = pickle.load(f)
+
+    # Filtro de confianza ANTES de entrenar nada: el clasificador debe
+    # ajustarse a la población de detecciones que va a ver el tracker, no
+    # a una que se acaba de descartar.
+    conf_min = float(cfg_tracking.get("confianza_min", 0.0) or 0.0)
+    if conf_min > 0:
+        datos["cache"], colores = filtrar_por_confianza(
+            datos["cache"], colores, conf_min
+        )
 
     clasificador = None
     cfg_equipos = {}

@@ -2599,3 +2599,58 @@ Nota de método: la primera versión de esta medición daba "100 % en ambos
 grupos" para el hueco previo. No era un hallazgo: aquí solo hay
 observaciones en frames con GT (1 de cada 15), así que dos consecutivas
 distan 15 por construcción y el umbral de 9 lo cumplía todo.
+
+
+---
+
+# LA PUERTA DE APARIENCIA EN LA RE-ENTRADA (17-ago-2026)
+
+`src/tracking/puerta_reentrada.py`. Rediseño del "camino A" después de
+que el paso 0 refutara su premisa: la puerta no va en el instante del
+cruce (1,8×) sino en la RE-ENTRADA tras perder el track (3,0×).
+
+Qué hace: cuando ByteTrack recupera una identidad que estuvo perdida, se
+compara la firma de color de antes con la de después. Si no casan, la
+identidad se parte ahí y el trozo nuevo sale aparte, para que el cosido
+por pureza decida con su propio criterio.
+
+Va DESPUÉS de la asociación y ANTES del cosido. `sv.ByteTrack` es una
+caja cerrada y no admite un coste de apariencia dentro, así que esta es
+la posición más cercana al problema que el código permite.
+
+## Medición (banco, v4 con su config)
+
+| puerta | nIds | cob. | conc | IDF1 | tasa | quim |
+|---|---|---|---|---|---|---|
+| desactivada | 64 | 0,610 | 21 | 0,540 | 0,071 | 5 |
+| **color 0,9 · hueco 0,5 s** | 79 | 0,619 | 21 | **0,546** | 0,072 | **3** |
+| color 1,1 · hueco 0,5 s | 66 | **0,625** | 21 | 0,540 | 0,071 | 4 |
+| color 0,7 · hueco 0,5 s | 100 | 0,591 | 21 | 0,530 | 0,089 | 3 |
+
+**Tres quimeras es la mejor cifra que ha dado el proyecto** (el v4pre
+adoptado da 5). Adoptado 0,9 en el perfil del v4, aceptando +0,001 de
+tasa de IDSW, que es ruido. La variante 1,1 no degrada absolutamente
+nada y sube más la cobertura, si se prefiere ese compromiso.
+
+Demasiado estricta (0,7) se pasa de frenada: 100 identidades y la tasa
+de IDSW sube a 0,089. La puerta tiene el mismo filo que los tres cortes
+fallidos y hay que dejarla en el punto medido, no en el más exigente.
+
+## Por qué esta vez el corte SUBE la cobertura
+
+Los tres cortes fallidos (velocidad, post-proceso, color) bajaban la
+cobertura porque troceaban identidades sanas. Este la sube (0,610 →
+0,619) porque solo mira los puntos de re-entrada —el 6 % de las
+transiciones— y porque partir una quimera **le devuelve al cosido la
+posibilidad de recolocar bien los dos trozos**. Cortar donde el sistema
+ya estaba adivinando no destruye información: la libera.
+
+Es la doctrina de Alex, literal: no cortar en todos los frames, solo
+decidir mejor donde el sistema ya está adivinando.
+
+## Salvaguarda contra el cuarto negativo
+
+La puerta se ABSTIENE si no hay al menos `min_obs_firma` (3)
+observaciones con color a cada lado. Con una o dos muestras la firma es
+ruido y el corte sería aleatorio, que es exactamente cómo se estropearon
+los intentos anteriores.

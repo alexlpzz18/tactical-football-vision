@@ -45,6 +45,7 @@ from src.tracking.asociacion_bytetrack import (  # noqa: E402
     asociar_con_bytetrack,
 )
 from src.tracking.cache_io import cargar_cache  # noqa: E402
+from src.tracking.filtro_confianza import filtrar_por_confianza  # noqa: E402
 from src.tracking.cosido_pureza import (  # noqa: E402
     ParametrosCosidoPureza,
     coser_por_pureza,
@@ -124,6 +125,13 @@ class Banco:
         self.datos = cargar_cache(self.cfg["rutas"]["cache"])
         with open(self.cfg["rutas"]["cache_colores"], "rb") as f:
             self.colores = pickle.load(f)
+        # El banco tiene que ver EXACTAMENTE lo que verá producción: si el
+        # config de tracking tira detecciones dudosas, aquí también.
+        conf_min = float(self.cfg_tracking.get("confianza_min", 0.0) or 0.0)
+        if conf_min > 0:
+            self.datos["cache"], self.colores = filtrar_por_confianza(
+                self.datos["cache"], self.colores, conf_min
+            )
         homografia = np.load(self.cfg["rutas"]["homografia"])
         self.gt = gt_a_por_frame(
             parsear_cvat(self.cfg["rutas"]["ground_truth"]),
