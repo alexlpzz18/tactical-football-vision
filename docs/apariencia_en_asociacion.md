@@ -103,3 +103,69 @@ id 4, cinco).
 
 Cualquier GT que vaya a sobrevivir a estos cambios tiene que estar
 indexado por **posición y tiempo**, no por id del sistema.
+
+---
+
+# CAMINO B: el coste mixto en METROS (19-ago-2026)
+
+`src/tracking/coste_asociacion.py`. Implementado el término geométrico
+como pidió Alex: **distancia física con radio derivado de la física**, no
+un umbral abstracto.
+
+    radio(Δt, y) = v_max · Δt  +  k · σ(y)
+
+- `v_max · Δt` crece **solo con el hueco**: cuanto más tiempo lleva
+  perdido un jugador, más lejos puede estar legítimamente.
+- `σ(y)` es la incertidumbre de la proyección, medida: **±0,11 m cerca,
+  ±1,85 m en el fondo**. Sin ella el radio del fondo sería tan estrecho
+  como el de cerca y vetaría emparejamientos correctos.
+
+## El peso NO es constante, y se deriva en vez de elegirse
+
+Un α fijo seguiría fiándose de la geometría en el fondo, donde no informa.
+La solución no es inventar un α por zona sino **pesar cada evidencia por
+su precisión**, que es lo estándar al combinar dos medidas:
+
+    σ_geo(Δt, y)² = σ(y)² + (v_incert · Δt)²
+    α = (1/σ_geo²) / (1/σ_geo² + 1/σ_app²)
+
+α baja **solo** en los dos casos en que debe: lejos y tras un hueco
+largo. Ninguna regla ad hoc.
+
+| y (m) | Δt | σ(y) | radio | **α** |
+|---|---|---|---|---|
+| 0 | 0,12 s | 0,11 | 1,1 m | **0,96** |
+| 0 | 1,0 s | 0,11 | 7,2 m | 0,31 |
+| 20 | 0,12 s | 0,63 | 2,1 m | 0,70 |
+| 40 | 0,12 s | 1,15 | 3,1 m | 0,42 |
+| 65 | 0,12 s | 1,80 | 4,4 m | **0,23** |
+| 65 | 3,0 s | 1,80 | 24,6 m | 0,04 |
+
+En continuidad y cerca manda la geometría (0,96). En el fondo tras un
+hueco, la apariencia (α = 0,04). **Y eso encaja con lo medido**: allí la
+geometría es mala Y el color da 0,000 separando equipos, así que la
+apariencia es lo único que queda — y el peso llega solo a esa conclusión.
+
+## Dos decisiones de diseño que conviene no perder
+
+**El veto por radio va ANTES de mirar la apariencia.** Por muy parecido
+que sea el aspecto, un jugador no puede estar donde no ha podido llegar.
+La apariencia desempata dentro de lo posible; no autoriza lo imposible.
+Si se mezclara en un único coste sin veto, un embedding muy parecido
+podría comprar un salto de 40 m — que es justo la quimera que queremos
+matar.
+
+**Una sola constante libre**: `sigma_apariencia`, la incertidumbre
+equivalente de la apariencia en metros (cuántos metros de error
+posicional "valen" lo que la distancia de coseno). Todo lo demás sale de
+física o de medidas ya hechas. Es lo único que hay que calibrar contra el
+banco.
+
+## Lo que falta
+
+Esto es la **función de coste**, con sus tests. Falta la etapa de
+asociación que la usa (matching húngaro por frame, gestión de tracks
+perdidos) y la calibración de `sigma_apariencia` contra el banco. Sin esa
+calibración los valores de α de la tabla son plausibles pero no están
+validados: a Δt = 1 s ya baja a 0,31 incluso cerca de la cámara, que
+puede ser demasiado agresivo.
