@@ -3052,3 +3052,39 @@ Consecuencia: si la pata del benjamín se vuelve la métrica que decide
 —y va camino, porque el F7 es el caso objetivo del producto— **hay que
 hacer un GT de identidad del benjamín**, indexado por posición y tiempo,
 no por id del sistema.
+
+---
+
+# HERRAMIENTA DE GT DE IDENTIDAD (19-ago-2026)
+
+`scripts/etiquetar_identidad_gt.py`. Desbloquea lo que la limitación
+anotada dejaba bloqueado: en el benjamín no se podían contar quimeras del
+mismo equipo ni juzgar si conviene mirar los cruces, porque no hay GT
+posicional y la accuracy de equipos **premia fragmentar**.
+
+Cada identidad es una tira de 16 recortes ordenada en el tiempo, con la
+caja del jugador en azul y las vecinas en blanco. Se hace clic en el
+recorte **a partir del cual ya no es el mismo niño**: eso parte la
+identidad en segmentos, y varios clics dan varios cortes.
+
+El CSV sale como `id_sistema, orden, frame, t_s, x_m, y_m, segmento,
+es_corte`: **indexado por posición y tiempo**, no solo por id. Los ids no
+sobreviven a un cambio de detector —27 de 30 del mini-GT anterior eran
+otra persona con el v4, mediana 38 m— pero dónde y cuándo estuvo alguien,
+sí.
+
+## Ya encuentra una quimera sin que nadie la busque
+
+Al revisar la salida antes de enviarla, la identidad **#7 — la más larga
+del tramo, 598 observaciones** — resulta ser dos personas: arranca siendo
+un jugador **naranja** y a partir del sexto recorte es un **blanco con el
+dorsal 4**.
+
+Es una quimera **entre equipos**, no del mismo equipo, y sobrevive a
+todo lo que hay montado: puerta de re-entrada con embedding incluida. Con
+598 observaciones es además de las que más contaminan las métricas.
+
+Que aparezca en la primera identidad que se mira, sin buscarla, sugiere
+que el recuento de quimeras del F7 va a ser bastante peor que el de
+Villaviciosa (3 sobre 38 identidades con ≥10 observaciones). Es
+exactamente el dato que faltaba para decidir.
