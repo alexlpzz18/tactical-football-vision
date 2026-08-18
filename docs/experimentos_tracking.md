@@ -2873,3 +2873,97 @@ entre A y B acierta el 50 % por azar en vez del 0 % actual.
 Ninguno de los dos está implementado: son fallos de menos del 9 % de los
 fallos totales (el punto 1 dice que el 85-90 % es asociación), así que
 van por detrás del tracker. Quedan apuntados con su arreglo.
+
+---
+
+# LA PUERTA POR EMBEDDING: las dos patas (19-ago-2026)
+
+## Pata 1 — Villaviciosa: barrido fino
+
+`scripts/barrido_puerta_embedding.py`. Rango útil 0,04-0,13, ya sabido.
+
+| umbral | nIds | cob. | conc | IDF1 | quim | **mismo eq** |
+|---|---|---|---|---|---|---|
+| 0,040 | 79 | 0,602 | 21 | 0,543 | **2** | 1 |
+| 0,050 | 74 | 0,612 | 21 | 0,548 | **2** | 1 |
+| 0,060 | 69 | 0,621 | 21 | 0,552 | 3 | 1 |
+| **0,070** | 68 | **0,623** | 21 | **0,553** | 3 | **1** |
+| **0,080** | 68 | **0,623** | 21 | **0,553** | 3 | **1** |
+| 0,090 | 66 | 0,612 | 21 | 0,534 | 4 | 1 |
+| 0,100 | 64 | 0,612 | 21 | 0,537 | 3 | 1 |
+| **color 0,9** | 79 | 0,622 | 21 | 0,542 | **4** | **2** |
+
+Los otros ejes: **hueco 0,5 s** gana (0,3 empata, ≥0,8 pierde);
+**min_obs** es plano entre 1 y 8 (se deja en 3); **ponderar por tamaño no
+cambia NINGUNA decisión** — el comprobador de puntos idénticos lo cazó, y
+por eso se queda desactivado en vez de añadir complejidad que no paga.
+
+Nota: 0,04-0,05 dan **2 quimeras**, mejor que las 3 del ganador, pero
+hunden la cobertura a 0,602-0,612. Es el error de siempre y se descarta.
+
+## Pata 2 — benjamín (sin GT posicional)
+
+**Lo que NO se puede medir ahí, dicho claro**: las quimeras del mismo
+equipo. Requieren identidad etiquetada y el benjamín no la tiene; el
+caso #43 fue una observación visual de Alex, no un dataset. El mini-GT
+del v4 tampoco llegó, así que la accuracy de equipos sigue saliendo del
+traslado con pérdida.
+
+| puerta | nIds | cortes | conc | acc equipos |
+|---|---|---|---|---|
+| color 0,9 | 84 | 21 | 17,4 | 0,787 |
+| embedding 0,06 | 89 | 20 | 17,4 | 0,796 |
+| **embedding 0,08** | **79** | 10 | 17,4 | **0,796** |
+| embedding 0,10 | 77 | 7 | 17,4 | 0,811 |
+
+El embedding bate al color en accuracy con **menos identidades** (79 vs
+84) y la misma concurrencia. En F7 hay ~15 personas y la concurrencia es
+17,4 en todas las variantes: la puerta no la mueve.
+
+## Balance de las dos patas
+
+| | Villaviciosa | benjamín |
+|---|---|---|
+| quimeras | 4 → **3** | (no medible) |
+| del mismo equipo | 2 → **1** | (no medible) |
+| IDF1 | 0,542 → **0,553** | — |
+| cobertura | 0,622 → **0,623** | — |
+| concurrencia | 21 = 21 | 17,4 = 17,4 |
+| accuracy equipos | — | 0,787 → **0,796** |
+| tasa de IDSW | 0,068 → 0,069 | — |
+
+Mejora en todo **menos** la tasa de IDSW, que sube 0,001. Es ruido, pero
+la excepción exige no degradar NADA, así que **no se adopta solo**: la
+decisión es de Alex.
+
+# EL TECHO DE LA PUERTA EN EL F7: los saltos salen en CRUCES
+
+`scripts/sospechosas_de_quimera.py`. Sin GT posicional no se puede
+afirmar qué identidad es quimera, pero sí señalar dónde mirar.
+
+Y al hacerlo aparece algo que no esperaba: **de los 106 saltos de
+apariencia por encima del umbral en el benjamín, casi todos tienen hueco
+de 0,1-0,3 s** — o sea son CRUCES, y la puerta ni los examina, porque por
+diseño solo mira re-entradas (hueco ≥ 0,75 s).
+
+| dist | id | minuto | hueco | ¿la puerta? |
+|---|---|---|---|---|
+| 0,172 | 23 | 5:10,0 | 0,30 s | no la mira (cruce) |
+| 0,164 | 23 | 5:10,1 | 0,10 s | no la mira (cruce) |
+| 0,132 | 15 | **5:07,7** | 1,70 s | **sí, cortada** |
+| 0,125 | 7 | 5:20,7 | 0,10 s | no la mira (cruce) |
+| 0,122 | 32 | 5:47,4 | 0,10 s | no la mira (cruce) |
+
+Recuento: **106 saltos en cruces que la puerta no mira**, y 35
+re-entradas con salto por debajo del umbral.
+
+El paso 0 midió que la re-entrada era la señal limpia (3,0× frente a 1,8×
+del solape) **en Villaviciosa**. En el F7 la foto puede ser distinta, y
+esta tabla lo sugiere. No es contradicción —aquella medía dónde nacen las
+quimeras y esta dónde salta la apariencia— pero abre una pregunta
+concreta: **extender la puerta a los cruces**, ahora que la señal ya no es
+el color sino un embedding que sí distingue compañeros.
+
+Primera versión de este script: la columna "¿la puerta cortó?" se
+calculaba solo con la distancia y decía "sí" en saltos que la puerta ni
+examina. Habría mandado a Alex a mirar los sitios equivocados.

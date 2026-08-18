@@ -78,6 +78,7 @@ def correr_perfil(
     colores: dict | None = None,
     clasificador=None,
     cfg_equipos: dict | None = None,
+    embeddings: dict | None = None,
 ) -> list[list[Tracklet]]:
     """Corre el pipeline de tracking completo según el perfil.
 
@@ -99,7 +100,7 @@ def correr_perfil(
         raise ValueError(f"Perfil desconocido: {perfil!r} (usa uno de {PERFILES})")
 
     if perfil == "bytetrack":
-        return _perfil_bytetrack(cache, fps, sample, cfg_tracking, colores)
+        return _perfil_bytetrack(cache, fps, sample, cfg_tracking, colores, embeddings)
 
     params_a = dict(cfg_tracking["etapa_a"])
     params_cosido = dict(cfg_tracking["cosido"])
@@ -146,6 +147,7 @@ def _perfil_bytetrack(
     sample: int,
     cfg_tracking: dict,
     colores: dict | None,
+    embeddings: dict | None = None,
 ) -> list[list[Tracklet]]:
     """Asociación con ByteTrack + cosido por pureza (sin cota de plantilla).
 
@@ -166,11 +168,18 @@ def _perfil_bytetrack(
     # Puerta de apariencia en la RE-ENTRADA, ANTES del cosido: aquí se
     # parte lo que ByteTrack recuperó sobre la persona equivocada, y el
     # cosido de abajo es quien puede volver a unirlo si se equivocó.
+    alturas = {
+        (e["frame_idx"], i): float(d[5] - d[3])
+        for e in cache
+        for i, d in enumerate(e["dets"])
+    }
     identidades = aplicar_puerta_reentrada(
         identidades,
         colores,
         dt,
         ParametrosPuertaReentrada.desde_dict(cfg_tracking.get("puerta_reentrada")),
+        embeddings=embeddings,
+        alturas=alturas,
     )
     resolucion = cfg_tracking.get("_resolucion")  # lo inyecta el processor
     return coser_por_pureza(

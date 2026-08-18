@@ -72,13 +72,19 @@ class ParametrosPuertaReentrada:
     # Observaciones a cada lado para calcular la firma. Con una sola
     # muestra la firma es ruido puro y la puerta cortaría al azar.
     min_obs_firma: int = 3
+    # Ponderar cada observación por el TAMAÑO de su recorte al construir
+    # la firma. El embedding es más fiable cuanto más grande es el
+    # recorte —medido: a <20 px reconoce el 20 % de los reencuentros y a
+    # 20-30 px el 17-21 %, pero por debajo de eso la señal se degrada—,
+    # así que una observación de 40 px debería pesar más que una de 14.
+    ponderar_por_tamano: bool = False
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosPuertaReentrada":
         return cls(**(d or {}))
 
 
-def _firma(colores: dict, pares, embeddings=None) -> np.ndarray | None:
+def _firma(colores: dict, pares, embeddings=None, pesos=None) -> np.ndarray | None:
     """Firma media de unas observaciones.
 
     Con `embeddings` usa el embedding de apariencia; si no, el bloque HS
@@ -89,8 +95,14 @@ def _firma(colores: dict, pares, embeddings=None) -> np.ndarray | None:
     personas.
     """
     if embeddings is not None:
-        muestras = [embeddings[p] for p in pares if p in embeddings]
-        return np.mean(muestras, axis=0) if muestras else None
+        usados = [p for p in pares if p in embeddings]
+        if not usados:
+            return None
+        muestras = [embeddings[p] for p in usados]
+        if pesos is not None:
+            w = np.array([max(pesos.get(p, 1.0), 1e-3) for p in usados])
+            return np.average(muestras, axis=0, weights=w)
+        return np.mean(muestras, axis=0)
 
     from src.team_classification.feature_v2 import parte_camiseta_hs
 
@@ -120,6 +132,7 @@ def aplicar_puerta_reentrada(
     dt: float,
     params: ParametrosPuertaReentrada | None = None,
     embeddings: dict | None = None,
+    alturas: dict | None = None,
 ) -> list[list[Tracklet]]:
     """Parte las identidades cuyo color no case tras una pérdida real.
 
@@ -157,8 +170,9 @@ def aplicar_puerta_reentrada(
             previas = [p for _f, p in obs[ini:k]]
             fin = k + _VENTANA_FIRMA
             siguientes = [p for _f, p in obs[k:fin]]
-            antes = _firma(colores, previas, embeddings)
-            despues = _firma(colores, siguientes, embeddings)
+            pesos = alturas if params.ponderar_por_tamano else None
+            antes = _firma(colores, previas, embeddings, pesos)
+            despues = _firma(colores, siguientes, embeddings, pesos)
             n_antes = sum(1 for p in previas if p in fuente)
             n_desp = sum(1 for p in siguientes if p in fuente)
             if (

@@ -292,6 +292,17 @@ suavizado:
 # recoloque bien los trozos.
 puerta_reentrada:
   activa: true
-  color_max_dist: 0.9
+  # Firma por EMBEDDING (siglip) en vez de color. El color es ciego por
+  # definición a dos compañeros con la misma equipación — el caso #43 —
+  # y a menos de 20 px da 0,000 separando ni siquiera equipos.
+  # Ganador del barrido fino en Villaviciosa (19-ago-2026):
+  #   umbral 0.07-0.08 · hueco 0.5 s · min_obs 3 · sin ponderar
+  # Frente a la puerta de color: quimeras 4→3, del MISMO equipo 2→1,
+  # IDF1 0.542→0.553, cobertura 0.622→0.623.
+  emb_max_dist: 0.08
+  color_max_dist: 0.9      # fallback si no hay caché de embeddings
   hueco_min_s: 0.5
   min_obs_firma: 3
+  # Medido: no cambia NINGUNA decisión en el banco. Se deja en false para
+  # no añadir complejidad que no paga.
+  ponderar_por_tamano: false

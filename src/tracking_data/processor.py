@@ -588,6 +588,36 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             datos["cache"], colores, conf_min
         )
 
+    # Caché de embeddings de apariencia (opcional). Se filtra con el
+    # MISMO criterio de confianza que el resto: si no, sus det_idx
+    # apuntarían a otras cajas — el fallo silencioso de siempre.
+    embeddings = None
+    ruta_emb = cfg["rutas"].get("cache_embeddings")
+    if ruta_emb and Path(ruta_emb).exists():
+        with open(ruta_emb, "rb") as f:
+            d_emb = pickle.load(f)
+        V = np.asarray(d_emb["embeddings"], dtype=np.float32)
+        crudo = {tuple(c): V[i] for i, c in enumerate(d_emb["claves"])}
+        if conf_min > 0:
+            datos_crudos = cargar_cache(cfg["rutas"]["cache"])
+            embeddings = {}
+            for e in datos_crudos["cache"]:
+                fr, j = e["frame_idx"], 0
+                for i, det in enumerate(e["dets"]):
+                    if det[6] < conf_min:
+                        continue
+                    if (fr, i) in crudo:
+                        embeddings[(fr, j)] = crudo[(fr, i)]
+                    j += 1
+        else:
+            embeddings = crudo
+        logger.info(
+            "Caché de embeddings: %s (%d vectores, backbone %s)",
+            ruta_emb,
+            len(embeddings),
+            d_emb.get("backbone", "?"),
+        )
+
     clasificador = None
     cfg_equipos = {}
     if colores is not None and cfg.get("equipos", {}).get("activo", True):
@@ -607,6 +637,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         colores=colores,
         clasificador=clasificador,
         cfg_equipos=cfg_equipos,
+        embeddings=embeddings,
     )
 
     equipos: dict[int, str] = {}
