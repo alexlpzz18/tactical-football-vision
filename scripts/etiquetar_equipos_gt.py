@@ -66,13 +66,29 @@ def elegir_muestras(observaciones, n_muestras, alto_min=18):
     return elegidas
 
 
-def recortar(frame, caja, margen=MARGEN_CROP):
-    """Recorte con holgura, con la caja del jugador MARCADA, listo para embeber.
+# Colores BGR de las cajas del recorte.
+AZUL_OSCURO = (140, 40, 0)  # el jugador de la pregunta
+GRIS_OTROS = (245, 245, 245)  # los demás; blanco roto, que el gris
+# medio se perdía contra el césped y era como no pintarlos
+ALTO_CROP = 120
 
-    La marca no es decoración. El recorte lleva holgura para dar contexto,
-    y esa misma holgura mete a menudo a otro jugador dentro del cuadro:
-    sin señalar cuál es, quien etiqueta tiene que adivinar a quién se
-    refiere la pregunta. Lo pidió Alex tras etiquetar la primera tanda.
+
+def recortar(frame, caja, cajas_frame=None, margen=MARGEN_CROP):
+    """Recorte con holgura y TODAS las cajas pintadas, la del jugador en azul.
+
+    Primera versión: se pintaba solo la caja del jugador. Alex lo probó y
+    no servía — "muchas veces coges a dos personas en uno". Y tiene
+    sentido: con la holgura del 25 % entran vecinos, y un rectángulo
+    suelto sobre un amontonamiento no dice cuál de los dos cuerpos
+    encierra; parece que abarca a los dos.
+
+    La solución es la del vídeo: pintar TODAS las detecciones del frame
+    que caen en el recorte, para que se vea qué ha separado el detector,
+    y distinguir la de la pregunta por el color.
+
+    Las cajas se dibujan DESPUÉS de escalar. Dibujarlas antes las
+    difumina el INTER_CUBIC y el trazo se pierde justo en los recortes
+    pequeños, que son los que más falta hacen.
     """
     h, w = frame.shape[:2]
     ox1, oy1, ox2, oy2 = caja
@@ -83,22 +99,27 @@ def recortar(frame, caja, margen=MARGEN_CROP):
     y2 = min(h, int(oy2 + dy))
     if x2 <= x1 or y2 <= y1:
         return None
-    crop = frame[y1:y2, x1:x2].copy()
-    # Rectángulo en coordenadas del recorte. Verde lima: no coincide con
-    # ninguna equipación que hayamos visto, así que no confunde al ojo.
-    cv2.rectangle(
-        crop,
-        (int(ox1 - x1), int(oy1 - y1)),
-        (int(ox2 - x1), int(oy2 - y1)),
-        (60, 230, 160),
-        1,
-    )
-    # Altura fija para que la tira se lea de un vistazo; el ancho sigue
-    # la proporción real del recorte.
-    alto_destino = 120
-    escala = alto_destino / crop.shape[0]
+
+    crop = frame[y1:y2, x1:x2]
+    escala = ALTO_CROP / crop.shape[0]
     ancho = max(12, int(crop.shape[1] * escala))
-    return cv2.resize(crop, (ancho, alto_destino), interpolation=cv2.INTER_CUBIC)
+    crop = cv2.resize(crop, (ancho, ALTO_CROP), interpolation=cv2.INTER_CUBIC)
+
+    def dibuja(c, color, grosor):
+        a, b, cc, d = c
+        p1 = (int((a - x1) * escala), int((b - y1) * escala))
+        p2 = (int((cc - x1) * escala), int((d - y1) * escala))
+        # Solo si asoma algo dentro del recorte
+        if p2[0] < 0 or p2[1] < 0 or p1[0] > ancho or p1[1] > ALTO_CROP:
+            return
+        cv2.rectangle(crop, p1, p2, color, grosor)
+
+    for otra in cajas_frame or []:
+        if tuple(otra[:4]) == (ox1, oy1, ox2, oy2):
+            continue
+        dibuja(otra[:4], GRIS_OTROS, 2)
+    dibuja((ox1, oy1, ox2, oy2), AZUL_OSCURO, 2)
+    return crop
 
 
 def a_base64(crop):
@@ -158,7 +179,7 @@ def construir_identidades(df, cache_dets, n_muestras, min_obs):
     return dict(sorted(identidades.items(), key=lambda kv: -kv[1]["n_obs"]))
 
 
-def extraer_crops(ruta_video, identidades):
+def extraer_crops(ruta_video, identidades, cache_dets=None):
     """Decodifica UNA vez el rango necesario y saca todos los recortes."""
     necesarios = {}
     for datos in identidades.values():
@@ -181,8 +202,11 @@ def extraer_crops(ruta_video, identidades):
         ok, frame = cap.read()
         if not ok:
             break
+        cajas_frame = [
+            (d[2], d[3], d[4], d[5]) for d in (cache_dets or {}).get(frame_idx, [])
+        ]
         for id_j, caja, x_m, y_m in necesarios.get(frame_idx, []):
-            crop = recortar(frame, caja)
+            crop = recortar(frame, caja, cajas_frame)
             if crop is None:
                 continue
             dato = a_base64(crop)
@@ -443,7 +467,7 @@ def main() -> None:
         identidades = {k: v for k, v in identidades.items() if k in pedidos}
     if not identidades:
         raise SystemExit("Ninguna identidad supera --min-obs")
-    crops = extraer_crops(cfg["rutas"]["video"], identidades)
+    crops = extraer_crops(cfg["rutas"]["video"], identidades, cache_dets)
 
     # Colores de los botones: los REALES del equipo si están en el meta,
     # para que el botón se parezca a la camiseta que hay que reconocer.

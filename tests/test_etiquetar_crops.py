@@ -34,3 +34,23 @@ def test_recorte_no_modifica_el_frame_original():
 def test_recorte_fuera_de_rango():
     frame = np.zeros((50, 50, 3), dtype=np.uint8)
     assert mod.recortar(frame, (60, 60, 70, 70)) is None
+
+
+def test_pinta_a_los_vecinos_en_otro_color():
+    """El caso que rompió la v1: en el recorte entran dos personas y hay
+    que ver cuál es la de la pregunta (azul) y cuál el vecino (gris)."""
+    frame = np.zeros((300, 300, 3), dtype=np.uint8)
+    objetivo = (100, 100, 120, 150)
+    vecino = (118, 100, 138, 150)
+    crop = mod.recortar(frame, objetivo, [objetivo, vecino])
+    assert crop is not None
+    colores = {tuple(c) for fila in crop for c in fila if tuple(c) != (0, 0, 0)}
+    assert mod.AZUL_OSCURO in colores, "falta la caja del jugador (azul oscuro)"
+    assert mod.GRIS_OTROS in colores, "falta la caja del vecino (gris)"
+
+
+def test_sin_cajas_del_frame_sigue_marcando_al_jugador():
+    frame = np.zeros((300, 300, 3), dtype=np.uint8)
+    crop = mod.recortar(frame, (100, 100, 120, 150))
+    colores = {tuple(c) for fila in crop for c in fila if tuple(c) != (0, 0, 0)}
+    assert mod.AZUL_OSCURO in colores
