@@ -290,3 +290,83 @@ la casilla que decide, antes de dejar que dictamine.** Escribí el
 criterio sin mirar la densidad del GT, y su primer veredicto fue matar la
 línea de la apariencia con 3 parejas. Es la segunda vez que una casilla
 mal poblada casi cierra una vía buena.
+
+---
+
+# DÓNDE OPERA EL EMBEDDING: un backbone, y es siglip (19-ago-2026)
+
+`scripts/tamano_en_el_cruce.py`. La distribución global de tamaños no
+sirve para elegir: el embedding no se consulta en todos los recortes,
+sino en el CRUCE y en la RE-ENTRADA.
+
+| momento | n | <20 px | 20-30 px | >30 px |
+|---|---|---|---|---|
+| todos los recortes | 9.511 | 5,0 % | 69,9 % | 25,1 % |
+| en el cruce | 909 | 9,2 % | 63,6 % | 27,2 % |
+| **en la re-entrada** | 132 | **42,4 %** | 51,5 % | 6,1 % |
+
+**La re-entrada está dominada por recortes pequeños: 42,4 % frente al
+5,0 % de la población general, un enriquecimiento de 8,5×.** Tiene
+sentido físico: un track se pierde sobre todo cuando el jugador está
+lejos, donde mide poco y se ocluye con facilidad.
+
+Dos consecuencias:
+
+1. **La casilla que elegimos a ciegas era la correcta.** `<20 px × 2-5 s`
+   no era una esquina exótica: es el 42 % de las re-entradas, el momento
+   exacto donde nacen las quimeras que resisten a todo.
+2. **Gana siglip**, que es quien manda en ese bin (0,200 frente a 0,149
+   de resnet50 y 0,106 de dinov2).
+
+## El esquema por zonas está muerto, y no por el coste
+
+La idea era siglip para pequeños y dinov2 para grandes. La medición que
+la mata no es de coste:
+
+| en las re-entradas | |
+|---|---|
+| el ANTES y el DESPUÉS caen en el MISMO bin | 95 (72 %) |
+| caen en bins **DISTINTOS** | **37 (28 %)** |
+
+En una re-entrada se compara el recorte de AHORA con los de ANTES. Si
+cada bin usa un backbone distinto, **esas parejas viven en espacios
+vectoriales distintos y no se pueden comparar**: un vector de siglip y
+uno de dinov2 no tienen ninguna relación métrica.
+
+O sea que el 28 % de las re-entradas quedaría sin poder juzgarse — y son
+precisamente aquellas en las que el jugador ha cambiado de profundidad,
+que suelen ser las de hueco más largo. **El esquema se rompe justo en el
+caso al que sirve.**
+
+## Coste de inferencia
+
+Por recorte, en órdenes de magnitud (224×224):
+
+| backbone | arquitectura | ~GFLOPs/recorte | relativo |
+|---|---|---|---|
+| resnet50 | CNN | ~4 | 1× |
+| siglip-base | ViT-B/16, 196 tokens | ~17,5 | ~4× |
+| dinov2-base | ViT-B/14, 256 tokens | ~23 | ~6× |
+
+A escala de partido (≈10.600 recortes por minuto de vídeo con
+`sample_every: 3`, ~950.000 en 90 min), siglip son unos 17 PFLOPs por
+partido. **El número absoluto hay que medirlo en la próxima pasada de
+Colab**, no estimarlo: depende del batch, de la GPU y del solape con la
+decodificación. Lo que sí es firme es la relación entre los tres.
+
+Nota sobre el esquema por zonas y el coste: enrutando por tamaño, cada
+recorte pasa por UN modelo, así que el cómputo sería parecido al de un
+solo backbone. Su coste real es otro — dos modelos en memoria, dos
+cachés, y sobre todo la incomparabilidad de arriba. **Aunque saliera
+gratis, no compensa.**
+
+## Decisión
+
+**Un solo backbone: siglip-base-patch16-224.** Apache-2.0, gana en el bin
+que decide, y una sola representación mantiene comparables todas las
+parejas. Menos complejidad y menos superficie de error.
+
+Reserva anotada: dinov2 gana en 20-30 px (0,211 vs 0,170), que es donde
+está el 70 % de los recortes. Si algún día el embedding se usa para algo
+que opere sobre la población general —y no sobre re-entradas— hay que
+volver a esta tabla.

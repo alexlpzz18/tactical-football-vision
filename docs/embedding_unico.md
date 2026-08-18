@@ -122,3 +122,31 @@ El caso #43 muestra el filo por el otro lado: la puerta de re-entrada
 compara color y por eso es ciega a dos compañeros del mismo equipo. Un
 embedding puede verlos —está por medir— pero solo si quien lo consulta
 usa el umbral fino de identidad, no el grueso de equipación.
+
+---
+
+## HALLAZGO DE PRODUCTO: el fondo del campo puede ser recuperable
+
+Medido el 19-ago-2026 (`docs/benchmark_embeddings.md`):
+
+**Con recortes de menos de 20 px, el histograma HSV da 0,000 separando
+EQUIPOS.** No "poco": cero. A esa escala el color no distingue nada — ni
+siquiera lo que mejor se le da, que es decir de qué equipo es alguien.
+
+Los embeddings, en cambio, dan 0,197-0,246 en esa misma casilla.
+
+Esto cambia una suposición de fondo del proyecto. El fondo del campo se
+venía dando por perdido —jugadores de 15-20 px, color inservible,
+identidades que se rompen— y la conclusión implícita era que hacía falta
+mejor cámara o mejor detector. **La medición dice otra cosa: allí queda
+señal, solo que no es de color.**
+
+Y encaja con lo demás: la re-entrada, que es donde nacen las quimeras que
+resisten a todo, ocurre un 42 % de las veces con recortes de menos de 20
+px, frente al 5 % de la población general. Es decir, **el fondo del campo
+no es un rincón del problema: es donde está el problema.**
+
+Consecuencia para el producto: si la apariencia recupera el fondo, se
+recupera cobertura donde hoy se pierde, sin cambiar de cámara. Está por
+demostrar de punta a punta —el benchmark mide la señal, no el resultado
+final—, pero justifica el camino B por sí solo.
