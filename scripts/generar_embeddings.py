@@ -148,6 +148,7 @@ def main() -> None:
         logger.warning("⚠ Sin GPU: esto va a tardar muchísimo (ver CLAUDE.md)")
 
     nombre = BACKBONES.get(args.backbone, args.backbone)
+    datos_cache = cargar_cache(args.cache)
     embeber, media, desv, dims = cargar_backbone(nombre, dispositivo)
     logger.info("Backbone %s → %d dims, en %s", nombre, dims, dispositivo)
 
@@ -189,6 +190,13 @@ def main() -> None:
         # Sin estos dos campos el caché no se puede validar más adelante.
         "backbone": nombre,
         "cache_origen": Path(args.cache).name,
+        # fps y sample viajan con el caché para que el benchmark pueda
+        # calcular la SEPARACIÓN TEMPORAL entre dos recortes sin abrir
+        # también el caché de detecciones. Es lo que decide si el
+        # embedding sirve para el caso que duele: reconocer al mismo niño
+        # tras un hueco largo, no solo en el frame siguiente.
+        "fps": float(datos_cache["fps"]),
+        "sample": int(datos_cache["sample"]),
         "dims": int(matriz.shape[1]) if len(matriz) else dims,
     }
     Path(args.salida).parent.mkdir(parents=True, exist_ok=True)

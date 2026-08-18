@@ -85,3 +85,39 @@ El benchmark se hace sobre **embeddings SIN PCA**. Aplicar PCA antes
 mediría la PCA además del backbone, y con tres candidatos de dimensiones
 distintas (768, 768, 2048) sería comparar cosas diferentes. La PCA se
 evalúa después, sobre el ganador, como optimización de producción.
+
+---
+
+## Adición: estratificar TAMBIÉN por separación temporal (19-ago-2026)
+
+Petición de Alex, y corrige un punto ciego del criterio original.
+
+El paso 0 midió que las quimeras nacen sobre todo al **RECUPERAR un track
+perdido** (ratio 3,0×), no en el cruce instantáneo (1,8×). O sea: el
+momento en que el embedding tiene que decidir es justo aquel en que la
+geometría ya no dice nada, porque han pasado segundos y el jugador puede
+estar en cualquier parte.
+
+**Un embedding que solo reconozca reencuentros inmediatos no sirve para
+el caso que duele.** Y la métrica original lo habría dado por bueno: las
+parejas de "misma persona" en frames contiguos son casi el mismo píxel, y
+cualquier backbone las empareja.
+
+Por eso las parejas de MISMA persona se parten por separación temporal:
+
+| bin | qué representa |
+|---|---|
+| < 1 s | continuidad; el caso fácil, que ya resuelve el IoU |
+| 2-5 s | **la re-entrada típica** (el buffer es de 1,5 s) |
+| > 5 s | el hueco largo, donde solo queda la apariencia |
+
+**El ganador se decide por el bin de 2-5 s**, cruzado con el bin de
+tamaño < 20 px. Esa casilla —jugador pequeño, reencuentro tras varios
+segundos— es exactamente la situación que produce las quimeras que
+resisten a todo lo demás.
+
+Si un backbone gana en la media y pierde ahí, no vale.
+
+No hace falta regenerar nada: la separación sale de los `frame_idx` que
+el caché ya guarda, y ahora también lleva `fps` y `sample` para no
+depender del caché de detecciones.

@@ -27,38 +27,57 @@ porque a escala de partido completo son 1,6 GB frente a 270 MB.
 
 ## Celdas
 
+**Solo hay DOS cosas que revisar**, marcadas con `# ← REVISA`. El resto
+son rutas del repo, que sí conozco.
+
 **Celda 1 — entorno**
 
 ```python
 from google.colab import drive; drive.mount('/content/drive')
 %cd /content
-!git clone https://github.com/<tu-usuario>/tactical-football-vision.git 2>/dev/null || (cd tactical-football-vision && git pull)
+!git clone https://github.com/<TU-USUARIO>/tactical-football-vision.git 2>/dev/null || (cd tactical-football-vision && git pull)
 %cd /content/tactical-football-vision
 !pip -q install timm transformers
 !nvidia-smi --query-gpu=name,memory.total --format=csv
 ```
 
-**Celda 2 — enlazar los datos de Drive**
+**Celda 2 — enlazar los datos de Drive y COMPROBAR que están**
 
 ```python
-import os
-RAIZ = "/content/drive/MyDrive/<tu-carpeta>"   # ajusta a tu ruta
+import os, glob
+
+RAIZ = "/content/drive/MyDrive/CAMBIAME"          # ← REVISA: tu carpeta del proyecto en Drive
+VIDEO_VILLA = "data/raw/partido.mp4"              # ← REVISA: el config dice partido.mp4;
+                                                  #   no está en local, así que no he podido
+                                                  #   verificar cómo se llama en tu Drive
+VIDEO_BENJA = "data/raw/benja_gredos_p1_20min.mp4"   # este sí lo he verificado
+
 for sub in ("data/raw", "data/tracking", "data/tracking_benja"):
     os.makedirs(sub, exist_ok=True)
 !ln -sf {RAIZ}/data/raw/* data/raw/ 2>/dev/null
 !ln -sf {RAIZ}/data/tracking/*.pkl data/tracking/ 2>/dev/null
 !ln -sf {RAIZ}/data/tracking_benja/*.pkl data/tracking_benja/ 2>/dev/null
-!ls -la data/tracking/*v4*.pkl data/tracking_benja/*v4*.pkl
+
+# Parar AQUÍ si algo falta, en vez de descubrirlo a mitad de la pasada
+faltan = [f for f in (VIDEO_VILLA, VIDEO_BENJA,
+                      "data/tracking/cache_detecciones_v4.pkl",
+                      "data/tracking_benja/cache_detecciones_benja_v4.pkl")
+          if not os.path.exists(f)]
+if faltan:
+    print("❌ FALTAN, revisa las rutas antes de seguir:")
+    for f in faltan: print("   ", f)
+    print("\nEsto hay en data/raw:", glob.glob("data/raw/*"))
+else:
+    print("✓ Todo en su sitio")
 ```
 
 **Celda 3 — generar los seis cachés**
 
 ```python
 TRAMOS = [
-    ("villa", "data/tracking/cache_detecciones_v4.pkl",
-     "data/raw/<video_villaviciosa>.mp4", "data/tracking"),
-    ("benja", "data/tracking_benja/cache_detecciones_benja_v4.pkl",
-     "data/raw/benja_gredos_p1_20min.mp4", "data/tracking_benja"),
+    ("villa", "data/tracking/cache_detecciones_v4.pkl", VIDEO_VILLA, "data/tracking"),
+    ("benja", "data/tracking_benja/cache_detecciones_benja_v4.pkl", VIDEO_BENJA,
+     "data/tracking_benja"),
 ]
 for backbone in ("siglip", "dinov2", "resnet50"):
     for nombre, cache, video, destino in TRAMOS:
@@ -68,13 +87,22 @@ for backbone in ("siglip", "dinov2", "resnet50"):
             --salida {destino}/emb_{nombre}_{backbone}.pkl
 ```
 
-**Celda 4 — copiar a Drive para bajarlos**
+**Celda 4 — copiar a Drive y comprobar los seis**
 
 ```python
 !mkdir -p {RAIZ}/data/embeddings
 !cp data/tracking/emb_*.pkl data/tracking_benja/emb_*.pkl {RAIZ}/data/embeddings/
-!ls -lh {RAIZ}/data/embeddings/
+
+import pickle, glob
+for f in sorted(glob.glob(f"{RAIZ}/data/embeddings/emb_*.pkl")):
+    d = pickle.load(open(f, "rb"))
+    print(f"{f.split('/')[-1]:<28} {len(d['claves']):>6} recortes × {d['dims']:>4} dims"
+          f"  origen={d['cache_origen']}")
 ```
+
+Los seis tienen que sumar **22.741 recortes** (10.621 villa + 12.120
+benja por backbone) y `origen` tiene que ser un caché `*_v4.pkl`. Si no
+cuadra, no bajes nada: algo se enlazó mal.
 
 ## Tiempo esperado
 
