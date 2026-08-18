@@ -27,8 +27,13 @@ porque a escala de partido completo son 1,6 GB frente a 270 MB.
 
 ## Celdas
 
-**Solo hay DOS cosas que revisar**, marcadas con `# ← REVISA`. El resto
-son rutas del repo, que sí conozco.
+Rutas confirmadas por Alex (19-ago-2026). Lo único sin confirmar es dónde
+viven los CACHÉS en Drive: él solo corrigió las de vídeo, así que la
+celda 2 comprueba y para si no están.
+
+**Los vídeos se COPIAN a disco local de Colab antes de leerlos.** Leerlos
+enlazados desde Drive colgó una sesión entera: cada `cap.read()` acaba
+siendo una petición de red, y decodificar mil frames así no termina.
 
 **Celda 1 — entorno**
 
@@ -41,34 +46,46 @@ from google.colab import drive; drive.mount('/content/drive')
 !nvidia-smi --query-gpu=name,memory.total --format=csv
 ```
 
-**Celda 2 — enlazar los datos de Drive y COMPROBAR que están**
+**Celda 2 — copiar vídeos a disco local y cachés al repo**
 
 ```python
-import os, glob
+import os, glob, shutil, time
 
-RAIZ = "/content/drive/MyDrive/CAMBIAME"          # ← REVISA: tu carpeta del proyecto en Drive
-VIDEO_VILLA = "data/raw/partido.mp4"              # ← REVISA: el config dice partido.mp4;
-                                                  #   no está en local, así que no he podido
-                                                  #   verificar cómo se llama en tu Drive
-VIDEO_BENJA = "data/raw/benja_gredos_p1_20min.mp4"   # este sí lo he verificado
+RAIZ = "/content/drive/MyDrive/tactical-football-vision-data"
 
-for sub in ("data/raw", "data/tracking", "data/tracking_benja"):
-    os.makedirs(sub, exist_ok=True)
-!ln -sf {RAIZ}/data/raw/* data/raw/ 2>/dev/null
-!ln -sf {RAIZ}/data/tracking/*.pkl data/tracking/ 2>/dev/null
-!ln -sf {RAIZ}/data/tracking_benja/*.pkl data/tracking_benja/ 2>/dev/null
+# Vídeos: de Drive a disco LOCAL de Colab. Nunca se leen enlazados.
+VIDEOS = {
+    "/content/villa.mp4": f"{RAIZ}/videos/raw/alevinA_casarrubuelos_f11_fijo_p1.mp4",
+    "/content/benja.mp4": f"{RAIZ}/videos/raw/benja_gredos_p1_20min.mp4",
+}
+for local, origen in VIDEOS.items():
+    if os.path.exists(local):
+        print(f"ya estaba: {local} ({os.path.getsize(local)/1e9:.2f} GB)")
+        continue
+    if not os.path.exists(origen):
+        print(f"❌ NO existe en Drive: {origen}")
+        continue
+    t = time.time()
+    shutil.copy(origen, local)
+    print(f"copiado {local}  {os.path.getsize(local)/1e9:.2f} GB  en {time.time()-t:.0f}s")
 
-# Parar AQUÍ si algo falta, en vez de descubrirlo a mitad de la pasada
+# Cachés de detección: pequeños (~1 MB), se copian al repo
+os.makedirs("data/tracking", exist_ok=True)
+os.makedirs("data/tracking_benja", exist_ok=True)
+!cp {RAIZ}/data/tracking/cache_detecciones_v4.pkl data/tracking/ 2>/dev/null
+!cp {RAIZ}/data/tracking_benja/cache_detecciones_benja_v4.pkl data/tracking_benja/ 2>/dev/null
+
+VIDEO_VILLA, VIDEO_BENJA = "/content/villa.mp4", "/content/benja.mp4"
 faltan = [f for f in (VIDEO_VILLA, VIDEO_BENJA,
                       "data/tracking/cache_detecciones_v4.pkl",
                       "data/tracking_benja/cache_detecciones_benja_v4.pkl")
           if not os.path.exists(f)]
 if faltan:
-    print("❌ FALTAN, revisa las rutas antes de seguir:")
+    print("\n❌ FALTAN, revisa las rutas antes de seguir:")
     for f in faltan: print("   ", f)
-    print("\nEsto hay en data/raw:", glob.glob("data/raw/*"))
+    print("\nEn Drive hay:", glob.glob(f"{RAIZ}/*"))
 else:
-    print("✓ Todo en su sitio")
+    print("\n✓ Todo en su sitio, y los vídeos en disco local")
 ```
 
 **Celda 3 — generar los seis cachés**
@@ -94,15 +111,17 @@ for backbone in ("siglip", "dinov2", "resnet50"):
 !cp data/tracking/emb_*.pkl data/tracking_benja/emb_*.pkl {RAIZ}/data/embeddings/
 
 import pickle, glob
+esperado = {"villa": 10621, "benja": 12120}
 for f in sorted(glob.glob(f"{RAIZ}/data/embeddings/emb_*.pkl")):
     d = pickle.load(open(f, "rb"))
-    print(f"{f.split('/')[-1]:<28} {len(d['claves']):>6} recortes × {d['dims']:>4} dims"
-          f"  origen={d['cache_origen']}")
+    tramo = f.split("emb_")[1].split("_")[0]
+    ok = "✓" if len(d["claves"]) == esperado.get(tramo) else "❌"
+    print(f"{ok} {f.split('/')[-1]:<28} {len(d['claves']):>6} recortes × {d['dims']:>4} dims"
+          f"  origen={d['cache_origen']}  fps={d['fps']:.2f}")
 ```
 
-Los seis tienen que sumar **22.741 recortes** (10.621 villa + 12.120
-benja por backbone) y `origen` tiene que ser un caché `*_v4.pkl`. Si no
-cuadra, no bajes nada: algo se enlazó mal.
+Los seis tienen que dar ✓ (10.621 villa / 12.120 benja) y `origen` tiene
+que ser un caché `*_v4.pkl`. Si no cuadra, no bajes nada.
 
 ## Tiempo esperado
 
