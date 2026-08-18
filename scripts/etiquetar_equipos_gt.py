@@ -209,6 +209,9 @@ PLANTILLA = """<!doctype html>
  :root { color-scheme: dark }
  body { margin:0; background:#0f1115; color:#e8eaed;
         font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif }
+ .cambio { background:#2a2f3a; color:#9ca3af; border:1px solid #3a4150;
+          border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer; }
+ .cambio.on { background:#f472b6; color:#111; border-color:#f472b6; }
  header { position:sticky; top:0; z-index:5; background:#171a21;
           border-bottom:1px solid #262b36; padding:12px 20px;
           display:flex; align-items:center; gap:18px; flex-wrap:wrap }
@@ -268,10 +271,20 @@ function etiquetasDe(d) {
   return d.crops.map((_c, j) => resp[clave(d.id, j)]).filter(Boolean);
 }
 function completa(d) { return etiquetasDe(d).length === d.crops.length; }
+// Quimera DETECTADA por las etiquetas: los recortes cambian de equipo.
+// No ve la del mismo equipo — dos naranjas se etiquetan igual aunque
+// sean dos personas. Por eso existe el marcador manual de abajo.
 function esQuimera(d) {
   const e = etiquetasDe(d);
   return e.length > 1 && new Set(e).size > 1;
 }
+
+// Marcador MANUAL: "esta identidad cambia de persona". Es la única forma
+// de registrar la quimera entre compañeros del mismo equipo, que es la
+// que ninguna señal de color puede ver (caso #43 de Alex: todo naranja,
+// pero a mitad de la tira empieza a seguir a otro naranja).
+const cambia = {};
+function esCambio(d) { return !!cambia[d.id]; }
 
 function swatches(id, j, mini) {
   return OPCIONES.map(o =>
@@ -308,6 +321,9 @@ function pinta() {
         <b>#${d.id}</b>
         <span>${d.n_obs} obs · ${d.t_ini}-${d.t_fin}s · (${d.x_m}, ${d.y_m}) m</span>
         <span>predicción: ${d.prediccion}</span>${marca}
+        <button class="cambio ${esCambio(d) ? 'on' : ''}" data-cambio="${d.id}"
+                title="Marca si la tira cambia de persona (aunque vistan igual)">
+          ${esCambio(d) ? '✓ cambia de persona' : 'cambia de persona'}</button>
       </div>
       <div class="todos">todos =
         ${OPCIONES.map(o =>
@@ -328,6 +344,14 @@ function pinta() {
           <div class="swatches">${swatches(d.id, j, true)}</div>
         </div>`).join('')}</div>`;
     lista.appendChild(ficha);
+  });
+
+  lista.querySelectorAll('button[data-cambio]').forEach(b => {
+    b.onclick = () => {
+      const id = +b.dataset.cambio;
+      cambia[id] = !cambia[id];
+      const y = window.scrollY; pinta(); window.scrollTo(0, y);
+    };
   });
 
   lista.querySelectorAll('button[data-v]').forEach(b => {
@@ -357,11 +381,12 @@ function actualiza() {
 }
 
 document.getElementById('exportar').onclick = () => {
-  const filas = ['id_jugador,t_s,frame,x_m,y_m,equipo_real,prediccion,n_obs'];
+  const filas = ['id_jugador,t_s,frame,x_m,y_m,equipo_real,prediccion,n_obs,cambia_persona'];
   IDENTIDADES.forEach(d => d.crops.forEach((c, j) => {
     const r = resp[clave(d.id, j)];
     if (r) filas.push(
-      [d.id, c.t, c.f, c.x, c.y, r, d.prediccion, d.n_obs].join(','));
+      [d.id, c.t, c.f, c.x, c.y, r, d.prediccion, d.n_obs,
+       esCambio(d) ? 1 : 0].join(','));
   }));
   if (filas.length === 1) { alert('Todavía no has etiquetado nada.'); return; }
   const url = URL.createObjectURL(new Blob([filas.join('\\n')], {type:'text/csv'}));
