@@ -150,3 +150,43 @@ Consecuencia para el producto: si la apariencia recupera el fondo, se
 recupera cobertura donde hoy se pierde, sin cambiar de cámara. Está por
 demostrar de punta a punta —el benchmark mide la señal, no el resultado
 final—, pero justifica el camino B por sí solo.
+
+### El principio se cumplió a mi costa, dos turnos después de escribirlo
+
+19-ago-2026. Al meter siglip en la puerta de re-entrada hacía falta un
+umbral en distancia de coseno. Puse **0,35** —un número "razonable" para
+coseno— y barrí 0,15 / 0,25 / 0,35 / 0,50.
+
+Las cuatro filas salieron **idénticas**: mismos ids, misma cobertura,
+mismo IDF1, mismas quimeras. Y coincidían con la puerta desactivada.
+
+La distancia de coseno entre recortes **al azar** de este partido:
+
+| percentil | p1 | p25 | p50 | p75 | p99 |
+|---|---|---|---|---|---|
+| distancia | 0,038 | 0,090 | 0,125 | 0,168 | 0,294 |
+
+Con el p99 en 0,294, un umbral de 0,35 **no corta absolutamente nada**, y
+0,15 ya está por encima de la mediana de parejas aleatorias. Los umbrales
+útiles estaban en **0,04-0,13**, un orden de magnitud por debajo de mi
+"número razonable". Con 0,08 la puerta bate al color en quimeras, IDF1 y
+cobertura, y baja las quimeras del mismo equipo de 2 a 1.
+
+Dos lecciones, y la segunda es la que más vale:
+
+1. **El umbral no se hereda ni se estima: se deriva de la distribución
+   de los datos.** Es literalmente lo que dice el principio de arriba, y
+   lo incumplí yo, dos turnos después de escribirlo. No por descuido
+   conceptual sino por lo fácil que es: "0,35 suena bien para coseno" es
+   un razonamiento que se cuela sin avisar.
+
+2. **Sospechar de cuatro filas idénticas.** Un barrido cuyos puntos dan
+   exactamente el mismo resultado no es un empate: es que el parámetro no
+   está haciendo nada. Sin ese reflejo, la conclusión que le habría dado a
+   Alex es "el embedding no aporta en la puerta" — falsa, y habría cerrado
+   la única vía que sí funciona. Es el mismo reflejo que salvó el
+   benchmark cuando la casilla decisoria tenía 3 parejas.
+
+Corolario práctico: **cualquier barrido debería comprobar que sus puntos
+producen resultados distintos** antes de interpretarlos. Si no los
+producen, el rango está mal elegido y la tabla no dice lo que parece.
