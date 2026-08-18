@@ -2833,3 +2833,43 @@ Con un matiz que no conviene perder: el embedding del punto 2 es el mismo
 que necesitan el 3 y el 4 (ver `docs/embedding_unico.md`), así que
 benchmarkear backbones **no** es trabajo tirado — solo que su primer
 beneficiario deja de ser la clasificación.
+
+---
+
+# EL BUG `A → otro`: dos causas, ninguna era la que dije (19-ago-2026)
+
+El diagnóstico del punto 1 dejó como error dominante del clasificador
+`A → otro` (27 obs) y yo apunté a "la regla de staff o el árbitro". **La
+regla de staff no tiene nada que ver**: las cinco identidades afectadas
+están DENTRO del campo (0,00 m fuera, con tolerancia de 2 m).
+
+Las causas son dos, y distintas entre sí:
+
+## 1. Falso positivo del catálogo arbitral (id 40, el gordo)
+
+Un jugador real del equipo A, con 110 observaciones en el centro del
+campo (x 43-50, y 20-38), lo marca `identificar_arbitros` como árbitro.
+
+La regla de conflicto del catálogo existe y funciona, pero protege al
+**prototipo** del equipo: desactiva un arquetipo si la equipación media
+de A o B cae dentro. Lo que no cubre es la **dispersión alrededor del
+prototipo** — un jugador concreto cuyo color se aparta lo suficiente
+puede caer en un arquetipo que no choca con la media de su equipo.
+
+Arreglo a medir: exigir además que la identidad esté más lejos de A y B
+que cierto margen antes de aceptar el arquetipo. Es decir, que el
+catálogo solo mande cuando el color NO se parece a ningún equipo.
+
+## 2. El prototipo `otro` absorbe identidades cortas (ids 22, 31, 53, 76)
+
+7, 14, 16 y **1** observación respectivamente. El fit produce un
+prototipo `otro` (contra lo que decía una nota antigua sobre el v4pre) y
+las medias ruidosas de identidades cortas caen ahí.
+
+Arreglo a medir: mínimo de observaciones para poder asignar `otro`. Con
+una sola observación la media de color es ruido, y forzar la elección
+entre A y B acierta el 50 % por azar en vez del 0 % actual.
+
+Ninguno de los dos está implementado: son fallos de menos del 9 % de los
+fallos totales (el punto 1 dice que el 85-90 % es asociación), así que
+van por detrás del tracker. Quedan apuntados con su arreglo.

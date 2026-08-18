@@ -92,3 +92,33 @@ fases, del consumidor más barato al más caro:
    riesgo 2 se haya medido y salga favorable.
 3. **Asociación con apariencia** — el único que exige cobertura total y
    el único caro. Solo si los dos anteriores ganan.
+
+---
+
+## PRINCIPIO DE ARQUITECTURA: un embedding, un umbral por consumidor
+
+Es el caso #43 de Alex convertido en diseño.
+
+**Las tres tareas quieren invariancias OPUESTAS.** Clasificar equipos
+quiere que dos compañeros distintos estén CERCA (misma equipación).
+Asociar y partir quimeras quiere que estén LEJOS (son personas
+distintas). No es una diferencia de calibración: es el objetivo
+contrario.
+
+De ahí la regla, que vale para cualquier señal de apariencia que
+añadamos, no solo para el embedding:
+
+> **Se comparte la representación, NUNCA el umbral.** Cada consumidor
+> —asociación, partición de quimeras, clasificación de equipo— declara y
+> calibra el suyo por separado, y ninguno hereda el de otro.
+
+Y su corolario, que es el que se olvida:
+
+> Un umbral copiado de otro consumidor **no falla: acierta menos**. No
+> hay excepción, no hay traza, no hay test que salte. Es exactamente cómo
+> se coló el fallo de la feature v2.
+
+El caso #43 muestra el filo por el otro lado: la puerta de re-entrada
+compara color y por eso es ciega a dos compañeros del mismo equipo. Un
+embedding puede verlos —está por medir— pero solo si quien lo consulta
+usa el umbral fino de identidad, no el grueso de equipación.
