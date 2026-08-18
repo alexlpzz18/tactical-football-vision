@@ -64,6 +64,11 @@ class ParametrosPuertaReentrada:
     # 1,2 es el veto adoptado: aquí se parte de algo MÁS exigente porque
     # el punto de re-entrada ya es sospechoso de por sí.
     color_max_dist: float = 0.9
+    # Umbral cuando la firma es un EMBEDDING, en distancia de coseno.
+    # Escala distinta a la del color: no se puede heredar el 0.9 (ver el
+    # principio de docs/embedding_unico.md — se comparte la
+    # representación, nunca el umbral).
+    emb_max_dist: float = 0.35
     # Observaciones a cada lado para calcular la firma. Con una sola
     # muestra la firma es ruido puro y la puerta cortaría al azar.
     min_obs_firma: int = 3
@@ -73,12 +78,33 @@ class ParametrosPuertaReentrada:
         return cls(**(d or {}))
 
 
-def _firma(colores: dict, pares: list[tuple[int, int]]) -> np.ndarray | None:
-    """Color medio de unas observaciones, en la escala v1 (bloque HS)."""
+def _firma(colores: dict, pares, embeddings=None) -> np.ndarray | None:
+    """Firma media de unas observaciones.
+
+    Con `embeddings` usa el embedding de apariencia; si no, el bloque HS
+    del color. El embedding se adopta porque el color es CIEGO al caso
+    que más duele —dos compañeros con la misma equipación, el #43 de
+    Alex— y porque está medido que a menos de 20 px el HSV da 0,000
+    separando ni siquiera equipos, mientras siglip da 0,200 reconociendo
+    personas.
+    """
+    if embeddings is not None:
+        muestras = [embeddings[p] for p in pares if p in embeddings]
+        return np.mean(muestras, axis=0) if muestras else None
+
     from src.team_classification.feature_v2 import parte_camiseta_hs
 
     muestras = [parte_camiseta_hs(colores[p]) for p in pares if p in colores]
     return np.mean(muestras, axis=0) if muestras else None
+
+
+def _distancia(a, b, coseno: bool) -> float:
+    """Coseno para embeddings, euclídea para el color."""
+    if coseno:
+        na = float(np.linalg.norm(a)) + 1e-9
+        nb = float(np.linalg.norm(b)) + 1e-9
+        return float(1.0 - float(a @ b) / (na * nb))
+    return float(np.linalg.norm(a - b))
 
 
 def _observaciones(identidad: list[Tracklet]) -> list[tuple[int, tuple[int, int]]]:
@@ -93,6 +119,7 @@ def aplicar_puerta_reentrada(
     colores: dict | None,
     dt: float,
     params: ParametrosPuertaReentrada | None = None,
+    embeddings: dict | None = None,
 ) -> list[list[Tracklet]]:
     """Parte las identidades cuyo color no case tras una pérdida real.
 
@@ -107,8 +134,11 @@ def aplicar_puerta_reentrada(
         Las identidades, con las sospechosas partidas en dos o más.
     """
     params = params or ParametrosPuertaReentrada()
-    if not params.activa or colores is None:
+    fuente = embeddings if embeddings is not None else colores
+    if not params.activa or fuente is None:
         return identidades
+    usa_emb = embeddings is not None
+    umbral = params.emb_max_dist if usa_emb else params.color_max_dist
 
     hueco_min_frames = max(1, int(round(params.hueco_min_s / dt))) if dt > 0 else 1
     salida: list[list[Tracklet]] = []
@@ -127,10 +157,10 @@ def aplicar_puerta_reentrada(
             previas = [p for _f, p in obs[ini:k]]
             fin = k + _VENTANA_FIRMA
             siguientes = [p for _f, p in obs[k:fin]]
-            antes = _firma(colores, previas)
-            despues = _firma(colores, siguientes)
-            n_antes = sum(1 for p in previas if p in colores)
-            n_desp = sum(1 for p in siguientes if p in colores)
+            antes = _firma(colores, previas, embeddings)
+            despues = _firma(colores, siguientes, embeddings)
+            n_antes = sum(1 for p in previas if p in fuente)
+            n_desp = sum(1 for p in siguientes if p in fuente)
             if (
                 antes is None
                 or despues is None
@@ -140,7 +170,7 @@ def aplicar_puerta_reentrada(
                 # Sin firma fiable la puerta se abstiene: cortar a ciegas
                 # es exactamente el error que costó los tres negativos.
                 continue
-            if float(np.linalg.norm(antes - despues)) > params.color_max_dist:
+            if _distancia(antes, despues, usa_emb) > umbral:
                 cortes.append(obs[k][0])
 
         if not cortes:
