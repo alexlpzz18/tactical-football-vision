@@ -2758,3 +2758,78 @@ Detalle que un test cazó: hay que recortar sobre una **copia** del frame.
 Sin ella, la marca de un jugador se quedaría pintada en los recortes de
 todos los demás del mismo instante — un fallo silencioso que habría
 envenenado el etiquetado sin dar ningún error.
+
+---
+
+# PUNTO 1: ¿CLASIFICADOR O TRACKER? (19-ago-2026)
+
+`scripts/diagnostico_fallos_clasificacion.py`. Un jugador sale con el
+equipo equivocado por dos motivos con soluciones distintas:
+
+- **(a) identidad PURA mal clasificada**: el tracker acertó (una
+  identidad = una persona) y falló el color. Se arregla clasificando
+  mejor.
+- **(b) identidad CONTAMINADA**: la identidad mezcla a dos personas, así
+  que **no existe etiqueta correcta** — la mitad de sus observaciones van
+  a estar mal se elija lo que se elija. Ningún clasificador lo salva.
+
+Criterio acordado: si más del 30 % cae en (b), la prioridad es el
+tracker.
+
+## Resultado en Villaviciosa (v4 ajustado + puerta)
+
+De 1.706 observaciones casadas con el GT, **418 mal etiquetadas (24,5 %)**.
+Reparto según cuán exigente sea la definición de "contaminada" —qué
+fracción de la identidad tiene que ser la segunda persona:
+
+| umbral | puras | contaminadas | (a) | (b) |
+|---|---|---|---|---|
+| 0 % (una obs suelta basta) | 21 | 38 | 8,6 % | **91,4 %** |
+| 5 % | 26 | 33 | 10,8 % | **89,2 %** |
+| 10 % | 33 | 26 | 15,1 % | **84,9 %** |
+| 20 % | 39 | 20 | 47,1 % | **52,9 %** |
+
+**El veredicto aguanta en todos**: incluso con la definición más estricta
+—donde la segunda persona tiene que ser el 20 % de la identidad— la
+asociación explica más de la mitad. En el rango razonable (5-10 %) es del
+85-89 %.
+
+La sensibilidad importaba: con el umbral en 0, **una sola observación**
+casada con otra persona marca la identidad como contaminada, y eso podía
+ser ruido de asociación en un cruce en vez de una quimera de verdad. No
+lo era.
+
+Lectura del umbral 20 %: el salto de (a) a 47 % no es que el clasificador
+empeore, es que a esa exigencia las identidades con contaminación del
+10-19 % pasan a contarse como "puras" **arrastrando sus errores**. Por eso
+la franja creíble es 5-10 %, no 20.
+
+## Qué aporta ya la puerta de re-entrada
+
+| | obs mal | % del total |
+|---|---|---|
+| sin puerta | 448 | 26,3 % |
+| con puerta | 418 | 24,5 % |
+
+Ahorra 30 observaciones, un 7 % relativo. Positivo pero modesto: confirma
+que la puerta va en la dirección correcta y que su techo está donde ya se
+midió (ciega al cruce entre compañeros del mismo equipo).
+
+## Consecuencia para el orden del trabajo
+
+**La prioridad es el TRACKER.** El clasificador de color, sobre
+identidades limpias, solo se equivoca en el 8,6 % de sus observaciones —y
+su confusión dominante es `A → otro` (27 obs), que huele a regla de staff
+o árbitro, no a color mal medido.
+
+Eso reordena los puntos pendientes:
+
+- **Punto 4 (tracker con apariencia) y punto 3 (partir quimeras con
+  GTA-Link) suben**: atacan el 85-90 % del problema.
+- **Punto 2 (embeddings en vez de HSV) baja**: por bueno que sea el
+  clasificador, su techo de mejora aquí es ~9 % de los fallos.
+
+Con un matiz que no conviene perder: el embedding del punto 2 es el mismo
+que necesitan el 3 y el 4 (ver `docs/embedding_unico.md`), así que
+benchmarkear backbones **no** es trabajo tirado — solo que su primer
+beneficiario deja de ser la clasificación.
