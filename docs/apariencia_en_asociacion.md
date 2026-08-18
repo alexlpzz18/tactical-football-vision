@@ -169,3 +169,70 @@ perdidos) y la calibración de `sigma_apariencia` contra el banco. Sin esa
 calibración los valores de α de la tabla son plausibles pero no están
 validados: a Δt = 1 s ya baja a 0,31 incluso cerca de la cámara, que
 puede ser demasiado agresivo.
+
+## Calibración contra el banco: el camino B PIERDE (19-ago-2026)
+
+`scripts/calibrar_coste_mixto.py`, con siglip y las dos constantes
+barridas.
+
+| sigma_app | v_incert | nIds | cob. | conc | IDF1 | tasa | quim |
+|---|---|---|---|---|---|---|---|
+| 0,5 | 0,5 | 88 | 0,581 | 24 | 0,449 | 0,142 | 10 |
+| 0,5 | 1,5 | 84 | 0,585 | 25 | 0,440 | 0,166 | 10 |
+| 0,5 | 3,0 | 77 | 0,582 | 27 | 0,355 | 0,220 | 19 |
+| 1,0 | 0,5 | 91 | 0,590 | 24 | 0,447 | 0,139 | 12 |
+| 1,0 | 1,5 | 91 | 0,566 | 25 | 0,399 | 0,171 | 12 |
+| 1,0 | 3,0 | 77 | 0,581 | 29 | 0,348 | 0,244 | 18 |
+| **2,0** | **0,5** | 91 | 0,605 | 24 | 0,426 | 0,142 | **8** |
+| 2,0 | 1,5 | 91 | 0,601 | 25 | 0,392 | 0,156 | 13 |
+| 2,0 | 3,0 | 76 | 0,574 | 27 | 0,387 | 0,202 | 16 |
+| **REFERENCIA** (ByteTrack + puerta) | | **64** | **0,619** | **21** | **0,546** | — | **3** |
+
+**Ninguna combinación cumple el criterio, y ninguna se acerca.** La mejor
+del barrido da 8 quimeras frente a 3, con IDF1 0,426 frente a 0,546.
+
+## No es un problema de calibración
+
+Las nueve combinaciones quedan entre 0,348 y 0,449 de IDF1, muy por
+debajo del 0,546 de la referencia. Un óptimo escondido entre esos puntos
+no explicaría una brecha así: **la diferencia es algorítmica**, y hay
+razones concretas:
+
+1. **ByteTrack asocia en DOS pasadas** —primero las detecciones de alta
+   confianza, luego las dudosas contra lo que quedó sin emparejar— y esa
+   es literalmente su aportación. Mi implementación hace una sola pasada.
+2. **ByteTrack usa filtro de Kalman**; aquí la predicción es lineal desde
+   la velocidad suavizada del tracklet, mucho más pobre tras un hueco.
+3. La gestión de tracks perdidos de la librería está más trabajada que un
+   simple "si lleva más de X segundos, muere".
+
+`v_incert = 0,5` sí resulta mejor que 1,5 en todas las filas, así que la
+sospecha de que 1,5 era demasiado agresivo era correcta. Pero corregirlo
+no salva la brecha.
+
+## Decisión: NO se adopta, y el diseño se replantea
+
+El camino B, tal como estaba planteado —**sustituir** ByteTrack por una
+asociación propia— pierde. La lectura honesta es que reimplementar desde
+cero una pieza madura, y ganarle, es más caro de lo que parecía cuando lo
+propuse; el aviso estaba escrito en el diseño original ("hay que estar
+dispuesto a perder un tiempo largo antes de recuperar el nivel actual") y
+se ha cumplido.
+
+Lo que **sí** está demostrado por otra vía:
+
+- La señal de apariencia existe y es fuerte donde hace falta (siglip
+  0,200 vs 0,018 del HSV en la re-entrada de recortes pequeños).
+- Metida como **puerta sobre ByteTrack**, ya baja las quimeras de 5 a 3
+  sin degradar nada.
+
+O sea: la apariencia es buena, sustituir la asociación no. El camino
+productivo es **añadir apariencia a la asociación que ya funciona** —por
+ejemplo, sustituyendo la firma de color de la puerta de re-entrada por el
+embedding de siglip, que es exactamente donde el benchmark dice que gana
+por once veces— en vez de reescribir la etapa entera.
+
+El módulo se queda en el repo, con sus tests: la función de coste y el
+radio físico son correctos y reutilizables si algún día se ataca la
+asociación con más tiempo (dos pasadas, Kalman) o si aparece una
+implementación con licencia compatible.
