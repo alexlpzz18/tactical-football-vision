@@ -78,6 +78,18 @@ class ParametrosPuertaReentrada:
     # 20-30 px el 17-21 %, pero por debajo de eso la señal se degrada—,
     # así que una observación de 40 px debería pesar más que una de 14.
     ponderar_por_tamano: bool = False
+    # Mirar TAMBIÉN los cruces, no solo las re-entradas.
+    #
+    # La restricción "solo re-entradas" venía de que la firma era COLOR, y
+    # con color mirar un cruce entre compañeros es inútil: visten igual,
+    # no hay nada que comparar. Con un embedding sí hay señal, así que la
+    # restricción sobra — era herencia de la señal antigua, no una
+    # propiedad del problema.
+    #
+    # Y la medición lo pedía: de los 106 saltos de apariencia sobre el
+    # umbral en el benjamín, casi todos tienen hueco de 0,1-0,3 s, o sea
+    # son cruces que la puerta ni examinaba.
+    mirar_cruces: bool = False
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosPuertaReentrada":
@@ -133,6 +145,7 @@ def aplicar_puerta_reentrada(
     params: ParametrosPuertaReentrada | None = None,
     embeddings: dict | None = None,
     alturas: dict | None = None,
+    cruces: set | None = None,
 ) -> list[list[Tracklet]]:
     """Parte las identidades cuyo color no case tras una pérdida real.
 
@@ -163,7 +176,15 @@ def aplicar_puerta_reentrada(
         cortes = []
         for k in range(1, len(obs)):
             salto = obs[k][0] - obs[k - 1][0]
-            if salto < hueco_min_frames * 1.5:
+            es_reentrada = salto >= hueco_min_frames * 1.5
+            # OJO: obs[k] es (frame, (frame, det_idx)); la clave del
+            # conjunto de cruces es (frame, det_idx), o sea obs[k][1].
+            # Comparar obs[k] no casaba NUNCA y la extensión no hacía
+            # nada — lo cazaron dos filas idénticas en el barrido.
+            es_cruce = (
+                params.mirar_cruces and cruces is not None and obs[k][1] in cruces
+            )
+            if not (es_reentrada or es_cruce):
                 continue
             n_reentradas += 1
             ini = max(0, k - _VENTANA_FIRMA)

@@ -3,6 +3,7 @@ rutas:
   ground_truth: data/annotations/ground_truth_tracking/annotations.xml
   homografia: data/calibracion/homografia.npy
   cache_colores: data/tracking/cache_colores_v4.pkl
+  cache_embeddings: data/tracking/emb_villa_siglip.pkl
 alineacion:
   frame_offset: 7500
   paso_gt: 15

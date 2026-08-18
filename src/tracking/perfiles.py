@@ -173,13 +173,18 @@ def _perfil_bytetrack(
         for e in cache
         for i, d in enumerate(e["dets"])
     }
+    params_puerta = ParametrosPuertaReentrada.desde_dict(
+        cfg_tracking.get("puerta_reentrada")
+    )
+    cruces = _detecciones_en_cruce(cache) if params_puerta.mirar_cruces else None
     identidades = aplicar_puerta_reentrada(
         identidades,
         colores,
         dt,
-        ParametrosPuertaReentrada.desde_dict(cfg_tracking.get("puerta_reentrada")),
+        params_puerta,
         embeddings=embeddings,
         alturas=alturas,
+        cruces=cruces,
     )
     resolucion = cfg_tracking.get("_resolucion")  # lo inyecta el processor
     return coser_por_pureza(
@@ -190,6 +195,33 @@ def _perfil_bytetrack(
         jitter_px=_jitter(cfg_tracking, uso="cosido"),
         dt=dt,
     )
+
+
+def _detecciones_en_cruce(cache: list[dict], iou_min: float = 0.1) -> set:
+    """Claves (frame, det_idx) cuya caja se solapa con otra del mismo frame.
+
+    Es donde la geometría deja de distinguir a dos cuerpos, y por tanto
+    donde el emparejamiento por IoU se juega a cara o cruz.
+    """
+
+    def iou(a, b):
+        x1, y1 = max(a[0], b[0]), max(a[1], b[1])
+        x2, y2 = min(a[2], b[2]), min(a[3], b[3])
+        inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+        if inter <= 0:
+            return 0.0
+        ua = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+        return inter / ua if ua > 0 else 0.0
+
+    en_cruce = set()
+    for e in cache:
+        cajas = [d[2:6] for d in e["dets"]]
+        for i, ci in enumerate(cajas):
+            for j, cj in enumerate(cajas):
+                if i != j and iou(ci, cj) > iou_min:
+                    en_cruce.add((e["frame_idx"], i))
+                    break
+    return en_cruce
 
 
 def _jitter(cfg_tracking: dict, uso: str = "corte") -> float:

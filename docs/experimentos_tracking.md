@@ -2967,3 +2967,88 @@ el color sino un embedding que sí distingue compañeros.
 Primera versión de este script: la columna "¿la puerta cortó?" se
 calculaba solo con la distancia y decía "sí" en saltos que la puerta ni
 examina. Habría mandado a Alex a mirar los sitios equivocados.
+
+---
+
+# EXTENDER LA PUERTA A LOS CRUCES: medido y RECHAZADO (19-ago-2026)
+
+El razonamiento que lo motivaba es correcto y conviene dejarlo escrito:
+**la restricción "solo re-entradas" venía de que la firma era COLOR**, y
+con color mirar un cruce entre compañeros es inútil —visten igual, no hay
+nada que comparar—. Con un embedding sí hay señal, así que la restricción
+era herencia de la señal antigua, no una propiedad del problema.
+
+Implementado (`mirar_cruces`) y medido en las dos patas.
+
+## Villaviciosa (la única pata con GT de identidad)
+
+| variante | nIds | cob. | conc | IDF1 | quim | mismo eq |
+|---|---|---|---|---|---|---|
+| **solo re-entradas** | 68 | 0,623 | 21 | 0,553 | **3** | 1 |
+| re-entradas + cruces | 70 | 0,623 | 21 | 0,553 | **4** | 1 |
+| + cruces, umbral 0,06 | 86 | 0,627 | 21 | 0,543 | 4 | 1 |
+| + cruces, umbral 0,10 | 64 | 0,612 | 21 | 0,537 | 3 | 1 |
+
+**Empeora**: las quimeras suben de 3 a 4 y las del mismo equipo se quedan
+en 1. Cortar en los cruces añade identidades sin comprar pureza.
+
+## Benjamín — y por qué su número NO se puede leer solo
+
+| variante | nIds | cortes | conc | acc equipos |
+|---|---|---|---|---|
+| emb 0,08 solo re-entradas | **79** | 10 | 17,4 | 0,796 |
+| emb 0,08 + cruces | 91 | 36 | 17,4 | 0,822 |
+| emb 0,06 + cruces | **136** | 132 | 17,4 | **0,840** |
+
+Aquí la accuracy sube mucho… **y las identidades también**: 136 para ~15
+personas en campo. No es coincidencia: la accuracy se mide **por
+identidad**, así que trocear una identidad sucia en trozos limpios la
+sube automáticamente. **La métrica premia fragmentar**, y en el benjamín
+no hay cobertura ni quimeras que compensen ese sesgo porque no hay GT
+posicional.
+
+Dicho de otro modo: el 0,840 no dice que el tracking sea mejor, dice que
+hay más identidades y más cortas. En Villaviciosa, donde sí se puede
+medir pureza y cobertura a la vez, la misma variante empeora.
+
+## Decisión: NO se adopta
+
+`mirar_cruces: false`. La única pata capaz de juzgarlo dice que sube las
+quimeras, y la otra tiene una métrica que no puede distinguir "mejor" de
+"más troceado".
+
+Queda implementado y con su flag: si algún día hay GT de identidad del
+benjamín, la pregunta se puede reabrir con datos que sí decidan.
+
+## Un fallo que cazó el comprobador de puntos idénticos
+
+La primera medición dio "solo re-entradas" y "con cruces" **idénticas**.
+No era un hallazgo: `obs[k]` es `(frame, (frame, det_idx))` y la clave
+del conjunto de cruces es `(frame, det_idx)`, así que la comparación no
+casaba **nunca** y la extensión no hacía nada. Tras arreglarlo, 4 de 4
+puntos distintos — y el resultado real es el negativo de arriba.
+
+Es la segunda vez en dos sesiones que "todas las filas iguales" tapa un
+bug en vez de un empate. El reflejo va camino de ser la comprobación más
+rentable del proyecto.
+
+---
+
+# LIMITACIÓN ANOTADA: el benjamín no tiene GT de identidad
+
+Para que no se nos olvide, porque condiciona toda métrica que salga de
+esa pata:
+
+1. **Las quimeras del mismo equipo no se pueden contar allí.** Requieren
+   identidad etiquetada por posición y tiempo. El caso #43 de Alex fue
+   una observación visual, no un dataset.
+2. **La accuracy de equipos sale del traslado con pérdida** sobre un
+   mini-GT indexado por ids del v4pre: solo 35 de ~80 identidades
+   encuentran equivalente.
+3. **Esa accuracy premia fragmentar**, como acaba de verse con los
+   cruces.
+
+Consecuencia: si la pata del benjamín se vuelve la métrica que decide
+—y va camino, porque el F7 es el caso objetivo del producto— **hay que
+hacer un GT de identidad del benjamín**, indexado por posición y tiempo,
+no por id del sistema.

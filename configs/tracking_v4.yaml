@@ -274,6 +274,18 @@ presets:
 # recoloque bien los trozos.
 puerta_reentrada:
   activa: true
-  color_max_dist: 0.9
+  # Firma por EMBEDDING (siglip), adoptada por Alex el 19-ago-2026 tras
+  # ganar en las dos patas. Frente a la puerta de color:
+  #   quimeras 4→3, del MISMO equipo 2→1, IDF1 0.542→0.553,
+  #   cobertura 0.622→0.623, concurrencia igual (21).
+  # La tasa de IDSW sube 0.001 — ruido, y la excepción existe para
+  # bloquear degradaciones reales, no milésimas (decisión de Alex).
+  emb_max_dist: 0.08
+  color_max_dist: 0.9      # fallback si no hay caché de embeddings
   hueco_min_s: 0.5
   min_obs_firma: 3
+  # Medido: no cambia NINGUNA decisión. Fuera, no paga su complejidad.
+  ponderar_por_tamano: false
+  # Medido y RECHAZADO en Villaviciosa: mirar también los cruces sube las
+  # quimeras de 3 a 4. Ver docs/experimentos_tracking.md.
+  mirar_cruces: false

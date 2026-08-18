@@ -39,6 +39,7 @@ from src.tracking.interpolacion import (  # noqa: E402
     identidades_a_trayectorias,
     interpolar_trayectorias,
 )
+from src.tracking.perfiles import _detecciones_en_cruce  # noqa: E402
 from src.tracking.puerta_reentrada import (  # noqa: E402
     ParametrosPuertaReentrada,
     aplicar_puerta_reentrada,
@@ -63,7 +64,7 @@ def main() -> None:
     p.add_argument(
         "--eje",
         default="umbral",
-        choices=["umbral", "hueco", "min_obs", "tamano"],
+        choices=["umbral", "hueco", "min_obs", "tamano", "cruces"],
     )
     args = p.parse_args()
     logging.basicConfig(level=logging.CRITICAL)
@@ -93,6 +94,19 @@ def main() -> None:
         variantes = [
             (f"min_obs {m}", {**fijos, "min_obs_firma": m}) for m in (1, 2, 3, 5, 8)
         ]
+    elif args.eje == "cruces":
+        variantes = [
+            ("solo re-entradas", {**fijos, "mirar_cruces": False}),
+            ("re-entradas + cruces", {**fijos, "mirar_cruces": True}),
+            (
+                "re-entradas + cruces 0.06",
+                {**fijos, "mirar_cruces": True, "emb_max_dist": 0.06},
+            ),
+            (
+                "re-entradas + cruces 0.10",
+                {**fijos, "mirar_cruces": True, "emb_max_dist": 0.10},
+            ),
+        ]
     else:
         variantes = [
             ("sin ponderar", {**fijos, "ponderar_por_tamano": False}),
@@ -107,13 +121,17 @@ def main() -> None:
     print("-" * len(cab))
     filas = []
     for nombre, kw in variantes:
+        pp = ParametrosPuertaReentrada(**kw)
         ids = aplicar_puerta_reentrada(
             base,
             banco.colores,
             banco.dt,
-            ParametrosPuertaReentrada(**kw),
+            pp,
             embeddings=emb,
             alturas=alturas,
+            cruces=(
+                _detecciones_en_cruce(banco.datos["cache"]) if pp.mirar_cruces else None
+            ),
         )
         ids = coser_por_pureza(
             ids,
