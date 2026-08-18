@@ -195,3 +195,98 @@ que subir la densidad del GT en recortes pequeños. Dos vías:
 
 La 2 es barata y no pide más trabajo manual. Es lo que propongo antes de
 declarar nada sobre el bin pequeño.
+
+---
+
+# RESULTADO CON PSEUDO-GT (19-ago-2026) — y siglip NO estaba descartado
+
+## El pseudo-GT y su blindaje
+
+El GT cubre 1 de cada 15 frames, así que solo 458 de 10.621 recortes
+tenían etiqueta y el bin pequeño se quedaba en 3 parejas. Se densifica
+usando las identidades del tracker, con dos cautelas:
+
+1. **La pureza se verifica contra el GT, nunca contra el propio tracker.**
+   Si nos fiáramos de "es pura porque el tracker no la partió",
+   mediríamos el embedding sobre parejas que el tracker ya sabía
+   emparejar: sesgo circular a favor de lo que ya funciona. Lo pidió Alex
+   explícitamente y es el punto delicado de todo el montaje.
+2. **Las parejas cruzan fragmentos.** Cuando dos identidades distintas
+   resultan ser la misma persona del GT, sus recortes se emparejan entre
+   sí — y esas son justo las parejas que **el tracker FALLÓ**, las
+   re-entradas tras un hueco. Sin esto los positivos serían solo los
+   aciertos del tracker y el bin de 2-5 s estaría sesgado hacia lo fácil.
+
+Supervivientes del filtro: **29 identidades puras verificadas**, 14
+contaminadas descartadas, 44 sin GT que las juzgue.
+
+| bin | recortes | personas | parejas a 2-5 s | (antes) |
+|---|---|---|---|---|
+| **<20 px** | 263 | 12 | **788** | 3 |
+| 20-30 px | 3.707 | 18 | 71.221 | 274 |
+| >30 px | 1.325 | 12 | 24.425 | 285 |
+
+5.295 recortes etiquetados frente a 458. La casilla que decide pasa de 3
+parejas a 788: ya se puede aplicar el criterio.
+
+## La tabla
+
+TPR @ FPR 1 % sobre parejas de MISMO equipo:
+
+| recortes | backbone | <1 s | **2-5 s** | >5 s | dist. equipo |
+|---|---|---|---|---|---|
+| **<20 px** | **siglip** | 0,438 | **0,200** | 0,047 | 0,246 |
+| | resnet50 | 0,418 | 0,149 | 0,039 | 0,197 |
+| | dinov2 | 0,253 | 0,106 | 0,051 | 0,208 |
+| | HSV (control) | 0,231 | **0,018** | 0,005 | 0,000 |
+| **20-30 px** | dinov2 | 0,429 | 0,211 | 0,137 | 0,156 |
+| | siglip | 0,413 | 0,170 | 0,083 | 0,204 |
+| | resnet50 | 0,420 | 0,162 | 0,055 | 0,314 |
+| | HSV (control) | 0,247 | 0,074 | 0,067 | 0,192 |
+| **>30 px** | dinov2 | 0,452 | 0,116 | 0,080 | 0,058 |
+| | resnet50 | 0,476 | 0,054 | 0,023 | 0,024 |
+| | siglip | 0,426 | 0,050 | 0,015 | 0,048 |
+| | HSV (control) | 0,164 | 0,039 | 0,037 | **0,665** |
+
+## Veredicto: gana siglip, y hay que retirar lo que dije antes
+
+**siglip 0,200 frente a 0,018 del HSV: once veces mejor** en la casilla
+que decide. Estable con tres semillas distintas (0,200 / 0,194 / 0,182),
+así que no es ruido del muestreo.
+
+**Y contradice lo que yo había concluido con el GT disperso**, donde
+siglip empataba con el control (0,079 vs 0,082) y lo di por descartado.
+Estaba midiendo con 274 parejas en el bin contiguo y ninguna en el
+decisivo. La conclusión correcta es la de ahora, con 250 veces más
+parejas — pero el episodio deja claro que **una tabla con casillas
+mal pobladas no es "un poco menos fiable": puede invertir el orden.**
+
+Nota para no sobreinterpretar: siglip gana en el bin pequeño y dinov2 en
+el mediano (0,211 vs 0,170). Si el consumidor final trabaja sobre todo
+con recortes de 20-30 px —que son la mayoría— la elección merece
+revisarse. Para la re-entrada en el fondo del campo, que es el caso que
+duele, manda siglip.
+
+## Hallazgo que se mantiene: color y embedding no compiten
+
+- **El color separa EQUIPOS**: HSV 0,665 en "distinto equipo" con
+  recortes grandes, frente a 0,058 del mejor embedding.
+- **El embedding separa PERSONAS**: siglip 0,200 frente a 0,018 del HSV
+  en la casilla difícil.
+
+Cada representación es buena en su pregunta, y son preguntas opuestas.
+Confirma el principio de `docs/embedding_unico.md`: **el HSV se queda en
+el clasificador de equipos; la apariencia va al tracker.**
+
+Un matiz que aparece solo aquí: con recortes <20 px el HSV da **0,000**
+en "distinto equipo". A esa escala el color no distingue ni equipos, y
+los embeddings (0,197-0,246) son lo único que queda.
+
+## Lección de método
+
+Un criterio escrito a ciegas —que es lo correcto para no elegir la tabla
+que nos gusta— **también hay que comprobar que tiene datos suficientes en
+la casilla que decide, antes de dejar que dictamine.** Escribí el
+criterio sin mirar la densidad del GT, y su primer veredicto fue matar la
+línea de la apariencia con 3 parejas. Es la segunda vez que una casilla
+mal poblada casi cierra una vía buena.

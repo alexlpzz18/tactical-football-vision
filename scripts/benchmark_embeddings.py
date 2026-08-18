@@ -49,6 +49,85 @@ MAX_PAREJAS = 60_000
 SEMILLA = 0
 
 
+def pseudo_gt(cfg, gt, umbral, claves):
+    """Etiqueta por identidad, con las identidades VERIFICADAS PURAS.
+
+    El GT solo cubre 1 de cada 15 frames, así que casan 458 de 10.621
+    recortes y el bin pequeño se queda en 17. La densidad se sube usando
+    las identidades del tracker: si el GT confirma que una identidad es
+    UNA sola persona, entonces TODOS sus recortes son esa persona,
+    también los de frames sin GT.
+
+    Blindaje contra el sesgo circular (lo pidió Alex, y es el punto
+    delicado): la pureza se verifica contra el GT, **nunca** "es pura
+    porque el tracker lo dice". Si nos fiáramos del tracker,
+    mediríamos el embedding sobre parejas que el tracker ya sabía
+    emparejar, y saldría bien por construcción.
+
+    Y algo mejor todavía: cuando DOS identidades distintas resultan ser
+    la misma persona del GT, sus recortes se emparejan entre sí. Esas son
+    exactamente las parejas que el tracker FALLÓ — las re-entradas tras
+    un hueco, que es el caso que duele. Sin esto, los positivos serían
+    solo los aciertos del tracker y el bin de 2-5 s estaría sesgado hacia
+    lo fácil.
+    """
+    from src.tracking.perfiles import correr_perfil
+    from src.tracking.cache_io import cargar_cache
+    import pickle as _pk
+    import yaml as _yaml
+
+    datos = cargar_cache(cfg["rutas"]["cache"])
+    cfg_tr = _yaml.safe_load(open("configs/tracking_v4.yaml"))
+    with open(cfg["rutas"]["cache_colores"], "rb") as fh:
+        colores = _pk.load(fh)
+    identidades = correr_perfil(
+        datos["cache"],
+        datos["fps"],
+        datos["sample"],
+        cfg_tr,
+        perfil="bytetrack",
+        colores=colores,
+    )
+    persona, equipo = {}, {}
+    n_puras = n_impuras = n_sin_gt = 0
+    for ident in identidades:
+        claves_id, votos = [], {}
+        for tr in ident:
+            for pos, par in zip(tr.pos, tr.det_idxs):
+                claves_id.append(tuple(par))
+                g = gt.get(par[0])
+                if not g:
+                    continue
+                mejor, dmin, eq = None, umbral, None
+                for o in g:
+                    d = float(np.linalg.norm(np.asarray(o.pos) - np.asarray(pos)))
+                    if d < dmin:
+                        mejor, dmin, eq = o.obj_id, d, o.team
+                if mejor is not None:
+                    votos.setdefault(mejor, [0, eq])[0] += 1
+        if not votos:
+            n_sin_gt += 1
+            continue
+        if len(votos) > 1:
+            n_impuras += 1  # contaminada: NO sirve como pseudo-GT
+            continue
+        n_puras += 1
+        gid = next(iter(votos))
+        for c in claves_id:
+            persona[c] = gid
+            equipo[c] = str(votos[gid][1])
+    logger.info(
+        "Pseudo-GT: %d identidades PURAS verificadas contra el GT "
+        "(%d contaminadas descartadas, %d sin GT que las juzgue)",
+        n_puras,
+        n_impuras,
+        n_sin_gt,
+    )
+    per = np.array([persona.get(c) for c in claves], dtype=object)
+    eqs = np.array([equipo.get(c, "None") for c in claves], dtype=object)
+    return per, eqs
+
+
 def cargar_gt(cfg):
     gt = gt_a_por_frame(
         parsear_cvat(cfg["rutas"]["ground_truth"]),
@@ -131,6 +210,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", default="configs/evaluation_v4.yaml")
     p.add_argument("--emb", default="data/tracking", help="carpeta de emb_villa_*.pkl")
+    p.add_argument(
+        "--pseudo-gt",
+        action="store_true",
+        help="Etiqueta por identidad verificada pura, para densificar el bin pequeño",
+    )
+    p.add_argument("--semilla", type=int, default=SEMILLA)
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -168,7 +253,10 @@ def main() -> None:
     )
     candidatos["HSV (control)"] = {"embeddings": hsv, "coseno": False}
 
-    personas, equipos = etiquetar(claves, datos["cache"], gt, umbral_gt.base)
+    if args.pseudo_gt:
+        personas, equipos = pseudo_gt(cfg, gt, umbral_gt.base, claves)
+    else:
+        personas, equipos = etiquetar(claves, datos["cache"], gt, umbral_gt.base)
     validos = np.array([p is not None for p in personas])
     logger.info(
         "%d recortes, %d casados con el GT (%d personas)",
@@ -177,7 +265,7 @@ def main() -> None:
         len(set(personas[validos])),
     )
 
-    rng = np.random.default_rng(SEMILLA)
+    rng = np.random.default_rng(args.semilla)
     filas = []
     for nombre, datos_c in candidatos.items():
         V = np.asarray(datos_c["embeddings"], dtype=np.float32)
