@@ -48,6 +48,15 @@ entrenamiento:
 # esos para el color medio; si no tiene, usar todos. Medido: 0.559 → 0.603
 # de accuracy de campo (un recorte limpio vale más que muchos ruidosos).
 agregacion:
+  # Mínimo de observaciones para poder etiquetar 'otro'. Por debajo se
+  # fuerza A/B. El prototipo 'otro' es un imán para las medias ruidosas de
+  # identidades cortas: con 1, 7, 14 o 16 observaciones la media de color
+  # es ruido, y el cajón se traga jugadores reales.
+  # Medido en Villaviciosa (19-ago-2026): cobertura 0.619→0.633, accuracy
+  # de equipos 0.750→0.804, identidades puras mal clasificadas 7→5, sin
+  # tocar IDF1 ni quimeras. Neutro en el benjamín (allí las identidades
+  # son largas y ninguna cae por debajo). Adoptado por Alex.
+  min_obs_para_otro: 25
   solo_cercanos: true
   umbral_my: 45.0
 
