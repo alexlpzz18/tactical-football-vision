@@ -184,9 +184,20 @@ def clasificar_identidades(
         feats = cercanos if (solo_cercanos and cercanos) else todos
         media = color_medio_limpio(feats, ocluidas)
         if media is not None:
-            equipos[id_identidad] = clasificador.predict_color(
+            etiqueta = clasificador.predict_color(
                 media, dist_max=cfg_agg.get("dist_max_prototipo")
             )
+            # El prototipo 'otro' es un imán para las medias ruidosas de
+            # identidades cortas. Medido en Villaviciosa: cuatro
+            # identidades de 1, 7, 14 y 16 observaciones acababan ahí
+            # siendo jugadores reales de campo — y con UNA observación la
+            # media de color es ruido puro. Por debajo del mínimo se
+            # fuerza la elección entre A y B, que acierta ~50 % por azar
+            # en vez del 0 % actual.
+            min_otro = cfg_agg.get("min_obs_para_otro", 0)
+            if etiqueta == "otro" and 0 < len(feats) < min_otro:
+                etiqueta = clasificador.predict_color(media, solo_equipos=True)
+            equipos[id_identidad] = etiqueta
 
     # Catálogo ABSOLUTO de equipaciones arbitrales. Va ANTES de la regla
     # de porteros a propósito: un portero con equipación llamativa cae en
@@ -198,6 +209,7 @@ def clasificar_identidades(
             colores,
             [clasificador._prototipos.a, clasificador._prototipos.b],
             min_observaciones=cfg_equipos["arbitro"].get("min_observaciones", 25),
+            margen_equipo=cfg_equipos["arbitro"].get("margen_equipo", 0.0),
         )
         for indice in arbitros:
             equipos[indice] = "otro"

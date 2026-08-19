@@ -3088,3 +3088,76 @@ Que aparezca en la primera identidad que se mira, sin buscarla, sugiere
 que el recuento de quimeras del F7 va a ser bastante peor que el de
 Villaviciosa (3 sobre 38 identidades con ≥10 observaciones). Es
 exactamente el dato que faltaba para decidir.
+
+---
+
+# LOS DOS BUGS DEL CLASIFICADOR (19-ago-2026)
+
+`scripts/medir_bugs_clasificador.py`. Medidos por separado, como pedía
+Alex. Recordatorio de escala: el clasificador solo puede tocar el **8,6 %
+de los fallos**; el 85-90 % es asociación.
+
+| variante | cob. | IDF1 | quim | acc eq | puras mal | obs mal |
+|---|---|---|---|---|---|---|
+| base | 0,619 | 0,546 | 3 | 0,750 | 7 | 36 |
+| bug 1: margen 0,5 | 0,619 | 0,546 | 3 | 0,750 | 7 | 36 |
+| bug 1: margen 0,8 | 0,619 | 0,546 | 3 | 0,750 | 7 | 36 |
+| bug 2: min_obs 10 | 0,631 | 0,546 | 3 | 0,786 | 6 | 35 |
+| **bug 2: min_obs 25** | **0,633** | 0,546 | 3 | **0,804** | **5** | **33** |
+| los dos | 0,633 | 0,546 | 3 | 0,804 | 5 | 33 |
+
+## Bug 1 (catálogo arbitral): el arreglo es correcto y NO sirve de nada
+
+`margen_equipo` hace lo que debe: el catálogo pasa de marcar 1 identidad
+(el id 40) a marcar 0 en cuanto se le exige que el color no se parezca a
+ningún equipo. Las filas idénticas de la tabla no eran un fallo de
+fontanería — se comprobó.
+
+Lo que pasa es otra cosa, y es más interesante: **con el arreglo, el id
+40 pasa de `'otro'` a `'B'`… y el GT dice `A`.** El clasificador de color
+lo manda a B por su cuenta (`predict_color` = B, con 110 observaciones).
+
+O sea: **el catálogo arbitral era un síntoma, no la causa.** Quitarlo
+sustituye una respuesta equivocada por otra equivocada, y por eso ninguna
+métrica se mueve. El id 40 es un jugador del equipo A cuyo color medio se
+parece más al prototipo B — un caso difícil de clasificación, no un bug.
+
+Se deja implementado con **defecto 0,0 (desactivado)**: es correcto en
+principio —el catálogo no debería mandar sobre un color que se parece a
+un equipo— pero no tiene beneficio medible aquí y sí un riesgo (un
+árbitro cuyo color se pareciera a una equipación dejaría de detectarse).
+Siguiendo la regla de las dos oportunidades, se abandona la vía.
+
+## Bug 2 (el cajón 'otro'): funciona en Villaviciosa
+
+`min_obs_para_otro: 25` — por debajo de 25 observaciones no se puede
+etiquetar 'otro' y se fuerza A/B.
+
+Mejora **cobertura (0,619 → 0,633), accuracy de equipos (0,750 → 0,804),
+identidades puras mal clasificadas (7 → 5)** y no degrada IDF1 ni
+quimeras. Es la primera vez que un cambio del clasificador mueve la
+cobertura: al no mandar identidades cortas al cajón 'otro', dejan de
+descartarse del informe.
+
+### En el benjamín es NEUTRO, no negativo
+
+| | acc | identidades 'otro' |
+|---|---|---|
+| base | 0,796 | 32 |
+| min_obs 10 | 0,796 | 32 |
+| min_obs 25 | 0,796 | 32 |
+
+Tres filas idénticas — y esta vez sí es efecto real, comprobado: en el
+benjamín las identidades son largas (79 para 600 frames) y **ninguna cae
+por debajo del mínimo**, así que la regla no llega a dispararse.
+
+## Decisión
+
+**No se adopta por la excepción**: mejora una pata y es neutro en la
+otra, y la excepción exige mejorar en las dos. Queda como parámetro
+disponible (`agregacion.min_obs_para_otro`), con defecto 0.
+
+Recomendación: adoptarlo con 25. Mejora claramente donde puede mejorar,
+no toca nada donde no aplica, y su riesgo es acotado — solo afecta a
+identidades de menos de 25 observaciones, que son las que hoy se
+etiquetan con una media de color que es ruido.

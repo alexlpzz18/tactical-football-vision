@@ -294,8 +294,18 @@ class TeamClassifierColor:
         return salida
 
     # ------------------------------------------------------------- predict
-    def predict_color(self, feat: np.ndarray, dist_max: float | None = None) -> str:
+    def predict_color(
+        self,
+        feat: np.ndarray,
+        dist_max: float | None = None,
+        solo_equipos: bool = False,
+    ) -> str:
         """Clasifica una feature (p. ej. color medio de una identidad).
+
+        `solo_equipos` ignora el prototipo 'otro' y fuerza a elegir entre
+        A y B. Se usa con identidades demasiado cortas para fiarse de su
+        color medio: el prototipo 'otro' es un imán para las medias
+        ruidosas, y con una sola observación la media es ruido puro.
 
         `dist_max` es la distancia máxima admitida a AMBOS prototipos. Con
         solo dos cajones, un árbitro de amarillo o un entrenador en
@@ -324,7 +334,7 @@ class TeamClassifierColor:
         feat = _solo_hs(feat)
         pr = self._prototipos
         candidatos = [("A", pr.a), ("B", pr.b)]
-        if pr.otro is not None:
+        if pr.otro is not None and not solo_equipos:
             candidatos.append(("otro", pr.otro))
         distancias = [np.linalg.norm(feat - proto) for _, proto in candidatos]
         mejor = int(np.argmin(distancias))

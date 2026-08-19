@@ -135,6 +135,7 @@ def identificar_arbitros(
     colores: dict,
     prototipos_equipo: list[np.ndarray],
     min_observaciones: int = 25,
+    margen_equipo: float = 0.0,
 ) -> dict[int, str]:
     """{id_identidad: nombre del arquetipo} de quienes visten de árbitro.
 
@@ -144,6 +145,14 @@ def identificar_arbitros(
         prototipos_equipo: prototipos A y B, para la regla de conflicto.
         min_observaciones: recortes mínimos para juzgar (con menos, el
             tono dominante es demasiado inestable).
+        margen_equipo: si es > 0, el catálogo SOLO manda cuando el color
+            de la identidad está a más de `margen_equipo × d(A,B)` del
+            prototipo más cercano. Sin esto, la regla de conflicto
+            protege al PROTOTIPO del equipo pero no a la dispersión
+            alrededor: un jugador cuyo color se aparta cae en un
+            arquetipo que no choca con la media de su equipo. Medido: le
+            pasaba al id 40 de Villaviciosa, un jugador del equipo A con
+            110 observaciones en el centro del campo.
 
     Returns:
         Solo las identidades que caen en un arquetipo activo.
@@ -168,6 +177,16 @@ def identificar_arbitros(
         if tono is None:
             continue
         brillo = brillo_medio(media)
+        if margen_equipo > 0 and len(prototipos_equipo) >= 2:
+            from src.team_classification.feature_v2 import parte_camiseta_hs
+
+            hs = parte_camiseta_hs(media)
+            a, b = prototipos_equipo[0], prototipos_equipo[1]
+            separacion = float(np.linalg.norm(a - b))
+            cerca = min(float(np.linalg.norm(hs - a)), float(np.linalg.norm(hs - b)))
+            if separacion > 0 and cerca < margen_equipo * separacion:
+                # Se parece a un equipo: manda el equipo, no el catálogo.
+                continue
         for arq in activos:
             if arq.contiene(tono[0], tono[1], brillo):
                 encontrados[indice] = arq.nombre
