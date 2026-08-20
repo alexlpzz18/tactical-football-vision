@@ -242,3 +242,66 @@ No el error absoluto contra este GT, sino:
    aunque no su magnitud fina.
 
 El temblor es la métrica principal: mide justo lo que motivó el cambio.
+
+---
+
+# SEGUNDA LÍNEA BASE: el TEMBLOR (20-ago-2026)
+
+`scripts/temblor.py`. σ del ruido de posición, en metros, estimado con la
+segunda diferencia — cero para velocidad constante, insensible a
+aceleración constante, y el ruido pasa entero (desviación de Δ² = σ·√6).
+Versión robusta con MAD para que un regate real no la infle.
+
+| fuente | 10-20 m | 20-30 m | 30+ m |
+|---|---|---|---|
+| SISTEMA **crudo** (0,10 s) | 0,10 | 0,14 | **0,20** |
+| SISTEMA crudo a 0,50 s | 0,24 | 0,32 | 0,36 |
+| SISTEMA suavizado + interpolado (0,50 s) | 0,09 | 0,12 | 0,15 |
+| CLICS de Alex (0,50 s, sin corregir) | 0,62 | 0,80 | 0,59 |
+
+## Un fallo de medición, cazado antes de interpretarlo
+
+La primera pasada midió sobre el CSV exportado y dio **0,01 m**. Eso no
+es el detector: es **el suavizador haciendo su trabajo**. Comparado con
+los clics habría dicho que el sistema tiembla 60 veces menos que la mano
+de Alex, y la conclusión habría sido "no hay margen". Falsa. Hay que
+medir sobre las posiciones **crudas**, antes del post-proceso.
+
+## Tres lecturas, y una contradice lo que esperábamos
+
+**1. El temblor SÍ crece con la profundidad** (0,10 → 0,14 → 0,20). Se
+duplica de la franja cercana a la lejana, que es lo que predice la
+amplificación de la perspectiva.
+
+Y eso **matiza** el hallazgo del error plano. Las dos cosas conviven así:
+el error absoluto está dominado por la convención de anclaje —un sesgo
+sistemático que la corrección por altura de caja iguala a todas las
+profundidades— mientras que el temblor, que es la parte aleatoria, sí ve
+la perspectiva. O sea: **anclaje manda en el sesgo, perspectiva manda en
+el ruido.** Son dos problemas distintos y el punto 2 (pose) ataca el
+primero, el punto 3 (Kalman heterocedástico) ataca el segundo.
+
+**2. El suavizador actual no es tan mal parche**: recorta el temblor de
+0,36 a 0,15 m en la franja lejana, un 58 %. Un Kalman con ruido
+heterocedástico tiene que batir eso, no solo mejorar sobre el crudo.
+
+**3. Los clics de Alex tiemblan MÁS que el sistema** — 0,59-0,80 m frente
+a 0,24-0,36 m a la misma cadencia. Dos veces y media más.
+
+Eso responde a su pregunta ("si el pipeline tiembla mucho más que mi
+mano, hay margen; si tiembla igual, el techo es físico") **con una
+tercera opción que no estaba en el menú: el pipeline tiembla MENOS que
+la mano.** Consecuencia práctica: el ojo humano sobre un fotograma **no
+sirve como suelo irreducible**, porque ya está por encima del sistema. Si
+hace falta un suelo de referencia real, tendrá que venir de otro sitio —
+un objeto estático de posición conocida, por ejemplo.
+
+## Lo importante: esta métrica SÍ puede ver la mejora de la pose
+
+El temblor crudo en la franja lejana es **0,20 m**. La mejora que se
+persigue con el anclaje por pose (58 cm → 11 cm de error de profundidad)
+está en ese mismo orden, así que un cambio real **se vería**. Es lo
+contrario del error contra GT, cuyo suelo de ruido se comía la señal
+entera.
+
+Queda como línea base para el punto 2.
