@@ -88,3 +88,88 @@ ese 7,6 % es el sesgo de los pies empujando a la gente hacia fuera por el
 fondo — otra confirmación de (a), y un aviso de que el filtro de
 "fuera del campo" del replay puede estar comiéndose posiciones legítimas
 en la banda lejana.
+
+---
+
+# ¿RECALIBRAR? NO. Es óptica, no calibración (20-ago-2026)
+
+`scripts/auditar_homografia.py`. La pregunta era si los tirones del
+replay salen de tener pocos puntos de referencia arriba.
+
+**No: la banda alta está bien cubierta.** 11 de los 19 puntos (58 %)
+caen en `y_px < 700`. Alex no la desatendió.
+
+Y la medida que zanja el asunto es expresar el residuo **en píxeles** en
+vez de en metros:
+
+| | error mediano en metros | error mediano en PÍXELES |
+|---|---|---|
+| banda alta (y_px < 700) | 1,11 m | **3,0 px** |
+| banda baja | 0,79 m | **5,7 px** |
+
+**El ajuste es MÁS preciso arriba que abajo** (3,0 px frente a 5,7). Lo
+que cambia no es la calidad del ajuste sino la escala:
+
+| y_px | metros por píxel vertical | un error de 3 px vale |
+|---|---|---|
+| 600 | 0,598 | **1,79 m** |
+| 650 | 0,313 | 0,94 m |
+| 700 | 0,192 | 0,58 m |
+| 900 | 0,055 | 0,17 m |
+| 1000 | 0,036 | 0,11 m |
+
+Volver a marcar daría otra vez ±2-3 px —es el límite del ojo y del
+ratón— y por tanto otra vez ±1,5 m arriba. **No compensa la sesión de 15
+minutos.**
+
+Es amplificación por perspectiva: intrínseca a proyectar un plano con una
+cámara fija. Y afecta **igual a las detecciones del sistema**: un píxel de
+temblor en el borde inferior de una caja, en esa banda, es un metro de
+error. Encaja con la σ ya medida por otra vía (0,11 m cerca, 1,85 m en el
+fondo) y le pone el mecanismo.
+
+**Aviso de método**: el veredicto automático del script decía lo
+contrario —"marcar puntos donde faltan sí puede bajar el error"— porque
+comparaba el residuo en metros contra un umbral fijo, sin tener en cuenta
+la amplificación local. Habría costado una sesión de clics para nada.
+
+---
+
+# CORRECCIÓN DEL SESGO: sí compensa, y por ALTURA DE CAJA
+
+Aclaración de Alex: no fue por no ver los pies, sino que marcó **a
+propósito** la parte de la media más cercana al pie, creyendo que el
+detector se guiaba por el blanco de la camiseta. La caja envuelve a la
+persona entera y lo que se proyecta es su borde inferior — el suelo.
+
+Como el sesgo es sistemático, se corrige en el conversor
+(`src/evaluation/correccion_pies.py`) en vez de re-cliquear:
+
+| corrección | desplazamiento mediano | p90 |
+|---|---|---|
+| ninguna | 1,58 m | 3,14 m |
+| píxeles fijos (7,7 px) | 0,48 m | 1,89 m |
+| **por altura de caja (0,129 × alto)** | **0,42 m** | **1,47 m** |
+
+Gana la corrección **por altura**, como intuía Alex: el desfase escala
+con la distancia, porque un jugador cercano ocupa 90 px y uno del fondo
+25, y "el tobillo" no está a la misma altura en píxeles en cada caso.
+
+Con 0,42 m el GT baja **por debajo del error de la propia calibración**
+(0,91 m de mediana en sus puntos de referencia). Deja de ser el factor
+limitante: **ahora sirve también para medir error de localización**, no
+solo identidad.
+
+Efecto colateral que lo confirma: las posiciones dentro del campo pasan
+de **92,4 % a 96,7 %**, y el replay descarta 27 en vez de 62.
+
+## El caso patológico de 17 m, localizado
+
+**Jugador 10, t = 5:53,9 (frame 10605).** Clic en (1156, 600); el pie de
+la caja está en y = 632. Son **32 px por encima** sobre una caja de 48 px
+de alto: el clic cayó a la altura de la rodilla, no del tobillo.
+
+A y_px = 600 la sensibilidad es 0,6 m/px, así que esos 32 px son 17 m.
+La corrección por altura recupera 6 px de los 32 — el resto es un clic
+sencillamente alto, y conviene revisarlo a mano si esa observación acaba
+pesando en alguna métrica.

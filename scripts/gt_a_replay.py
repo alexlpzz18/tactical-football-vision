@@ -42,6 +42,14 @@ def main() -> None:
     p.add_argument("--config", default="configs/processor_benja_emb.yaml")
     p.add_argument("--equipos", required=True)
     p.add_argument("--salida-csv", default="data/annotations/gt_benja/gt_replay.csv")
+    p.add_argument(
+        "--sin-corregir-pies",
+        action="store_true",
+        help=(
+            "No baja los clics al suelo. Con la corrección el "
+            "desplazamiento mediano pasa de 1,58 m a 0,42 m."
+        ),
+    )
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -53,6 +61,16 @@ def main() -> None:
         equipos[int(j)] = eq
 
     df = pd.read_csv(args.clics)
+    if not args.sin_corregir_pies:
+        from src.evaluation.correccion_pies import corregir_clics
+        from src.tracking.cache_io import cargar_cache
+
+        ruta_cache = (
+            cfg["rutas"]["cache"]
+            if "cfg" in dir()
+            else "data/tracking_benja/cache_detecciones_benja_v4.pkl"
+        )
+        df = corregir_clics(df, cargar_cache(ruta_cache)["cache"])
     faltan = set(df.jugador.unique()) - set(equipos)
     if faltan:
         logger.warning("⚠ Sin equipo asignado: %s (irán como 'otro')", sorted(faltan))

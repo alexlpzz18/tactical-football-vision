@@ -40,6 +40,11 @@ ANCHO = 18.0
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--csv", required=True)
+    p.add_argument(
+        "--cache",
+        default="data/tracking_benja/cache_detecciones_benja_v4.pkl",
+        help="Caché de detecciones, para escalar la corrección de pies",
+    )
     p.add_argument("--salida", required=True)
     p.add_argument(
         "--equipos",
@@ -47,10 +52,23 @@ def main() -> None:
         help="Opcional: 'jugador:equipo,...' p. ej. '1:A,2:A,8:portero_B'",
     )
     p.add_argument("--alto", type=float, default=ALTO)
+    p.add_argument(
+        "--sin-corregir-pies",
+        action="store_true",
+        help=(
+            "No baja los clics al suelo. Con la corrección el "
+            "desplazamiento mediano pasa de 1,58 m a 0,42 m."
+        ),
+    )
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     df = pd.read_csv(args.csv)
+    if not args.sin_corregir_pies:
+        from src.evaluation.correccion_pies import corregir_clics
+        from src.tracking.cache_io import cargar_cache
+
+        df = corregir_clics(df, cargar_cache(args.cache)["cache"])
     faltan = {"jugador", "frame", "x_px", "y_px"} - set(df.columns)
     if faltan:
         raise SystemExit(f"Al CSV le faltan columnas: {sorted(faltan)}")
