@@ -173,3 +173,72 @@ A y_px = 600 la sensibilidad es 0,6 m/px, así que esos 32 px son 17 m.
 La corrección por altura recupera 6 px de los 32 — el resto es un clic
 sencillamente alto, y conviene revisarlo a mano si esa observación acaba
 pesando en alguna métrica.
+
+---
+
+# LÍNEA BASE: error de localización por franjas (20-ago-2026)
+
+`scripts/error_localizacion.py`. Con el GT ya anclado y el pipeline
+actual (v4 ajustado + puerta con embedding).
+
+| franja | n GT | emparejadas | error medio | mediana | p90 |
+|---|---|---|---|---|---|
+| 10-20 m | 127 | 89 % | 0,68 m | 0,56 | 1,29 |
+| 20-30 m | 219 | 95 % | 0,96 m | 0,78 | 1,98 |
+| 30+ m | 468 | 92 % | 0,89 m | 0,56 | 2,00 |
+| **TOTAL** | **814** | **92 %** | **0,88 m** | **0,59** | **1,92** |
+
+64 observaciones del GT (8 %) sin pareja, y 120 detecciones del sistema
+sin GT — que incluyen al árbitro, no etiquetado, y **no se cuentan como
+fallo**.
+
+Comprobado que el radio de emparejamiento **no censura** el resultado:
+con radio máximo de 6, 12 o 25 m sale exactamente lo mismo. Las 64 sin
+pareja lo son por falta de detección, no por distancia.
+
+## Dos avisos que condicionan el punto 2 (anclaje por pose)
+
+### 1. El error es PLANO con la profundidad, y eso es sospechoso
+
+0,68 / 0,96 / 0,89 m. Si dominara la amplificación de la perspectiva, el
+fondo debería ser mucho peor. No lo es — lo que sugiere que el error no
+está dominado por el ruido de proyección sino por **la convención de
+anclaje**, que es la misma en las dos franjas.
+
+Eso apoya la hipótesis del anclaje por pose. Pero lleva al segundo aviso.
+
+### 2. Mi corrección alineó el GT CON EL DETECTOR — y eso lo invalida como juez del anclaje
+
+La corrección de pies desplaza cada clic `0,129 × alto de caja`, y ese
+factor **salió de comparar los clics con las cajas del detector**. O sea:
+el GT está ahora anclado *igual que el detector*, por construcción.
+
+Consecuencia directa: **este GT no puede juzgar una mejora de anclaje.**
+Si la pose dice que el pie real está, pongamos, 5 px más abajo que el
+borde de la caja, el GT —alineado a la caja— llamaría PEOR a la pose.
+
+Y hay un problema de escala encima: el suelo de ruido del propio GT
+—0,42 m de sesgo residual más 0,91 m de error de la calibración— es del
+mismo orden que los 0,88 m que mide. **Un sistema con 0,11 m de error
+sería indistinguible de uno con 0,5 m.** El estudio que cita Alex reporta
+58 cm → 11 cm; esa diferencia cae entera por debajo de nuestro
+instrumento.
+
+## Qué medir entonces, para que el punto 2 sea evaluable
+
+No el error absoluto contra este GT, sino:
+
+1. **TEMBLOR** (jitter): ruido de la posición entre fotogramas
+   consecutivos de una misma identidad, descontando el movimiento real.
+   Es lo que se ve en el replay, se mide **sin GT**, y no tiene suelo de
+   ruido heredado. Si la pose ancla mejor, el temblor baja.
+2. **Coherencia interna**: cuánto se desvía el anclaje por pose del
+   anclaje por caja, y cuál de los dos produce trayectorias más suaves a
+   igualdad de movimiento.
+3. Contra el GT, usar los clics **SIN corregir** como referencia
+   independiente: son de una fuente distinta (el ojo de Alex sobre el
+   cuerpo), no derivada de las cajas. Su sesgo es conocido y
+   direccional, así que sirve para comprobar el SIGNO de la corrección
+   aunque no su magnitud fina.
+
+El temblor es la métrica principal: mide justo lo que motivó el cambio.
