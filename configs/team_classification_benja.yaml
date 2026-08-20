@@ -1,0 +1,149 @@
+# Clasificación de equipos del partido de BENJAMINES (fútbol 7).
+#
+# NO comparte nada con configs/team_classification.yaml (Villaviciosa,
+# F11): las áreas, el eje de profundidad y las dimensiones son distintos.
+
+# ── El campo: de aquí salen las áreas y las dimensiones ──────────────
+campo:
+  config: configs/campo_benja.yaml # 62x40, marcas F7
+
+# ── DÓNDE ESTÁ LA CÁMARA (lo más importante de este archivo) ─────────
+#
+# Casi todo el sistema trata la PROFUNDIDAD de forma especial: el color
+# solo es señal de cerca, el error de localización crece con la distancia
+# y los umbrales se expresan en metros a cámara. Con la cámara en la
+# banda (Villaviciosa) la profundidad es el eje ANCHO; aquí la cámara
+# está DETRÁS DE LA PORTERÍA x=0, así que la profundidad es el eje LARGO
+# y crece con x.
+#
+# Verificado con data/calibracion_benja/homografia_benja.npy: la parte
+# baja de la imagen (lo más cercano) cae en x≈8 m y sube hacia x grande.
+#
+# ⚠️ Si el eje fuese el equivocado, "quedarse con los recortes cercanos"
+# seleccionaría por una coordenada que no mide la distancia, y el fit del
+# clasificador colapsaría en un solo equipo (el fallo de julio-2026).
+profundidad:
+  eje: x
+  creciente: true # lejos = x grande (la cámara está en x=0)
+
+# ── Entrenamiento del clasificador de color ──────────────────────────
+#
+# Umbrales en METROS DESDE LA CÁMARA. Medido sobre la homografía del
+# benja, los metros por píxel son 0.021 (x=5), 0.059 (x=15), 0.161
+# (x=31), 0.290 (x=45) y 0.444 (x=58): la señal de color sobrevive en el
+# primer tercio y poco más.
+#
+# 25 m es el punto de partida (equivale a ~0.12 m/píxel, comparable a la
+# zona donde el color funcionaba en Villaviciosa). Si el log avisa de
+# "solo N recortes cercanos", subirlo; si el fit sale desequilibrado,
+# bajarlo. Revisa SIEMPRE en el log que los tamaños de A y B queden
+# parecidos.
+entrenamiento:
+  solo_cercanos: true
+  umbral_profundidad_m: 25.0
+  min_features: 300
+
+# Agregación por identidad: más generoso que el fit (una identidad con
+# algún recorte decente vale más que ninguno).
+agregacion:
+  # Mínimo de observaciones para poder etiquetar 'otro'. Por debajo se
+  # fuerza A/B. El prototipo 'otro' es un imán para las medias ruidosas de
+  # identidades cortas: con 1, 7, 14 o 16 observaciones la media de color
+  # es ruido, y el cajón se traga jugadores reales.
+  # Medido en Villaviciosa (19-ago-2026): cobertura 0.619→0.633, accuracy
+  # de equipos 0.750→0.804, identidades puras mal clasificadas 7→5, sin
+  # tocar IDF1 ni quimeras. Neutro en el benjamín (allí las identidades
+  # son largas y ninguna cae por debajo). Adoptado por Alex.
+  min_obs_para_otro: 25
+  solo_cercanos: true
+  # BARRIDO del 16-ago-2026: este dial manda en la accuracy del benjamín
+  # y el 35 se quedaba corto. Medido contra el mini-GT (radio del fit
+  # fijo en 25, que es lo que manda en Villaviciosa):
+  #     agregación 25 → 0,830 · 35 → 0,867 · 45 → 0,883
+  # Villaviciosa no se entera: con radio de fit 25, 28 o 30 da cifras
+  # IDÉNTICAS (0,559 / 0,453 / 5 quimeras / 0,671).
+  umbral_profundidad_m: 45.0
+
+# ── Regla de porteros: áreas DERIVADAS del modelo F7 ─────────────────
+#
+# `desde_modelo` calcula las áreas del campo (12 m de profundidad, 26 m
+# de ancho → x 0-12 y 50-62, y 7-33) en vez de usar números a mano. Los
+# del F11 (corte en mx=88.5) no existen en un campo de 62 m.
+#
+# ⚠️ equipo_mx_alto / equipo_mx_bajo hay que AJUSTARLOS al partido: qué
+# equipo defiende cada portería en este tramo. Con la cámara tras la
+# portería x=0, "bajo" es la portería cercana a cámara.
+porteros:
+  activo: true
+  desde_modelo: true
+  margen_m: 2.0 # holgura: el portero sale a achicar
+  equipo_mx_alto: A # equipo que defiende la portería LEJANA (x=62)
+  equipo_mx_bajo: B # equipo que defiende la portería CERCANA (x=0)
+
+# ── Regla de staff: dimensiones del modelo (62x40) ───────────────────
+#
+# Sin `largo`/`ancho` explícitos, los toma del campo de arriba. Marca
+# como no-jugador a quien viva fuera del rectángulo.
+staff:
+  activo: true
+  tolerancia_m: 2.0
+  min_observaciones: 5
+
+# ── Extracción de color: igual que en el F11 (no depende del campo) ──
+clasificador_color:
+  torso_alto: [0.12, 0.45]
+  torso_ancho: [0.15, 0.85]
+  verde_h: [35, 85]
+  verde_s_min: 40
+  verde_v_min: 40
+  bins_h: 16
+  bins_s: 16
+  k_clusters: 8
+  umbral_min: 0.5
+  umbral_max: 1.3
+  umbral_paso: 0.05
+  semilla: 0
+
+# ── Rechazo por distancia a AMBOS prototipos: MEDIDO Y DESCARTADO ────
+#
+# Idea: con solo dos cajones (A/B), un árbitro de amarillo o un
+# entrenador en chándal caen forzosamente en el menos malo. Si el color
+# está lejos de los dos, lo honesto sería decir "otro".
+#
+# No funciona con nuestra feature de color. Dos medidas:
+#
+#   - Umbral ABSOLUTO: calibrado en el benjamín parecía perfecto
+#     (jugadores p90 0,656 vs staff p10 0,712, casi sin solape), pero
+#     llevado a Villaviciosa hundía la accuracy de equipos de 0,718 a
+#     0,482. Cada partido tiene su escala de color.
+#   - Umbral RELATIVO a la separación entre prototipos (ya implementado,
+#     que es la forma correcta de expresarlo): a 1,2 no cambia nada en
+#     ninguno de los dos partidos; a 1,0 cuesta accuracy en Villaviciosa
+#     (0,718 -> 0,682) y en el benjamín solo saca del campo a UNA
+#     identidad que la regla de staff no cogiera ya.
+#
+# Conclusión: el amarillo del árbitro NO está lejos de los dos prototipos
+# en un histograma HS de un torso de 15-40 px. Para separarlo hace falta
+# comportamiento (pegado a banda, no sigue el juego), no color.
+# Se deja implementado y en off: null = desactivado.
+agregacion_dist_max_prototipo_nota: ver arriba
+
+# ── Catálogo ABSOLUTO de equipaciones arbitrales ─────────────────────
+#
+# Los árbitros visten un conjunto CERRADO (amarillo/verde/naranja flúor,
+# azul eléctrico, negro), así que se reconocen sin calibrar por partido —
+# al revés que el intento anterior por distancia a los prototipos, que no
+# viajaba entre partidos. Con regla de conflicto: si una equipación del
+# partido cae en un arquetipo, ese arquetipo se desactiva solo.
+#
+# Validado en los dos cachés:
+#   benjamín      -> desactiva 'naranja_fluor' (el equipo B viste naranja)
+#                    y encuentra al árbitro: verde flúor, 493 obs, en el
+#                    centro del campo (31, 24) m. Salía como equipo B.
+#   Villaviciosa  -> 0 identidades marcadas: no roba ningún jugador.
+#
+# El arquetipo NEGRO está declarado pero inactivo: la feature de color es
+# un histograma HS y sin V el negro no se distingue del blanco.
+arbitro:
+  activo: true
+  min_observaciones: 25

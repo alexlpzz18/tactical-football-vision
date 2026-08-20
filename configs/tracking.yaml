@@ -61,8 +61,46 @@ rescate_cortos:
 # Solo entre dos posiciones reales (nunca extrapolar), solo en frames del
 # caché, y solo si el hueco no supera max_hueco segundos.
 interpolacion:
-  activa: false  # se decide tras medir contra el banco (docs/experimentos_tracking.md)
+  # ADOPTADA con el modelo v4pre (08-ago-2026): cobertura 0.453→0.566 con
+  # la tasa de IDSW bajando (0.339→0.320). Con v3 empeoraba la tasa
+  # (0.341→0.356) y estuvo en off — ver docs/experimentos_tracking.md,
+  # sección "salto v4pre". La aplican el banco y el processor DESPUÉS del
+  # perfil (produce trayectorias, no identidades de tracklets).
+  activa: true
   max_hueco: 6.0
+
+# Consolidación FINAL (post-clasificación): fusiona fichas del MISMO
+# equipo co-locadas de forma sostenida — los racimos que se ven en el
+# replay. Se decide midiendo (concurrencia vs cobertura vs tasa IDSW);
+# ver docs/experimentos_tracking.md.
+# ADOPTADA (08-ago-2026): concurrencia 47→36 fichas por frame con la
+# cobertura plana (0.566→0.557), IDF1 0.227→0.281, tasa de IDSW
+# 0.320→0.304, accuracy de equipos 0.733→0.800 y quimeras 36→27.
+# Va ANTES de interpolar (medido: después es peor, compara estelas
+# fantasma). dist_max 6.0 es el borde del acantilado: a 7.0 la cobertura
+# se desploma a 0.456 porque empieza a fusionar jugadores distintos.
+consolidacion:
+  activa: true
+  dist_max: 6.0           # distancia mediana máxima entre las dos fichas (m)
+  min_frames_comunes: 20  # "sostenida": no un cruce puntual
+
+# Corte de TELETRANSPORTES (objetivo "replay creíble", 08-ago-2026):
+# parte la identidad donde la velocidad es imposible de forma SOSTENIDA
+# (cadenas quimera que saltan de un jugador a otro). Medido: 94 rachas de
+# >8,5 m/s → 0, con la cobertura casi intacta (0.557 → 0.553) y sin coste
+# de concurrencia (el corte parte en el tiempo, no añade fichas).
+# El criterio es sostenido y no por paso suelto porque a dt=0,12 s el
+# ruido del fondo (1,16 m de mediana) ya simula 9-10 m/s.
+corte_velocidad:
+  activo: true
+  v_max: 8.5          # m/s (sprint de élite) — criterio de racha SOSTENIDA
+  duracion_min: 0.5   # s que debe durar la racha imposible para cortar
+  min_observaciones: 3  # trozos más cortos se descartan (parpadeo)
+  # Criterio de SALTO INSTANTÁNEO (un solo frame): 60 m/s son 7,2 m en
+  # 0,12 s, 3× el ruido de localización del fondo (p90 2,45 m ≈ 20 m/s).
+  # Sin este criterio quedaban saltos de hasta 37 m en un frame (v_max
+  # 309 m/s) que no formaban racha pero eran lo más visible del replay.
+  v_teleport: 60.0
 
 cosido:
   # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
@@ -90,3 +128,102 @@ cosido:
   v_max_salto: null
   peso_vel: 0.0
   v_ref: 7.0
+
+# ── BASE NUEVA: asociación con ByteTrack (perfil "bytetrack") ────────
+#
+# Adoptada el 11-ago-2026 tras el banco comparativo. Solo la usa el
+# perfil "bytetrack"; los perfiles oficial y candidato siguen intactos.
+#
+# Medido en el tramo de validación (v4pre), con interpolación encima:
+#
+#   perfil       nIds  cob.   conc  IDF1   tasa   quimeras  equipos
+#   candidato     244  0.551   34   0.259  0.301   23/43     0.661
+#   bytetrack     142  0.558   23   0.443  0.147    5/40     0.714
+#   (GT)           23  1.000   22
+bytetrack:
+  # Ver el docstring de ParametrosByteTrack: `umbral_emparejamiento` NO
+  # es un IoU mínimo sino una distancia (1-IoU), así que 0.98 es MUY
+  # permisivo. Con el 0.8 de la librería se perdía el 11 % de nuestras
+  # detecciones, porque nuestros jugadores son diminutos (15-40 px) y el
+  # IoU entre frames cae a plomo.
+  umbral_activacion: 0.10
+  buffer_perdido_s: 2.0
+  umbral_emparejamiento: 0.995
+  usar_fps_efectivo: true
+
+# Cosido de los fragmentos de ByteTrack con criterio de PUREZA. Sin cota
+# de plantilla, a propósito: el número de identidades es un proxy y la
+# pureza es la métrica. Medido: quitar el veto de ambigüedad sube las
+# quimeras de 5 a 11, y quitar el de color, de 5 a 9.
+cosido_pureza:
+  activo: true
+  max_hueco: 4.0
+  tol_base: 1.5
+  tol_por_seg: 2.5
+  v_max_salto: 8.0
+  color_max_dist: 1.2
+  peso_color: 0.5
+  peso_hueco: 0.3
+  margen_ambiguedad: 0.15
+  solape_max_frames: 0
+  max_pasadas: 3
+
+# ── SUAVIZADO de posiciones (adoptado 11-ago-2026) ───────────────────
+#
+# El diagnóstico frame-a-frame demostró que el replay se ve mal en el
+# fondo del campo CON la detección perfecta: allí 1 px vale medio metro y
+# el temblor de la caja (3,5 px medidos) da ±1,85 m, o sea ±18 m/s.
+# Cortar la identidad por eso era el arreglo equivocado; suavizar la
+# posición ataca el ruido donde está y no toca la identidad.
+#
+# Medido en el banco (base bytetrack), con el p99 de velocidad:
+#
+#   variante                     cob.   IDF1   tasa  quim  v99   %>8.5
+#   sin suavizado                0.558  0.443  0.147   5   30 m/s  —
+#   savgol 0,5 s + resolución    0.567  0.452  0.125   3   16 m/s  —
+#   media 0,5 s + resolución     0.550  0.447  0.120   4    5 m/s  0.1%
+#
+# Se adopta la MEDIA porque el objetivo del encargo era la credibilidad
+# visual: deja el 99,9 % de los pasos por debajo de 8,5 m/s, frente a los
+# 158 m/s del CSV anterior. savgol conserva 0,017 más de cobertura y está
+# a un cambio de config si se prefiere ese equilibrio.
+# BARRIDO del 16-ago-2026 (scripts/barrido_suavizado.py, 24 combinaciones):
+# el informe y el replay NO quieren lo mismo, y hasta ahora se les servía
+# la misma configuración.
+#
+#   preset          ventana  hueco  método  cobertura  saltos imposibles
+#   informe          0,5 s   4,0 s  savgol    0,569         2,9 %
+#   replay           0,8 s   4,0 s  media     0,537         0,2 %
+#   (actual)         0,5 s   2,5 s  media     0,538         0,4 %
+#
+# El patrón que lo explica: savgol conserva los picos —para eso está— y
+# entre esos picos están los del ruido, así que da más cobertura y 3× más
+# saltos. La media los aplana: replay limpio, algo menos de cobertura.
+#
+# NO se cambia el default sin el OK de Alex, y aquí hay un motivo extra:
+# subir la ventana a 0,8 altera el perfil legacy `oficial` (89 → 96
+# identidades), porque el suavizado corre ANTES del corte de velocidad y
+# cambia qué rachas resultan imposibles. El default se queda en lo
+# calibrado; los dos presets están declarados abajo para elegirlos
+# explícitamente.
+suavizado:
+  activo: true
+  ventana_s: 0.5
+  metodo: media # media | savgol
+  escalar_con_resolucion: 1.0
+
+# Preset alternativo para el INFORME, que agrega en mapas de calor y
+# métricas colectivas: ahí interesa la cobertura y el temblor individual
+# no se ve. Lo consume quien genere el informe pasándolo a postprocesar.
+presets:
+  # Agrega en mapas de calor y métricas colectivas: interesa la cobertura
+  # y el temblor individual no se ve.
+  informe:
+    suavizado: {activo: true, ventana_s: 0.5, metodo: savgol,
+                escalar_con_resolucion: 1.0}
+    interpolacion_max_hueco: 4.0
+  # Se mira jugada a jugada: manda que nada dé saltos imposibles.
+  replay:
+    suavizado: {activo: true, ventana_s: 0.8, metodo: media,
+                escalar_con_resolucion: 1.0}
+    interpolacion_max_hueco: 4.0

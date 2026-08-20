@@ -1,0 +1,46 @@
+# Cachés del v4 para Villaviciosa — TRAMO DEL BANCO (min 5, 60 s).
+#
+# Config DEDICADO a propósito: el tramo va escrito, no comentado. Con
+# processor.yaml hay que acordarse de descomentarlo, y esa es exactamente
+# la trampa en la que ya se cayó con el v2color — se procesó el vídeo
+# entero (16.300 frames) y el caché quedó inservible para comparar con el
+# banco, que solo cubre el minuto 5-6.
+#
+# Rutas de salida propias: no pisa los cachés del v4pre hasta que la
+# medición diga que el v4 gana.
+
+pipeline: nuevo
+modo: full
+deteccion:
+  modelo: models/weights/best_v4.pt
+  confianza: 0.3
+  max_area_caja: 0.05
+  sahi:
+    filas: 2
+    columnas: 4
+    solape: 0.2
+  device: cuda
+distorsion:
+  k1: -1.5
+  k2: 0.5
+muestreo:
+  sample_every: 3
+  tramo:
+    min_ini: 5.0
+    dur_seg: 60.0
+tracking:
+  perfil: bytetrack
+config_tracking: configs/tracking.yaml
+equipos:
+  activo: true
+campo_m:
+  largo: 100.0
+  ancho: 64.0
+  margen: 8.0
+rutas:
+  video: data/raw/partido.mp4
+  cache: data/tracking/cache_detecciones_v4.pkl
+  cache_colores: data/tracking/cache_colores_v4.pkl
+  homografia: data/calibracion/homografia.npy
+  salida_csv: data/tracking/posiciones_v4.csv
+  salida_meta: data/tracking/posiciones_v4_meta.json

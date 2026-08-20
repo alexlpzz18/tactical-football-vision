@@ -25,7 +25,16 @@ logger = logging.getLogger(__name__)
 
 # Convención de equipo del CSV (la misma de TEAM_COLORS en pipeline.py);
 # los porteros cuentan con su equipo para el informe colectivo
-EQUIPO_A_ENTERO = {"A": 0, "portero_A": 0, "B": 1, "portero_B": 1, "otro": 2}
+# 'staff' (línier/cuerpo técnico, regla posicional) va al mismo cajón que
+# 'otro': fuera de las métricas por equipo y del informe.
+EQUIPO_A_ENTERO = {
+    "A": 0,
+    "portero_A": 0,
+    "B": 1,
+    "portero_B": 1,
+    "otro": 2,
+    "staff": 2,
+}
 
 
 def _build_camera_matrix(w, h, focal_factor=1.0):
@@ -379,6 +388,58 @@ def _filtrar_detecciones_v2(dets, confianza_min, max_area_frac, area_frame):
     return filtradas
 
 
+def posicionar_en_frame(cap, objetivo: int) -> int:
+    """Deja el vídeo justo antes del frame `objetivo`. Devuelve dónde quedó.
+
+    `cap.set(CAP_PROP_POS_FRAMES, n)` NO es fiable con vídeo comprimido:
+    salta al fotograma clave más cercano, que puede estar muy lejos. En
+    el partido del benjamín, pedir el frame 8991 dejaba el vídeo en el
+    9292 — **301 frames, 10 segundos de desincronía**. El efecto es
+    traicionero porque no rompe nada: pinta cajas correctas sobre el
+    fotograma equivocado, y el desajuste se ve pequeño en los jugadores
+    lejanos (pocos píxeles por frame) y enorme en los cercanos.
+
+    Por eso el salto se VERIFICA siempre y, si no cayó donde debía, se
+    rebobina y se avanza decodificando. No se decodifica SIEMPRE porque
+    cuesta caro: llegar al minuto 5 de este partido son 27 s, y en un
+    partido entero, minutos.
+
+    Ojo con una trampa: `cap.set` acepta un frame que no existe y luego
+    `cap.get` devuelve tan campante la posición pedida, así que la
+    comprobación de POS_FRAMES por sí sola no basta y hay que mirar
+    además cuántos frames tiene el vídeo.
+    """
+    if objetivo <= 0:
+        return 0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total > 0 and objetivo >= total:
+        raise RuntimeError(
+            f"No se pudo posicionar en el frame {objetivo}: el vídeo solo "
+            f"tiene {total}. ¿El tramo (muestreo.tramo) cae fuera del vídeo?"
+        )
+    cap.set(cv2.CAP_PROP_POS_FRAMES, objetivo)
+    pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+    if pos == objetivo:
+        return pos
+    logger.warning(
+        "El salto al frame %d cayó en el %d: se reposiciona decodificando "
+        "(sin esto, las cajas irían sobre el fotograma equivocado)",
+        objetivo,
+        pos,
+    )
+    if pos > objetivo:  # se pasó: no hay marcha atrás, hay que rebobinar
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        pos = 0
+    while pos < objetivo and cap.grab():
+        pos += 1
+    if pos != objetivo:
+        raise RuntimeError(
+            f"No se pudo posicionar en el frame {objetivo} (se llegó al {pos}): "
+            "¿el vídeo es más corto que el tramo pedido?"
+        )
+    return pos
+
+
 def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     """Modo FULL (Colab GPU): vídeo → detección SAHI → cachés en disco.
 
@@ -393,6 +454,16 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     from sahi.predict import get_sliced_prediction
 
     from src.team_classification.color_classifier import extraer_color_torso
+    from src.team_classification.feature_v2 import extraer_color_torso_v2
+
+    # Versión de la feature de color. La v2 añade V (desbloquea el
+    # arquetipo negro del catálogo arbitral) y el histograma del
+    # pantalón, y sus 256 primeros valores son EXACTAMENTE la v1, así que
+    # ningún umbral calibrado cambia de escala. Se elige por config
+    # porque cambiarla obliga a regenerar los cachés.
+    version_color = int(cfg.get("deteccion", {}).get("version_color", 1))
+    extractor = extraer_color_torso_v2 if version_color >= 2 else extraer_color_torso
+    logger.info("Feature de color v%d (la v2 añade V y pantalón)", version_color)
 
     validar_config(cfg, _CLAVES_FULL)
     cfg_det = cfg["deteccion"]
@@ -422,7 +493,7 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     # Tramo/límite opcional (muestreo.tramo / muestreo.max_frames)
     frame_ini, frame_fin = _rango_de_frames(cfg["muestreo"], fps)
     if frame_ini > 0:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_ini)
+        posicionar_en_frame(cap, frame_ini)
         logger.info(
             "Tramo: arrancando en el frame %d (t=%.1f s)%s",
             frame_ini,
@@ -467,7 +538,7 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
             if crop.size > 0:
                 # ÚNICA función de extracción del repo (normalización L2,
                 # la escala en la que están calibrados todos los umbrales)
-                feat = extraer_color_torso(crop)
+                feat = extractor(crop)
                 if feat.sum() > 0:
                     colores[(frame_idx, det_idx)] = feat
         cache.append({"frame_idx": frame_idx, "t": frame_idx / fps, "dets": dets})
@@ -494,6 +565,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         entrenar_clasificador,
     )
     from src.tracking.cache_io import cargar_cache
+    from src.tracking.filtro_confianza import filtrar_por_confianza
     from src.tracking.perfiles import correr_perfil
 
     validar_config(cfg, _CLAVES_DESDE_CACHE)
@@ -507,10 +579,53 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         with open(ruta_colores, "rb") as f:
             colores = pickle.load(f)
 
+    # Filtro de confianza ANTES de entrenar nada: el clasificador debe
+    # ajustarse a la población de detecciones que va a ver el tracker, no
+    # a una que se acaba de descartar.
+    conf_min = float(cfg_tracking.get("confianza_min", 0.0) or 0.0)
+    if conf_min > 0:
+        datos["cache"], colores = filtrar_por_confianza(
+            datos["cache"], colores, conf_min
+        )
+
+    # Caché de embeddings de apariencia (opcional). Se filtra con el
+    # MISMO criterio de confianza que el resto: si no, sus det_idx
+    # apuntarían a otras cajas — el fallo silencioso de siempre.
+    embeddings = None
+    ruta_emb = cfg["rutas"].get("cache_embeddings")
+    if ruta_emb and Path(ruta_emb).exists():
+        with open(ruta_emb, "rb") as f:
+            d_emb = pickle.load(f)
+        V = np.asarray(d_emb["embeddings"], dtype=np.float32)
+        crudo = {tuple(c): V[i] for i, c in enumerate(d_emb["claves"])}
+        if conf_min > 0:
+            datos_crudos = cargar_cache(cfg["rutas"]["cache"])
+            embeddings = {}
+            for e in datos_crudos["cache"]:
+                fr, j = e["frame_idx"], 0
+                for i, det in enumerate(e["dets"]):
+                    if det[6] < conf_min:
+                        continue
+                    if (fr, i) in crudo:
+                        embeddings[(fr, j)] = crudo[(fr, i)]
+                    j += 1
+        else:
+            embeddings = crudo
+        logger.info(
+            "Caché de embeddings: %s (%d vectores, backbone %s)",
+            ruta_emb,
+            len(embeddings),
+            d_emb.get("backbone", "?"),
+        )
+
     clasificador = None
     cfg_equipos = {}
     if colores is not None and cfg.get("equipos", {}).get("activo", True):
-        cfg_equipos = cargar_config_equipos()
+        # Ruta configurable: cada campo tiene su propia config de equipos
+        # (áreas de portería, eje de profundidad, dimensiones).
+        cfg_equipos = cargar_config_equipos(
+            cfg.get("config_equipos", "configs/team_classification.yaml")
+        )
         clasificador = entrenar_clasificador(colores, cfg_equipos, datos["cache"])
 
     identidades = correr_perfil(
@@ -521,6 +636,8 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         perfil=cfg["tracking"]["perfil"],
         colores=colores,
         clasificador=clasificador,
+        cfg_equipos=cfg_equipos,
+        embeddings=embeddings,
     )
 
     equipos: dict[int, str] = {}
@@ -529,43 +646,113 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             identidades, colores, clasificador, cfg_equipos
         )
 
-    return exportar_posiciones(identidades, equipos, datos, cfg)
+    # Fase post-clasificación (consolidación + interpolación), compartida
+    # con el banco: src/tracking/perfiles.py::postprocesar.
+    from src.tracking.perfiles import postprocesar
+    from src.tracking.resolucion import desde_config
+
+    # Escalado por resolución local: sin él, los umbrales en m/s valen lo
+    # mismo donde 1 píxel son 2 cm que donde son 44 (ver el bloque
+    # `escalado_resolucion` de configs/tracking_benja.yaml). Es None
+    # salvo que la config lo pida, así que el F11 no cambia.
+    resolucion = desde_config(
+        cfg_tracking,
+        cfg["rutas"]["homografia"],
+        cfg["campo_m"]["largo"],
+        cfg["campo_m"]["ancho"],
+    )
+    frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
+    # El suavizado necesita el dt REAL de este caché (varía con fps y
+    # submuestreo), no un valor por defecto.
+    if cfg_tracking.get("suavizado", {}).get("activo", False):
+        cfg_tracking["suavizado"]["dt"] = (
+            datos["sample"] / datos["fps"] if datos["fps"] else 0.12
+        )
+
+    trayectorias, equipos = postprocesar(
+        identidades,
+        equipos,
+        frames_ts,
+        cfg_tracking,
+        resolucion=resolucion,
+        perfil=cfg["tracking"]["perfil"],
+    )
+
+    # Colores REALES de cada equipo (del prototipo del clasificador), para
+    # que el replay no tenga que pintar de azul y rojo por convenio.
+    colores_equipo = clasificador.colores_equipos() if clasificador else {}
+
+    return exportar_posiciones(
+        trayectorias,
+        equipos,
+        datos,
+        cfg,
+        trayectorias=trayectorias,
+        colores_equipo=colores_equipo,
+    )
 
 
 def exportar_posiciones(
-    identidades, equipos: dict[int, str], datos: dict, cfg: dict
+    identidades,
+    equipos: dict[int, str],
+    datos: dict,
+    cfg: dict,
+    trayectorias=None,
+    colores_equipo: dict | None = None,
 ) -> pd.DataFrame:
     """Escribe el CSV de posiciones y el meta JSON (formato compatible).
 
     Columnas: frame, tiempo_s, id_jugador, equipo (0=A, 1=B, 2=otro;
     porteros con su equipo) y etiqueta (A/B/portero_A/portero_B/otro).
+
+    Args:
+        trayectorias: salida de interpolar_identidades (una lista de
+            (frame_idx, pos, es_real) por identidad, en el MISMO orden que
+            `identidades`). Si se pasa, el CSV sale de las trayectorias
+            (posiciones reales + interpoladas); si no, de los tracklets.
     """
     fps = datos["fps"]
     largo, ancho = cfg["campo_m"]["largo"], cfg["campo_m"]["ancho"]
     margen = cfg["campo_m"]["margen"]
 
+    # Observaciones (frame, pos, es_real) por identidad
+    if trayectorias is not None:
+        observaciones = [list(tray) for tray in trayectorias]
+    else:
+        observaciones = [
+            [
+                (frame_idx, pos, True)
+                for tracklet in identidad
+                for pos, (frame_idx, _det) in zip(tracklet.pos, tracklet.det_idxs)
+            ]
+            for identidad in identidades
+        ]
+
     filas = []
-    for id_identidad, identidad in enumerate(identidades, start=1):
+    for id_identidad, obs_identidad in enumerate(observaciones, start=1):
         etiqueta = equipos.get(id_identidad, "otro")
         entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
-        for tracklet in identidad:
-            for pos, (frame_idx, _det) in zip(tracklet.pos, tracklet.det_idxs):
-                mx, my = float(pos[0]), float(pos[1])
-                if not (-margen <= mx <= largo + margen):
-                    continue
-                if not (-margen <= my <= ancho + margen):
-                    continue
-                filas.append(
-                    {
-                        "frame": int(frame_idx),
-                        "tiempo_s": round(frame_idx / fps, 2),
-                        "id_jugador": id_identidad,
-                        "equipo": entero,
-                        "etiqueta": etiqueta,
-                        "x_m": round(mx, 2),
-                        "y_m": round(my, 2),
-                    }
-                )
+        for frame_idx, pos, es_real in obs_identidad:
+            mx, my = float(pos[0]), float(pos[1])
+            if not (-margen <= mx <= largo + margen):
+                continue
+            if not (-margen <= my <= ancho + margen):
+                continue
+            filas.append(
+                {
+                    "frame": int(frame_idx),
+                    "tiempo_s": round(frame_idx / fps, 2),
+                    "id_jugador": id_identidad,
+                    "equipo": entero,
+                    "etiqueta": etiqueta,
+                    "x_m": round(mx, 2),
+                    "y_m": round(my, 2),
+                    # 1 = detección real; 0 = posición interpolada. El
+                    # informe las usa todas (cobertura); el replay filtra
+                    # las interpoladas "viejas" para no pintar ficción.
+                    "es_real": int(bool(es_real)),
+                }
+            )
     df = pd.DataFrame(filas).sort_values(["frame", "id_jugador"])
 
     Path(cfg["rutas"]["salida_csv"]).parent.mkdir(parents=True, exist_ok=True)
@@ -585,6 +772,9 @@ def exportar_posiciones(
         # Campos nuevos del pipeline v2
         "pipeline_version": "v2",
         "perfil_tracking": cfg["tracking"]["perfil"],
+        "interpolacion": trayectorias is not None,
+        # Color de camiseta de cada equipo, derivado del clasificador
+        "colores_equipo": colores_equipo or {},
         "n_identidades": len(identidades),
         "equipos": {
             etiqueta: sum(1 for e in equipos.values() if e == etiqueta)
@@ -593,19 +783,33 @@ def exportar_posiciones(
     }
     with open(cfg["rutas"]["salida_meta"], "w") as f:
         json.dump(meta, f, indent=2)
+    # Las identidades escritas NO son todas las que salieron del tracker:
+    # el export descarta las que no dejan ninguna fila válida. Decirlo con
+    # `len(identidades)` engaña —86 frente a 40 en el benjamín del v4—, y
+    # es la cifra que uno lee para juzgar si hay exceso de fragmentos.
     logger.info(
-        "Exportadas %d posiciones de %d identidades (%s)",
+        "Exportadas %d posiciones de %d identidades (de %d que dio el tracker) (%s)",
         len(filas),
+        meta["ids_unicos"],
         len(identidades),
         cfg["rutas"]["salida_csv"],
     )
     return df
 
 
-def procesar_partido(config_path: str = "configs/processor.yaml") -> pd.DataFrame:
-    """Punto de entrada único: despacha según configs/processor.yaml."""
+def procesar_partido(
+    config_path: str = "configs/processor.yaml", modo: str | None = None
+) -> pd.DataFrame:
+    """Punto de entrada único: despacha según configs/processor.yaml.
+
+    `modo` sobrescribe el del yaml. Existe para poder correr en local
+    (desde_cache, sin GPU) el MISMO config que se usa en Colab (full),
+    sin duplicarlo ni editarlo cada vez.
+    """
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
+    if modo is not None:
+        cfg["modo"] = modo
 
     if cfg["pipeline"] == "legacy":
         logger.info("Pipeline LEGACY (fallback) — process_video clásico")

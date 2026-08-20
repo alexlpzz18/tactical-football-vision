@@ -1,0 +1,60 @@
+# Campo del partido de BENJAMINES (fútbol 7) — caso nuevo, convive con el
+# F11 de Villaviciosa sin tocarlo.
+#
+# Cómo se usa:
+#   python -m src.homography.marcar_puntos --config configs/campo_benja.yaml
+#   python -m src.homography.calcular_homografia --config configs/campo_benja.yaml
+#   python scripts/auditar_escala.py --config configs/campo_benja.yaml
+#
+# ⚠️ largo y ancho son una ESTIMACIÓN de partida. Las marcas interiores
+# (área, penalti, círculo, portería) sí son reglamento F7 de la Federación
+# de Fútbol de Madrid y no se tocan: son la referencia con la que
+# auditar_escala.py deriva las medidas reales del campo desde los clics.
+
+campo:
+  nombre: benjamines
+  tipo: f7 # de qué reglamento salen las marcas interiores
+  largo: 62.0 # ESTIMADO — sustituir por lo que derive la auditoría
+  ancho: 40.0 # ESTIMADO
+
+  # Solo hace falta tocar esto si el campo es atípico (por ejemplo, un
+  # área más estrecha de lo reglamentario). Si se omite, se usan las
+  # medidas F7 de src/campo_modelo.py: área 26x12, penalti 9,
+  # círculo r=6, portería 6.
+  # marcas:
+  #   area_ancho: 26.0
+  #   area_profundidad: 12.0
+  #   penalti: 9.0
+  #   circulo_radio: 6.0
+  #   porteria_ancho: 6.0
+
+# Rutas PROPIAS del benja: no pisan ningún archivo de Villaviciosa.
+rutas:
+  imagen: data/calibracion_benja/frame.png
+  puntos: data/calibracion_benja/puntos_marcados_benja.json
+  homografia: data/calibracion_benja/homografia_benja.npy
+
+# ── Nota sobre la ÓPTICA de este caso (cámara normal tras portería) ──
+#
+# La cámara va baja y detrás de una portería, así que el eje LARGO del
+# campo se aleja de la cámara. Consecuencia física (no es un bug):
+# para una cámara a altura h mirando al suelo, un desplazamiento en el
+# suelo a distancia d se proyecta con un factor ~h/d², de modo que los
+# metros por píxel crecen con el CUADRADO de la distancia. Entre un
+# jugador a 10 m y otro a 50 m hay un factor ~25 en el error de
+# localización por píxel de error de la caja.
+#
+# Implicaciones prácticas:
+#   - La mitad lejana (sobre todo el área contraria) tendrá un error de
+#     metros grande por poco error de píxel. Los umbrales que dependen de
+#     la profundidad hay que recalibrarlos para ESTE campo.
+#   - Al marcar puntos, los del fondo lejano son los menos fiables: es
+#     mejor saltarlos que clicarlos a ojo (auditar_escala.py informa del
+#     residuo por punto para detectarlo).
+#   - A cambio, la cámara sin distorsión evita el problema de lente que
+#     ensucia la calibración de Villaviciosa.
+
+# Orientación del REPLAY para que case con la vista de la cámara.
+# Elegida visualmente por Alex (11-ago-2026) entre las cuatro variantes.
+espejar: y
+radio_ficha_m: 0.8   # feedback perceptual: la ficha grande sobrevende la precisión

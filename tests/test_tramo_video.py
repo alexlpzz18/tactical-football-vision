@@ -57,3 +57,71 @@ def test_tramo_fraccional():
     ini, fin = _rango_de_frames(cfg, fps=25.0)
     assert ini == pytest.approx(3750)
     assert fin == pytest.approx(3750 + 750)
+
+
+# ── posicionamiento en el vídeo ───────────────────────────────────────
+
+
+def _video_sintetico(ruta, n_frames=90, w=160, h=120):
+    """Vídeo donde cada frame lleva ESCRITO su número, en su propio brillo.
+
+    Cada frame es de un gris uniforme igual a 2·i, así se puede saber sin
+    ambigüedad qué frame se ha leído. El paso de 2 y el frame uniforme
+    dejan margen de sobra para el ruido del códec.
+    """
+    import cv2
+    import numpy as np
+
+    for fourcc, ext in (("avc1", ".mp4"), ("mp4v", ".mp4"), ("MJPG", ".avi")):
+        destino = ruta.with_suffix(ext)
+        escritor = cv2.VideoWriter(
+            str(destino), cv2.VideoWriter_fourcc(*fourcc), 30, (w, h)
+        )
+        if not escritor.isOpened():
+            escritor.release()
+            continue
+        for i in range(n_frames):
+            escritor.write(np.full((h, w, 3), 2 * i, dtype=np.uint8))
+        escritor.release()
+        if cv2.VideoCapture(str(destino)).read()[0]:
+            return destino
+    pytest.skip("ningún códec disponible para escribir el vídeo de prueba")
+
+
+def test_posicionar_deja_el_video_en_el_frame_pedido(tmp_path):
+    """Regresión del bug del benjamín (10-ago-2026).
+
+    `cap.set(POS_FRAMES, 8991)` dejaba el vídeo en el 9292 — 301 frames,
+    10 segundos — y el vídeo de diagnóstico pintaba cajas correctas sobre
+    el fotograma equivocado. El desajuste parecía espacial (creciente
+    hacia los bordes) porque los jugadores cercanos recorren muchos más
+    píxeles por frame que los lejanos.
+    """
+    import cv2
+
+    from src.tracking_data.processor import posicionar_en_frame
+
+    ruta = _video_sintetico(tmp_path / "v.mp4")
+    for objetivo in (0, 1, 37, 64, 89):
+        cap = cv2.VideoCapture(str(ruta))
+        posicionar_en_frame(cap, objetivo)
+        ok, frame = cap.read()
+        cap.release()
+        assert ok, f"no se pudo leer tras posicionar en {objetivo}"
+        leido = int(round(float(frame.mean()) / 2))
+        assert leido == objetivo, (
+            f"se pidió el frame {objetivo} y se leyó el {leido}: "
+            "las cajas irían sobre el fotograma equivocado"
+        )
+
+
+def test_posicionar_avisa_si_el_tramo_excede_el_video(tmp_path):
+    import cv2
+
+    from src.tracking_data.processor import posicionar_en_frame
+
+    ruta = _video_sintetico(tmp_path / "v.mp4", n_frames=30)
+    cap = cv2.VideoCapture(str(ruta))
+    with pytest.raises(RuntimeError, match="No se pudo posicionar"):
+        posicionar_en_frame(cap, 500)
+    cap.release()

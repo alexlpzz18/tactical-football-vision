@@ -1,0 +1,64 @@
+# Entrenamiento del detector de JUGADORES v4 (840 imágenes).
+#
+# Decisión de tamaño: yolov8m (decidido con Alex, 16-ago-2026). El
+# argumento no es el mAP por sí mismo sino el ciclo de trabajo: un modelo
+# mejor pre-anota mejor los siguientes lotes, y etiquetar es hoy el
+# cuello de botella. El coste de inferencia se optimiza más adelante,
+# cuando haya volumen que lo justifique — destilar a small con el medium
+# como maestro sigue estando disponible entonces.
+#
+# Historial para comparar: v3 (yolov8s, ~380 img) mAP50 0.857 · v4pre
+# (yolov8s, 478 img) mAP50 0.90.
+
+modelo:
+  base: yolov8m.pt
+  clases: [jugador]
+
+entrenamiento:
+  epochs: 120
+  # 1280 como el v4pre: los jugadores miden 15-40 px y a 640 el detalle
+  # del fondo desaparece. No se baja aunque el modelo sea más grande.
+  imgsz: 1280
+  # yolov8m a 1280 no cabe con batch 16 en una T4 (16 GB). 8 es lo
+  # seguro; con A100 se puede subir a 16.
+  batch: 8
+  patience: 25
+  optimizer: auto
+  cos_lr: true
+  # Semilla fija: sin ella, comparar v4 con v4pre mide también el azar.
+  seed: 0
+
+# Heredada del v4pre, que es lo que dio 0.90. No se toca en el mismo
+# salto en que cambia el tamaño del modelo: si el resultado sorprende,
+# hay que saber a qué atribuirlo.
+augmentation:
+  mosaic: 1.0
+  scale: 0.5
+  translate: 0.1
+  fliplr: 0.5
+  flipud: 0.0
+  hsv_v: 0.4
+  hsv_s: 0.5
+  hsv_h: 0.015
+  mixup: 0.0
+  copy_paste: 0.0
+  erasing: 0.0
+
+# Versionado del dataset en W&B: sin esto, dentro de tres lotes nadie
+# sabrá con qué imágenes exactas se entrenó cada modelo, y comparar mAPs
+# entre runs deja de significar nada.
+wandb:
+  activo: true
+  proyecto: tactical-lens-deteccion
+  entidad: null # null = tu usuario por defecto
+  artifact_dataset: dataset-v4-840
+  # Se registran también los lotes de origen, para poder reconstruir la
+  # historia: qué aportó cada tanda de etiquetado.
+  tags: [v4, yolov8m, 840img, dos-etiquetadores]
+
+evaluacion:
+  # El mismo criterio de siempre: el salto se juzga contra v4pre en el
+  # banco de tracking, no solo por el mAP. Un mAP mejor que no mueve la
+  # cobertura colectiva no es un salto de producto.
+  comparar_con: models/weights/best_v4pre.pt
+  banco: configs/evaluation_v4pre.yaml

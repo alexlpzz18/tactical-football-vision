@@ -1,0 +1,51 @@
+# PILOTO DE BALÓN: 5 min del benjamín con los DOS modelos.
+# Guía de Colab y plan de medición: docs/piloto_balon.md
+# Rutas de salida propias: no pisa nada del tramo de 1 min.
+
+pipeline: nuevo
+modo: full
+deteccion:
+  modelo: models/weights/best_v4pre.pt
+  confianza: 0.3
+  max_area_caja: 0.05
+  sahi:
+    filas: 2
+    columnas: 4
+    solape: 0.2
+  device: cuda
+distorsion:
+  k1: 0.0
+  k2: 0.0
+muestreo:
+  sample_every: 3
+  tramo:
+    min_ini: 5.0
+    dur_seg: 300.0
+tracking:
+  perfil: bytetrack
+config_tracking: configs/tracking_benja.yaml
+equipos:
+  activo: true
+config_equipos: configs/team_classification_benja.yaml
+campo_m:
+  largo: 62.0
+  ancho: 40.0
+  margen: 5.0
+rutas:
+  video: data/raw/benja_gredos_p1_20min.mp4
+  cache: data/tracking_benja/cache_detecciones_benja_piloto5min.pkl
+  cache_colores: data/tracking_benja/cache_colores_benja_piloto5min.pkl
+  homografia: data/calibracion_benja/homografia_benja.npy
+  salida_csv: data/tracking_benja/posiciones_benja_piloto5min.csv
+  salida_meta: data/tracking_benja/posiciones_benja_meta_piloto5min.json
+  cache_balon: data/tracking_benja/cache_balon_piloto.pkl
+balon:
+  modelo: models/weights/best_balon_v1.pt
+  confianza: 0.35  # ELEGIDO por barrido: P 0.958 / R 0.836 / F0.5 0.931 (meseta con 0.40)
+  imgsz: 1280
+  sample_every: 2
+  sahi:
+    activo: false
+    filas: 3
+    columnas: 5
+    solape: 0.15

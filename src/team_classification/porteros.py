@@ -46,6 +46,144 @@ class ReglaPorteros:
                 d[clave] = tuple(d[clave])
         return cls(**d)
 
+    @classmethod
+    def desde_modelo(
+        cls,
+        modelo,
+        margen: float = 2.0,
+        equipo_mx_alto: str = "A",
+        equipo_mx_bajo: str = "B",
+    ) -> "ReglaPorteros":
+        """Deriva las áreas del MODELO de campo en vez de hardcodearlas.
+
+        Los valores por defecto de esta clase son los del F11 de
+        Villaviciosa, ajustados a mano contra su ground truth. En un campo
+        de otra medida no significan nada: un corte en mx=88,5 no existe
+        en un campo de 62 m de largo. Con esto, la regla sale del
+        reglamento de la modalidad y de las dimensiones reales del campo.
+        """
+        areas = modelo.areas_porteria(margen=margen)
+        return cls(
+            area_mx_bajo=areas["bajo"][0],
+            area_mx_alto=areas["alto"][0],
+            area_my=areas["bajo"][1],
+            equipo_mx_alto=equipo_mx_alto,
+            equipo_mx_bajo=equipo_mx_bajo,
+        )
+
+
+def _mediana(identidad: list[Tracklet]) -> tuple[float, float]:
+    """Posición mediana de la identidad (mx, my)."""
+    posiciones = np.array([pos for tr in identidad for pos in tr.pos])
+    mediana = np.median(posiciones, axis=0)
+    return float(mediana[0]), float(mediana[1])
+
+
+def _en_area(mx: float, my: float, regla: "ReglaPorteros") -> str | None:
+    """'bajo', 'alto' o None según en qué área de portería vive."""
+    if not (regla.area_my[0] <= my <= regla.area_my[1]):
+        return None
+    if regla.area_mx_bajo[0] <= mx <= regla.area_mx_bajo[1]:
+        return "bajo"
+    if regla.area_mx_alto[0] <= mx <= regla.area_mx_alto[1]:
+        return "alto"
+    return None
+
+
+def deducir_lados(
+    equipos: dict[int, str],
+    identidades: list[list[Tracklet]],
+    largo: float,
+    regla: "ReglaPorteros | None" = None,
+    ancho: float | None = None,
+    separacion_min_frac: float = 0.02,
+) -> tuple[str, str] | None:
+    """Qué equipo defiende cada portería, DEDUCIDO de las posiciones.
+
+    Antes esto era un par de claves de config que había que "ajustar al
+    partido" a mano. No funciona: nadie puede verificarlo a ojo sobre un
+    replay, y en el benjamín estaba al revés — los porteros salían
+    cruzados (el portero_A era en realidad el del equipo B).
+
+    La señal que sí decide: el equipo que defiende la portería x=0 tiene
+    a sus jugadores, en promedio, más cerca de ella que el rival, porque
+    sus defensas viven ahí. Medido en el benjamín: A 30,0 m vs B 34,1 m
+    sobre un campo de 62, una separación de 4,2 m que no deja duda y que
+    da el lado CORRECTO (el contrario del que estaba configurado).
+
+    Se usa el eje LARGO (pos[0]), que es donde están las porterías, sea
+    cual sea el eje de profundidad de la cámara.
+
+    ⚠️ Los propios porteros NO pueden votar, y por eso hace falta `regla`.
+    El motivo no es que "voten al equipo contrario", sino que su etiqueta
+    de color es basura: un portero viste distinto a sus compañeros, así
+    que el clasificador le asigna un equipo prácticamente al azar. Y como
+    además vive en un extremo del campo, ese voto aleatorio arrastra la
+    media de quien le toque. Medido en el benjamín: dejándolos votar sale
+    A 42,4 vs B 34,2 (invertido); excluyéndolos, A 30,0 vs B 34,1
+    (correcto, y coincide con la verificación visual).
+
+    Args:
+        equipos: {id: etiqueta} del clasificador de color.
+        identidades: las identidades, en el mismo orden 1..N.
+        largo: largo del campo en metros.
+        regla: si se pasa, las identidades que viven en un área de
+            portería quedan EXCLUIDAS del voto (ver arriba).
+        ancho: ancho del campo. Con él solo votan las posiciones DENTRO
+            del campo — imprescindible, porque esta deducción corre antes
+            que la regla de staff y en el fondo de la imagen hay público
+            y suplentes proyectados a x=71, 80 y hasta 95 m sobre un
+            campo de 62. Con ellos dentro, la media de su equipo se
+            dispara y el signo vuelve a salir invertido.
+        separacion_min_frac: separación mínima entre las medias, como
+            fracción del largo, para fiarse. Por debajo se devuelve None
+            y manda la config.
+
+    Returns:
+        (equipo_bajo, equipo_alto) o None si la señal no es concluyente.
+    """
+    posiciones: dict[str, list[float]] = {"A": [], "B": []}
+    for indice, identidad in enumerate(identidades, start=1):
+        etiqueta = equipos.get(indice)
+        if etiqueta not in posiciones:
+            continue  # porteros ya marcados, staff, 'otro': no votan
+        if regla is not None and _en_area(*_mediana(identidad), regla) is not None:
+            continue  # vive en un área: es portero, y su voto invierte el signo
+        for tracklet in identidad:
+            for pos in tracklet.pos:
+                mx, my = float(pos[0]), float(pos[1])
+                if not 0.0 <= mx <= largo:
+                    continue
+                if ancho is not None and not 0.0 <= my <= ancho:
+                    continue
+                posiciones[etiqueta].append(mx)
+
+    if not posiciones["A"] or not posiciones["B"]:
+        return None
+    media_a = float(np.mean(posiciones["A"]))
+    media_b = float(np.mean(posiciones["B"]))
+    if abs(media_a - media_b) < separacion_min_frac * largo:
+        logger.warning(
+            "Lados de portería no concluyentes (A %.1f m vs B %.1f m, "
+            "separación < %.0f %% del campo): se usa lo configurado",
+            media_a,
+            media_b,
+            100 * separacion_min_frac,
+        )
+        return None
+
+    bajo, alto = ("A", "B") if media_a < media_b else ("B", "A")
+    logger.info(
+        "Lados deducidos de las posiciones: %s defiende x=0 y %s x=%.0f "
+        "(x media: A %.1f m, B %.1f m)",
+        bajo,
+        alto,
+        largo,
+        media_a,
+        media_b,
+    )
+    return bajo, alto
+
 
 def aplicar_regla_porteros(
     equipos: dict[int, str],
@@ -66,18 +204,48 @@ def aplicar_regla_porteros(
         'portero_A' / 'portero_B'.
     """
     resultado = dict(equipos)
-    n_reetiquetadas = 0
+
+    # EXCLUSIVIDAD: un solo portero por área. Antes, cualquier identidad
+    # cuya mediana cayera en el área se convertía en portero, así que un
+    # defensa que pasa el rato ahí —o un delantero que presiona— salía
+    # reetiquetado. Caso real del benjamín: el id 55, un jugador de campo
+    # del equipo B, se lo comió la regla.
+    #
+    # El criterio para elegir entre candidatos es la PERMANENCIA: el
+    # portero es quien más observaciones acumula dentro del área, y por
+    # goleada. Los demás se quedan con su etiqueta de color.
+    candidatos: dict[str, list[tuple[int, int]]] = {"bajo": [], "alto": []}
     for id_identidad, identidad in enumerate(identidades, start=1):
-        posiciones = np.array([pos for tr in identidad for pos in tr.pos])
-        mediana = np.median(posiciones, axis=0)
-        mx, my = float(mediana[0]), float(mediana[1])
-        if not (regla.area_my[0] <= my <= regla.area_my[1]):
+        lado = _en_area(*_mediana(identidad), regla)
+        if lado is None:
             continue
-        if regla.area_mx_bajo[0] <= mx <= regla.area_mx_bajo[1]:
-            resultado[id_identidad] = f"portero_{regla.equipo_mx_bajo}"
-            n_reetiquetadas += 1
-        elif regla.area_mx_alto[0] <= mx <= regla.area_mx_alto[1]:
-            resultado[id_identidad] = f"portero_{regla.equipo_mx_alto}"
-            n_reetiquetadas += 1
+        dentro = sum(
+            1
+            for tracklet in identidad
+            for pos in tracklet.pos
+            if _en_area(float(pos[0]), float(pos[1]), regla) == lado
+        )
+        candidatos[lado].append((dentro, id_identidad))
+
+    n_reetiquetadas = 0
+    for lado, lista in candidatos.items():
+        if not lista:
+            continue
+        lista.sort(reverse=True)
+        dentro, id_identidad = lista[0]
+        equipo = regla.equipo_mx_bajo if lado == "bajo" else regla.equipo_mx_alto
+        resultado[id_identidad] = f"portero_{equipo}"
+        n_reetiquetadas += 1
+        for otros_dentro, otro_id in lista[1:]:
+            logger.info(
+                "Identidad %d vive en el área %s (%d obs) pero NO es portero: "
+                "la %d lleva %d. Se queda con su etiqueta de color (%s)",
+                otro_id,
+                lado,
+                otros_dentro,
+                id_identidad,
+                dentro,
+                resultado.get(otro_id),
+            )
     logger.info("Regla de porteros: %d identidades reetiquetadas", n_reetiquetadas)
     return resultado

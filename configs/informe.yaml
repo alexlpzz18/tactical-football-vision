@@ -1,0 +1,120 @@
+# Catálogo de métricas del informe táctico v2.
+#
+# Cada métrica tiene un estado:
+#   activa       → se calcula desde el CSV y se muestra con su valor
+#   proximamente → se muestra en gris con badge y QUÉ falta para activarla
+#
+# "Encender" una métrica cuando llegue su dependencia = cambiar su estado
+# aquí + implementar su calculadora en src/report/metricas_informe.py
+# (el informe falla claro si una métrica 'activa' no tiene calculadora:
+# la config no puede prometer lo que el código no sabe hacer).
+
+# Análisis táctico con IA (paso 6 del MVP2): el código calcula las
+# métricas; el LLM SOLO redacta a partir de esos números. Una llamada a
+# la API por informe. La clave va en .env (NUNCA aquí ni en el código).
+analisis_ia:
+  modelo: claude-sonnet-4-6
+  max_tokens: 1024
+
+parametros:
+  # Nº de jugadores más retrasados que definen la línea defensiva
+  # (excluido el portero) y más adelantados que definen la de ataque
+  n_defensas: 4
+  n_atacantes: 3
+  # Suavizado de la serie de basculación (ventana en segundos)
+  ventana_basculacion_s: 2.0
+
+metricas:
+  # ── ACTIVAS (solo posiciones + equipos del CSV) ──────────────────────
+  - clave: heatmap
+    nombre: Mapa de calor
+    estado: activa
+    definicion: >-
+      Dónde ha estado el equipo: presencia relativa suavizada sobre el
+      campo (intenso = zona muy ocupada, respecto al máximo del propio
+      equipo).
+  - clave: centroide
+    nombre: Centroide
+    estado: activa
+    definicion: >-
+      Posición media de todos los jugadores del equipo durante el tramo,
+      en metros de campo.
+  - clave: amplitud_profundidad
+    nombre: Amplitud y profundidad
+    estado: activa
+    definicion: >-
+      Cuánto se estira el equipo a lo ancho (amplitud) y a lo largo
+      (profundidad) del campo: el doble de la dispersión típica de sus
+      posiciones en cada eje.
+  - clave: altura_linea_defensiva
+    nombre: Altura de la línea defensiva
+    estado: activa
+    definicion: >-
+      Distancia media de la línea defensiva a su propia portería: media de
+      los N jugadores más retrasados (sin el portero) en cada instante.
+      Más metros = defensa más adelantada.
+  - clave: altura_bloque
+    nombre: Altura del bloque
+    estado: activa
+    definicion: >-
+      Distancia media de TODO el equipo (sin portero) a su propia
+      portería. Bloque alto = equipo volcado en campo rival.
+  - clave: distancia_lineas
+    nombre: Distancia entre líneas
+    estado: activa
+    definicion: >-
+      Separación media entre la línea defensiva y la de ataque del propio
+      equipo. Un equipo "largo" (muchos metros) es fácil de jugar por
+      dentro.
+  - clave: basculacion
+    nombre: Basculación lateral
+    estado: activa
+    definicion: >-
+      Hacia qué banda se desplaza el bloque a lo largo del tiempo:
+      posición media del equipo en el eje ancho del campo, como serie
+      temporal.
+  - clave: territorio
+    nombre: Ocupación de zonas y pasillos
+    estado: activa
+    definicion: >-
+      Reparto del tiempo del equipo por tercios del campo (defensa /
+      medio / ataque, relativo a su portería) y por pasillos (banda
+      cercana a cámara / central / banda lejana).
+
+  # ── PRÓXIMAMENTE (con su dependencia explícita) ──────────────────────
+  - clave: posesion
+    nombre: Posesión
+    estado: proximamente
+    requiere: detección de balón — dataset en etiquetado
+  - clave: ppda
+    nombre: PPDA / intensidad de presión
+    estado: proximamente
+    requiere: detección de balón
+  - clave: altura_presion
+    nombre: Altura de presión
+    estado: proximamente
+    requiere: detección de balón
+  - clave: transiciones
+    nombre: Transiciones ofensivas/defensivas
+    estado: proximamente
+    requiere: detección de balón
+  - clave: balon_parado
+    nombre: Balón parado (córners, faltas)
+    estado: proximamente
+    requiere: detección de balón + detección de eventos
+  - clave: xg_tiros
+    nombre: xG y tiros
+    estado: proximamente
+    requiere: detección de eventos — MVP3
+  - clave: duelos
+    nombre: Duelos y marcajes
+    estado: proximamente
+    requiere: detección de eventos — MVP3
+  - clave: fisico
+    nombre: Distancia recorrida y físico por jugador
+    estado: proximamente
+    requiere: tracking individual estable — en optimización
+  - clave: heatmap_individual
+    nombre: Mapa de calor individual
+    estado: proximamente
+    requiere: tracking individual estable

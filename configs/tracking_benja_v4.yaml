@@ -1,0 +1,308 @@
+# Config del detector v4 para el F7 — mismos parámetros medidos en el
+# banco (docs/experimentos_tracking.md, re-barrido del 17-ago-2026).
+# En esta pata el v4 sube de 0.740 a 0.802 de accuracy de equipos,
+# pero el v4pre sigue en 0.883: por eso esto NO es el default.
+confianza_min: 0.45
+
+# Tracking del partido de BENJAMINES (fútbol 7) — deriva de
+# configs/tracking.yaml (Villaviciosa, F11) con los parámetros que
+# DEPENDEN DEL CAMPO ajustados. Los demás se heredan tal cual.
+#
+# ⚠️ Los valores heredados se calibraron en un campo de 100×64 visto desde
+# la banda. Este es 62×40 visto desde detrás de la portería, con una
+# compresión en profundidad mucho mayor (0.02 m/píxel cerca, 0.44 lejos).
+# Son un PUNTO DE PARTIDA razonable, no una calibración: hay que
+# revisarlos con el primer tramo procesado y su replay.
+#
+# Qué se ha cambiado respecto al F11 y por qué:
+#
+#   cota_plantilla.cota   23 → 15   F7 son 7+7 jugadores + árbitro, no
+#                                   22 + árbitro. Dejar 23 haría que la
+#                                   cota nunca actuara (nunca se llega).
+#   consolidacion.dist_max 6.0 → 4.0  6 m en un campo de 62 es
+#                                   proporcionalmente el doble que en uno
+#                                   de 100: fusionaría jugadores distintos.
+#                                   4.0 ≈ el mismo peso relativo.
+#
+# Sin tocar (y por qué se pueden heredar):
+#   corte_velocidad.v_max 8.5 m/s   es un límite FÍSICO (un benjamín corre
+#                                   menos, así que el veto solo será más
+#                                   holgado; no genera falsos cortes).
+#   interpolacion.max_hueco 6.0 s   temporal, no espacial.
+#   etapa_a / cosido                 en metros; el radio físico de un
+#                                   jugador no cambia con el campo.
+
+# Parámetros del tracking en metros (2 etapas), validados experimentalmente
+# en Colab sobre el tramo min 5-6 (ver briefing_claude_code.md, Parte 2).
+# NO cambiar sin medir contra el banco de evaluación (Tarea 3).
+
+etapa_a:
+  # Velocidad máxima plausible de un jugador (m/s). Define el radio de búsqueda:
+  # RADIO = v_max * dt + margen
+  v_max: 7.0
+  # Margen de ruido de detección/proyección (metros)
+  margen: 0.8
+  # Regla anti-robo: si la 2ª mejor opción está a menos de este factor de
+  # distancia extra (en radios), NO asociar (preferimos cortar el tracklet)
+  ambig_factor: 0.7
+  # Un track sin verse más de (max_gap_dts * dt) segundos se cierra
+  max_gap_dts: 3.0
+  # Filtro final: descartar tracklets con menos de estos frames
+  min_frames: 3
+
+# Contexto de plantilla (1/2): exclusión espacial dura — dos identidades
+# co-ubicadas (mediana de distancia <= dist_max en sus frames comunes) son
+# el mismo jugador y se fusionan (deduplicando por frame). No hace nada en
+# el pipeline oficial (sin duplicados paralelos); en el candidato
+# rescate+grafo: IDF1 0.225->0.287, IDSW 807->632, HOTA 0.147->0.165.
+exclusion_espacial:
+  activa: false  # sin efecto en el oficial; imprescindible con rescate
+  dist_max: 1.5
+  min_frames_comunes: 3
+
+# Contexto de plantilla (2/2): cota BLANDA de plantilla — fusión golosa de
+# identidades ENTRELAZADAS (observaciones alternadas en el tiempo,
+# espacialmente compatibles por interpolación) hasta acercar la
+# concurrencia de identidades activas a la plantilla real (~23). Blanda:
+# se para cuando no quedan pares con coste <= coste_max.
+cota_plantilla:
+  activa: false  # solo tiene sentido sobre rescate+grafo+exclusion
+  cota: 15   # F7: 7+7 jugadores + árbitro (F11 eran 23)
+  coste_max: 4.0
+
+# Tarea 3c: segunda pasada de cosido sobre las identidades ya cosidas
+# (fusionadas en super-tracklets), para cerrar huecos largos. Tolerancia
+# más conservadora que la 1ª pasada: con huecos de >6 s la extrapolación
+# lineal es poco fiable, así que la tolerancia crece más despacio.
+segunda_pasada:
+  activa: false  # se decide tras medir contra el banco
+  max_hueco: 12.0
+  tol_base: 1.5
+  tol_por_seg: 1.5
+  peso_hueco: 0.3
+  color_max_dist: 1.2
+  peso_color: 0.15
+
+# Tarea 3b: rescate de tracklets cortos. La Etapa A se corre con
+# min_frames=1 (todo entra al cosido) y el filtro se aplica después a
+# nivel de identidad: se conservan las que suman al menos
+# min_frames_identidad observaciones en total.
+rescate_cortos:
+  activo: false  # se decide tras medir contra el banco
+  min_frames_identidad: 3
+
+# Tarea 3a: interpolación de huecos DENTRO de identidades cosidas.
+# Solo entre dos posiciones reales (nunca extrapolar), solo en frames del
+# caché, y solo si el hueco no supera max_hueco segundos.
+interpolacion:
+  # ADOPTADA con el modelo v4pre (08-ago-2026): cobertura 0.453→0.566 con
+  # la tasa de IDSW bajando (0.339→0.320). Con v3 empeoraba la tasa
+  # (0.341→0.356) y estuvo en off — ver docs/experimentos_tracking.md,
+  # sección "salto v4pre". La aplican el banco y el processor DESPUÉS del
+  # perfil (produce trayectorias, no identidades de tracklets).
+  activa: true
+  # MEDIDO (10-ago-2026): error p90 de interpolar linealmente un hueco,
+  # por duración y zona, sobre este caché:
+  #        hueco   x 0-15m  x 15-30m  x 30-45m  x 45-62m
+  #         1,1 s    0,41 m    0,66 m    1,12 m    1,48 m
+  #         2,1 s    0,92 m    1,33 m    1,88 m    2,13 m
+  #         3,1 s    1,64 m    2,10 m    2,69 m    2,79 m
+  # Los 6,0 s heredados del F11 inventaban >1,6 m INCLUSO en la zona
+  # buena. Topes nuevos: ~1 m de ficción como máximo.
+  max_hueco: 2.5   # antes 6.0 (heredado del F11)
+  hueco_min: 1.2   # tope en la peor zona (escalado por resolución)
+
+# Consolidación FINAL (post-clasificación): fusiona fichas del MISMO
+# equipo co-locadas de forma sostenida — los racimos que se ven en el
+# replay. Se decide midiendo (concurrencia vs cobertura vs tasa IDSW);
+# ver docs/experimentos_tracking.md.
+# ADOPTADA (08-ago-2026): concurrencia 47→36 fichas por frame con la
+# cobertura plana (0.566→0.557), IDF1 0.227→0.281, tasa de IDSW
+# 0.320→0.304, accuracy de equipos 0.733→0.800 y quimeras 36→27.
+# Va ANTES de interpolar (medido: después es peor, compara estelas
+# fantasma). dist_max 6.0 es el borde del acantilado: a 7.0 la cobertura
+# se desploma a 0.456 porque empieza a fusionar jugadores distintos.
+consolidacion:
+  activa: true
+  dist_max: 4.0           # escalado a 62 m de largo (en F11 eran 6.0)
+  min_frames_comunes: 20  # "sostenida": no un cruce puntual
+
+# Corte de TELETRANSPORTES (objetivo "replay creíble", 08-ago-2026):
+# parte la identidad donde la velocidad es imposible de forma SOSTENIDA
+# (cadenas quimera que saltan de un jugador a otro). Medido: 94 rachas de
+# >8,5 m/s → 0, con la cobertura casi intacta (0.557 → 0.553) y sin coste
+# de concurrencia (el corte parte en el tiempo, no añade fichas).
+# El criterio es sostenido y no por paso suelto porque a dt=0,12 s el
+# ruido del fondo (1,16 m de mediana) ya simula 9-10 m/s.
+corte_velocidad:
+  activo: true
+  v_max: 8.5          # m/s (sprint de élite) — criterio de racha SOSTENIDA
+  duracion_min: 0.5   # s que debe durar la racha imposible para cortar
+  min_observaciones: 3  # trozos más cortos se descartan (parpadeo)
+  # Criterio de SALTO INSTANTÁNEO (un solo frame): 60 m/s son 7,2 m en
+  # 0,12 s, 3× el ruido de localización del fondo (p90 2,45 m ≈ 20 m/s).
+  # Sin este criterio quedaban saltos de hasta 37 m en un frame (v_max
+  # 309 m/s) que no formaban racha pero eran lo más visible del replay.
+  v_teleport: 60.0
+
+# ── ESCALADO POR RESOLUCIÓN (clave en este encuadre) ─────────────────
+#
+# Diagnóstico (09-ago-2026): el corte de velocidad hizo 138 cortes en un
+# minuto, frente a un puñado en Villaviciosa. No es que los niños
+# teletransporten: los umbrales estaban en m/s FIJOS y aquí la resolución
+# no es uniforme — un píxel vale 0,02 m junto al área cercana y 0,44 m en
+# el fondo. Con un jitter de caja de 2 px y dt=0,12 s, ese mismo temblor
+# vale 0,35 m/s cerca y 7,4 m/s lejos, así que un umbral de 8,5 m/s se
+# dispara en el fondo con ruido puro.
+#
+# Con esto activo, cada umbral se calcula en la zona donde ocurre:
+#   corte de velocidad   v_max + jitter · (m/píxel) / dt
+#   consolidación        dist_max + jitter · (m/píxel)
+#   interpolación        el hueco máximo se REDUCE donde peor se ve
+#                        (rellenar allí inventa muchos más metros)
+#
+# ── VALORES MEDIDOS (10-ago-2026), ya no estimados ───────────────────
+# Sobre este mismo caché, con el residuo de las cajas respecto a un
+# ajuste lineal local de 5 frames (9.910 muestras):
+#   jitter del punto de pie: p50 1,06 px · rms 2,4 px · p90 4,0 px
+#   → ruido del DESPLAZAMIENTO entre 2 frames = √2 · 2,4 ≈ 3,5 px
+# El jitter es constante en píxeles a cualquier profundidad (2,2-2,8 px
+# rms en las 4 zonas), como corresponde a ruido del detector: lo que
+# cambia con la distancia es cuántos METROS vale ese píxel.
+escalado_resolucion:
+  activo: true
+  jitter_px: 3.5 # MEDIDO: ruido del desplazamiento caja↔caja
+  # La consolidación NO usa el mismo número, y esto se midió: pregunta
+  # "¿son la misma persona?", no "¿cabe en el ruido?". Con 3,5 en ambos
+  # sobre-fusiona, y esas quimeras las trocea después el corte: la vida
+  # mediana de las identidades del medio campo (31-45 m) caía de 30,2 s
+  # a 6,9 s. Ver src/tracking/perfiles.py::_jitter.
+  jitter_px_consolidacion: 2.0
+  paso_rejilla_m: 2.0 # resolución de la rejilla precalculada
+
+cosido:
+  # Hueco temporal máximo entre el final de A y el inicio de B (segundos)
+  max_hueco: 6.0
+  # Tolerancia de distancia para coser: tol = tol_base + tol_por_seg * hueco
+  tol_base: 1.2
+  tol_por_seg: 3.0
+  # Peso del término de hueco en el coste del candidato
+  peso_hueco: 0.3
+  # Veto suave de color: distancia de histogramas mayor que esto → no coser.
+  # (El color en esta cámara es señal débil: mediana entre pares legítimos
+  # = 0.90, p90 = 1.16.)
+  color_max_dist: 1.2
+  # Peso del término de color en el coste del candidato
+  peso_color: 0.15
+  # Selección de uniones: "goloso" (original validado) o "global"
+  # (asignación de coste mínimo en grafo; Tarea 3, ver experimentos)
+  metodo: goloso
+  # Solo para metodo=global: coste de dejar un tracklet sin continuación
+  # (> coste máximo de un candidato real, ~1.45)
+  coste_no_union: 2.0
+  # Consistencia de velocidad en la unión (Tarea 3, ver experimentos):
+  # veto físico si la velocidad implicada por el salto supera v_max_salto
+  # (null = off) y término de coste peso_vel * ||v_salto - vel_A|| / v_ref
+  v_max_salto: null
+  peso_vel: 0.0
+  v_ref: 7.0
+
+# ── BASE NUEVA (perfil "bytetrack") aplicada al F7 ───────────────────
+#
+# Se hereda casi todo de configs/tracking.yaml. Lo que cambia es lo que
+# depende de ESTA cámara: aquí un píxel vale de 0,009 a 0,527 m según la
+# zona, así que el veto de velocidad y la tolerancia del cosido se
+# quedarían cortos en el fondo del campo. El escalado por resolución de
+# `escalado_resolucion` ya los relaja donde toca (lo inyecta el
+# processor), y encima se parte de umbrales algo más holgados.
+bytetrack:
+  umbral_activacion: 0.10
+  # Medido con el v4: 1.5 bate a 2.0 y 3.0 en las cuatro métricas.
+  buffer_perdido_s: 1.5
+  umbral_emparejamiento: 0.995
+  # Exigir DOS detecciones consecutivas para ABRIR identidad. Con un
+  # detector bueno mata fragmentos espurios sin perder cobertura, y es
+  # el cambio que más baja las quimeras (7 → 3).
+  min_frames_consecutivos: 2
+  usar_fps_efectivo: true
+
+cosido_pureza:
+  activo: true
+  # Huecos más cortos que en el F11: el campo es la mitad de largo y la
+  # compresión en profundidad hace que una extrapolación de 4 s en el
+  # fondo se vaya metros.
+  max_hueco: 4.0
+  tol_base: 1.5
+  tol_por_seg: 2.5
+  # Benjamines: corren menos que los adultos del F11 (allí 8,0 m/s).
+  v_max_salto: 6.5
+  color_max_dist: 0.9
+  peso_color: 0.5
+  peso_hueco: 0.3
+  margen_ambiguedad: 0.15
+  solape_max_frames: 0
+  max_pasadas: 3
+
+# ── SUAVIZADO de posiciones (adoptado 11-ago-2026) ───────────────────
+#
+# El diagnóstico frame-a-frame demostró que el replay se ve mal en el
+# fondo del campo CON la detección perfecta: allí 1 px vale medio metro y
+# el temblor de la caja (3,5 px medidos) da ±1,85 m, o sea ±18 m/s.
+# Cortar la identidad por eso era el arreglo equivocado; suavizar la
+# posición ataca el ruido donde está y no toca la identidad.
+#
+# Medido en el banco (base bytetrack), con el p99 de velocidad:
+#
+#   variante                     cob.   IDF1   tasa  quim  v99   %>8.5
+#   sin suavizado                0.558  0.443  0.147   5   30 m/s  —
+#   savgol 0,5 s + resolución    0.567  0.452  0.125   3   16 m/s  —
+#   media 0,5 s + resolución     0.550  0.447  0.120   4    5 m/s  0.1%
+#
+# Se adopta la MEDIA porque el objetivo del encargo era la credibilidad
+# visual: deja el 99,9 % de los pasos por debajo de 8,5 m/s, frente a los
+# 158 m/s del CSV anterior. savgol conserva 0,017 más de cobertura y está
+# a un cambio de config si se prefiere ese equilibrio.
+suavizado:
+  activo: true
+  ventana_s: 0.5
+  metodo: media # media | savgol
+  escalar_con_resolucion: 1.0
+
+# ── PUERTA DE APARIENCIA EN LA RE-ENTRADA ────────────────────────────
+#
+# Cuando ByteTrack recupera un track perdido, exigir que la firma de
+# color case antes de devolverle el id. Si no casa, se parte y el cosido
+# decide después. Va aquí y no en el instante del cruce porque el paso 0
+# lo midió: solape de cajas 1,8× frente a pérdida real del track 3,0×
+# (scripts/diagnostico_quimeras.py).
+#
+# Medido en el banco con el v4 (17-ago-2026):
+#
+#   puerta                 nIds   cob.  conc   IDF1   tasa  quim
+#   desactivada              64  0.610    21  0.540  0.071     5
+#   color 0.9 · hueco 0.5s   79  0.619    21  0.546  0.072     3   ← esta
+#   color 1.1 · hueco 0.5s   66  0.625    21  0.540  0.071     4
+#
+# Se elige 0.9 por pureza (3 quimeras, la mejor cifra que ha dado el
+# proyecto) aceptando +0,001 de tasa de IDSW, que es ruido. La 1.1 es la
+# opción que no degrada NADA en absoluto, si se prefiere cobertura.
+#
+# Sube la cobertura en vez de bajarla, que es lo contrario de los tres
+# cortes fallidos anteriores: partir una quimera deja que el cosido
+# recoloque bien los trozos.
+puerta_reentrada:
+  activa: true
+  # Firma por EMBEDDING (siglip) en vez de color. El color es ciego por
+  # definición a dos compañeros con la misma equipación — el caso #43 —
+  # y a menos de 20 px da 0,000 separando ni siquiera equipos.
+  # Ganador del barrido fino en Villaviciosa (19-ago-2026):
+  #   umbral 0.07-0.08 · hueco 0.5 s · min_obs 3 · sin ponderar
+  # Frente a la puerta de color: quimeras 4→3, del MISMO equipo 2→1,
+  # IDF1 0.542→0.553, cobertura 0.622→0.623.
+  emb_max_dist: 0.08
+  color_max_dist: 0.9      # fallback si no hay caché de embeddings
+  hueco_min_s: 0.5
+  min_obs_firma: 3
+  # Medido: no cambia NINGUNA decisión en el banco. Se deja en false para
+  # no añadir complejidad que no paga.
+  ponderar_por_tamano: false

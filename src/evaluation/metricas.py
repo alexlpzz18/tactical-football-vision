@@ -283,6 +283,148 @@ def cobertura_colectiva(
 
 
 @dataclass
+class ResultadoConcurrencia:
+    """Identidades SIMULTÁNEAS por frame: predichas vs las reales del GT.
+
+    Es el número que grita el replay y que ninguna métrica clásica mira:
+    IDF1/HOTA/cobertura pueden ser razonables con el doble de fichas en
+    pantalla, porque penalizan por posición emparejada, no por exceso de
+    identidades vivas a la vez. Si el pipeline dibuja 44 círculos para 23
+    personas, el producto es inservible aunque las métricas aguanten.
+
+    Nota: se cuentan las identidades con OBSERVACIÓN en el frame (lo que
+    el replay dibuja), no las "activas" entre su primer y último frame.
+    """
+
+    mediana_pred: float
+    p90_pred: float
+    max_pred: int
+    mediana_gt: float
+    p90_gt: float
+    exceso_mediana: float  # mediana_pred - mediana_gt (0 = perfecto)
+
+
+def concurrencia_por_frame(
+    gt: PorFrame,
+    pred: PorFrame,
+    frames: list[int],
+) -> ResultadoConcurrencia:
+    """Mediana/p90/máximo de identidades simultáneas (predichas y GT)."""
+    n_pred = np.array([len(pred.get(frame, [])) for frame in frames], dtype=float)
+    n_gt = np.array([len(gt.get(frame, [])) for frame in frames], dtype=float)
+    resultado = ResultadoConcurrencia(
+        mediana_pred=float(np.median(n_pred)) if len(n_pred) else 0.0,
+        p90_pred=float(np.percentile(n_pred, 90)) if len(n_pred) else 0.0,
+        max_pred=int(n_pred.max()) if len(n_pred) else 0,
+        mediana_gt=float(np.median(n_gt)) if len(n_gt) else 0.0,
+        p90_gt=float(np.percentile(n_gt, 90)) if len(n_gt) else 0.0,
+        exceso_mediana=(
+            float(np.median(n_pred) - np.median(n_gt)) if len(n_pred) else 0.0
+        ),
+    )
+    logger.info(
+        "Concurrencia por frame: pred mediana=%.0f p90=%.0f (GT mediana=%.0f)",
+        resultado.mediana_pred,
+        resultado.p90_pred,
+        resultado.mediana_gt,
+    )
+    return resultado
+
+
+@dataclass
+class ResultadoTransiciones:
+    """Transiciones a velocidad IMPOSIBLE sostenida (fichas "cohete").
+
+    Un salto de un frame es ruido de detección y apenas se ve; lo que
+    destruye la credibilidad del replay es una ficha cruzando el campo a
+    velocidad imposible durante medio segundo o más — típicamente una
+    interpolación que rellena un hueco entre dos posiciones lejanas, o una
+    identidad quimera que salta de un jugador a otro.
+
+    Se cuentan RACHAS: tramos consecutivos con velocidad > v_max que duran
+    al menos `duracion_min` segundos.
+    """
+
+    n_rachas: int
+    n_identidades_afectadas: int
+    duracion_total_s: float
+    v_max_observada: float
+
+
+def transiciones_imposibles(
+    pred: PorFrame,
+    tiempos: dict[int, float],
+    v_max: float = 8.5,
+    duracion_min: float = 0.5,
+) -> ResultadoTransiciones:
+    """Cuenta rachas de velocidad imposible por identidad (ver dataclass).
+
+    Args:
+        pred: observaciones por frame (las del replay/CSV).
+        tiempos: {frame_idx: t en segundos}.
+        v_max: velocidad humanamente plausible (m/s). 8.5 ≈ sprint de élite.
+        duracion_min: duración mínima de la racha para contarla (s).
+    """
+    por_identidad: dict[int, list[tuple[float, np.ndarray]]] = defaultdict(list)
+    for frame, observaciones in pred.items():
+        t = tiempos.get(frame)
+        if t is None:
+            continue
+        for obs in observaciones:
+            por_identidad[obs.obj_id].append((t, obs.pos))
+
+    n_rachas = 0
+    afectadas = set()
+    duracion_total = 0.0
+    v_max_observada = 0.0
+    for obj_id, serie in por_identidad.items():
+        serie.sort(key=lambda x: x[0])
+        racha_inicio: float | None = None
+        anterior_t: float | None = None
+        for (t0, p0), (t1, p1) in zip(serie[:-1], serie[1:]):
+            dt = t1 - t0
+            if dt <= 0:
+                continue
+            velocidad = float(np.linalg.norm(p1 - p0) / dt)
+            v_max_observada = max(v_max_observada, velocidad)
+            if velocidad > v_max:
+                if racha_inicio is None:
+                    racha_inicio = t0
+                anterior_t = t1
+            else:
+                if racha_inicio is not None and anterior_t is not None:
+                    duracion = anterior_t - racha_inicio
+                    if duracion >= duracion_min:
+                        n_rachas += 1
+                        afectadas.add(obj_id)
+                        duracion_total += duracion
+                racha_inicio, anterior_t = None, None
+        if racha_inicio is not None and anterior_t is not None:
+            duracion = anterior_t - racha_inicio
+            if duracion >= duracion_min:
+                n_rachas += 1
+                afectadas.add(obj_id)
+                duracion_total += duracion
+
+    resultado = ResultadoTransiciones(
+        n_rachas=n_rachas,
+        n_identidades_afectadas=len(afectadas),
+        duracion_total_s=round(duracion_total, 2),
+        v_max_observada=round(v_max_observada, 1),
+    )
+    logger.info(
+        "Transiciones imposibles (>%.1f m/s durante ≥%.1f s): %d rachas en "
+        "%d identidades (%.1f s en total)",
+        v_max,
+        duracion_min,
+        resultado.n_rachas,
+        resultado.n_identidades_afectadas,
+        resultado.duracion_total_s,
+    )
+    return resultado
+
+
+@dataclass
 class ResumenEquipos:
     """Resumen de la clasificación de equipos con mapeo A↔B óptimo.
 

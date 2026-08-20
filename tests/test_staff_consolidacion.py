@@ -1,0 +1,324 @@
+"""Tests de la regla de staff, la consolidación final y la concurrencia."""
+
+import numpy as np
+import pytest
+
+from src.evaluation.metricas import concurrencia_por_frame
+from src.evaluation.modelo import Observacion
+from src.team_classification.staff import (
+    ETIQUETA_STAFF,
+    ReglaStaff,
+    aplicar_regla_staff,
+)
+from src.tracking.consolidacion import consolidar_colocadas
+from src.tracking.field_tracker import Tracklet
+
+LARGO, ANCHO = 105.0, 68.0
+
+
+def _identidad(posiciones, id_tracklet=1, frame0=100):
+    """Identidad de un solo tracklet con las posiciones dadas."""
+    tr = Tracklet(id_tracklet, 0.0, np.array(posiciones[0], dtype=float), 0, frame0)
+    for k, pos in enumerate(posiciones[1:], start=1):
+        tr.anadir(0.12 * k, np.array(pos, dtype=float), 0, frame0 + 3 * k)
+    return [tr]
+
+
+# ── regla de staff ────────────────────────────────────────────────────
+
+
+def test_staff_marca_al_de_fuera_del_campo():
+    """Quien vive por encima de la banda (y<0) se marca staff; el de dentro no."""
+    dentro = _identidad([(50.0, 30.0)] * 10)
+    linier = _identidad([(50.0, -4.0)] * 10, id_tracklet=2)
+    equipos = {1: "A", 2: "A"}
+    resultado = aplicar_regla_staff(
+        equipos, [dentro, linier], ReglaStaff(LARGO, ANCHO, tolerancia_m=2.0)
+    )
+    assert resultado[1] == "A"
+    assert resultado[2] == ETIQUETA_STAFF
+
+
+def test_staff_respeta_la_tolerancia():
+    """Un jugador que pisa la banda (1 m fuera) NO es staff con tol 2 m."""
+    pisando = _identidad([(50.0, -1.0)] * 10)
+    resultado = aplicar_regla_staff(
+        {1: "B"}, [pisando], ReglaStaff(LARGO, ANCHO, tolerancia_m=2.0)
+    )
+    assert resultado[1] == "B"
+
+
+def test_staff_usa_la_mediana_no_un_pico():
+    """Una excursión puntual fuera no marca staff (la mediana manda)."""
+    posiciones = [(50.0, 30.0)] * 9 + [(50.0, -30.0)]
+    resultado = aplicar_regla_staff(
+        {1: "A"}, [_identidad(posiciones)], ReglaStaff(LARGO, ANCHO)
+    )
+    assert resultado[1] == "A"
+
+
+def test_staff_no_juzga_con_pocas_observaciones():
+    """Con menos de min_observaciones no se decide (evita artefactos)."""
+    resultado = aplicar_regla_staff(
+        {1: "A"},
+        [_identidad([(-200.0, -300.0)] * 3)],
+        ReglaStaff(LARGO, ANCHO, min_observaciones=5),
+    )
+    assert resultado[1] == "A"
+
+
+def test_staff_pilla_el_artefacto_de_proyeccion_lejano():
+    """Con observaciones suficientes, el artefacto (-125,-313) sí es staff."""
+    resultado = aplicar_regla_staff(
+        {1: "A"},
+        [_identidad([(-125.0, -313.0)] * 8)],
+        ReglaStaff(LARGO, ANCHO, min_observaciones=5),
+    )
+    assert resultado[1] == ETIQUETA_STAFF
+
+
+# ── consolidación final ───────────────────────────────────────────────
+
+
+def _tray(desplazamiento, n=200, x0=50.0, y0=30.0, real=True):
+    """Trayectoria recta con un offset constante respecto a (x0, y0)."""
+    return [
+        (
+            100 + 3 * k,
+            np.array([x0 + 0.05 * k + desplazamiento[0], y0 + desplazamiento[1]]),
+            real,
+        )
+        for k in range(n)
+    ]
+
+
+def test_consolida_pareja_del_mismo_equipo_pegada():
+    """Dos fichas de A a 2 m sostenidos se fusionan en una."""
+    trayectorias = [_tray((0.0, 0.0)), _tray((0.0, 2.0))]
+    nuevas, equipos = consolidar_colocadas(
+        trayectorias, {1: "A", 2: "A"}, dist_max=4.0, min_frames_comunes=100
+    )
+    assert len(nuevas) == 1
+    assert equipos[1] == "A"
+    # Conserva un punto por frame (no duplica frames)
+    frames = [f for f, _p, _r in nuevas[0]]
+    assert len(frames) == len(set(frames)) == 200
+
+
+def test_nunca_fusiona_equipos_distintos():
+    """Aunque estén pegadísimas, A y B no se juntan: eso sería inventar."""
+    trayectorias = [_tray((0.0, 0.0)), _tray((0.0, 0.5))]
+    nuevas, _ = consolidar_colocadas(
+        trayectorias, {1: "A", 2: "B"}, dist_max=4.0, min_frames_comunes=100
+    )
+    assert len(nuevas) == 2
+
+
+def test_no_fusiona_staff_ni_otro():
+    """'staff' y 'otro' quedan fuera de la consolidación."""
+    trayectorias = [_tray((0.0, 0.0)), _tray((0.0, 1.0))]
+    nuevas, _ = consolidar_colocadas(
+        trayectorias, {1: "staff", 2: "staff"}, dist_max=4.0, min_frames_comunes=100
+    )
+    assert len(nuevas) == 2
+
+
+def test_exige_proximidad_sostenida_no_un_cruce():
+    """Pocos frames comunes → no se decide (aunque coincidan en ellos)."""
+    corta = [(100 + 3 * k, np.array([50.0, 30.0]), True) for k in range(10)]
+    larga = _tray((0.0, 0.0))
+    nuevas, _ = consolidar_colocadas(
+        [larga, corta], {1: "A", 2: "A"}, dist_max=4.0, min_frames_comunes=100
+    )
+    assert len(nuevas) == 2
+
+
+def test_prioriza_las_posiciones_con_mas_observaciones_reales():
+    """En los frames compartidos gana la ficha mejor soportada por detecciones."""
+    fantasma = _tray((0.0, 1.0), real=False)  # todo interpolado
+    solida = _tray((0.0, 0.0), real=True)
+    nuevas, _ = consolidar_colocadas(
+        [fantasma, solida], {1: "A", 2: "A"}, dist_max=4.0, min_frames_comunes=100
+    )
+    assert len(nuevas) == 1
+    # La posición conservada es la de la sólida (y=30.0), no la del fantasma
+    assert nuevas[0][0][1][1] == pytest.approx(30.0)
+
+
+def test_fusion_transitiva_de_un_racimo():
+    """A≈B y B≈C → un solo racimo fusionado."""
+    trayectorias = [_tray((0.0, 0.0)), _tray((0.0, 3.0)), _tray((0.0, 6.0))]
+    nuevas, _ = consolidar_colocadas(
+        trayectorias, {1: "A", 2: "A", 3: "A"}, dist_max=4.0, min_frames_comunes=100
+    )
+    assert len(nuevas) == 1
+
+
+# ── métrica de concurrencia ───────────────────────────────────────────
+
+
+def test_concurrencia_cuenta_identidades_simultaneas():
+    """Mediana/p90 de fichas por frame, y el exceso frente al GT."""
+    gt = {
+        f: [Observacion(i, np.array([0.0, 0.0])) for i in range(2)] for f in range(10)
+    }
+    pred = {
+        f: [Observacion(i, np.array([0.0, 0.0])) for i in range(5)] for f in range(10)
+    }
+    resultado = concurrencia_por_frame(gt, pred, list(range(10)))
+    assert resultado.mediana_pred == 5
+    assert resultado.mediana_gt == 2
+    assert resultado.exceso_mediana == 3
+    assert resultado.max_pred == 5
+
+
+# ── corte por velocidad imposible ─────────────────────────────────────
+
+
+def _serie(posiciones, frame0=100, paso=3):
+    """Trayectoria (frame, pos, real) a partir de una lista de (x, y)."""
+    return [
+        (frame0 + paso * k, np.array(p, dtype=float), True)
+        for k, p in enumerate(posiciones)
+    ]
+
+
+TIEMPOS_TEST = {100 + 3 * k: 0.12 * k for k in range(200)}
+
+
+def test_corte_parte_la_identidad_en_el_teletransporte():
+    """Una identidad que salta 40 m durante 1 s se parte en dos."""
+    from src.tracking.corte_velocidad import cortar_por_velocidad
+
+    quieto_a = [(10.0, 10.0)] * 10
+    salto = [(10.0 + 5 * k, 10.0) for k in range(1, 9)]  # ~41 m/s sostenidos
+    quieto_b = [(50.0, 10.0)] * 10
+    tray = _serie(quieto_a + salto + quieto_b)
+    nuevas, equipos = cortar_por_velocidad(
+        [tray], {1: "A"}, TIEMPOS_TEST, v_max=8.5, duracion_min=0.5
+    )
+    assert len(nuevas) == 2
+    assert equipos == {1: "A", 2: "A"}  # ambos trozos heredan el equipo
+    # Y ya no queda ningún paso imposible dentro de un trozo
+    for trozo in nuevas:
+        for (f0, p0, _), (f1, p1, _) in zip(trozo[:-1], trozo[1:]):
+            dt = TIEMPOS_TEST[f1] - TIEMPOS_TEST[f0]
+            assert np.linalg.norm(p1 - p0) / dt <= 8.5
+
+
+def test_corte_ignora_el_ruido_de_un_solo_paso():
+    """Un salto puntual (ruido del fondo) NO parte la identidad."""
+    from src.tracking.corte_velocidad import cortar_por_velocidad
+
+    posiciones = [(10.0, 10.0)] * 5 + [(13.0, 10.0)] + [(10.0, 10.0)] * 5
+    nuevas, _ = cortar_por_velocidad(
+        [_serie(posiciones)], {1: "A"}, TIEMPOS_TEST, v_max=8.5, duracion_min=0.5
+    )
+    assert len(nuevas) == 1
+
+
+def test_corte_descarta_los_trozos_de_parpadeo():
+    """Los fragmentos por debajo de min_observaciones no sobreviven."""
+    from src.tracking.corte_velocidad import cortar_por_velocidad
+
+    salto = [(10.0 + 5 * k, 10.0) for k in range(8)]
+    tray = _serie(salto + [(50.0, 10.0)] * 10)
+    nuevas, _ = cortar_por_velocidad(
+        [tray],
+        {1: "A"},
+        TIEMPOS_TEST,
+        v_max=8.5,
+        duracion_min=0.5,
+        min_observaciones=3,
+    )
+    assert len(nuevas) == 1  # el trozo inicial (dentro de la racha) se cae
+
+
+def test_metrica_de_transiciones_detecta_la_racha():
+    """transiciones_imposibles cuenta la racha y reporta la v máxima."""
+    from src.evaluation.metricas import transiciones_imposibles
+
+    pred = {}
+    for k in range(20):
+        frame = 100 + 3 * k
+        x = 10.0 if k < 5 else (10.0 + 5 * (k - 4) if k < 13 else 50.0)
+        pred[frame] = [Observacion(1, np.array([x, 10.0]))]
+    resultado = transiciones_imposibles(pred, TIEMPOS_TEST, v_max=8.5, duracion_min=0.5)
+    assert resultado.n_rachas == 1
+    assert resultado.n_identidades_afectadas == 1
+    assert resultado.v_max_observada > 8.5
+
+
+def test_corte_parte_el_salto_instantaneo():
+    """Un teletransporte de un solo frame (>v_teleport) también parte."""
+    from src.tracking.corte_velocidad import cortar_por_velocidad
+
+    # 30 m de golpe en un frame (0.12 s) = 250 m/s: no es racha, es salto
+    posiciones = [(10.0, 10.0)] * 8 + [(40.0, 10.0)] * 8
+    nuevas, _ = cortar_por_velocidad(
+        [_serie(posiciones)],
+        {1: "A"},
+        TIEMPOS_TEST,
+        v_max=8.5,
+        duracion_min=0.5,
+        v_teleport=60.0,
+    )
+    assert len(nuevas) == 2
+
+
+def test_corte_sin_v_teleport_no_parte_el_salto_suelto():
+    """Con v_teleport=None solo actúa el criterio de racha sostenida."""
+    from src.tracking.corte_velocidad import cortar_por_velocidad
+
+    posiciones = [(10.0, 10.0)] * 8 + [(40.0, 10.0)] * 8
+    nuevas, _ = cortar_por_velocidad(
+        [_serie(posiciones)],
+        {1: "A"},
+        TIEMPOS_TEST,
+        v_max=8.5,
+        duracion_min=0.5,
+        v_teleport=None,
+    )
+    assert len(nuevas) == 1
+
+
+def test_teleport_no_dispara_con_el_ruido_del_fondo():
+    """El umbral de teletransporte está por encima del ruido lejano.
+
+    2,4 m entre frames es el p90 del error de localización en el fondo
+    (≈20 m/s a dt=0,12 s): el criterio de SALTO no debe verlo. Se aísla
+    subiendo v_max para que no intervenga el criterio de racha, que sí
+    corta una oscilación sostenida de esa amplitud (y debe hacerlo).
+    """
+    from src.tracking.corte_velocidad import cortar_por_velocidad
+
+    posiciones = [(10.0 + 2.4 * (k % 2), 60.0) for k in range(16)]
+    nuevas, _ = cortar_por_velocidad(
+        [_serie(posiciones)],
+        {1: "A"},
+        TIEMPOS_TEST,
+        v_max=1e9,
+        duracion_min=0.5,
+        v_teleport=60.0,
+    )
+    assert len(nuevas) == 1
+
+
+def test_racha_sostenida_de_ruido_grande_si_se_corta():
+    """Documenta el reverso: una oscilación sostenida de 2,4 m SÍ corta.
+
+    Es intencionado: 20 m/s mantenidos durante 2 s no es un jugador,
+    aunque la amplitud individual parezca ruido.
+    """
+    from src.tracking.corte_velocidad import cortar_por_velocidad
+
+    posiciones = [(10.0 + 2.4 * (k % 2), 60.0) for k in range(16)]
+    nuevas, _ = cortar_por_velocidad(
+        [_serie(posiciones)],
+        {1: "A"},
+        TIEMPOS_TEST,
+        v_max=8.5,
+        duracion_min=0.5,
+        v_teleport=60.0,
+    )
+    assert nuevas == []  # todos los trozos quedan por debajo del mínimo

@@ -42,3 +42,14 @@ def test_respeta_la_cota():
     b = _identidad_frames(2, [30, 36, 42], recta)  # sin solape temporal
     resultado = fusionar_hasta_cota([a, b], cota=2, coste_max=1.5)
     assert len(resultado) == 2
+
+
+def test_exclusion_por_coobservacion():
+    """Pares co-observados >= k frames no se fusionan (variante 3j, en off)."""
+    recta = lambda t: 10.0 + 2.0 * t  # noqa: E731
+    a = _identidad_frames(1, [0, 3, 6, 9, 12], recta)
+    b = _identidad_frames(2, [0, 3, 6, 9, 12], recta)  # co-observada SIEMPRE
+    con_excl = fusionar_hasta_cota([a, b], cota=1, coste_max=1.5, excl_coobservacion=3)
+    sin_excl = fusionar_hasta_cota([a, b], cota=1, coste_max=1.5)
+    assert len(con_excl) == 2  # co-observados: jugadores distintos, no fusionar
+    assert len(sin_excl) == 1  # sin la exclusión sí se fusionarían

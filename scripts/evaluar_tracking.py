@@ -29,10 +29,7 @@ import yaml
 # Permite ejecutar el script desde la raíz del repo sin instalar el paquete
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.evaluation.adaptador import (  # noqa: E402
-    identidades_a_por_frame,
-    trayectorias_a_por_frame,
-)
+from src.evaluation.adaptador import trayectorias_a_por_frame  # noqa: E402
 from src.evaluation.alineacion import (  # noqa: E402
     distancia_media_gt_cache,
     frames_comunes,
@@ -43,6 +40,7 @@ from src.evaluation.metricas import (  # noqa: E402
     accuracy_equipos,
     calcular_metricas_tracking,
     cobertura_colectiva,
+    concurrencia_por_frame,
     resumen_equipos,
 )
 from src.team_classification.pipeline_equipos import (  # noqa: E402
@@ -57,11 +55,10 @@ from src.tracking.field_tracker import (  # noqa: E402
     ParametrosEtapaA,
 )
 from src.tracking.cota_plantilla import fusionar_hasta_cota  # noqa: E402
-from src.tracking.perfiles import correr_perfil  # noqa: E402
+from src.tracking.perfiles import correr_perfil, postprocesar  # noqa: E402
 from src.tracking.exclusion_espacial import (  # noqa: E402
     fusionar_identidades_duplicadas,
 )
-from src.tracking.interpolacion import interpolar_identidades  # noqa: E402
 from src.tracking.stitcher import (  # noqa: E402
     ParametrosCosido,
     TrackletStitcher,
@@ -136,6 +133,13 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Forzar cota blanda de plantilla (fusión de entrelazadas) on/off",
+    )
+    parser.add_argument(
+        "--consolidar",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Forzar la consolidación final (fusión de fichas del mismo "
+        "equipo montadas) on/off (por defecto: config)",
     )
     parser.add_argument(
         "--segunda-pasada",
@@ -272,21 +276,27 @@ def main() -> None:
             identidades, colores_eq, clasificador_eq, cfg_eq
         )
 
-    # Tarea 3a: interpolación de huecos dentro de identidades (opcional)
+    # Fase post-clasificación (consolidación + interpolación): el MISMO
+    # código que corre producción (src/tracking/perfiles.py::postprocesar).
     cfg_interp = cfg_tracking.get("interpolacion", {})
     interpolar = (
         args.interpolar
         if args.interpolar is not None
         else cfg_interp.get("activa", False)
     )
-    if interpolar:
-        frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
-        trayectorias = interpolar_identidades(
-            identidades, frames_ts, cfg_interp["max_hueco"]
+    cfg_post = dict(cfg_tracking)
+    cfg_post["interpolacion"] = dict(cfg_interp, activa=interpolar)
+    if args.consolidar is not None:
+        cfg_post["consolidacion"] = dict(
+            cfg_tracking.get("consolidacion", {}), activa=args.consolidar
         )
-        pred = trayectorias_a_por_frame(trayectorias, equipos_pred)
-    else:
-        pred = identidades_a_por_frame(identidades, equipos_pred)
+    consolidar = cfg_post.get("consolidacion", {}).get("activa", False)
+
+    frames_ts = [(e["frame_idx"], e["t"]) for e in datos["cache"]]
+    trayectorias, equipos_pred = postprocesar(
+        identidades, equipos_pred or {}, frames_ts, cfg_post
+    )
+    pred = trayectorias_a_por_frame(trayectorias, equipos_pred)
 
     # ------------------------------------------------------------- alineación
     frames_cache = [e["frame_idx"] for e in datos["cache"]]
@@ -313,6 +323,7 @@ def main() -> None:
     propias_fijo = calcular_metricas_tracking(gt, pred, comunes, umbral_fijo)
     equipos = accuracy_equipos(gt, pred, comunes, umbral_prof)
     cobertura = cobertura_colectiva(gt, pred, comunes, umbral_prof)
+    concurrencia = concurrencia_por_frame(gt, pred, comunes)
 
     with tempfile.TemporaryDirectory(prefix="trackeval_") as tmp:
         estandar = evaluar_con_trackeval(
@@ -337,6 +348,7 @@ def main() -> None:
     )
     print(f"Perfil: {args.perfil or 'composición manual (flags/config)'}")
     print(f"Interpolación de huecos: {'ACTIVA' if interpolar else 'off'}")
+    print(f"Consolidación final: {'ACTIVA' if consolidar else 'off'}")
     print(f"Rescate de tracklets cortos: {'ACTIVO' if rescatar else 'off'}")
     print(f"Segunda pasada de cosido: {'ACTIVA' if segunda else 'off'}")
     print(f"Identidades GT: {len(tracks_gt)} (22 players + 1 referee)")
@@ -393,6 +405,17 @@ def main() -> None:
     print(
         "  Por equipo: "
         + "  ".join(f"{g}={v:.3f}" for g, v in cobertura.por_grupo.items())
+    )
+    print("-" * ancho)
+    print("MÉTRICA DE PRODUCTO — concurrencia por frame (fichas en pantalla)")
+    print(
+        f"  Identidades simultáneas pred: mediana {concurrencia.mediana_pred:.0f}  "
+        f"p90 {concurrencia.p90_pred:.0f}  max {concurrencia.max_pred}"
+    )
+    print(
+        f"  Referencia GT:                mediana {concurrencia.mediana_gt:.0f}  "
+        f"p90 {concurrencia.p90_gt:.0f}   → exceso "
+        f"{concurrencia.exceso_mediana:+.0f}"
     )
     print("-" * ancho)
     if resumen.n_campo > 0:

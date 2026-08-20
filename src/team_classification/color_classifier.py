@@ -129,6 +129,51 @@ def extraer_color_torso(
     return hist / norma if norma > 0 else hist
 
 
+def _solo_hs(feature):
+    """El bloque HS del pecho, sea la feature v1 o v2.
+
+    TODOS los umbrales del sistema están calibrados en la escala de la v1
+    (fusión del fit 0,5-1,3, veto de color 1,2, firmas). Una feature v2 es
+    más larga, así que cualquier distancia calculada sobre el vector
+    entero vive en OTRA escala y esos umbrales dejan de significar lo que
+    dicen — en silencio, que es lo peligroso. Recortando aquí, un caché
+    v2 se comporta EXACTAMENTE como uno v1, y usar los bloques nuevos
+    pasa a ser una decisión explícita en vez de un efecto colateral.
+    """
+    from src.team_classification.feature_v2 import parte_camiseta_hs
+
+    return parte_camiseta_hs(np.asarray(feature))
+
+
+def color_dominante(feature: np.ndarray, params=None) -> tuple[int, int, int]:
+    """Color RGB representativo de una feature de torso (histograma HS).
+
+    La feature es un histograma 2D de tono×saturación normalizado. El bin
+    con más masa es el color que más veces aparece en el pecho de esos
+    jugadores: convertido a RGB, es literalmente el color de la camiseta.
+
+    Sirve para que el replay pinte a cada equipo de SU color (naranja y
+    blanco, si eso es lo que llevan) en vez de un azul y un rojo fijos que
+    obligan al entrenador a mirar la leyenda.
+
+    El valor (brillo) no está en la feature —el histograma es solo H y S—
+    así que se fija alto: interesa un color legible en pantalla, no
+    reproducir la iluminación del campo.
+    """
+    p = params or ParametrosClasificadorColor()
+    hist = _solo_hs(feature).astype(np.float64).reshape(p.bins_h, p.bins_s)
+    if not np.isfinite(hist).any() or hist.sum() <= 0:
+        return (128, 128, 128)
+    bin_h, bin_s = np.unravel_index(int(np.argmax(hist)), hist.shape)
+    # Centro del bin, en la escala HSV de OpenCV (H 0-179, S 0-255)
+    h = (bin_h + 0.5) * 180.0 / p.bins_h
+    sat = (bin_s + 0.5) * 256.0 / p.bins_s
+    # Saturación mínima para que un blanco/gris no salga negro en pantalla
+    hsv = np.uint8([[[h, min(sat, 255), 235]]])
+    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0]
+    return (int(bgr[2]), int(bgr[1]), int(bgr[0]))
+
+
 class TeamClassifierColor:
     """Clasificador de equipos por color, 100 % automático (sin etiquetas)."""
 
@@ -154,7 +199,7 @@ class TeamClassifierColor:
         grandes por tamaño = equipos → prototipos.
         """
         p = self.params
-        features = np.asarray(features)
+        features = np.array([_solo_hs(f) for f in np.asarray(features)])
         if len(features) < p.k_clusters:
             raise ValueError(
                 f"Se necesitan al menos {p.k_clusters} features para entrenar "
@@ -232,16 +277,69 @@ class TeamClassifierColor:
             mejor_umbral = p.umbral_min
         return mejor_umbral
 
+    def colores_equipos(self) -> dict[str, str]:
+        """{'A': '#rrggbb', 'B': '#rrggbb'} de los prototipos aprendidos.
+
+        Es el color con el que el replay pinta cada equipo. Si el
+        clasificador no está entrenado, devuelve {} y quien llame usa sus
+        colores por defecto.
+        """
+        if self._prototipos is None:
+            return {}
+        salida = {}
+        for etiqueta, proto in (("A", self._prototipos.a), ("B", self._prototipos.b)):
+            r, g, b = color_dominante(proto, self.params)
+            salida[etiqueta] = f"#{r:02x}{g:02x}{b:02x}"
+        logger.info("Colores de equipo derivados del clasificador: %s", salida)
+        return salida
+
     # ------------------------------------------------------------- predict
-    def predict_color(self, feat: np.ndarray) -> str:
-        """Clasifica una feature (p. ej. color medio de una identidad)."""
+    def predict_color(
+        self,
+        feat: np.ndarray,
+        dist_max: float | None = None,
+        solo_equipos: bool = False,
+    ) -> str:
+        """Clasifica una feature (p. ej. color medio de una identidad).
+
+        `solo_equipos` ignora el prototipo 'otro' y fuerza a elegir entre
+        A y B. Se usa con identidades demasiado cortas para fiarse de su
+        color medio: el prototipo 'otro' es un imán para las medias
+        ruidosas, y con una sola observación la media es ruido puro.
+
+        `dist_max` es la distancia máxima admitida a AMBOS prototipos. Con
+        solo dos cajones, un árbitro de amarillo o un entrenador en
+        chándal caen forzosamente en el menos malo — en el benjamín el
+        árbitro salía como equipo B en los tres frames revisados. Si la
+        feature está lejos de los dos, la respuesta honesta es 'otro'.
+
+        El umbral es RELATIVO a la separación entre los dos prototipos,
+        no absoluto. Medirlo enseñó por qué hace falta: calibrado a mano
+        con el caché del benjamín (jugadores p90 0,656 frente a staff p10
+        0,712, casi sin solape) el valor 0,70 parecía perfecto, y llevado
+        tal cual a Villaviciosa hundía la accuracy de equipos de 0,718 a
+        0,482. Cada partido tiene su propia escala de color, así que un
+        número en unidades de histograma no viaja. La distancia entre A y
+        B sí es una escala natural del problema: "lejos de los dos"
+        significa lejos COMPARADO con lo que separa a los dos equipos.
+
+        Los porteros superan cualquier umbral razonable —visten distinto,
+        que es justo el problema— pero no importa: la regla de área los
+        reetiqueta después por su posición.
+        """
         if self._prototipos is None:
             raise RuntimeError(
                 "El clasificador no está entrenado: llama a fit primero."
             )
+        feat = _solo_hs(feat)
         pr = self._prototipos
         candidatos = [("A", pr.a), ("B", pr.b)]
-        if pr.otro is not None:
+        if pr.otro is not None and not solo_equipos:
             candidatos.append(("otro", pr.otro))
         distancias = [np.linalg.norm(feat - proto) for _, proto in candidatos]
-        return candidatos[int(np.argmin(distancias))][0]
+        mejor = int(np.argmin(distancias))
+        if dist_max is not None:
+            separacion = float(np.linalg.norm(pr.a - pr.b))
+            if separacion > 0 and distancias[mejor] > dist_max * separacion:
+                return "otro"
+        return candidatos[mejor][0]

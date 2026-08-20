@@ -1,0 +1,211 @@
+[
+  {
+    "nombre": "center",
+    "pixel": [
+      964,
+      716
+    ],
+    "metros": [
+      31.0,
+      20.0
+    ]
+  },
+  {
+    "nombre": "circulo_top",
+    "pixel": [
+      692,
+      710
+    ],
+    "metros": [
+      31.0,
+      26.0
+    ]
+  },
+  {
+    "nombre": "circulo_bottom",
+    "pixel": [
+      1238,
+      730
+    ],
+    "metros": [
+      31.0,
+      14.0
+    ]
+  },
+  {
+    "nombre": "circulo_left",
+    "pixel": [
+      946,
+      764
+    ],
+    "metros": [
+      25.0,
+      20.0
+    ]
+  },
+  {
+    "nombre": "circulo_right",
+    "pixel": [
+      985,
+      684
+    ],
+    "metros": [
+      37.0,
+      20.0
+    ]
+  },
+  {
+    "nombre": "halfway_top",
+    "pixel": [
+      121,
+      695
+    ],
+    "metros": [
+      31.0,
+      40.0
+    ]
+  },
+  {
+    "nombre": "halfway_bottom",
+    "pixel": [
+      1857,
+      761
+    ],
+    "metros": [
+      31.0,
+      0.0
+    ]
+  },
+  {
+    "nombre": "penalty_left",
+    "pixel": [
+      884,
+      1000
+    ],
+    "metros": [
+      9.0,
+      20.0
+    ]
+  },
+  {
+    "nombre": "penalty_right",
+    "pixel": [
+      988,
+      631
+    ],
+    "metros": [
+      53.0,
+      20.0
+    ]
+  },
+  {
+    "nombre": "box_left_top",
+    "pixel": [
+      0,
+      912
+    ],
+    "metros": [
+      12.0,
+      33.0
+    ]
+  },
+  {
+    "nombre": "box_left_bottom",
+    "pixel": [
+      1919,
+      994
+    ],
+    "metros": [
+      12.0,
+      7.0
+    ]
+  },
+  {
+    "nombre": "box_right_top",
+    "pixel": [
+      625,
+      630
+    ],
+    "metros": [
+      50.0,
+      33.0
+    ]
+  },
+  {
+    "nombre": "box_right_bottom",
+    "pixel": [
+      1361,
+      655
+    ],
+    "metros": [
+      50.0,
+      7.0
+    ]
+  },
+  {
+    "nombre": "box_right_top_line",
+    "pixel": [
+      692,
+      604
+    ],
+    "metros": [
+      62.0,
+      33.0
+    ]
+  },
+  {
+    "nombre": "box_right_bottom_line",
+    "pixel": [
+      1307,
+      626
+    ],
+    "metros": [
+      62.0,
+      7.0
+    ]
+  },
+  {
+    "nombre": "goal_right_top",
+    "pixel": [
+      917,
+      609
+    ],
+    "metros": [
+      62.0,
+      23.0
+    ]
+  },
+  {
+    "nombre": "goal_right_bottom",
+    "pixel": [
+      1072,
+      613
+    ],
+    "metros": [
+      62.0,
+      17.0
+    ]
+  },
+  {
+    "nombre": "corner_top_right",
+    "pixel": [
+      514,
+      601
+    ],
+    "metros": [
+      62.0,
+      40.0
+    ]
+  },
+  {
+    "nombre": "corner_bottom_right",
+    "pixel": [
+      1493,
+      634
+    ],
+    "metros": [
+      62.0,
+      0.0
+    ]
+  }
+]

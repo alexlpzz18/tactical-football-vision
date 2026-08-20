@@ -1,0 +1,18 @@
+rutas:
+  cache: data/tracking/cache_detecciones_v4.pkl
+  ground_truth: data/annotations/ground_truth_tracking/annotations.xml
+  homografia: data/calibracion/homografia.npy
+  cache_colores: data/tracking/cache_colores_v4.pkl
+  cache_embeddings: data/tracking/emb_villa_siglip.pkl
+alineacion:
+  frame_offset: 7500
+  paso_gt: 15
+asociacion:
+  umbral_metros: 2.0
+  umbral_profundidad:
+    base: 0.4
+    por_metro: 0.045
+    minimo: 1.0
+    maximo: 4.0
+trackeval:
+  lado_caja_sintetica: 2.0

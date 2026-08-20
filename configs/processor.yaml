@@ -29,7 +29,7 @@ muestreo:
 
 # ── Tracking: el perfil decide el pipeline (ver src/tracking/perfiles.py) ──
 tracking:
-  perfil: candidato      # oficial | candidato
+  perfil: bytetrack      # oficial | candidato | bytetrack (DEFAULT desde 11-ago-2026)
   # DECISIÓN 12-jul-2026: candidato adoptado como default de producto.
   # La cobertura colectiva (la métrica del informe) arbitró: 0.456 vs
   # 0.184 del oficial (fit del clasificador con recortes cercanos). Detalle en docs/experimentos_tracking.md.
@@ -41,14 +41,16 @@ equipos:
 
 # ── Campo (para el filtro de posiciones del export; ejes de la homografía) ──
 campo_m:
-  largo: 105.0
-  ancho: 68.0
+  largo: 100.0
+  ancho: 64.0
   margen: 8.0            # generoso: el error de proyección del fondo es real
 
 rutas:
   video: data/raw/partido.mp4                      # solo modo full
-  cache: data/tracking/cache_detecciones_min5_60s.pkl
-  cache_colores: data/tracking/cache_colores_min5_60s.pkl
+  # Cachés del modelo v4pre (mAP50 ~0.90; validados 08-ago-2026). Los del
+  # v3 (cache_*_min5_60s.pkl) quedan como referencia histórica del banco.
+  cache: data/tracking/cache_detecciones_v4pre.pkl
+  cache_colores: data/tracking/cache_colores_v4pre.pkl
   homografia: data/calibracion/homografia.npy
   salida_csv: data/tracking/posiciones_v2.csv
   salida_meta: data/tracking/posiciones_v2_meta.json

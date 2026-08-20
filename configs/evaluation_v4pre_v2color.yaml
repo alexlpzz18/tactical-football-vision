@@ -1,0 +1,22 @@
+# Banco con los caches de FEATURE V2, recortados al mismo tramo que
+# el banco v1 para que el paso 0 de control sea comparable.
+# Ojo: las detecciones difieren un 0.2% (11404 vs 11377) porque la
+# pasada del video entero no es bit a bit la del tramo.
+
+rutas:
+  cache: data/tracking/cache_detecciones_v4pre_v2color_tramo.pkl
+  ground_truth: data/annotations/ground_truth_tracking/annotations.xml
+  homografia: data/calibracion/homografia.npy
+  cache_colores: data/tracking/cache_colores_v4pre_v2color_tramo.pkl
+alineacion:
+  frame_offset: 7500
+  paso_gt: 15
+asociacion:
+  umbral_metros: 2.0
+  umbral_profundidad:
+    base: 0.4
+    por_metro: 0.045
+    minimo: 1.0
+    maximo: 4.0
+trackeval:
+  lado_caja_sintetica: 2.0
