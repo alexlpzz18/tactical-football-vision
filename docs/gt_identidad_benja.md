@@ -305,3 +305,42 @@ contrario del error contra GT, cuyo suelo de ruido se comía la señal
 entera.
 
 Queda como línea base para el punto 2.
+
+---
+
+# DOS HALLAZGOS QUE ORDENAN EL PROYECTO (20-ago-2026)
+
+## 1. Sesgo y ruido son problemas DISTINTOS, y se atacan por separado
+
+| | con la profundidad |
+|---|---|
+| error de localización absoluto | **PLANO** (0,68 / 0,96 / 0,89 m) |
+| temblor (ruido de posición) | **CRECIENTE** (0,10 / 0,14 / 0,20 m) |
+
+Si un solo mecanismo explicara los dos, irían juntos. No van.
+
+- El **error absoluto** está dominado por la **convención de anclaje**:
+  un sesgo sistemático, igual a todas las distancias. Lo ataca el
+  **anclaje por pose**.
+- El **temblor** está dominado por la **amplificación de la
+  perspectiva**: aleatorio y creciente con la distancia. Lo ataca el
+  **Kalman con ruido heterocedástico**.
+
+Son dos frentes independientes. Mezclarlos —o esperar que uno arregle el
+otro— sería perder el tiempo en el que no toca.
+
+## 2. El ojo humano NO es el suelo irreducible
+
+Los clics de Alex tiemblan **2,5× más que el sistema** (0,59-0,80 m
+frente a 0,24-0,36 m a la misma cadencia).
+
+Dos consecuencias incómodas y útiles:
+
+- **El "techo visual" que se generó con el GT se ve PEOR de lo que el
+  sistema puede llegar a ser.** No es el techo: es una referencia con más
+  ruido que el propio sistema. Sirve para juzgar formato y estética —para
+  lo que se hizo— pero no como listón de calidad de trayectoria.
+- **Para un suelo real hace falta otra referencia**: un objeto estático
+  de posición conocida en el campo (un banderín, una esquina, un poste),
+  cuyo temblor medido sea puro ruido del sistema sin componente humana ni
+  movimiento real.
