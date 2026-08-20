@@ -190,3 +190,52 @@ Dos lecciones, y la segunda es la que más vale:
 Corolario práctico: **cualquier barrido debería comprobar que sus puntos
 producen resultados distintos** antes de interpretarlos. Si no los
 producen, el rango está mal elegido y la tabla no dice lo que parece.
+
+---
+
+## Coste en producción: la vía barata ahorra disco, no GPU (19-ago-2026)
+
+`scripts/coste_embeddings_produccion.py`. La puerta no consulta el
+embedding en cada detección, solo en las ventanas de ±8 observaciones
+alrededor de cada re-entrada. Medido sobre el tramo y extrapolado a un
+partido de 90 min:
+
+| estrategia | recortes | caché fp16 | con PCA-128 |
+|---|---|---|---|
+| partido entero | 903.600 | 1.388 MB | 231 MB |
+| **solo ventanas (±8 obs)** | **102.150** | 157 MB | **26 MB** |
+
+**Solo hace falta el 11,3 % de los recortes: 8,8× menos.**
+
+### Pero el gasto real no son los recortes, son las PASADAS
+
+Para saber dónde están las re-entradas hay que **haber trackeado ya**, y
+para trackear hacen falta las detecciones. O sea que la vía barata es un
+pipeline de **dos pasadas** sobre el vídeo:
+
+1. detectar (SAHI) → trackear → localizar re-entradas
+2. **volver a decodificar el vídeo** y embeber solo esas ventanas
+
+frente a **una** pasada embebiendo todo mientras se detecta.
+
+Decodificar 90 minutos es el coste fijo que domina. Los recortes son de
+224×224 y su inferencia es barata al lado de SAHI, que hace 8 tiles a
+1280 por frame. Así que la vía barata **ahorra almacenamiento (9×) pero
+añade una decodificación completa**: solo compensa si el cuello de
+botella es el disco, no la GPU.
+
+### Recomendación: una pasada, y tirar lo que sobre
+
+Embeber todo durante la pasada de detección —el vídeo ya está
+decodificado— y **descartar después lo que no cae en ninguna ventana**.
+Cuesta la GPU de embeber los 903.600 recortes, que es marginal frente a
+SAHI, y deja el caché final en **26 MB con PCA-128**.
+
+Es lo mejor de las dos: una sola decodificación y un caché pequeño.
+
+### Lo que sigue sin medir
+
+El **tiempo real de GPU** por partido. Los órdenes de magnitud dicen que
+siglip es marginal frente a SAHI, pero eso es una estimación de FLOPs, no
+un cronómetro. Se mide en la próxima pasada de Colab, cronometrando el
+paso de embedding por separado.

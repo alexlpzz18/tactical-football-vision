@@ -71,3 +71,30 @@ la tarea 5 pendiente).
 - [ ] Alex revisa los cuatro defaults de la primera tabla
 - [ ] Decidir si las diez ramas absorbidas se borran tras el merge
 - [ ] Confirmar que `data/` sigue fuera del control de versiones
+
+---
+
+## Ensayo del merge (19-ago-2026)
+
+- **0 conflictos.** `main` no ha avanzado por su cuenta, así que el merge
+  es un fast-forward limpio salvo por el `--no-ff` que conviene usar para
+  que quede el punto de fusión en el historial.
+- 305 tests verdes en la rama.
+- Los cuatro defaults ya tienen el OK de Alex.
+
+Comando, cuando él lo confirme:
+
+```bash
+git checkout main && git merge --no-ff v4/caches-y-informe && git push origin main
+```
+
+Y después, si quiere limpiar, las diez ramas absorbidas:
+
+```bash
+git branch -d feature/tracking-v4pre feature/migracion-bytetrack \
+  feature/informe-v2 feature/balon feature/analisis-ia \
+  barrido/fit-clasificador barrido/suavizado \
+  barrido/asociacion-combinada remedicion/v2color feature/tracking-ventana
+```
+
+**No se ha fusionado**: queda a la espera de su confirmación.
