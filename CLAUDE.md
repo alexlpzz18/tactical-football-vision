@@ -88,3 +88,24 @@ posición y tiempo.
   ⚠️ Alineación: el caché tiene 1 de cada 3 frames; el GT 1 de cada 15
   → evaluar sobre los frames comunes (los múltiplos de 15).
 - `data/calibracion/homografia.npy`: matriz H 3x3 píxel→metros (ya en el repo).
+
+## Hallazgo que reordena el proyecto (20-ago-2026)
+**La ASOCIACIÓN es el 100 % del margen medible en métricas de producto;
+el anclaje es cero.** Medido con tests de oráculo contra el GT de
+identidad del benjamín (`docs/oraculos.md`):
+
+| variante | centroide | anchura |
+|---|---|---|
+| sistema | 1,55 m | 0,93 m |
+| + anclaje perfecto | 1,61 m | 1,03 m |
+| **+ asociación perfecta** | **0,42 m** | **0,33 m** |
+
+Arreglar la asociación divide el error de centroide por 3,7. Arreglar el
+anclaje no lo mejora — un sesgo sistemático mueve el centroide pero no
+deforma el bloque, y las métricas colectivas apenas lo notan. Por eso el
+anclaje por pose baja de prioridad a comprobación barata.
+
+Y la mezcla no está donde creíamos: sin re-entrada la pureza sube solo de
+80,1 % a 84,4 %, así que **el 16 % restante se contamina DENTRO del
+seguimiento continuo**, en los cruces. Un grafo global que solo una
+tracklets tiene ahí su techo: hay que **partir y luego unir**.

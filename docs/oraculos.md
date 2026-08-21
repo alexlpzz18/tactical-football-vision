@@ -68,3 +68,53 @@ la línea por el motivo equivocado.
   los datos actuales. Haría falta una referencia independiente de la
   propia homografía (un objeto estático de posición conocida). Queda
   abierto y no bloquea nada.
+
+---
+
+# PUNTO 3: ¿cuánta contaminación mete nuestra propia puerta? (20-ago-2026)
+
+`scripts/pureza_sin_reentrada.py`. Se desactiva la re-entrada —buffer a
+cero, cada reaparición abre tracklet nuevo— y se mide la pureza contra el
+GT del benjamín.
+
+| buffer de re-entrada | tracklets | puros | % puros | **pureza obs** | frag. |
+|---|---|---|---|---|---|
+| **0,0 s (SIN re-entrada)** | 30 | 13 | 43 % | **84,4 %** | 2,1 |
+| 0,5 s | 25 | 10 | 40 % | 80,0 % | 1,8 |
+| **1,5 s (el adoptado)** | 24 | 9 | 38 % | **80,1 %** | 1,7 |
+| 3,0 s | 23 | 9 | 39 % | 78,1 % | 1,6 |
+
+(14 personas reales en el GT)
+
+## Dos lecturas, y la segunda reordena el punto 4
+
+**1. Nuestra puerta mete poca contaminación: 4,3 puntos.** De 84,4 % sin
+re-entrada a 80,1 % con el buffer adoptado. A cambio baja la
+fragmentación de 2,1 a 1,7 tracklets por persona. El intercambio es
+razonable y el buffer se queda.
+
+**2. Y esto es lo importante: SIN re-entrada la pureza sigue siendo solo
+84,4 %, y apenas el 43 % de los tracklets son puros.** O sea que **la
+mezcla ocurre mayoritariamente DENTRO del seguimiento continuo** —en los
+cruces, fotograma a fotograma— y no en las reapariciones.
+
+Es un resultado incómodo: la puerta de re-entrada, que es donde hemos
+invertido las últimas semanas, ataca 4 puntos mientras 16 vienen de otro
+sitio.
+
+## Consecuencia directa para el punto 4
+
+**Un grafo global que solo UNA tracklets no puede alcanzar el oráculo.**
+El oráculo de asociación (centroide 0,42 m) supone identidad perfecta
+*por observación*; los tracklets que entrarían al grafo ya vienen
+contaminados en un 16 %, y unir bien piezas sucias no las limpia.
+
+Así que el diseño del punto 4 tiene que ser **partir y unir**, no solo
+unir:
+
+1. **Partir** los tracklets contaminados (clustering de embeddings dentro
+   de cada uno — que es exactamente lo que hace GTA-Link, cuyo algoritmo
+   es MIT aunque su checkpoint no sirva).
+2. **Unir** globalmente los trozos limpios con el grafo.
+
+En ese orden. Sin el primer paso, el segundo tiene un techo del 84 %.
