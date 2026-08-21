@@ -1,0 +1,1098 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Perfil</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh}
+#hud{position:fixed;left:12px;top:12px;font:12px/1.5 ui-monospace,monospace;
+color:#fff;background:rgba(0,0,0,.7);padding:8px 12px;white-space:pre}</style>
+</head><body><canvas id="c"></canvas><div id="hud">midiendo…</div>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   NÚCLEO — matrices, compilación de shaders y utilidades de WebGL2.
+   Escrito a mano a propósito: sin dependencias no hay nada que descargar
+   ni que se rompa al actualizar.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ---------- mat4 (column-major, como espera WebGL) ---------- */
+const M4 = {
+  ident(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
+
+  perspectiva(fovY, aspect, near, far){
+    const f = 1/Math.tan(fovY/2), nf = 1/(near-far);
+    return new Float32Array([
+      f/aspect,0,0,0,  0,f,0,0,
+      0,0,(far+near)*nf,-1,  0,0,2*far*near*nf,0]);
+  },
+
+  mirar(ojo, centro, arriba){
+    let zx=ojo[0]-centro[0], zy=ojo[1]-centro[1], zz=ojo[2]-centro[2];
+    let l=Math.hypot(zx,zy,zz)||1; zx/=l; zy/=l; zz/=l;
+    let xx=arriba[1]*zz-arriba[2]*zy, xy=arriba[2]*zx-arriba[0]*zz, xz=arriba[0]*zy-arriba[1]*zx;
+    l=Math.hypot(xx,xy,xz)||1; xx/=l; xy/=l; xz/=l;
+    const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+    return new Float32Array([
+      xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+      -(xx*ojo[0]+xy*ojo[1]+xz*ojo[2]),
+      -(yx*ojo[0]+yy*ojo[1]+yz*ojo[2]),
+      -(zx*ojo[0]+zy*ojo[1]+zz*ojo[2]), 1]);
+  },
+
+  mul(a,b){
+    const o=new Float32Array(16);
+    for(let c=0;c<4;c++) for(let r=0;r<4;r++){
+      o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+    }
+    return o;
+  },
+
+  invertir(m){
+    const o=new Float32Array(16);
+    const a00=m[0],a01=m[1],a02=m[2],a03=m[3], a10=m[4],a11=m[5],a12=m[6],a13=m[7],
+          a20=m[8],a21=m[9],a22=m[10],a23=m[11], a30=m[12],a31=m[13],a32=m[14],a33=m[15];
+    const b00=a00*a11-a01*a10, b01=a00*a12-a02*a10, b02=a00*a13-a03*a10,
+          b03=a01*a12-a02*a11, b04=a01*a13-a03*a11, b05=a02*a13-a03*a12,
+          b06=a20*a31-a21*a30, b07=a20*a32-a22*a30, b08=a20*a33-a23*a30,
+          b09=a21*a32-a22*a31, b10=a21*a33-a23*a31, b11=a22*a33-a23*a32;
+    let det=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+    if(!det) return M4.ident();
+    det=1/det;
+    o[0]=(a11*b11-a12*b10+a13*b09)*det;  o[1]=(a02*b10-a01*b11-a03*b09)*det;
+    o[2]=(a31*b05-a32*b04+a33*b03)*det;  o[3]=(a22*b04-a21*b05-a23*b03)*det;
+    o[4]=(a12*b08-a10*b11-a13*b07)*det;  o[5]=(a00*b11-a02*b08+a03*b07)*det;
+    o[6]=(a32*b02-a30*b05-a33*b01)*det;  o[7]=(a20*b05-a22*b02+a23*b01)*det;
+    o[8]=(a10*b10-a11*b08+a13*b06)*det;  o[9]=(a01*b08-a00*b10-a03*b06)*det;
+    o[10]=(a30*b04-a31*b02+a33*b00)*det; o[11]=(a21*b02-a20*b04-a23*b00)*det;
+    o[12]=(a11*b07-a10*b09-a12*b06)*det; o[13]=(a00*b09-a01*b07+a02*b06)*det;
+    o[14]=(a31*b01-a30*b03-a32*b00)*det; o[15]=(a20*b03-a21*b01+a22*b00)*det;
+    return o;
+  },
+};
+
+/* ---------- utilidades ---------- */
+const lim  = (v,a,b)=> v<a?a:(v>b?b:v);
+const mez  = (a,b,t)=> a+(b-a)*t;
+const suave= t=> t*t*(3-2*t);
+const suave5=t=> t*t*t*(t*(t*6-15)+10);
+/* facilita entradas y salidas sin que se note el arranque */
+const easeIO= t=> t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+
+function compilar(gl, tipo, fuente, nombre){
+  const s = gl.createShader(tipo);
+  gl.shaderSource(s, fuente);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    const log = gl.getShaderInfoLog(s);
+    console.error(`[shader ${nombre}]`, log);
+    throw new Error(`Shader ${nombre}: ${log}`);
+  }
+  return s;
+}
+
+function programa(gl, vs, fs, nombre){
+  const p = gl.createProgram();
+  gl.attachShader(p, compilar(gl, gl.VERTEX_SHADER, vs, nombre+':vs'));
+  gl.attachShader(p, compilar(gl, gl.FRAGMENT_SHADER, fs, nombre+':fs'));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+    const log = gl.getProgramInfoLog(p);
+    console.error(`[program ${nombre}]`, log);
+    throw new Error(`Program ${nombre}: ${log}`);
+  }
+  /* cachea las localizaciones para no pedirlas cada frame */
+  p.u = new Proxy({}, {
+    get(cache, k){
+      if(!(k in cache)) cache[k] = gl.getUniformLocation(p, k);
+      return cache[k];
+    }
+  });
+  return p;
+}
+
+function bufferQuad(gl){
+  const b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  return b;
+}
+
+</script><script>
+/* ═══════════════════════════════════════════════════════════════════════
+   ENTORNO — cielo, sol, terreno, agua, suelo y campo.
+
+   Todo procedural, sin un solo asset externo.
+
+   Dos decisiones que sostienen la calidad de imagen:
+
+   1. El horizonte es una silueta angular (una altura por azimut). Barato,
+      y da cordilleras creíbles con parallaje correcta al girar la cámara.
+
+   2. El suelo y las líneas del campo se resuelven ANALÍTICAMENTE por rayo,
+      no con geometría. Una línea de cal es una fórmula, así que se ve
+      perfecta desde 400 m y desde 6 m, sin teselado ni aliasing.
+
+   Un "mundo" es solo un juego de parámetros: cambiar de mundo es
+   interpolarlos, así que la transición sale gratis.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const ENV_VS = `#version 300 es
+in vec2 pos;
+void main(){ gl_Position = vec4(pos, 0.0, 1.0); }`;
+
+const ENV_FS = `#version 300 es
+precision highp float;
+out vec4 frag;
+
+uniform vec2  uRes;
+uniform mat4  uInvViewProj;
+uniform vec3  uCamPos;
+uniform float uTime;
+
+uniform vec3  uSkyTop, uSkyHorizon, uSunDir, uSunCol, uHaze;
+uniform float uSunSize, uSunPower, uStars, uExposure;
+uniform float uCloud, uCloudHeight;
+uniform vec3  uCloudCol;
+uniform vec3  uRidgeCol[3];
+uniform float uRidgeBase[3], uRidgeAmp[3], uRidgeFreq[3], uRidgeHaze[3], uRidgeSeed[3];
+uniform float uWater, uWaterAz, uWaterWide;
+uniform vec3  uWaterCol;
+uniform vec3  uSueloCol;
+uniform float uTierra, uNieve;      /* 0..1 mezcla de tipo de suelo */
+uniform float uCampo;               /* visibilidad de las líneas del campo */
+uniform float uNiebla;              /* densidad de niebla de distancia */
+
+const float CX = 105.0, CY = 68.0;  /* campo reglamentario, en metros */
+
+/* ---------- ruido ---------- */
+float hash11(float p){ p=fract(p*0.1031); p*=p+33.33; p*=p+p; return fract(p); }
+float hash21(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*0.1031);
+  q += dot(q, q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float vnoise(float x){
+  float i=floor(x), f=fract(x); f=f*f*(3.0-2.0*f);
+  return mix(hash11(i), hash11(i+1.0), f);
+}
+float vnoise2(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i),          hash21(i+vec2(1,0)), f.x),
+             mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)), f.x), f.y);
+}
+float fbm1(float x, int oct){
+  float s=0.0,a=0.5,f=1.0;
+  for(int i=0;i<6;i++){ if(i>=oct) break; s+=a*vnoise(x*f); f*=2.03; a*=0.5; }
+  return s;
+}
+float fbm2(vec2 p, int oct){
+  float s=0.0,a=0.5;
+  for(int i=0;i<7;i++){ if(i>=oct) break; s+=a*vnoise2(p); p*=2.02; a*=0.5; }
+  return s;
+}
+
+/* ---------- horizonte ---------- */
+float ridge(float az, int i){
+  float base,amp,fq,sd;
+  if(i==0){ base=uRidgeBase[0]; amp=uRidgeAmp[0]; fq=uRidgeFreq[0]; sd=uRidgeSeed[0]; }
+  else if(i==1){ base=uRidgeBase[1]; amp=uRidgeAmp[1]; fq=uRidgeFreq[1]; sd=uRidgeSeed[1]; }
+  else { base=uRidgeBase[2]; amp=uRidgeAmp[2]; fq=uRidgeFreq[2]; sd=uRidgeSeed[2]; }
+  /* ridged noise: 1-|2n-1| convierte el ruido suave en cimas afiladas */
+  float r = 1.0 - abs(fbm1(az*fq + sd, 3)*2.0 - 1.0);
+  float m = fbm1(az*fq*0.34 + sd*1.7, 3);   /* agrupa las cimas en macizos */
+  return base + amp*(r*0.95 + m*0.70 - 0.80);
+}
+vec3  ridgeCol(int i){ return i==0?uRidgeCol[0]:(i==1?uRidgeCol[1]:uRidgeCol[2]); }
+float ridgeHaze(int i){ return i==0?uRidgeHaze[0]:(i==1?uRidgeHaze[1]:uRidgeHaze[2]); }
+
+/* Aproximación de la curva ACES: comprime altas luces y da contraste. */
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+}
+
+/* ---------- cielo ---------- */
+vec3 skyColor(vec3 d){
+  vec3 sd = normalize(uSunDir);
+  float t = pow(clamp(d.y,0.0,1.0), 0.40);
+  vec3 col = mix(uSkyHorizon, uSkyTop, t);
+
+  float mu = max(dot(d, sd), 0.0);
+  col += uSunCol * pow(mu, 5.0)   * 0.42 * uSunPower;
+  col += uSunCol * pow(mu, 190.0) * 1.80 * uSunPower;
+  col += uSunCol * smoothstep(1.0-uSunSize, 1.0-uSunSize*0.30, mu) * 9.0 * uSunPower;
+
+  if(uStars > 0.001 && d.y > 0.0){
+    vec2 sp = d.xz/max(d.y,0.08);
+    float s  = vnoise2(sp*70.0);
+    float tw = 0.65 + 0.35*sin(uTime*1.7 + hash21(floor(sp*70.0))*40.0);
+    col += vec3(0.8,0.86,1.0) * smoothstep(0.972,0.999,s) * tw * uStars
+           * smoothstep(0.02,0.30,d.y);
+  }
+
+  if(uCloud > 0.001 && d.y > 0.010){
+    vec2 cp = d.xz/d.y * uCloudHeight;
+    float n = fbm2(cp*0.00085 + vec2(uTime*0.0030, uTime*0.0011), 4);
+    float cover = smoothstep(0.56-uCloud*0.16, 0.74, n);
+    float lit   = pow(max(dot(d,sd),0.0), 3.0);
+    /* base en sombra y borde encendido hacia el sol: da volumen */
+    vec3  cc    = mix(uCloudCol*0.55, uCloudCol*1.9 + uSunCol*0.7, lit*0.9);
+    col = mix(col, cc, cover*0.92 * smoothstep(0.010,0.12,d.y));
+  }
+  return col;
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy/uRes)*2.0 - 1.0;
+  vec4 p0 = uInvViewProj*vec4(uv,-1.0,1.0);
+  vec4 p1 = uInvViewProj*vec4(uv, 1.0,1.0);
+  vec3 d  = normalize(p1.xyz/p1.w - p0.xyz/p0.w);
+
+  float az = atan(d.z,d.x);
+  float el = d.y;
+  vec3  col = skyColor(d);
+
+  /* agua, en un sector del horizonte (mar abierto o lago) */
+  if(uWater > 0.001 && el < 0.0){
+    float da = abs(atan(sin(az-uWaterAz), cos(az-uWaterAz)));
+    float sector = 1.0 - smoothstep(uWaterWide*0.70, uWaterWide, da);
+    if(sector > 0.001){
+      vec3 r = normalize(vec3(d.x,-d.y,d.z));
+      float fres = pow(1.0-min(-el,1.0), 4.0);
+      float sun  = pow(max(dot(r,normalize(uSunDir)),0.0), 80.0);
+      float rip  = fbm2(d.xz/max(-el,0.02)*0.05 + vec2(uTime*0.05,uTime*0.03), 4);
+      vec3 cielo = mix(uSkyHorizon, uSkyTop, pow(clamp(r.y,0.0,1.0),0.40));
+      vec3 wc = mix(uWaterCol, cielo, 0.28+0.58*fres)
+              + uSunCol*smoothstep(0.60,0.95,rip)*sun*4.0;
+      col = mix(col, wc, sector*smoothstep(-0.004,-0.09,el));
+    }
+  }
+
+  /* cordilleras, de la más lejana a la más cercana. Van sobre el cielo y
+     por encima del horizonte; el suelo se dibuja después, bajo el horizonte. */
+  for(int i=0;i<3;i++){
+    float h = ridge(az, i);
+    float aa = fwidth(el)*1.1 + 0.0004;
+    float m = smoothstep(h+aa, h-aa, el);
+    if(m > 0.001){
+      vec3 rc = ridgeCol(i);
+      rc *= 0.86 + 0.28*fbm1(az*uRidgeFreq[0]*3.3 + float(i)*11.0, 2);
+      float sunAz = atan(uSunDir.z, uSunDir.x);
+      float rim = 1.0 - smoothstep(0.0, 1.3, abs(atan(sin(az-sunAz), cos(az-sunAz))));
+      rc += uSunCol*rim*0.14*uSunPower;
+      rc = mix(rc, uHaze, ridgeHaze(i));
+      col = mix(col, rc, m);
+    }
+  }
+
+  col = mix(col, uHaze, smoothstep(0.035,-0.01,el)*0.16);
+
+  col *= uExposure;
+  col = aces(col);                           /* curva filmica con contraste */
+  col = pow(max(col,0.0), vec3(1.0/2.2));    /* vuelta a espacio de pantalla */
+
+  /* viñeteado suave: enfoca la mirada sin que se note */
+  vec2 vg = gl_FragCoord.xy/uRes - 0.5;
+  col *= 1.0 - dot(vg,vg)*0.42;
+
+  frag = vec4(col,1.0);
+}`;
+
+
+/* ═══════════ SUELO ═══════════
+   Geometría real (un disco grande) para que la profundidad la escriba el
+   rasterizador. Las marcas del campo siguen siendo analíticas: una línea
+   de cal es una fórmula, y así se ve perfecta desde 400 m y desde 6 m. */
+
+const SUELO_VS = `#version 300 es
+in vec2 pos;                 /* coordenadas en metros sobre el plano */
+out vec2 vP;
+out float vDist;
+uniform mat4 uViewProj;
+uniform vec3 uCamPos;
+void main(){
+  vP = pos;
+  vDist = length(uCamPos - vec3(pos.x, 0.0, pos.y));
+  gl_Position = uViewProj*vec4(pos.x, 0.0, pos.y, 1.0);
+}`;
+
+const SUELO_FS = `#version 300 es
+precision highp float;
+in vec2 vP;
+in float vDist;
+out vec4 frag;
+
+uniform vec3  uHaze, uSueloCol, uSunCol, uSkyTop, uSunDir;
+uniform float uTierra, uNieve, uCampo, uNiebla, uExposure, uNoche;
+
+const float CX = 105.0, CY = 68.0;
+
+float hash21(vec2 p){
+  vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float vnoise2(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),
+             mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y);
+}
+float fbm2(vec2 p, int oct){
+  float s=0.0,a=0.5;
+  for(int i=0;i<6;i++){ if(i>=oct) break; s+=a*vnoise2(p); p*=2.02; a*=0.5; }
+  return s;
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+
+/* ---------- distancias 2D para las marcas del campo ---------- */
+float dSeg(vec2 p, vec2 a, vec2 b){
+  vec2 pa=p-a, ba=b-a;
+  return length(pa - ba*clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0));
+}
+float dRect(vec2 p, vec2 c, vec2 h){        /* contorno, no relleno */
+  vec2 q = abs(p-c)-h;
+  return abs(min(max(q.x,q.y),0.0) + length(max(q,0.0)));
+}
+float dArco(vec2 p, vec2 c, float r){ return abs(length(p-c)-r); }
+
+/* Marcas del campo como campo de distancia. Devuelve 0..1 de "hay cal". */
+float marcas(vec2 p, float aa){
+  float d = 1e9;
+  d = min(d, dRect(p, vec2(0.0), vec2(CX*0.5, CY*0.5)));          /* banda */
+  d = min(d, dSeg(p, vec2(0.0,-CY*0.5), vec2(0.0,CY*0.5)));       /* medio */
+  d = min(d, dArco(p, vec2(0.0), 9.15));                          /* círculo */
+  for(float s=-1.0; s<=1.0; s+=2.0){
+    float x = s*CX*0.5;
+    d = min(d, dRect(p, vec2(x - s*8.25, 0.0), vec2(8.25, 20.16)));  /* área */
+    d = min(d, dRect(p, vec2(x - s*2.75, 0.0), vec2(2.75,  9.16)));  /* pequeña */
+    /* arco frontal del área, sólo la parte que sobresale */
+    vec2 pen = vec2(x - s*11.0, 0.0);
+    if(abs(p.x - (x - s*16.5)) < 20.0 && s*(p.x-(x-s*16.5)) < 0.0)
+      d = min(d, dArco(p, pen, 9.15));
+    d = min(d, length(p-pen) - 0.12);                               /* punto */
+  }
+  float w = 0.06;                       /* media anchura de la cal, en metros */
+  return 1.0 - smoothstep(w-aa, w+aa, d);
+}
+
+/* ---------- suelo ---------- */
+vec3 suelo(vec3 hit, float dist, float aa){
+  vec2 p = hit.xz;
+  vec3 col = uSueloCol;
+
+  /* Sólo se evalúa el material que pesa: en un mundo de hierba no se
+     paga el ruido de la tierra ni el de la nieve. */
+  float wH = (1.0-uTierra)*(1.0-uNieve);
+  col = vec3(0.0);
+  if(wH > 0.004){
+    float franja = smoothstep(0.42,0.58, sin(p.x*0.3927)*0.5+0.5);   /* corte, ~8 m */
+    col += wH * uSueloCol * mix(0.92,1.09,franja) * (0.90+0.20*fbm2(p*0.09,2));
+  }
+  if(uTierra > 0.004){
+    vec3 t = uSueloCol*(0.80 + 0.42*fbm2(p*0.14,3));
+    float uso = 1.0 - smoothstep(0.0,46.0, length(p*vec2(0.62,1.0)));
+    col += uTierra*(1.0-uNieve) * mix(t, t*1.20+vec3(0.05,0.035,0.02), uso*0.55);
+  }
+  if(uNieve > 0.004)
+    col += uNieve * uSueloCol * (0.94 + 0.12*fbm2(p*0.5,3));
+
+  /* fuera del campo el terreno pierde el cuidado y se ensucia */
+  vec2 q = abs(p) - vec2(CX*0.5+6.0, CY*0.5+5.0);
+  float fuera = smoothstep(0.0, 16.0, max(q.x,q.y));
+  col = mix(col, mix(col*0.74, uHaze*0.55, 0.35), fuera*0.85);
+
+  /* cal. Sólo se evalúa cerca del campo: fuera es la mayoría de la pantalla
+     y calcular allí una decena de distancias por píxel no aporta nada. */
+  float cal = 0.0;
+  if(uCampo > 0.004 && abs(p.x) < CX*0.5+3.0 && abs(p.y) < CY*0.5+3.0)
+    cal = marcas(p, aa) * uCampo * (1.0 - fuera);
+  vec3 colCal = mix(vec3(0.92,0.93,0.88), vec3(0.88,0.86,0.80), uTierra);
+  col = mix(col, colCal, cal*0.92);
+
+  return col;
+}
+
+
+void main(){
+  /* el antialias de la cal crece con la distancia: nunca centellea */
+  float aa = max(vDist*0.0016, 0.010);
+  vec3 col = suelo(vec3(vP.x,0.0,vP.y), vDist, aa);
+
+  /* El color del terreno ya está autorizado tal y como debe verse, así que
+     aquí sólo se tiñe con la luz del mundo en vez de multiplicar por ella. */
+  vec3 tinte = mix(vec3(1.0), uSunCol*1.35, 0.30);
+  col *= tinte * (1.0 - uNoche*0.60);
+  col += uSkyTop*0.05*(1.0-uNoche*0.5);        /* rebote frío del cielo */
+
+  float niebla = 1.0 - exp(-vDist*uNiebla);
+  col = mix(col, uHaze, niebla);
+  col = aces(col*uExposure);
+  col = pow(max(col,0.0), vec3(1.0/2.2));
+  frag = vec4(col,1.0);
+}`;
+
+/* ═══════════ Los cuatro mundos ═══════════
+   Sitios concretos, no paletas abstractas. Los colores se escriben tal y
+   como se quieren ver; el motor los pasa a lineal antes de subirlos. */
+const MUNDOS = [
+  {
+    id:'pueblo', nombre:'Castilla', pie:'Campo municipal · interior · tarde',
+    skyTop:[0.16,0.33,0.66], skyHorizon:[0.98,0.68,0.38],
+    sunDir:[-0.62,0.115,-0.42], sunCol:[1.00,0.66,0.30], sunSize:0.00042, sunPower:1.25,
+    haze:[0.90,0.68,0.46], stars:0, exposure:1.05,
+    cloud:0.55, cloudHeight:900, cloudCol:[1.00,0.80,0.66],
+    ridge:[
+      {base:0.090, amp:0.085, freq:3.4, haze:0.62, seed:12.3, col:[0.36,0.40,0.56]},
+      {base:0.048, amp:0.055, freq:6.2, haze:0.48, seed:41.7, col:[0.30,0.35,0.38]},
+      {base:0.017, amp:0.026, freq:11.0, haze:0.22, seed:77.1, col:[0.24,0.30,0.20]},
+    ],
+    water:0, waterAz:0, waterWide:0, waterCol:[0,0,0], noche:0,
+    suelo:'hierba', sueloCol:[0.26,0.40,0.17], niebla:0.00020,
+  },
+  {
+    id:'costa', nombre:'Cantábrico', pie:'Campo junto al mar · amanecer',
+    skyTop:[0.10,0.26,0.55], skyHorizon:[0.86,0.86,0.88],
+    sunDir:[0.70,0.085,0.30], sunCol:[1.00,0.80,0.60], sunSize:0.00040, sunPower:1.05,
+    haze:[0.82,0.86,0.90], stars:0, exposure:1.02,
+    cloud:0.70, cloudHeight:1100, cloudCol:[0.94,0.95,0.98],
+    ridge:[
+      {base:0.072, amp:0.070, freq:2.8, haze:0.70, seed:5.5,  col:[0.34,0.42,0.54]},
+      {base:0.034, amp:0.036, freq:5.4, haze:0.56, seed:33.2, col:[0.24,0.34,0.36]},
+      {base:0.012, amp:0.018, freq:9.5, haze:0.30, seed:61.8, col:[0.20,0.30,0.24]},
+    ],
+    water:1, waterAz:0.55, waterWide:1.55, waterCol:[0.05,0.16,0.24], noche:0,
+    suelo:'hierba', sueloCol:[0.22,0.38,0.19], niebla:0.00034,
+  },
+  {
+    id:'sabana', nombre:'Sabana', pie:'Campo de tierra · lago · media tarde',
+    skyTop:[0.20,0.42,0.72], skyHorizon:[0.96,0.84,0.58],
+    sunDir:[0.34,0.26,-0.72], sunCol:[1.00,0.84,0.48], sunSize:0.00038, sunPower:1.40,
+    haze:[0.92,0.80,0.56], stars:0, exposure:1.10,
+    cloud:0.30, cloudHeight:1500, cloudCol:[1.00,0.98,0.94],
+    ridge:[
+      {base:0.048, amp:0.030, freq:2.2, haze:0.74, seed:19.1, col:[0.44,0.42,0.46]},
+      {base:0.022, amp:0.017, freq:4.4, haze:0.60, seed:52.4, col:[0.44,0.38,0.24]},
+      {base:0.008, amp:0.011, freq:8.0, haze:0.34, seed:88.9, col:[0.40,0.33,0.17]},
+    ],
+    water:1, waterAz:-2.30, waterWide:0.62, waterCol:[0.07,0.20,0.22], noche:0,
+    suelo:'tierra', sueloCol:[0.50,0.31,0.17], niebla:0.00026,
+  },
+  {
+    id:'invierno', nombre:'Invierno', pie:'Campo helado · focos encendidos · noche',
+    skyTop:[0.012,0.022,0.055], skyHorizon:[0.07,0.11,0.20],
+    sunDir:[0.40,0.50,0.60], sunCol:[0.55,0.65,0.90], sunSize:0.00075, sunPower:0.35,
+    haze:[0.09,0.13,0.22], stars:1, exposure:1.45,
+    cloud:0.18, cloudHeight:1000, cloudCol:[0.12,0.16,0.26],
+    ridge:[
+      {base:0.100, amp:0.090, freq:3.0, haze:0.62, seed:8.8,  col:[0.26,0.33,0.50]},
+      {base:0.050, amp:0.050, freq:5.8, haze:0.42, seed:27.6, col:[0.17,0.22,0.34]},
+      {base:0.018, amp:0.024, freq:10.5, haze:0.22, seed:70.2, col:[0.11,0.15,0.24]},
+    ],
+    water:0, waterAz:0, waterWide:0, waterCol:[0,0,0], noche:1,
+    suelo:'nieve', sueloCol:[0.55,0.62,0.76], niebla:0.00022,
+  },
+];
+
+/* Interpolación lineal entre dos mundos: es toda la transición. */
+function mezclarMundos(a,b,t){
+  const L =(x,y)=> x+(y-x)*t;
+  const LV=(x,y)=> x.map((v,i)=> v+(y[i]-v)*t);
+  return {
+    skyTop:LV(a.skyTop,b.skyTop), skyHorizon:LV(a.skyHorizon,b.skyHorizon),
+    sunDir:LV(a.sunDir,b.sunDir), sunCol:LV(a.sunCol,b.sunCol),
+    sunSize:L(a.sunSize,b.sunSize), sunPower:L(a.sunPower,b.sunPower),
+    haze:LV(a.haze,b.haze), stars:L(a.stars,b.stars), exposure:L(a.exposure,b.exposure),
+    cloud:L(a.cloud,b.cloud), cloudHeight:L(a.cloudHeight,b.cloudHeight),
+    cloudCol:LV(a.cloudCol,b.cloudCol),
+    ridge:a.ridge.map((r,i)=>({
+      base:L(r.base,b.ridge[i].base), amp:L(r.amp,b.ridge[i].amp),
+      freq:L(r.freq,b.ridge[i].freq), haze:L(r.haze,b.ridge[i].haze),
+      seed:L(r.seed,b.ridge[i].seed), col:LV(r.col,b.ridge[i].col),
+    })),
+    water:L(a.water,b.water), waterAz:L(a.waterAz,b.waterAz),
+    waterWide:L(a.waterWide,b.waterWide), waterCol:LV(a.waterCol,b.waterCol),
+    sueloCol:LV(a.sueloCol,b.sueloCol), niebla:L(a.niebla,b.niebla),
+    noche:L(a.noche,b.noche),
+    tierra:L(a.suelo==='tierra'?1:0, b.suelo==='tierra'?1:0),
+    nieve: L(a.suelo==='nieve' ?1:0, b.suelo==='nieve' ?1:0),
+  };
+}
+
+/* sRGB -> lineal. La paleta se escribe como se quiere ver; el shader
+   trabaja en lineal y devuelve a pantalla al final. */
+const aLineal = c => c.map(v => Math.pow(v, 2.2));
+
+function subirMundo(gl, prog, m){
+  gl.uniform3fv(prog.u.uSkyTop,     aLineal(m.skyTop));
+  gl.uniform3fv(prog.u.uSkyHorizon, aLineal(m.skyHorizon));
+  gl.uniform3fv(prog.u.uSunCol,     aLineal(m.sunCol));
+  gl.uniform3fv(prog.u.uHaze,       aLineal(m.haze));
+  gl.uniform3fv(prog.u.uCloudCol,   aLineal(m.cloudCol));
+  gl.uniform3fv(prog.u.uWaterCol,   aLineal(m.waterCol));
+  gl.uniform3fv(prog.u.uSueloCol,   aLineal(m.sueloCol));
+  gl.uniform3fv(prog.u.uSunDir, m.sunDir);
+  gl.uniform1f(prog.u.uSunSize, m.sunSize);
+  gl.uniform1f(prog.u.uSunPower, m.sunPower);
+  gl.uniform1f(prog.u.uStars, m.stars);
+  gl.uniform1f(prog.u.uExposure, m.exposure);
+  gl.uniform1f(prog.u.uCloud, m.cloud);
+  gl.uniform1f(prog.u.uCloudHeight, m.cloudHeight);
+  gl.uniform1f(prog.u.uWater, m.water);
+  gl.uniform1f(prog.u.uWaterAz, m.waterAz);
+  gl.uniform1f(prog.u.uWaterWide, m.waterWide);
+  gl.uniform1f(prog.u.uTierra, m.tierra);
+  gl.uniform1f(prog.u.uNieve, m.nieve);
+  gl.uniform1f(prog.u.uNiebla, m.niebla);
+  const rc=[],rb=[],ra=[],rf=[],rh=[],rs=[];
+  m.ridge.forEach(r=>{ rc.push(...aLineal(r.col)); rb.push(r.base); ra.push(r.amp);
+                       rf.push(r.freq); rh.push(r.haze); rs.push(r.seed); });
+  gl.uniform3fv(prog.u.uRidgeCol, rc);
+  gl.uniform1fv(prog.u.uRidgeBase, rb); gl.uniform1fv(prog.u.uRidgeAmp, ra);
+  gl.uniform1fv(prog.u.uRidgeFreq, rf); gl.uniform1fv(prog.u.uRidgeHaze, rh);
+  gl.uniform1fv(prog.u.uRidgeSeed, rs);
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   OBJETOS DEL ENTORNO — arbolado, torres de luz, caserío y valla.
+
+   Son lo que convierte un plano en un sitio. Van instanciados: una sola
+   llamada de dibujado para todos los árboles del mundo.
+
+   Cada hueco de la escena (un árbol, una casa) tiene una apariencia por
+   mundo, y en cada frame se sube la mezcla de las dos apariencias activas.
+   Así los árboles se TRANSFORMAN de roble a acacia en vez de aparecer de
+   golpe, que es justo lo que pide "el mundo cambia, el juego no".
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ---------- carteles (árboles, arbustos, matorral) ---------- */
+const CART_VS = `#version 300 es
+in vec2 esq;              /* esquina del cartel, -0.5..0.5 */
+in vec3 iPos;             /* posición en el mundo */
+in vec4 iForma;           /* ancho, alto, tipoA, semilla */
+in vec2 iForma2;          /* tipoB, mezcla */
+in vec3 iCol;
+out vec2 vUv;
+out vec3 vCol;
+out float vTipoA, vTipoB, vMez, vSemilla, vDist;
+
+uniform mat4 uViewProj;
+uniform vec3 uCamPos;
+
+void main(){
+  vec3 haciaCam = uCamPos - iPos;
+  vec3 der = normalize(vec3(-haciaCam.z, 0.0, haciaCam.x));   /* siempre de frente */
+  vec3 p = iPos + der*esq.x*iForma.x + vec3(0.0, (esq.y+0.5)*iForma.y, 0.0);
+  vUv = esq + 0.5;
+  vCol = iCol; vTipoA = iForma.z; vTipoB = iForma2.x; vMez = iForma2.y;
+  vSemilla = iForma.w;
+  vDist = length(haciaCam);
+  gl_Position = uViewProj*vec4(p,1.0);
+}`;
+
+const CART_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+in vec3 vCol;
+in float vTipoA, vTipoB, vMez, vSemilla, vDist;
+out vec4 frag;
+
+uniform vec3  uHaze, uSunDir, uSunCol, uSkyTop;
+uniform float uNiebla, uExposure, uNoche;
+
+float hash21(vec2 p){
+  vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float vnoise2(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),
+             mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y);
+}
+float fbm(vec2 p){
+  float s=0.0,a=0.5;
+  for(int i=0;i<4;i++){ s+=a*vnoise2(p); p*=2.05; a*=0.5; }
+  return s;
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+
+/* Silueta por tipo. Devuelve (masa, tronco) para poder mezclar dos tipos
+   y que el arbolado se TRANSFORME al cambiar de mundo. */
+vec2 silueta(vec2 uv, float tipo, float sem, float ruido){
+  float x = uv.x-0.5, y = uv.y;
+  float dens = 0.0, tronco = 0.0;
+
+  if(tipo < 0.5){
+    /* copa redonda (roble, chopo) */
+    vec2 q = vec2(x/0.42, (y-0.63)/0.36);
+    dens = 1.0 - smoothstep(0.72, 1.02, length(q) - ruido*0.30);
+    tronco = (1.0-smoothstep(0.030,0.055,abs(x)))*(1.0-smoothstep(0.30,0.42,y));
+  } else if(tipo < 1.5){
+    /* acacia: copa ancha y plana, tronco largo */
+    float copa  = 1.0 - smoothstep(0.06,0.20, abs(y-0.78));
+    float ancho = 1.0 - smoothstep(0.26,0.50, abs(x));
+    dens = 1.0 - smoothstep(0.30,0.62, 1.0-copa*ancho + ruido*0.26);
+    tronco = (1.0-smoothstep(0.020,0.040,abs(x+(y-0.4)*0.09)))
+           * (1.0-smoothstep(0.62,0.80,y));
+  } else if(tipo < 2.5){
+    /* árbol desnudo de invierno */
+    float ramas = 0.0;
+    for(int i=0;i<5;i++){
+      float f=float(i);
+      float ang=(hash21(vec2(sem,f))-0.5)*1.5;
+      float alt=0.42+f*0.115;
+      float dx=abs(x-(y-0.36)*ang);
+      ramas=max(ramas,(1.0-smoothstep(0.008,0.026,dx))*(1.0-smoothstep(alt,alt+0.22,y)));
+    }
+    dens = ramas*0.85;
+    tronco = (1.0-smoothstep(0.022,0.042,abs(x)))*(1.0-smoothstep(0.55,0.78,y));
+  } else {
+    /* matorral bajo */
+    vec2 q = vec2(x/0.5,(y-0.24)/0.26);
+    dens = 1.0 - smoothstep(0.70,1.05, length(q) - ruido*0.36);
+  }
+  return vec2(dens, tronco);
+}
+
+void main(){
+  vec2 uv = vUv;
+  float x = uv.x-0.5, y = uv.y;
+  float sem = vSemilla*37.0;
+  float ruido = fbm(uv*7.0 + sem) - 0.5;
+
+  vec2 sa = silueta(uv, vTipoA, sem, ruido);
+  vec2 sb = silueta(uv, vTipoB, sem, ruido);
+  vec2 sil = mix(sa, sb, vMez);
+  float dens = sil.x, tronco = sil.y;
+
+  float a = max(dens, tronco);
+  if(a < 0.02) discard;
+
+  /* Volumen barato y MULTIPLICATIVO: si la luz se suma, el follaje oscuro
+     se convierte en un borrón del color del sol y pierde el verde. */
+  float sunX = normalize(uSunDir).x;
+  float lado = 0.40 + 0.60*smoothstep(-0.6,0.6, x*sign(sunX)+0.10);
+  float base = 0.42 + 0.58*smoothstep(0.0,0.60,y);
+  vec3 luz = uSkyTop*0.42 + uSunCol*lado*1.05*(1.0-uNoche*0.85);
+
+  vec3 propio = mix(vCol, vec3(0.055,0.038,0.026), tronco*0.9);  /* corteza */
+  vec3 col = propio*luz*base;
+
+  float niebla = 1.0 - exp(-vDist*uNiebla);
+  col = mix(col, uHaze, niebla);
+
+  col = aces(col*uExposure);
+  col = pow(max(col,0.0), vec3(1.0/2.2));
+  frag = vec4(col, a);
+}`;
+
+/* ---------- cajas (casas, torres, vallas, porterías) ---------- */
+const CAJA_VS = `#version 300 es
+in vec3 pos;
+in vec3 nor;
+in vec3 iPos;
+in vec3 iEsc;
+in vec4 iCol;      /* rgb + tipo(a): 0 muro, 1 tejado, 2 metal, 3 red */
+out vec3 vNor, vCol;
+out float vTipo, vDist, vAlt;
+uniform mat4 uViewProj;
+uniform vec3 uCamPos;
+void main(){
+  vec3 p = iPos + pos*iEsc;
+  vNor = nor; vCol = iCol.rgb; vTipo = iCol.a;
+  vAlt = p.y;
+  vDist = length(uCamPos - p);
+  gl_Position = uViewProj*vec4(p,1.0);
+}`;
+
+const CAJA_FS = `#version 300 es
+precision highp float;
+in vec3 vNor, vCol;
+in float vTipo, vDist, vAlt;
+out vec4 frag;
+uniform vec3 uHaze, uSunDir, uSunCol, uSkyTop;
+uniform float uNiebla, uExposure, uNoche;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+void main(){
+  vec3 n = normalize(vNor), sd = normalize(uSunDir);
+  float dif = max(dot(n, sd), 0.0);
+  float cielo = 0.5 + 0.5*n.y;                    /* luz ambiente del cielo */
+  vec3 col = vCol*(uSkyTop*cielo*0.55 + uSunCol*dif*1.15*(1.0-uNoche*0.8));
+
+  /* de noche las fachadas se apagan salvo las ventanas encendidas */
+  if(vTipo < 0.5 && uNoche > 0.01){
+    float rej = step(0.62, fract(vAlt*1.6))*step(0.55, fract(vAlt*7.3+vNor.x*13.0));
+    col += vec3(1.0,0.78,0.42)*rej*uNoche*0.9;
+  }
+  if(vTipo > 1.5 && vTipo < 2.5) col *= 0.8;      /* metal, más mate */
+
+  float niebla = 1.0 - exp(-vDist*uNiebla);
+  col = mix(col, uHaze, niebla);
+  col = aces(col*uExposure);
+  col = pow(max(col,0.0), vec3(1.0/2.2));
+  frag = vec4(col, 1.0);
+}`;
+
+/* ═══════════ Distribución de la escena ═══════════
+   Un solo reparto de huecos que sirve para los cuatro mundos. Las
+   coordenadas están en metros, con el campo (105 x 68) centrado en 0. */
+
+function rnd(semilla){                      /* aleatorio reproducible */
+  let s = semilla >>> 0;
+  return () => {
+    s = (s*1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/* Apariencia del arbolado en cada mundo: tipo, tamaño y color. */
+const ARBOL_MUNDO = {
+  pueblo:   {tipo:0, alto:[7,13],  ancho:[5,9],  col:[0.19,0.31,0.12], densidad:1.0},
+  costa:    {tipo:0, alto:[5,9],   ancho:[4,7],  col:[0.16,0.30,0.18], densidad:0.7},
+  sabana:   {tipo:1, alto:[6,10],  ancho:[9,15], col:[0.34,0.36,0.17], densidad:0.85},
+  invierno: {tipo:2, alto:[7,12],  ancho:[5,8],  col:[0.30,0.26,0.24], densidad:0.9},
+};
+
+/* Caserío: en la sabana desaparece (escala 0) y deja sitio a unas casas bajas. */
+const CASA_MUNDO = {
+  pueblo:   {n:1.0, alto:[6,13], muro:[0.78,0.70,0.58], tejado:[0.52,0.26,0.17]},
+  costa:    {n:0.7, alto:[6,11], muro:[0.86,0.86,0.84], tejado:[0.38,0.36,0.40]},
+  sabana:   {n:0.35,alto:[3, 5], muro:[0.72,0.58,0.40], tejado:[0.46,0.36,0.22]},
+  invierno: {n:0.9, alto:[6,12], muro:[0.62,0.60,0.60], tejado:[0.82,0.84,0.88]},
+};
+
+function generarEscena(){
+  const r = rnd(20260821);
+  const arboles = [], casas = [], estructuras = [];
+
+  /* ── arbolado: anillo alrededor del campo, más denso en el lado lejano ── */
+  for(let i=0;i<260;i++){
+    const ang = r()*Math.PI*2;
+    const rad = 78 + Math.pow(r(),0.55)*420;
+    const x = Math.cos(ang)*rad*1.35, z = Math.sin(ang)*rad;
+    /* despeja el rectángulo del campo y sus bandas */
+    if(Math.abs(x) < 74 && Math.abs(z) < 50) continue;
+    arboles.push({x, z, s:r(), esc:0.6+r()*0.8, tipoLado: Math.sin(ang)});
+  }
+
+  /* ── caserío: un pueblo agrupado en un lado ── */
+  for(let i=0;i<54;i++){
+    const ang = -0.9 + (r()-0.5)*1.5;
+    const rad = 160 + Math.pow(r(),0.7)*300;
+    casas.push({x:Math.cos(ang)*rad*1.2, z:Math.sin(ang)*rad, s:r(),
+                w:7+r()*9, d:7+r()*9, giro:r()*Math.PI});
+  }
+
+  /* ── torres de luz: cuatro, en las esquinas del recinto ── */
+  for(const sx of [-1,1]) for(const sz of [-1,1])
+    estructuras.push({tipo:'torre', x:sx*61, z:sz*42});
+
+  /* ── porterías ── */
+  for(const s of [-1,1]) estructuras.push({tipo:'porteria', x:s*52.5, z:0, lado:s});
+
+  /* ── valla perimetral ── */
+  estructuras.push({tipo:'valla'});
+
+  return {arboles, casas, estructuras};
+}
+
+/* Malla de una caja unitaria centrada en XZ y apoyada en y=0. */
+function mallaCaja(){
+  const p=[], n=[];
+  const caras = [
+    {nor:[0,0,1],  v:[[-.5,0,.5],[.5,0,.5],[.5,1,.5],[-.5,1,.5]]},
+    {nor:[0,0,-1], v:[[.5,0,-.5],[-.5,0,-.5],[-.5,1,-.5],[.5,1,-.5]]},
+    {nor:[1,0,0],  v:[[.5,0,.5],[.5,0,-.5],[.5,1,-.5],[.5,1,.5]]},
+    {nor:[-1,0,0], v:[[-.5,0,-.5],[-.5,0,.5],[-.5,1,.5],[-.5,1,-.5]]},
+    {nor:[0,1,0],  v:[[-.5,1,.5],[.5,1,.5],[.5,1,-.5],[-.5,1,-.5]]},
+  ];
+  for(const c of caras){
+    const [a,b,cc,d] = c.v;
+    for(const v of [a,b,cc, a,cc,d]){ p.push(...v); n.push(...c.nor); }
+  }
+  return {pos:new Float32Array(p), nor:new Float32Array(n), cuenta:p.length/3};
+}
+
+/* Disco de suelo por anillos concéntricos: mucha resolución cerca del campo
+   y triángulos grandes lejos, donde nadie los mira. */
+function mallaSuelo(){
+  const radios = [0, 4, 9, 18, 34, 62, 120, 260, 600, 1500, 5000];
+  const SEG = 72, p = [];
+  for(let r=0; r<radios.length-1; r++){
+    const r0 = radios[r], r1 = radios[r+1];
+    for(let i=0;i<SEG;i++){
+      const a0 = i/SEG*Math.PI*2, a1 = (i+1)/SEG*Math.PI*2;
+      const c0=Math.cos(a0), s0=Math.sin(a0), c1=Math.cos(a1), s1=Math.sin(a1);
+      /* estirado en X para que el disco cubra bien el campo, que es alargado */
+      const K = 1.35;
+      p.push(r0*c0*K, r0*s0,  r1*c0*K, r1*s0,  r1*c1*K, r1*s1);
+      p.push(r0*c0*K, r0*s0,  r1*c1*K, r1*s1,  r0*c1*K, r0*s1);
+    }
+  }
+  return {pos:new Float32Array(p), cuenta:p.length/2};
+}
+
+</script><script>
+/* ═══════════════════════════════════════════════════════════════════════
+   ESCENA — orquesta los pases de dibujado.
+
+   Orden: entorno (cielo, terreno, suelo y campo, escribiendo profundidad)
+   → cajas opacas (caserío, torres, porterías, valla) → arbolado con
+   transparencia, ordenado de lejos a cerca.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function crearEscena(gl){
+  const progEnv   = programa(gl, ENV_VS,  ENV_FS,  'env');
+  const progCart  = programa(gl, CART_VS, CART_FS, 'cartel');
+  const progCaja  = programa(gl, CAJA_VS, CAJA_FS, 'caja');
+  const progSuelo = programa(gl, SUELO_VS, SUELO_FS, 'suelo');
+
+  const quad  = bufferQuad(gl);
+  const caja  = mallaCaja();
+  const disp  = generarEscena();
+  const suelo = mallaSuelo();
+  const bufSuelo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufSuelo);
+  gl.bufferData(gl.ARRAY_BUFFER, suelo.pos, gl.STATIC_DRAW);
+
+  /* ---------- geometría estática ---------- */
+  const bufCajaPos = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufCajaPos);
+  gl.bufferData(gl.ARRAY_BUFFER, caja.pos, gl.STATIC_DRAW);
+  const bufCajaNor = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufCajaNor);
+  gl.bufferData(gl.ARRAY_BUFFER, caja.nor, gl.STATIC_DRAW);
+
+  const bufEsq = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufEsq);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -.5,-.5,  .5,-.5,  .5,.5,   -.5,-.5,  .5,.5,  -.5,.5]), gl.STATIC_DRAW);
+
+  /* ---------- búferes de instancia ---------- */
+  const N_ARB = disp.arboles.length;
+  const datosArb = new Float32Array(N_ARB*12);
+  const bufArb = gl.createBuffer();
+
+  const N_CAJA = disp.casas.length*2 + 4*2 + 2*3 + 44;
+  const datosCaja = new Float32Array(N_CAJA*10);
+  const bufCaja = gl.createBuffer();
+  let nCajas = 0;
+
+  const orden = disp.arboles.map((_,i)=>i);   /* índices para ordenar por z */
+
+  /* ---------- construcción por frame ---------- */
+  function construir(mA, mB, t, camPos){
+    const aA = ARBOL_MUNDO[mA.id], aB = ARBOL_MUNDO[mB.id];
+    const cA = CASA_MUNDO[mA.id],  cB = CASA_MUNDO[mB.id];
+    const L = (x,y)=> x+(y-x)*t;
+
+    /* arbolado, ordenado de lejos a cerca para que la transparencia case */
+    for(const i of orden){
+      const a = disp.arboles[i];
+      const dx = a.x-camPos[0], dz = a.z-camPos[2];
+      a._d = dx*dx + dz*dz;
+    }
+    orden.sort((p,q)=> disp.arboles[q]._d - disp.arboles[p]._d);
+
+    for(let k=0;k<N_ARB;k++){
+      const a = disp.arboles[orden[k]];
+      const alto  = L(mez(aA.alto[0], aA.alto[1], a.s),  mez(aB.alto[0], aB.alto[1], a.s))*a.esc;
+      const ancho = L(mez(aA.ancho[0],aA.ancho[1],a.s),  mez(aB.ancho[0],aB.ancho[1],a.s))*a.esc;
+      const dens  = L(aA.densidad, aB.densidad);
+      const vis   = a.s < dens ? 1 : 0;      /* clarea el bosque sin mover nada */
+      const o = k*12;
+      datosArb[o  ] = a.x; datosArb[o+1] = 0; datosArb[o+2] = a.z;
+      datosArb[o+3] = ancho*vis; datosArb[o+4] = alto*vis;
+      datosArb[o+5] = aA.tipo;   datosArb[o+6] = a.s;
+      datosArb[o+7] = aB.tipo;   datosArb[o+8] = t;
+      for(let c=0;c<3;c++)
+        datosArb[o+9+c] = Math.pow(L(aA.col[c], aB.col[c]), 2.2);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufArb);
+    gl.bufferData(gl.ARRAY_BUFFER, datosArb, gl.DYNAMIC_DRAW);
+
+    /* cajas */
+    nCajas = 0;
+    const push = (x,y,z, sx,sy,sz, r,g,b, tipo)=>{
+      const o = nCajas*10;
+      datosCaja[o]=x; datosCaja[o+1]=y; datosCaja[o+2]=z;
+      datosCaja[o+3]=sx; datosCaja[o+4]=sy; datosCaja[o+5]=sz;
+      datosCaja[o+6]=Math.pow(r,2.2); datosCaja[o+7]=Math.pow(g,2.2);
+      datosCaja[o+8]=Math.pow(b,2.2); datosCaja[o+9]=tipo;
+      nCajas++;
+    };
+
+    /* caserío: cuerpo + tejado. En la sabana encoge a casa baja. */
+    const nCasas = L(cA.n, cB.n);
+    for(let i=0;i<disp.casas.length;i++){
+      const c = disp.casas[i];
+      if(c.s > nCasas) continue;
+      const h = L(mez(cA.alto[0],cA.alto[1],c.s), mez(cB.alto[0],cB.alto[1],c.s));
+      const muro = [0,1,2].map(k=> L(cA.muro[k], cB.muro[k]));
+      const tej  = [0,1,2].map(k=> L(cA.tejado[k], cB.tejado[k]));
+      push(c.x, 0, c.z, c.w, h, c.d, muro[0],muro[1],muro[2], 0);
+      push(c.x, h, c.z, c.w*1.14, h*0.20, c.d*1.14, tej[0],tej[1],tej[2], 1);
+    }
+
+    /* torres de luz */
+    for(const e of disp.estructuras){
+      if(e.tipo === 'torre'){
+        push(e.x, 0, e.z, 0.9, 17, 0.9, 0.30,0.31,0.33, 2);
+        push(e.x, 17, e.z, 5.2, 1.5, 1.0, 0.36,0.37,0.39, 2);
+      }
+      if(e.tipo === 'porteria'){
+        const L_ = e.lado;
+        push(e.x, 0,  3.66, 0.14, 2.44, 0.14, 0.92,0.93,0.94, 2);
+        push(e.x, 0, -3.66, 0.14, 2.44, 0.14, 0.92,0.93,0.94, 2);
+        push(e.x, 2.44, 0, 0.14, 0.14, 7.32, 0.92,0.93,0.94, 2);
+      }
+      if(e.tipo === 'valla'){
+        /* postes del cierre perimetral */
+        for(let i=0;i<22;i++){
+          const u = i/22*Math.PI*2;
+          push(Math.cos(u)*62, 0, Math.sin(u)*44, 0.16, 2.1, 0.16, 0.30,0.32,0.30, 2);
+        }
+      }
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufCaja);
+    gl.bufferData(gl.ARRAY_BUFFER, datosCaja, gl.DYNAMIC_DRAW);
+  }
+
+  /* ---------- ayudantes de atributos ---------- */
+  function attr(prog, nombre, buf, tam, stride, offset, divisor){
+    const loc = gl.getAttribLocation(prog, nombre);
+    if(loc < 0) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, tam, gl.FLOAT, false, stride, offset);
+    gl.vertexAttribDivisor(loc, divisor||0);
+  }
+
+  function comunes(prog, m, camPos, viewProj){
+    gl.uniformMatrix4fv(prog.u.uViewProj, false, viewProj);
+    gl.uniform3fv(prog.u.uCamPos, camPos);
+    gl.uniform3fv(prog.u.uHaze, aLineal(m.haze));
+    gl.uniform3fv(prog.u.uSunDir, m.sunDir);
+    gl.uniform3fv(prog.u.uSunCol, aLineal(m.sunCol));
+    gl.uniform3fv(prog.u.uSkyTop, aLineal(m.skyTop));
+    gl.uniform1f(prog.u.uNiebla, m.niebla);
+    gl.uniform1f(prog.u.uExposure, m.exposure);
+    gl.uniform1f(prog.u.uNoche, m.noche);
+  }
+
+  /* ---------- dibujado ---------- */
+  function dibujar(est){
+    const {W,H, viewProj, invViewProj, camPos, m, tiempo, campo} = est;
+    const pases = est.pases || 'todo';
+    const hacer = n => pases==='todo' || pases.indexOf(n)>=0;
+
+    gl.viewport(0,0,W,H);
+    gl.disable(gl.BLEND);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+
+    /* 1 · cielo: al fondo de todo, sin tocar la profundidad */
+    if(hacer('cielo')){
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.useProgram(progEnv);
+    attr(progEnv, 'pos', quad, 2, 0, 0, 0);
+    gl.uniform2f(progEnv.u.uRes, W, H);
+    gl.uniformMatrix4fv(progEnv.u.uInvViewProj, false, invViewProj);
+    gl.uniform3fv(progEnv.u.uCamPos, camPos);
+    gl.uniform1f(progEnv.u.uTime, tiempo);
+    subirMundo(gl, progEnv, m);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+
+    /* 2 · suelo y campo, ya con profundidad de rasterizador */
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    if(hacer('suelo')){
+    gl.useProgram(progSuelo);
+    attr(progSuelo, 'pos', bufSuelo, 2, 0, 0, 0);
+    gl.uniform3fv(progSuelo.u.uSueloCol, aLineal(m.sueloCol));
+    gl.uniform1f(progSuelo.u.uTierra, m.tierra);
+    gl.uniform1f(progSuelo.u.uNieve, m.nieve);
+    gl.uniform1f(progSuelo.u.uCampo, campo);
+    comunes(progSuelo, m, camPos, viewProj);
+    gl.drawArrays(gl.TRIANGLES, 0, suelo.cuenta);
+    }
+
+    /* 3 · cajas opacas */
+    if(hacer('cajas')){
+    gl.useProgram(progCaja);
+    attr(progCaja, 'pos', bufCajaPos, 3, 0, 0, 0);
+    attr(progCaja, 'nor', bufCajaNor, 3, 0, 0, 0);
+    attr(progCaja, 'iPos', bufCaja, 3, 40, 0,  1);
+    attr(progCaja, 'iEsc', bufCaja, 3, 40, 12, 1);
+    attr(progCaja, 'iCol', bufCaja, 4, 40, 24, 1);
+    comunes(progCaja, m, camPos, viewProj);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, caja.cuenta, nCajas);
+    }
+
+    /* 4 · arbolado, transparente y ya ordenado de lejos a cerca */
+    if(hacer('arb')){
+    gl.useProgram(progCart);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    attr(progCart, 'esq', bufEsq, 2, 0, 0, 0);
+    attr(progCart, 'iPos',    bufArb, 3, 48, 0,  1);
+    attr(progCart, 'iForma',  bufArb, 4, 48, 12, 1);
+    attr(progCart, 'iForma2', bufArb, 2, 48, 28, 1);
+    attr(progCart, 'iCol',    bufArb, 3, 48, 36, 1);
+    comunes(progCart, m, camPos, viewProj);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, N_ARB);
+    }
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+
+  return {construir, dibujar, disp};
+}
+
+</script>
+<script>
+const cv=document.getElementById('c'),gl=cv.getContext('webgl2',{antialias:true,alpha:false});
+const hud=document.getElementById('hud');
+const esc=crearEscena(gl);
+/* cada caso se mide durante 1,6 s tras 0,5 s de calentamiento */
+const CASOS=[
+  {n:'cielo',        pases:'cielo', esc:1},
+  {n:'suelo',        pases:'suelo', esc:1},
+  {n:'arbolado',     pases:'arb',   esc:1},
+  {n:'cajas',        pases:'cajas', esc:1},
+  {n:'todo',         pases:'todo',  esc:1},
+  {n:'todo @70%',    pases:'todo',  esc:0.7},
+  {n:'todo @50%',    pases:'todo',  esc:0.5},
+];
+let idx=0,fase='calienta',t0=performance.now(),frames=0;
+window.RES=[];
+let W,H;
+function medir(e){const d=Math.min(devicePixelRatio||1,1.5)*e;
+  W=Math.round(innerWidth*d);H=Math.round(innerHeight*d);cv.width=W;cv.height=H;}
+medir(CASOS[0].esc);
+function frame(now){
+  if(idx>=CASOS.length){
+    hud.textContent=RES.map(r=>`${r.n.padEnd(12)} ${String(r.fps).padStart(4)} fps  ${r.px}`).join('\n');
+    return;
+  }
+  requestAnimationFrame(frame);
+  const c=CASOS[idx];
+  const camPos=[Math.cos(0.9)*120,42,Math.sin(0.9)*120];
+  const view=M4.mirar(camPos,[0,2,0],[0,1,0]);
+  const proj=M4.perspectiva(46*Math.PI/180,W/H,0.5,14000);
+  const vp=M4.mul(proj,view);
+  const m=mezclarMundos(MUNDOS[0],MUNDOS[1],0);
+  esc.construir(MUNDOS[0],MUNDOS[1],0,camPos);
+  esc.dibujar({W,H,viewProj:vp,invViewProj:M4.invertir(vp),camPos,m,
+               tiempo:now*0.001,campo:1,pases:c.pases});
+  const el=now-t0;
+  if(fase==='calienta'){ if(el>500){fase='mide';t0=now;frames=0;} }
+  else{ frames++;
+    if(el>1600){
+      RES.push({n:c.n,fps:Math.round(frames*1000/el),px:`${W}x${H}`});
+      idx++; fase='calienta'; t0=now;
+      if(idx<CASOS.length) medir(CASOS[idx].esc);
+    }
+  }
+  hud.textContent=`caso ${idx+1}/${CASOS.length}: ${c.n} (${fase})`;
+}
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html><meta charset="utf-8"><title>medición</title>
+<style>body{font:13px ui-monospace,monospace;background:#111;color:#ddd;padding:16px}
+iframe{width:640px;height:360px;border:1px solid #444}
+td{padding:4px 12px 4px 0}</style>
+<div id="out">midiendo…</div>
+<script>
+const CASOS=[
+ ['solo cielo','?esc=1&pases=cielo'],
+ ['solo suelo','?esc=1&pases=suelo'],
+ ['solo arbolado','?esc=1&pases=arb'],
+ ['solo cajas','?esc=1&pases=cajas'],
+ ['todo','?esc=1&pases=todo'],
+ ['todo @50%','?esc=0.5&pases=todo'],
+ ['todo @25%','?esc=0.25&pases=todo'],
+];
+const res=[];
+async function medir(nombre,q){
+  return new Promise(r=>{
+    const f=document.createElement('iframe');
+    f.src='build-escena.html'+q;
+    document.body.appendChild(f);
+    setTimeout(()=>{
+      const hud=f.contentDocument&&f.contentDocument.getElementById('hud');
+      const txt=hud?hud.textContent:'(sin hud)';
+      const mm=txt.match(/(\d+) fps/);
+      res.push([nombre, mm?mm[1]:'?', (txt.match(/(\d+)x(\d+)/)||[])[0]||'']);
+      f.remove(); r();
+    }, 3500);
+  });
+}
+(async()=>{
+  for(const [n,q] of CASOS) await medir(n,q);
+  document.getElementById('out').innerHTML='<table>'+
+    res.map(r=>`<tr><td>${r[0]}</td><td><b>${r[1]} fps</b></td><td>${r[2]}</td></tr>`).join('')+
+    '</table>';
+})();
+</script>
