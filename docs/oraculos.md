@@ -262,3 +262,79 @@ que traía. Es la línea que abre este resultado.
 Lo medido aquí no se tira: el filtro de plausibilidad (5,7 % de aristas,
 mediana 2 candidatas) y la partición (+6 puntos de pureza real) siguen
 siendo útiles si algún día las piezas llegan limpias.
+
+---
+
+# LOS CRUCES: hay señal geométrica, modesta pero real (20-ago-2026)
+
+`scripts/cruces.py`. Medir el fenómeno antes de construir nada, como
+pidió Alex.
+
+## 1. Cuántos son y cuántos falla el sistema
+
+En 30 segundos de juego, con 14 personas:
+
+| | |
+|---|---|
+| cruces detectados (a menos de 2,5 m) | **61** |
+| del MISMO equipo | 17 (28 %) |
+| de equipos distintos | 44 |
+
+| ¿los resuelve el sistema? | |
+|---|---|
+| bien | 22 (48 %) |
+| **MAL (intercambio de identidad)** | **24 (52 %)** |
+| sin datos suficientes | 15 |
+
+**El sistema falla más de la mitad de los cruces.** No son cinco casos:
+son 24 fallos en medio minuto. Extrapolado a un partido de 90 minutos,
+del orden de 4.000 intercambios.
+
+## 2. ¿Los resolvería la continuidad de movimiento?
+
+En los 24 que falla, se extrapola cada trayectoria desde antes del cruce
+y se mira si la asignación correcta gana a la cruzada:
+
+| | |
+|---|---|
+| **la geometría acierta** | **15 (65 %)** |
+| se equivoca igual | 8 (35 %) |
+
+**65 % frente al 50 % del azar: hay señal.** Modesta, pero real. Si se
+aprovechara entera, los intercambios en cruces bajarían de 24 a ~9.
+
+## Dos avisos sobre este número, en direcciones opuestas
+
+**A la baja**: es un oráculo **optimista**. Extrapola con las posiciones
+del GT, no con las del sistema. Con posiciones ruidosas —y el temblor
+crudo es de 0,10 a 0,20 m según la profundidad— acertará menos.
+
+**Al alza**: el GT va a **0,5 s** y el sistema tiene datos a **0,1 s**. A
+medio segundo un niño recorre de 1 a 3,5 m, así que la extrapolación
+atraviesa el cruce casi a ciegas; a una décima recorre 0,2-0,7 m y la
+continuidad es mucho más informativa. **Este test mide la geometría en
+las peores condiciones posibles de muestreo.**
+
+Los dos efectos no se cancelan necesariamente, pero el segundo es
+estructural: con la cadencia nativa la señal solo puede ser mayor.
+
+## Un bug que cambió el veredicto
+
+La primera pasada daba **48 %** —indistinguible del azar— y la conclusión
+habría sido "la geometría tampoco es la vía". Era un fallo en el factor
+de extrapolación: la velocidad se estima sobre un tramo de 15 fotogramas
+y se proyecta sobre 30, o sea un factor de 2, pero el código lo
+multiplicaba otra vez por dos y extrapolaba el doble de lejos.
+
+Con el factor correcto, 65 %. **Sexto bug cazado por desconfiar de un
+número**, y el segundo que habría cerrado una vía buena.
+
+## Recomendación
+
+Merece la pena probar la geometría en los cruces, con dos condiciones:
+
+1. **Trabajar a la cadencia nativa (0,1 s), no a la del GT.** Es donde la
+   señal es mayor y donde el sistema realmente decide.
+2. **Medir contra este 52 % de fallos como línea base**, no contra
+   métricas de producto: el efecto sobre el centroide llegará después, y
+   diluido.
