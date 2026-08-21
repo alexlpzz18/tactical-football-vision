@@ -118,3 +118,68 @@ unir:
 2. **Unir** globalmente los trozos limpios con el grafo.
 
 En ese orden. Sin el primer paso, el segundo tiene un techo del 84 %.
+
+---
+
+# 4a: PARTIR los tracklets con la apariencia (20-ago-2026)
+
+`src/tracking/partir_tracklets.py` + `scripts/medir_particion.py`.
+
+No con DBSCAN sobre embeddings sueltos, sino con **detección de punto de
+cambio**: en una identidad, un intercambio de persona es un cambio
+ORDENADO EN EL TIEMPO, no un grupo cualquiera. Se busca el instante que
+maximiza la distancia entre la firma de antes y la de después.
+
+La salvaguarda contra el cuarto negativo del proyecto: se compara la
+**media de una ventana**, nunca un embedding suelto, y solo se corta en el
+mejor punto de cada tracklet.
+
+## Primera tabla — y por qué NO se puede leer tal cual
+
+| variante | tracklets | puros | % puros | pureza obs | frag. |
+|---|---|---|---|---|---|
+| sin partir (base) | 24 | 9 | 38 % | 80,1 % | 1,7 |
+| umbral 0,04 | 83 | 62 | 75 % | **91,3 %** | 5,9 |
+| umbral 0,06 | 55 | 37 | 67 % | 89,4 % | 3,9 |
+| umbral 0,08 | 35 | 18 | 51 % | 87,8 % | 2,5 |
+| umbral 0,10 | 24 | 9 | 38 % | 80,1 % | 1,7 |
+| umbral 0,13 | 24 | 9 | 38 % | 80,1 % | 1,7 |
+
+Parece que gana 0,04 con +11 puntos de pureza. **Es falso**, y por la
+misma trampa que ya nos pilló con la accuracy de equipos: **la pureza
+premia fragmentar.** Un trozo de una sola observación es 100 % puro por
+definición. A 0,04 el cortador está troceando casi al máximo permitido.
+
+## El control que lo zanja: cortar en puntos AL AZAR
+
+Mismo número de cortes, colocados al azar:
+
+| umbral | por apariencia | al azar | **ventaja real** |
+|---|---|---|---|
+| 0,04 | 91,3 % | 88,3 % | **+3,0** |
+| 0,06 | 89,4 % | 84,3 % | **+5,1** |
+| **0,08** | 87,8 % | 81,8 % | **+6,0** |
+
+**La señal de apariencia aporta ~6 puntos de pureza, no 11.** El resto era
+trocear.
+
+Y el óptimo se invierte: **gana 0,08**, el umbral que MENOS corta, porque
+es el que mejor aprovecha cada corte. Cortar más añade fragmentación sin
+comprar pureza real.
+
+## Punto de operación y lo que le deja al grafo
+
+Con **umbral 0,08**: 24 → 35 tracklets, pureza **80,1 % → 87,8 %**,
+fragmentación de 1,7 a 2,5 por persona. El coste de fragmentación que
+Alex pidió medir en vez de asumir: **×1,5**, no ×3,5 como sugería el
+umbral agresivo.
+
+**El grafo recibirá piezas con ~88 % de pureza, no 100 %.** Ese es su
+techo real, y conviene tenerlo delante antes de construirlo: el oráculo
+de asociación (centroide 0,42 m) supone identidad perfecta por
+observación, y desde 88 % no se llega ahí solo uniendo.
+
+El 12 % que la apariencia no ve son, previsiblemente, los cruces entre
+compañeros del mismo equipo — el caso #43, donde dos niños con la misma
+equipación tienen embeddings casi iguales. Es el techo estructural que ya
+estaba anotado.

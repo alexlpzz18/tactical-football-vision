@@ -47,3 +47,6 @@ data/calibracion_benja/*.jpg
 
 # Informes generados (derivados, se regeneran con el script)
 data/reports/
+
+# Vista previa local de la landing 3D (no versionar)
+.preview-3d/
