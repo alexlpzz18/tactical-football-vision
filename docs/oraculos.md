@@ -183,3 +183,82 @@ El 12 % que la apariencia no ve son, previsiblemente, los cruces entre
 compañeros del mismo equipo — el caso #43, donde dos niños con la misma
 equipación tienen embeddings casi iguales. Es el techo estructural que ya
 estaba anotado.
+
+---
+
+# 4b: EL GRAFO NO ES EL PROBLEMA (20-ago-2026)
+
+`scripts/grafo_4b.py`. Las dos preguntas, antes de construir nada.
+
+## La barata: el filtro de plausibilidad física funciona
+
+Sobre los 116 tracklets partidos, de **4.735 pares ordenados posibles**:
+
+| filtro acumulado | aristas | % del total |
+|---|---|---|
+| hueco temporal ≤ 8 s | 1.279 | 27,0 % |
+| + velocidad (v_max·Δt + 2σ) | 414 | 8,7 % |
+| + equipo compatible | 359 | 7,6 % |
+| + escala compatible | **271** | **5,7 %** |
+
+Candidatas por tracklet: **media 2,3, mediana 2**.
+
+| candidatas | tracklets |
+|---|---|
+| 0 | 37 (32 %) |
+| 1 | 13 (11 %) |
+| 2 | 20 (17 %) |
+| 3 | 13 (11 %) |
+| más de 3 | 33 (28 %) |
+
+**El 60 % de los tracklets tiene 2 candidatas o menos.** La física sola
+descarta el 94 % de las uniones posibles. La intuición de Alex era
+correcta: medio problema se resuelve sin tocar la apariencia.
+
+## La que importa: el ORÁCULO DEL GRAFO dice que NO merece la pena
+
+Todas con equipos del GT, para que la comparación sea justa:
+
+| variante | piezas | pureza | centroide | anchura |
+|---|---|---|---|---|
+| base SIN partir, unión perfecta | 89 | 80,1 % | 1,81 m | 0,64 m |
+| **partido 0,08, unión PERFECTA** | 116 | 87,8 % | **1,68 m** | 0,45 m |
+| oráculo de ASOCIACIÓN (100 % puro) | — | 100 % | **0,42 m** | 0,33 m |
+
+**Un grafo perfecto sobre piezas del 88 % llega a 1,68 m. La asociación
+perfecta llega a 0,42 m.**
+
+Alex puso el listón en "si sale 0,9 m, el grafo perfecto no arregla el
+producto". Salió **1,68 m**: casi el doble de su umbral de descarte.
+
+### El reparto del margen, que es lo decisivo
+
+Del margen total (1,81 → 0,42 m = 1,39 m):
+
+- **partir mejor las piezas**: 1,81 → 1,68 m = **0,13 m (9 %)**
+- **unir perfectamente**: ya incluido arriba, es lo que hace el oráculo
+- **el 12 % de contaminación que queda dentro**: 1,68 → 0,42 m =
+  **1,26 m (91 %)**
+
+**El 91 % del margen está en la PUREZA de las piezas, no en la unión.**
+
+## Consecuencia: no se construye el grafo
+
+Construir el grafo real —coste, resolución global, exclusión,
+multi-hipótesis— es semanas de trabajo para disputar el 9 % del margen,
+y con un techo demostrado de 1,68 m que ni siquiera bate al sistema
+actual (1,55 m con los equipos del clasificador).
+
+**El frente es el 12 % de contaminación que la apariencia no ve**, y ya
+sabemos qué es: los cruces entre compañeros del MISMO equipo, donde dos
+niños con la misma equipación tienen embeddings casi idénticos. El caso
+#43 de Alex.
+
+Y como la apariencia es ciega ahí por construcción, lo único que queda es
+**geometría**: continuidad de movimiento a través del cruce — quién
+entra por dónde y quién sale por dónde, con la velocidad y la dirección
+que traía. Es la línea que abre este resultado.
+
+Lo medido aquí no se tira: el filtro de plausibilidad (5,7 % de aristas,
+mediana 2 candidatas) y la partición (+6 puntos de pureza real) siguen
+siendo útiles si algún día las piezas llegan limpias.
