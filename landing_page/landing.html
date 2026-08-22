@@ -1,0 +1,2940 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACIIES · Cualquier campo, cualquier partido</title>
+<meta name="description" content="Visión artificial aplicada al fútbol. Convertimos el vídeo de tus partidos en análisis táctico, juegues donde juegues.">
+<style>
+  /* ═══ Identidad: el mundo es cálido, la máquina es fría ═══
+     Todo lo que dibuja el sistema usa el mismo cian pálido y nunca se
+     confunde con la escena. Es la única regla de color de la página. */
+  :root{
+    --noche:#05080C; --noche-2:#0A1018; --noche-3:#111A25;
+    --tinta:#EAF2F8; --tinta-2:#9DB0C2; --tinta-3:#5E7286;
+    --frio:#9FE8FF; --frio-2:#4FC3EC;
+    --calido:#FFC46B;
+    --linea:rgba(159,232,255,.16); --linea-2:rgba(159,232,255,.32);
+    --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:auto}
+  body{background:var(--noche);color:var(--tinta);font-family:var(--sans);
+       font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased;
+       overflow-x:hidden}
+  ::selection{background:var(--frio);color:var(--noche)}
+  :focus-visible{outline:2px solid var(--frio);outline-offset:3px}
+  a{color:inherit;text-decoration:none}
+
+  /* ═══ Lienzos ═══ */
+  #escena,#etiq{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+  #escena{z-index:0}
+  #etiq{z-index:1;pointer-events:none}
+  /* velo que oscurece la escena bajo el texto, para que siempre se lea */
+  /* Dos capas: una lateral para la columna de texto y otra arriba y abajo
+     para la cabecera y los indicadores. Sin esto el titular compite con el
+     terreno iluminado y se pierde. */
+  #velo{position:fixed;inset:0;z-index:2;pointer-events:none;
+        background:
+          linear-gradient(180deg,rgba(5,8,12,.72) 0%,rgba(5,8,12,0) 18%,
+                          rgba(5,8,12,0) 74%,rgba(5,8,12,.66) 100%),
+          linear-gradient(90deg,rgba(5,8,12,.90) 0%,rgba(5,8,12,.72) 26%,
+                          rgba(5,8,12,.24) 46%,rgba(5,8,12,0) 62%)}
+  .acto.derecha ~ #velo{}
+  @media(max-width:820px){
+    #velo{background:linear-gradient(180deg,rgba(5,8,12,.72) 0%,rgba(5,8,12,.30) 26%,
+                    rgba(5,8,12,.62) 62%,rgba(5,8,12,.92) 100%)}
+  }
+  #grano{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:.35;
+         mix-blend-mode:overlay}
+
+  /* ═══ Cabecera ═══ */
+  header{position:fixed;top:0;left:0;right:0;z-index:20;
+         padding:22px clamp(18px,4vw,42px);
+         display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .marca{display:flex;align-items:baseline;gap:11px}
+  .marca b{font-size:19px;font-weight:700;letter-spacing:.16em}
+  .marca span{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;
+              color:var(--tinta-3);text-transform:uppercase}
+  @media(max-width:600px){.marca span{display:none}}
+
+  .cta{display:inline-flex;align-items:center;gap:9px;white-space:nowrap;
+       font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+       text-transform:uppercase;padding:11px 18px;border-radius:2px;
+       background:var(--frio);color:#04131B;font-weight:600;
+       transition:transform .15s ease, background .2s ease}
+  .cta:hover{background:#C4F0FF}
+  .cta:active{transform:translateY(1px)}
+  .cta.fantasma{background:transparent;color:var(--frio);
+                border:1px solid var(--linea-2)}
+  .cta.fantasma:hover{background:rgba(159,232,255,.08)}
+
+  /* ═══ Contenido sobre la escena ═══ */
+  main{position:relative;z-index:10}
+  /* cuando el texto va a la derecha, el velo se refleja */
+  body.der #velo{transform:scaleX(-1)}
+  body.der #velo{transition:none}
+  .acto{min-height:100vh;display:flex;align-items:center;
+        padding:120px clamp(18px,4vw,42px) 80px;pointer-events:none}
+  .caja{max-width:520px;pointer-events:auto;
+        will-change:opacity,transform}
+  .acto.derecha{justify-content:flex-end}
+  .acto.derecha .caja{text-align:right}
+
+  .clave{font-family:var(--mono);font-size:11px;letter-spacing:.26em;
+         text-transform:uppercase;color:var(--frio);margin-bottom:20px;
+         display:flex;align-items:center;gap:11px}
+  .acto.derecha .clave{justify-content:flex-end}
+  .clave::before{content:"";width:26px;height:1px;background:var(--frio);opacity:.6}
+  .acto.derecha .clave::before{display:none}
+
+  h1{font-size:clamp(38px,6.4vw,86px);line-height:.98;letter-spacing:-.04em;
+     font-weight:700;text-wrap:balance}
+  h1 em{font-style:normal;color:var(--frio);display:block}
+  h2{font-size:clamp(28px,3.9vw,50px);line-height:1.04;letter-spacing:-.032em;
+     font-weight:650;text-wrap:balance}
+  p.dice{font-size:clamp(16px,1.35vw,18.5px);color:var(--tinta-2);
+         margin-top:20px;max-width:44ch}
+  .acto.derecha p.dice{margin-left:auto}
+
+  .botones{display:flex;gap:12px;margin-top:34px;flex-wrap:wrap}
+
+  /* lecturas técnicas: aparecen con moderación, como un instrumento */
+  .lectura{display:flex;gap:0;margin-top:30px;border-top:1px solid var(--linea)}
+  .lectura div{flex:1;padding:13px 16px 11px 0}
+  .lectura div+div{padding-left:18px;border-left:1px solid var(--linea)}
+  .lectura .k{display:block;font-family:var(--mono);font-size:9.5px;
+              letter-spacing:.18em;text-transform:uppercase;color:var(--tinta-3);
+              margin-bottom:6px}
+  .lectura .v{display:block;font-family:var(--mono);font-size:19px;font-weight:600;
+              color:var(--frio);font-variant-numeric:tabular-nums}
+  .lectura .v u{text-decoration:none;font-size:11px;color:var(--tinta-3);
+                margin-left:3px;font-weight:400}
+
+  /* ═══ Informe final ═══ */
+  #informe{position:relative;z-index:12;background:var(--noche);
+           border-top:1px solid var(--linea);
+           padding:clamp(64px,9vw,120px) clamp(18px,4vw,42px)}
+  .envoltura{max-width:1080px;margin:0 auto}
+  .cabecera-inf{display:flex;justify-content:space-between;align-items:flex-end;
+                gap:24px;flex-wrap:wrap;padding-bottom:22px;
+                border-bottom:1px solid var(--linea)}
+  .cabecera-inf .t{font-size:clamp(24px,3vw,34px);font-weight:650;letter-spacing:-.03em}
+  .cabecera-inf .f{font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+                   text-transform:uppercase;color:var(--tinta-3)}
+
+  .rejilla{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+           background:var(--linea);margin-top:1px}
+  .ficha{background:var(--noche);padding:22px 20px}
+  .ficha .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;
+            text-transform:uppercase;color:var(--tinta-3);display:block;margin-bottom:10px}
+  .ficha .v{display:block;font-family:var(--mono);font-size:clamp(24px,2.6vw,32px);font-weight:600;
+            color:var(--tinta);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .ficha .v u{text-decoration:none;font-size:12px;color:var(--tinta-3);margin-left:4px}
+  .ficha .d{display:block;font-size:13px;color:var(--tinta-3);margin-top:10px;line-height:1.45}
+  @media(max-width:860px){.rejilla{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:480px){.rejilla{grid-template-columns:1fr}}
+
+  .conclusiones{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(24px,4vw,52px);
+                margin-top:clamp(40px,5vw,64px);align-items:start}
+  @media(max-width:860px){.conclusiones{grid-template-columns:1fr}}
+  .lista{list-style:none}
+  .lista li{padding:18px 0;border-bottom:1px solid var(--linea);display:flex;gap:16px}
+  .lista li:first-child{border-top:1px solid var(--linea)}
+  .lista .n{font-family:var(--mono);font-size:11px;color:var(--frio);padding-top:3px;
+            flex-shrink:0}
+  .lista b{display:block;font-weight:650;margin-bottom:5px}
+  .lista span{color:var(--tinta-2);font-size:15px}
+
+  .nota{background:var(--noche-2);border:1px solid var(--linea);padding:24px;
+        border-radius:3px}
+  .nota .k{font-family:var(--mono);font-size:10px;letter-spacing:.2em;
+           text-transform:uppercase;color:var(--frio);display:block;margin-bottom:12px}
+  .nota p{font-size:15px;color:var(--tinta-2)}
+  .nota p+p{margin-top:12px}
+
+  #cierre{position:relative;z-index:12;background:var(--noche);
+          padding:clamp(64px,9vw,120px) clamp(18px,4vw,42px) 90px;
+          border-top:1px solid var(--linea);text-align:center}
+  #cierre h2{max-width:16ch;margin:0 auto}
+  #cierre p{color:var(--tinta-2);margin:20px auto 0;max-width:48ch}
+  #cierre .botones{justify-content:center}
+
+  footer{position:relative;z-index:12;background:var(--noche);
+         border-top:1px solid var(--linea);padding:26px clamp(18px,4vw,42px);
+         display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+         font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+         color:var(--tinta-3);text-transform:uppercase}
+
+  /* ═══ Indicador de mundo ═══ */
+  #mundo{position:fixed;left:clamp(18px,4vw,42px);bottom:26px;z-index:20;
+         font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;
+         text-transform:uppercase;color:var(--tinta-3);
+         display:flex;align-items:center;gap:12px;pointer-events:none}
+  #mundo b{color:var(--frio);font-weight:600}
+  #mundo .barra{width:52px;height:1px;background:var(--linea-2);position:relative}
+  #mundo .barra i{position:absolute;inset:0 auto 0 0;background:var(--frio);width:0}
+  @media(max-width:820px){#mundo{bottom:14px}}
+
+  /* ═══ Progreso de fase ═══ */
+  #fases{position:fixed;right:clamp(18px,4vw,42px);top:50%;transform:translateY(-50%);
+         z-index:20;display:flex;flex-direction:column;gap:0;pointer-events:none}
+  #fases i{display:block;width:1px;height:26px;background:var(--linea-2);
+           position:relative;transition:background .4s ease}
+  #fases i[data-on]{background:var(--frio)}
+  @media(max-width:820px){#fases{display:none}}
+
+  .cargando{position:fixed;inset:0;z-index:60;background:var(--noche);
+            display:grid;place-items:center;transition:opacity .8s ease}
+  .cargando.fuera{opacity:0;pointer-events:none}
+  .cargando span{font-family:var(--mono);font-size:11px;letter-spacing:.3em;
+                 text-transform:uppercase;color:var(--tinta-3)}
+
+  @media(prefers-reduced-motion:reduce){
+    .cta{transition:none}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="escena"></canvas>
+<canvas id="etiq"></canvas>
+<div id="velo"></div>
+<canvas id="grano"></canvas>
+
+<header>
+  <div class="marca"><b>ACIIES</b><span>Visión artificial · Fútbol</span></div>
+  <a href="#contacto" class="cta">Pedir una demo</a>
+</header>
+
+<div id="mundo"><span id="mundo-n">—</span><span class="barra"><i id="mundo-b"></i></span></div>
+<div id="fases"></div>
+
+<main>
+  <section class="acto">
+    <div class="caja">
+      <div class="clave">Cualquier campo</div>
+      <h1>El mundo cambia.<em>El juego no.</em></h1>
+      <p class="dice">Visión artificial que convierte el vídeo de un partido en análisis táctico. Da igual el campo, el clima o la categoría.</p>
+      <div class="botones">
+        <a href="#contacto" class="cta">Pedir una demo</a>
+        <a href="#informe" class="cta fantasma">Ver un informe</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="acto derecha">
+    <div class="caja">
+      <div class="clave">El sitio da igual</div>
+      <h2>Un pueblo del interior. Un campo junto al mar. Tierra roja.</h2>
+      <p class="dice">El fútbol se juega en sitios que no se parecen en nada. Lo que ocurre dentro de las líneas es siempre lo mismo: veintidós personas ocupando un espacio.</p>
+    </div>
+  </section>
+
+  <section class="acto">
+    <div class="caja">
+      <div class="clave">El punto de partida</div>
+      <h2>Una cámara. Nada más.</h2>
+      <p class="dice">Sin sensores, sin petos con GPS, sin instalar nada. El vídeo que tu club ya graba desde la banda o desde la grada es suficiente.</p>
+    </div>
+  </section>
+
+  <section class="acto derecha">
+    <div class="caja">
+      <div class="clave">Lo que ves tú</div>
+      <h2>Desde la banda solo se ve el balón.</h2>
+      <p class="dice">Es el problema de siempre. Donde está la pelota hay veintiún jugadores más colocándose, y esa es la parte que decide los partidos.</p>
+    </div>
+  </section>
+
+  <section class="acto">
+    <div class="caja">
+      <div class="clave">Lo que ve el sistema</div>
+      <h2>Cada jugador, una posición en el campo.</h2>
+      <p class="dice">No un recorte de vídeo: una coordenada en metros sobre el terreno, fotograma a fotograma, con su identidad mantenida durante todo el partido.</p>
+      <div class="lectura">
+        <div><span class="k">Seguidos</span><span class="v" id="m-n">22</span></div>
+        <div><span class="k">Frecuencia</span><span class="v" id="m-fps">25<u>Hz</u></span></div>
+        <div><span class="k">Campo</span><span class="v">105<u>× 68 m</u></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="acto derecha">
+    <div class="caja">
+      <div class="clave">Movimiento</div>
+      <h2>Las líneas no se dibujan. Se recorren.</h2>
+      <p class="dice">Cada trazo del campo es el camino que alguien ha hecho de verdad. De ahí salen las distancias, las velocidades y los metros recorridos.</p>
+      <div class="lectura">
+        <div><span class="k">Punta</span><span class="v" id="m-punta">0<u>m/s</u></span></div>
+        <div><span class="k">Ritmo</span><span class="v" id="m-ritmo">0<u>m/min</u></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="acto">
+    <div class="caja">
+      <div class="clave">Estructura</div>
+      <h2>La forma del equipo, en metros.</h2>
+      <p class="dice">Amplitud, profundidad, altura de la línea defensiva, distancia entre líneas y ocupación por zonas. El vocabulario que ya usas en la pizarra, medido.</p>
+      <div class="lectura">
+        <div><span class="k">Amplitud</span><span class="v" id="m-amp">0<u>m</u></span></div>
+        <div><span class="k">Profundidad</span><span class="v" id="m-prof">0<u>m</u></span></div>
+        <div><span class="k">Entre líneas</span><span class="v" id="m-ent">0<u>m</u></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="acto derecha">
+    <div class="caja">
+      <div class="clave">El resultado</div>
+      <h2>Todo esto acaba en un informe.</h2>
+      <p class="dice">El partido entero se convierte en un documento que puedes leer antes del entrenamiento del martes.</p>
+    </div>
+  </section>
+</main>
+
+<section id="informe">
+  <div class="envoltura">
+    <div class="cabecera-inf">
+      <div class="t">Informe del partido</div>
+      <div class="f">Ejemplo · generado automáticamente</div>
+    </div>
+
+    <div class="rejilla">
+      <div class="ficha"><span class="k">Amplitud media</span>
+        <span class="v" id="i-amp">—<u>m</u></span>
+        <span class="d">Cuánto se abre el equipo a lo ancho del campo.</span></div>
+      <div class="ficha"><span class="k">Profundidad</span>
+        <span class="v" id="i-prof">—<u>m</u></span>
+        <span class="d">Distancia entre el jugador más retrasado y el más adelantado.</span></div>
+      <div class="ficha"><span class="k">Altura de línea</span>
+        <span class="v" id="i-linea">—<u>m</u></span>
+        <span class="d">A qué distancia de su portería defiende la última línea.</span></div>
+      <div class="ficha"><span class="k">Entre líneas</span>
+        <span class="v" id="i-ent">—<u>m</u></span>
+        <span class="d">Separación entre la línea defensiva y la de ataque.</span></div>
+    </div>
+
+    <div class="conclusiones">
+      <div>
+        <ul class="lista">
+          <li><span class="n">01</span><div><b>Qué corregir</b>
+            <span>Dónde te generan superioridad y por qué banda te atacan más.</span></div></li>
+          <li><span class="n">02</span><div><b>Qué reforzar</b>
+            <span>Lo que ya funciona, con la evidencia para enseñarlo en el vestuario.</span></div></li>
+          <li><span class="n">03</span><div><b>Qué entrenar</b>
+            <span>Las dos o tres cosas concretas en las que merece la pena invertir la semana.</span></div></li>
+        </ul>
+      </div>
+      <div class="nota">
+        <span class="k">Cómo se redacta</span>
+        <p>El código calcula las métricas y la IA solo las redacta. El modelo recibe las cifras ya calculadas y sus definiciones, nunca el vídeo ni las posiciones en bruto.</p>
+        <p>No puede afirmar nada que no salga de esos números. Es la diferencia entre un informe y una opinión.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="cierre">
+  <div class="envoltura">
+    <h2>Tu próximo partido, analizado.</h2>
+    <p>Cuéntanos de qué club eres y te enseñamos el informe de uno de tus partidos.</p>
+    <div class="botones"><a href="mailto:hola@aciies.com" class="cta" id="contacto">Pedir una demo</a></div>
+  </div>
+</section>
+
+<footer>
+  <span>ACIIES · Visión artificial aplicada al deporte</span>
+  <span>hola@aciies.com</span>
+</footer>
+
+<div class="cargando" id="cargando"><span>Preparando la escena</span></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   NÚCLEO — matrices, compilación de shaders y utilidades de WebGL2.
+   Escrito a mano a propósito: sin dependencias no hay nada que descargar
+   ni que se rompa al actualizar.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ---------- mat4 (column-major, como espera WebGL) ---------- */
+const M4 = {
+  ident(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
+
+  perspectiva(fovY, aspect, near, far){
+    const f = 1/Math.tan(fovY/2), nf = 1/(near-far);
+    return new Float32Array([
+      f/aspect,0,0,0,  0,f,0,0,
+      0,0,(far+near)*nf,-1,  0,0,2*far*near*nf,0]);
+  },
+
+  orto(i, d, ab, ar, near, far){
+    const lr = 1/(i-d), bt = 1/(ab-ar), nf = 1/(near-far);
+    return new Float32Array([
+      -2*lr,0,0,0,  0,-2*bt,0,0,  0,0,2*nf,0,
+      (i+d)*lr, (ar+ab)*bt, (far+near)*nf, 1]);
+  },
+
+  mirar(ojo, centro, arriba){
+    let zx=ojo[0]-centro[0], zy=ojo[1]-centro[1], zz=ojo[2]-centro[2];
+    let l=Math.hypot(zx,zy,zz)||1; zx/=l; zy/=l; zz/=l;
+    let xx=arriba[1]*zz-arriba[2]*zy, xy=arriba[2]*zx-arriba[0]*zz, xz=arriba[0]*zy-arriba[1]*zx;
+    l=Math.hypot(xx,xy,xz)||1; xx/=l; xy/=l; xz/=l;
+    const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+    return new Float32Array([
+      xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+      -(xx*ojo[0]+xy*ojo[1]+xz*ojo[2]),
+      -(yx*ojo[0]+yy*ojo[1]+yz*ojo[2]),
+      -(zx*ojo[0]+zy*ojo[1]+zz*ojo[2]), 1]);
+  },
+
+  mul(a,b){
+    const o=new Float32Array(16);
+    for(let c=0;c<4;c++) for(let r=0;r<4;r++){
+      o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+    }
+    return o;
+  },
+
+  invertir(m){
+    const o=new Float32Array(16);
+    const a00=m[0],a01=m[1],a02=m[2],a03=m[3], a10=m[4],a11=m[5],a12=m[6],a13=m[7],
+          a20=m[8],a21=m[9],a22=m[10],a23=m[11], a30=m[12],a31=m[13],a32=m[14],a33=m[15];
+    const b00=a00*a11-a01*a10, b01=a00*a12-a02*a10, b02=a00*a13-a03*a10,
+          b03=a01*a12-a02*a11, b04=a01*a13-a03*a11, b05=a02*a13-a03*a12,
+          b06=a20*a31-a21*a30, b07=a20*a32-a22*a30, b08=a20*a33-a23*a30,
+          b09=a21*a32-a22*a31, b10=a21*a33-a23*a31, b11=a22*a33-a23*a32;
+    let det=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+    if(!det) return M4.ident();
+    det=1/det;
+    o[0]=(a11*b11-a12*b10+a13*b09)*det;  o[1]=(a02*b10-a01*b11-a03*b09)*det;
+    o[2]=(a31*b05-a32*b04+a33*b03)*det;  o[3]=(a22*b04-a21*b05-a23*b03)*det;
+    o[4]=(a12*b08-a10*b11-a13*b07)*det;  o[5]=(a00*b11-a02*b08+a03*b07)*det;
+    o[6]=(a32*b02-a30*b05-a33*b01)*det;  o[7]=(a20*b05-a22*b02+a23*b01)*det;
+    o[8]=(a10*b10-a11*b08+a13*b06)*det;  o[9]=(a01*b08-a00*b10-a03*b06)*det;
+    o[10]=(a30*b04-a31*b02+a33*b00)*det; o[11]=(a21*b02-a20*b04-a23*b00)*det;
+    o[12]=(a11*b07-a10*b09-a12*b06)*det; o[13]=(a00*b09-a01*b07+a02*b06)*det;
+    o[14]=(a31*b01-a30*b03-a32*b00)*det; o[15]=(a20*b03-a21*b01+a22*b00)*det;
+    return o;
+  },
+};
+
+/* ---------- utilidades ---------- */
+const lim  = (v,a,b)=> v<a?a:(v>b?b:v);
+const mez  = (a,b,t)=> a+(b-a)*t;
+const suave= t=> t*t*(3-2*t);
+const suave5=t=> t*t*t*(t*(t*6-15)+10);
+/* facilita entradas y salidas sin que se note el arranque */
+const easeIO= t=> t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+
+function compilar(gl, tipo, fuente, nombre){
+  const s = gl.createShader(tipo);
+  gl.shaderSource(s, fuente);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    const log = gl.getShaderInfoLog(s);
+    console.error(`[shader ${nombre}]`, log);
+    throw new Error(`Shader ${nombre}: ${log}`);
+  }
+  return s;
+}
+
+function programa(gl, vs, fs, nombre){
+  const p = gl.createProgram();
+  gl.attachShader(p, compilar(gl, gl.VERTEX_SHADER, vs, nombre+':vs'));
+  gl.attachShader(p, compilar(gl, gl.FRAGMENT_SHADER, fs, nombre+':fs'));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+    const log = gl.getProgramInfoLog(p);
+    console.error(`[program ${nombre}]`, log);
+    throw new Error(`Program ${nombre}: ${log}`);
+  }
+  /* cachea las localizaciones para no pedirlas cada frame */
+  p.u = new Proxy({}, {
+    get(cache, k){
+      if(!(k in cache)) cache[k] = gl.getUniformLocation(p, k);
+      return cache[k];
+    }
+  });
+  return p;
+}
+
+function bufferQuad(gl){
+  const b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  return b;
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   SOMBRAS — mapa de profundidad desde el sol.
+
+   Es lo que más realismo aporta por vatio: sin sombra de contacto, los
+   jugadores y las porterías parecen pegatinas flotando sobre el césped.
+
+   Sólo se cubre el entorno del campo (±190 m). Más allá no hace falta:
+   el relieve ya se sombrea solo con su normal, y así cada texel del mapa
+   vale menos de 20 cm, que es lo que hace que la sombra tenga borde.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const SOMBRA_RADIO = 190, SOMBRA_LADO = 1024;
+
+/* Sólo posición: el pase de sombra no necesita color ni normales. */
+const SOMBRA_CAJA_VS = `#version 300 es
+in vec3 pos;
+in vec3 iPos;
+in vec3 iEsc;
+uniform mat4 uLuzVP;
+void main(){ gl_Position = uLuzVP*vec4(iPos + pos*iEsc, 1.0); }`;
+
+const SOMBRA_JUG_VS = `#version 300 es
+in vec3 pos;
+in float region;
+in vec3 iPos;
+in vec4 iDir;
+uniform mat4 uLuzVP;
+void main(){
+  vec3 p = pos;
+  /* misma zancada que en el pase de color, o la sombra no cuadra */
+  float amp = clamp(iDir.w/7.0, 0.0, 1.0);
+  float sw  = sin(iDir.z)*amp;
+  float ang = 0.0;
+  if(region > 1.5 && region < 3.5) ang = (region < 2.5 ?  sw : -sw)*0.85;
+  if(region > 3.5)                 ang = (region < 4.5 ? -sw :  sw)*0.55;
+  if(ang != 0.0){
+    float piv = (region < 3.5) ? 0.86 : 1.40;
+    float c = cos(ang), s = sin(ang);
+    float y = p.y - piv, z = p.z;
+    p.y = piv + y*c - z*s;
+    p.z =        y*s + z*c;
+  }
+  p.y += abs(sin(iDir.z))*amp*0.055;
+  float c = iDir.x, s = iDir.y;
+  vec3 q = vec3(p.x*c - p.z*s, p.y, p.x*s + p.z*c);
+  gl_Position = uLuzVP*vec4(iPos + q, 1.0);
+}`;
+
+/* El arbolado proyecta como una elipse: recalcular la silueta completa en
+   el pase de sombra no cambia nada visible y cuesta el doble. */
+const SOMBRA_CART_VS = `#version 300 es
+in vec2 esq;
+in vec3 iPos;
+in vec4 iForma;
+out vec2 vUv;
+uniform mat4 uLuzVP;
+uniform vec3 uLuzDir;
+void main(){
+  vec3 der = normalize(vec3(-uLuzDir.z, 0.0, uLuzDir.x));
+  vec3 p = iPos + der*esq.x*iForma.x + vec3(0.0, (esq.y+0.5)*iForma.y, 0.0);
+  vUv = esq + 0.5;
+  gl_Position = uLuzVP*vec4(p, 1.0);
+}`;
+
+const SOMBRA_FS = `#version 300 es
+precision highp float;
+void main(){}`;
+
+const SOMBRA_CART_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+void main(){
+  vec2 q = vec2((vUv.x-0.5)/0.44, (vUv.y-0.60)/0.40);
+  if(dot(q,q) > 1.0) discard;
+}`;
+
+/* Fragmento GLSL que se inyecta en los shaders que RECIBEN sombra. */
+const SOMBRA_GLSL = `
+uniform sampler2D uMapaSombra;
+uniform mat4 uLuzVP;
+uniform float uSombraFuerza;
+
+float enSombra(vec3 w, float pendiente){
+  vec4 lp = uLuzVP*vec4(w, 1.0);
+  vec3 q = lp.xyz/lp.w*0.5 + 0.5;
+  if(q.x < 0.002 || q.x > 0.998 || q.y < 0.002 || q.y > 0.998 || q.z > 1.0)
+    return 1.0;
+  /* sesgo dependiente de la pendiente: sin él aparecen bandas de acné */
+  float bias = 0.0006 + 0.0035*pendiente;
+  float suma = 0.0;
+  vec2 tex = vec2(1.0/${SOMBRA_LADO}.0);
+  for(int y=-1;y<=1;y++)
+    for(int x=-1;x<=1;x++){
+      float d = texture(uMapaSombra, q.xy + vec2(x,y)*tex).r;
+      suma += (q.z - bias > d) ? 0.0 : 1.0;
+    }
+  float s = suma/9.0;
+  /* la sombra se disuelve en el borde del mapa para que no haya costura */
+  vec2 b = abs(q.xy - 0.5)*2.0;
+  float borde = 1.0 - smoothstep(0.86, 0.99, max(b.x, b.y));
+  return mix(1.0, s, borde*uSombraFuerza);
+}
+`;
+
+function crearSombras(gl){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SOMBRA_LADO, SOMBRA_LADO,
+                0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0);
+  gl.drawBuffers([gl.NONE]);
+  gl.readBuffer(gl.NONE);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if(!ok) console.warn('[sombras] framebuffer incompleto; se desactivan');
+
+  const progCaja = programa(gl, SOMBRA_CAJA_VS, SOMBRA_FS, 'sombra:caja');
+  const progJug  = programa(gl, SOMBRA_JUG_VS,  SOMBRA_FS, 'sombra:jugador');
+  const progCart = programa(gl, SOMBRA_CART_VS, SOMBRA_CART_FS, 'sombra:arbol');
+
+  let luzVP = M4.ident();
+
+  /* Matriz de la luz: ortográfica centrada en el campo y mirando desde el sol. */
+  function calcularLuzVP(sunDir){
+    const d = Math.hypot(sunDir[0], sunDir[1], sunDir[2]) || 1;
+    let dx = sunDir[0]/d, dy = sunDir[1]/d, dz = sunDir[2]/d;
+    /* con el sol muy rasante la sombra se alarga hasta el infinito y el mapa
+       deja de tener resolución útil: se levanta a un mínimo practicable */
+    if(dy < 0.34){
+      const k = Math.hypot(dx, dz) || 1;
+      const h = Math.sqrt(Math.max(1 - 0.34*0.34, 0));
+      dx = dx/k*h; dz = dz/k*h; dy = 0.34;
+    }
+    const D = 340;
+    const ojo = [dx*D, dy*D, dz*D];
+    const arriba = Math.abs(dy) > 0.98 ? [1,0,0] : [0,1,0];
+    const view = M4.mirar(ojo, [0,0,0], arriba);
+    const proj = M4.orto(-SOMBRA_RADIO, SOMBRA_RADIO, -SOMBRA_RADIO, SOMBRA_RADIO, 1, 900);
+    luzVP = M4.mul(proj, view);
+    return luzVP;
+  }
+
+  return {tex, fbo, ok, progCaja, progJug, progCart, calcularLuzVP,
+          get luzVP(){ return luzVP; }};
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   ENTORNO — cielo, sol, terreno, agua, suelo y campo.
+
+   Todo procedural, sin un solo asset externo.
+
+   Dos decisiones que sostienen la calidad de imagen:
+
+   1. El horizonte es una silueta angular (una altura por azimut). Barato,
+      y da cordilleras creíbles con parallaje correcta al girar la cámara.
+
+   2. El suelo y las líneas del campo se resuelven ANALÍTICAMENTE por rayo,
+      no con geometría. Una línea de cal es una fórmula, así que se ve
+      perfecta desde 400 m y desde 6 m, sin teselado ni aliasing.
+
+   Un "mundo" es solo un juego de parámetros: cambiar de mundo es
+   interpolarlos, así que la transición sale gratis.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const ENV_VS = `#version 300 es
+in vec2 pos;
+void main(){ gl_Position = vec4(pos, 0.0, 1.0); }`;
+
+const ENV_FS = `#version 300 es
+precision highp float;
+out vec4 frag;
+
+uniform vec2  uRes;
+uniform mat4  uInvViewProj;
+uniform vec3  uCamPos;
+uniform float uTime;
+
+uniform vec3  uSkyTop, uSkyHorizon, uSunDir, uSunCol, uHaze;
+uniform float uSunSize, uSunPower, uStars, uExposure;
+uniform float uCloud, uCloudHeight;
+uniform vec3  uCloudCol;
+uniform vec3  uRidgeCol[3];
+uniform float uRidgeBase[3], uRidgeAmp[3], uRidgeFreq[3], uRidgeHaze[3], uRidgeSeed[3];
+uniform float uWater, uWaterAz, uWaterWide;
+uniform vec3  uWaterCol;
+uniform vec3  uSueloCol;
+uniform float uTierra, uNieve;      /* 0..1 mezcla de tipo de suelo */
+uniform float uCampo;               /* visibilidad de las líneas del campo */
+uniform float uNiebla;              /* densidad de niebla de distancia */
+
+const float CX = 105.0, CY = 68.0;  /* campo reglamentario, en metros */
+
+/* ---------- ruido ---------- */
+float hash11(float p){ p=fract(p*0.1031); p*=p+33.33; p*=p+p; return fract(p); }
+float hash21(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*0.1031);
+  q += dot(q, q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float vnoise(float x){
+  float i=floor(x), f=fract(x); f=f*f*(3.0-2.0*f);
+  return mix(hash11(i), hash11(i+1.0), f);
+}
+float vnoise2(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i),          hash21(i+vec2(1,0)), f.x),
+             mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)), f.x), f.y);
+}
+float fbm1(float x, int oct){
+  float s=0.0,a=0.5,f=1.0;
+  for(int i=0;i<6;i++){ if(i>=oct) break; s+=a*vnoise(x*f); f*=2.03; a*=0.5; }
+  return s;
+}
+float fbm2(vec2 p, int oct){
+  float s=0.0,a=0.5;
+  for(int i=0;i<7;i++){ if(i>=oct) break; s+=a*vnoise2(p); p*=2.02; a*=0.5; }
+  return s;
+}
+
+/* ---------- horizonte ---------- */
+float ridge(float az, int i){
+  float base,amp,fq,sd;
+  if(i==0){ base=uRidgeBase[0]; amp=uRidgeAmp[0]; fq=uRidgeFreq[0]; sd=uRidgeSeed[0]; }
+  else if(i==1){ base=uRidgeBase[1]; amp=uRidgeAmp[1]; fq=uRidgeFreq[1]; sd=uRidgeSeed[1]; }
+  else { base=uRidgeBase[2]; amp=uRidgeAmp[2]; fq=uRidgeFreq[2]; sd=uRidgeSeed[2]; }
+  /* ridged noise: 1-|2n-1| convierte el ruido suave en cimas afiladas */
+  float r = 1.0 - abs(fbm1(az*fq + sd, 3)*2.0 - 1.0);
+  float m = fbm1(az*fq*0.34 + sd*1.7, 3);   /* agrupa las cimas en macizos */
+  return base + amp*(r*0.95 + m*0.70 - 0.80);
+}
+vec3  ridgeCol(int i){ return i==0?uRidgeCol[0]:(i==1?uRidgeCol[1]:uRidgeCol[2]); }
+float ridgeHaze(int i){ return i==0?uRidgeHaze[0]:(i==1?uRidgeHaze[1]:uRidgeHaze[2]); }
+
+/* Aproximación de la curva ACES: comprime altas luces y da contraste. */
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+}
+
+/* ---------- cielo ---------- */
+vec3 skyColor(vec3 d){
+  vec3 sd = normalize(uSunDir);
+  float t = pow(clamp(d.y,0.0,1.0), 0.40);
+  vec3 col = mix(uSkyHorizon, uSkyTop, t);
+
+  float mu = max(dot(d, sd), 0.0);
+  col += uSunCol * pow(mu, 5.0)   * 0.42 * uSunPower;
+  col += uSunCol * pow(mu, 190.0) * 1.80 * uSunPower;
+  col += uSunCol * smoothstep(1.0-uSunSize, 1.0-uSunSize*0.30, mu) * 9.0 * uSunPower;
+
+  if(uStars > 0.001 && d.y > 0.0){
+    vec2 sp = d.xz/max(d.y,0.08);
+    float s  = vnoise2(sp*70.0);
+    float tw = 0.65 + 0.35*sin(uTime*1.7 + hash21(floor(sp*70.0))*40.0);
+    col += vec3(0.8,0.86,1.0) * smoothstep(0.972,0.999,s) * tw * uStars
+           * smoothstep(0.02,0.30,d.y);
+  }
+
+  if(uCloud > 0.001 && d.y > 0.010){
+    vec2 cp = d.xz/d.y * uCloudHeight;
+    float n = fbm2(cp*0.00085 + vec2(uTime*0.0030, uTime*0.0011), 4);
+    float cover = smoothstep(0.56-uCloud*0.16, 0.74, n);
+    float lit   = pow(max(dot(d,sd),0.0), 3.0);
+    /* base en sombra y borde encendido hacia el sol: da volumen */
+    vec3  cc    = mix(uCloudCol*0.55, uCloudCol*1.9 + uSunCol*0.7, lit*0.9);
+    col = mix(col, cc, cover*0.92 * smoothstep(0.010,0.12,d.y));
+  }
+  return col;
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy/uRes)*2.0 - 1.0;
+  vec4 p0 = uInvViewProj*vec4(uv,-1.0,1.0);
+  vec4 p1 = uInvViewProj*vec4(uv, 1.0,1.0);
+  vec3 d  = normalize(p1.xyz/p1.w - p0.xyz/p0.w);
+
+  float az = atan(d.z,d.x);
+  float el = d.y;
+  vec3  col = skyColor(d);
+
+  /* cordilleras, de la más lejana a la más cercana. Van sobre el cielo y
+     por encima del horizonte; el suelo se dibuja después, bajo el horizonte. */
+  for(int i=0;i<3;i++){
+    float h = ridge(az, i);
+    float aa = fwidth(el)*1.1 + 0.0004;
+    float m = smoothstep(h+aa, h-aa, el);
+    if(m > 0.001){
+      vec3 rc = ridgeCol(i);
+      rc *= 0.86 + 0.28*fbm1(az*uRidgeFreq[0]*3.3 + float(i)*11.0, 2);
+      float sunAz = atan(uSunDir.z, uSunDir.x);
+      float rim = 1.0 - smoothstep(0.0, 1.3, abs(atan(sin(az-sunAz), cos(az-sunAz))));
+      rc += uSunCol*rim*0.14*uSunPower;
+      rc = mix(rc, uHaze, ridgeHaze(i));
+      col = mix(col, rc, m);
+    }
+  }
+
+  col = mix(col, uHaze, smoothstep(0.035,-0.01,el)*0.16);
+
+  col *= uExposure;
+  col = aces(col);                           /* curva filmica con contraste */
+  col = pow(max(col,0.0), vec3(1.0/2.2));    /* vuelta a espacio de pantalla */
+
+  /* viñeteado suave: enfoca la mirada sin que se note */
+  vec2 vg = gl_FragCoord.xy/uRes - 0.5;
+  col *= 1.0 - dot(vg,vg)*0.42;
+
+  frag = vec4(col,1.0);
+}`;
+
+
+/* ═══════════ SUELO ═══════════
+   Geometría real (un disco grande) para que la profundidad la escriba el
+   rasterizador. Las marcas del campo siguen siendo analíticas: una línea
+   de cal es una fórmula, y así se ve perfecta desde 400 m y desde 6 m. */
+
+const SUELO_VS = `#version 300 es
+in vec2 pos;                 /* coordenadas en metros sobre el plano */
+out vec2 vP;
+out float vDist, vRasante, vAlt;
+out vec3 vNor;
+uniform mat4 uViewProj;
+uniform vec3 uCamPos;
+uniform float uWater, uWaterAz, uWaterWide, uWaterDist;
+
+float hash21b(vec2 p){
+  vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float vnoise2b(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash21b(i),hash21b(i+vec2(1,0)),f.x),
+             mix(hash21b(i+vec2(0,1)),hash21b(i+vec2(1,1)),f.x),f.y);
+}
+float fbm2b(vec2 p, int oct){
+  float s=0.0,a=0.5;
+  for(int i=0;i<5;i++){ if(i>=oct) break; s+=a*vnoise2b(p); p*=2.02; a*=0.5; }
+  return s;
+}
+
+/* Altura del terreno en metros. El campo se asienta sobre una explanada
+   plana: fuera de ella el terreno recupera su relieve. */
+float alturaTerreno(vec2 p){
+  /* centrado en cero: el campo queda a media ladera, no en un hoyo */
+  float h = 78.0*(fbm2b(p*0.00052 + vec2(31.7, 12.3), 4) - 0.46)
+          + 21.0*(fbm2b(p*0.0024  + vec2( 7.1, 55.9), 3) - 0.46);
+  float d = length(max(abs(p) - vec2(88.0, 60.0), vec2(0.0)));
+  float explanada = 1.0 - smoothstep(0.0, 130.0, d);
+  return mix(h, 0.0, explanada);
+}
+
+/* Dentro del agua el terreno se hunde y queda plano: es el fondo del mar. */
+float alturaConAgua(vec2 p){
+  float h = alturaTerreno(p);
+  if(uWater > 0.004){
+    float az = atan(p.y, p.x);
+    float da = abs(atan(sin(az-uWaterAz), cos(az-uWaterAz)));
+    float sector = 1.0 - smoothstep(uWaterWide*0.62, uWaterWide, da);
+    float dOrilla = uWaterDist*(0.80 + 0.42*vnoise2b(vec2(az*2.1, 3.7))
+                                    + 0.16*vnoise2b(vec2(az*6.3, 1.1)));
+    float lejos = smoothstep(dOrilla*0.97, dOrilla*1.16, length(p*vec2(0.80,1.0)));
+    h = mix(h, -2.0, uWater*sector*lejos);
+  }
+  return h;
+}
+
+void main(){
+  vP = pos;
+  float y = alturaConAgua(pos);
+  vAlt = y;
+  /* normal por diferencias finitas: sin ella el relieve no se ilumina */
+  float e = 6.0;
+  vNor = normalize(vec3(alturaConAgua(pos-vec2(e,0.0)) - alturaConAgua(pos+vec2(e,0.0)),
+                        2.0*e,
+                        alturaConAgua(pos-vec2(0.0,e)) - alturaConAgua(pos+vec2(0.0,e))));
+  vec3 w = vec3(pos.x, y, pos.y);
+  vec3 hacia = w - uCamPos;
+  vDist = length(hacia);
+  vRasante = 1.0 - abs(normalize(hacia).y);
+  gl_Position = uViewProj*vec4(w, 1.0);
+}`;
+
+const SUELO_FS = `#version 300 es
+precision highp float;
+in vec2 vP;
+in float vDist, vRasante, vAlt;
+in vec3 vNor;
+out vec4 frag;
+
+uniform vec3  uHaze, uSueloCol, uSunCol, uSkyTop, uSunDir, uWaterCol, uSkyHorizon;
+uniform float uTierra, uNieve, uCampo, uNiebla, uExposure, uNoche;
+uniform float uWater, uWaterAz, uWaterWide, uWaterDist, uTime;
+
+const float CX = 105.0, CY = 68.0;
+
+float hash21(vec2 p){
+  vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float vnoise2(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),
+             mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y);
+}
+float fbm2(vec2 p, int oct){
+  float s=0.0,a=0.5;
+  for(int i=0;i<6;i++){ if(i>=oct) break; s+=a*vnoise2(p); p*=2.02; a*=0.5; }
+  return s;
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+` + SOMBRA_GLSL + `
+
+/* ---------- distancias 2D para las marcas del campo ---------- */
+float dSeg(vec2 p, vec2 a, vec2 b){
+  vec2 pa=p-a, ba=b-a;
+  return length(pa - ba*clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0));
+}
+float dRect(vec2 p, vec2 c, vec2 h){        /* contorno, no relleno */
+  vec2 q = abs(p-c)-h;
+  return abs(min(max(q.x,q.y),0.0) + length(max(q,0.0)));
+}
+float dArco(vec2 p, vec2 c, float r){ return abs(length(p-c)-r); }
+
+/* Marcas del campo como campo de distancia. Devuelve 0..1 de "hay cal". */
+float marcas(vec2 p, float aa){
+  float d = 1e9;
+  d = min(d, dRect(p, vec2(0.0), vec2(CX*0.5, CY*0.5)));          /* banda */
+  d = min(d, dSeg(p, vec2(0.0,-CY*0.5), vec2(0.0,CY*0.5)));       /* medio */
+  d = min(d, dArco(p, vec2(0.0), 9.15));                          /* círculo */
+  for(float s=-1.0; s<=1.0; s+=2.0){
+    float x = s*CX*0.5;
+    d = min(d, dRect(p, vec2(x - s*8.25, 0.0), vec2(8.25, 20.16)));  /* área */
+    d = min(d, dRect(p, vec2(x - s*2.75, 0.0), vec2(2.75,  9.16)));  /* pequeña */
+    /* arco frontal del área, sólo la parte que sobresale */
+    vec2 pen = vec2(x - s*11.0, 0.0);
+    if(abs(p.x - (x - s*16.5)) < 20.0 && s*(p.x-(x-s*16.5)) < 0.0)
+      d = min(d, dArco(p, pen, 9.15));
+    d = min(d, length(p-pen) - 0.12);                               /* punto */
+  }
+  float w = 0.06;                       /* media anchura de la cal, en metros */
+  return 1.0 - smoothstep(w-aa, w+aa, d);
+}
+
+/* ---------- suelo ---------- */
+vec3 suelo(vec3 hit, float dist, float aa){
+  vec2 p = hit.xz;
+  vec3 col = uSueloCol;
+
+  /* huella del píxel en metros: por debajo de ella, cualquier patrón es
+     ruido. Se usa para apagar el detalle fino con la distancia. */
+  float huella  = max(fwidth(p.x), fwidth(p.y));
+  float detalle = 1.0 - smoothstep(0.35, 3.0, huella);    /* césped, surcos */
+  float medio   = 1.0 - smoothstep(3.0, 26.0, huella);    /* linderos, caminos */
+
+  /* Sólo se evalúa el material que pesa: en un mundo de hierba no se
+     paga el ruido de la tierra ni el de la nieve. */
+  float wH = (1.0-uTierra)*(1.0-uNieve);
+  col = vec3(0.0);
+  if(wH > 0.004){
+    float franja = smoothstep(0.42,0.58, sin(p.x*0.3927)*0.5+0.5);   /* corte, ~8 m */
+    float mod = mix(1.0, mix(0.92,1.09,franja)*(0.90+0.20*fbm2(p*0.09,2)), detalle);
+    vec3 hierba = uSueloCol * mod;
+
+    /* Desgaste: las bocas de portería, el círculo central y los puntos de
+       penalti son las zonas que más se pisan y en un campo de verdad están
+       peladas. Sin esto el césped se ve como una moqueta uniforme. */
+    float gast = 0.0;
+    for(float sg=-1.0; sg<=1.0; sg+=2.0){
+      vec2 boca = vec2(sg*(CX*0.5-2.2), 0.0);
+      gast = max(gast, 1.0 - smoothstep(2.5, 10.0, length((p-boca)*vec2(0.55,1.0))));
+      vec2 pen = vec2(sg*(CX*0.5-11.0), 0.0);
+      gast = max(gast, (1.0 - smoothstep(0.6, 2.4, length(p-pen)))*0.85);
+    }
+    gast = max(gast, (1.0 - smoothstep(1.5, 11.0, length(p)))*0.55);
+    gast *= 0.55 + 0.45*fbm2(p*0.35, 2)*detalle + 0.45*(1.0-detalle);
+    vec3 pelado = mix(uSueloCol*0.85, vec3(0.34,0.26,0.15), 0.62);
+    col += wH * mix(hierba, pelado, clamp(gast,0.0,1.0)*0.80);
+  }
+  if(uTierra > 0.004){
+    vec3 t = uSueloCol*(0.80 + 0.42*fbm2(p*0.14,3)*detalle + 0.21*(1.0-detalle));
+    float uso = 1.0 - smoothstep(0.0,46.0, length(p*vec2(0.62,1.0)));
+    col += uTierra*(1.0-uNieve) * mix(t, t*1.20+vec3(0.05,0.035,0.02), uso*0.55);
+  }
+  if(uNieve > 0.004)
+    col += uNieve * uSueloCol * (0.94 + 0.12*fbm2(p*0.5,3)*detalle + 0.06*(1.0-detalle));
+
+  /* fuera del campo el terreno pierde el cuidado y se ensucia */
+  vec2 q = abs(p) - vec2(CX*0.5+6.0, CY*0.5+5.0);
+  float fuera = smoothstep(0.0, 16.0, max(q.x,q.y));
+
+  if(fuera > 0.01){
+    /* Parcelas: celdas grandes de distinto cultivo. Sin esto, desde el aire
+       el mundo es una llanura de un solo color y se pierde toda la escala. */
+    vec2 celda = floor(p/150.0 + vec2(0.0, 0.37));
+    float tipo = hash21(celda*1.7);
+    float sub  = hash21(celda*3.1 + 11.0);
+    vec3 cultivo = mix(vec3(0.30,0.26,0.11),      /* rastrojo */
+                       vec3(0.16,0.24,0.09), tipo);   /* verde */
+    cultivo = mix(cultivo, vec3(0.34,0.22,0.12), step(0.78, sub)); /* barbecho */
+    cultivo *= 1.0 + (0.40*fbm2(p*0.020, 3) - 0.20)*medio;
+    /* surcos dentro de cada parcela, girados por celda */
+    float giro = tipo*3.1416;
+    vec2 pr = vec2(p.x*cos(giro)-p.y*sin(giro), p.x*sin(giro)+p.y*cos(giro));
+    cultivo *= 1.0 + 0.14*(smoothstep(0.45,0.55, fract(pr.x*0.09)) - 0.5)*detalle;
+    /* linderos entre parcelas: se ensanchan con la distancia en vez de
+       centellear, que es como se comporta una línea real vista de lejos */
+    vec2 borde = abs(fract(p/150.0 + vec2(0.0,0.37)) - 0.5);
+    float anchoLinde = 0.026 + huella/150.0;
+    float linde = 1.0 - smoothstep(0.5-anchoLinde*2.0, 0.5-anchoLinde*0.2,
+                                   max(borde.x, borde.y));
+    cultivo = mix(vec3(0.24,0.22,0.14), cultivo, mix(1.0, linde, medio));
+    /* un camino de tierra que pasa cerca del campo */
+    float cam = 1.0 - smoothstep(3.0+huella, 7.0+huella*2.0,
+                                 abs(p.y - 96.0 - 26.0*fbm2(vec2(p.x*0.004,0.0),2)));
+    cultivo = mix(cultivo, vec3(0.42,0.34,0.22), cam*0.85*medio);
+
+    vec3 lejano = mix(cultivo, uHaze*0.55, 0.18);
+    col = mix(col, lejano, fuera*0.92);
+  }
+
+  /* cal. Sólo se evalúa cerca del campo: fuera es la mayoría de la pantalla
+     y calcular allí una decena de distancias por píxel no aporta nada. */
+  float cal = 0.0;
+  if(uCampo > 0.004 && abs(p.x) < CX*0.5+3.0 && abs(p.y) < CY*0.5+3.0)
+    cal = marcas(p, aa) * uCampo * (1.0 - fuera);
+  vec3 colCal = mix(vec3(0.92,0.93,0.88), vec3(0.88,0.86,0.80), uTierra);
+  col = mix(col, colCal, cal*0.92);
+
+  return col;
+}
+
+
+void main(){
+  /* el antialias de la cal crece con la distancia: nunca centellea */
+  float aa = max(vDist*0.0016, 0.010);
+  vec3 col = suelo(vec3(vP.x,0.0,vP.y), vDist, aa);
+
+  /* Agua: un sector del plano más allá de cierta distancia. Así el mar de
+     la costa y el lago de la sabana son el mismo mecanismo, sólo cambia
+     lo ancho que es el sector y a qué distancia empieza. */
+  if(uWater > 0.004){
+    float az = atan(vP.y, vP.x);
+    float da = abs(atan(sin(az-uWaterAz), cos(az-uWaterAz)));
+    float sector = 1.0 - smoothstep(uWaterWide*0.62, uWaterWide, da);
+    float radio  = length(vP*vec2(0.80,1.0));
+    /* la orilla no es un círculo perfecto: se ondula con el azimut */
+    float dOrilla = uWaterDist*(0.80 + 0.42*vnoise2(vec2(az*2.1, 3.7))
+                                     + 0.16*vnoise2(vec2(az*6.3, 1.1)));
+    float lejos  = smoothstep(dOrilla*0.97, dOrilla*1.16, radio);
+    float agua   = uWater*sector*lejos;
+    if(agua > 0.004){
+      /* Fresnel de verdad: el agua es oscura vista a plomo y espejo al ras.
+         Sin esto el reflejo domina y el mar parece más bruma. */
+      float fres = pow(clamp(vRasante,0.0,1.0), 5.0);
+      vec3 refl = mix(uSkyHorizon, uSkyTop, 0.25);
+      float onda = fbm2(vP*0.030 + vec2(uTime*0.06, uTime*0.04), 3);
+      float brillo = smoothstep(0.58,0.94,onda)
+                   * pow(max(normalize(uSunDir).y,0.0), 0.5);
+      vec3 wc = mix(uWaterCol, refl, 0.04 + 0.46*fres)
+              + uSunCol*brillo*0.5*(0.3+0.7*fres);
+      /* la orilla: una línea de espuma que hace que el agua se LEA como agua */
+      float orilla = smoothstep(dOrilla*0.95, dOrilla*1.03, radio)
+                   * (1.0 - smoothstep(dOrilla*1.03, dOrilla*1.15, radio));
+      wc = mix(wc, vec3(0.85,0.88,0.90), orilla*0.55*sector);
+      col = mix(col, wc, agua);
+    }
+  }
+
+  /* El color del terreno ya está autorizado tal y como debe verse, así que
+     aquí sólo se tiñe con la luz del mundo en vez de multiplicar por ella. */
+  /* Iluminación con la normal del relieve: las laderas que miran al sol se
+     encienden y las contrarias se apagan. Es lo que da volumen al paisaje. */
+  vec3 n = normalize(vNor), sd = normalize(uSunDir);
+  float dif = max(dot(n, sd), 0.0);
+  float amb = 0.55 + 0.45*n.y;
+  float sm = enSombra(vec3(vP.x, vAlt, vP.y), 1.0 - dif);
+  /* la sombra oscurece por sí misma: multiplicarla por el difuso la
+     hacía desaparecer con el sol rasante, que es justo cuando más se ve */
+  float sombraVis = mix(1.0, 0.42, (1.0 - sm)*(1.0 - uNoche*0.85));
+  vec3 tinte = mix(vec3(1.0), uSunCol*1.35, 0.30);
+  col *= tinte * (1.0 - uNoche*0.60) * (0.62 + 0.62*dif*(1.0-uNoche*0.7)) * amb * sombraVis;
+  float g = dot(uSkyTop, vec3(0.2126,0.7152,0.0722));
+  col += mix(uSkyTop, vec3(g), 0.6)*0.05*(1.0-uNoche*0.5);   /* rebote del cielo */
+
+  float niebla = 1.0 - exp(-vDist*uNiebla);
+  col = mix(col, uHaze, niebla);
+  col = aces(col*uExposure);
+  col = pow(max(col,0.0), vec3(1.0/2.2));
+  frag = vec4(col,1.0);
+}`;
+
+/* ═══════════ Los cuatro mundos ═══════════
+   Sitios concretos, no paletas abstractas. Los colores se escriben tal y
+   como se quieren ver; el motor los pasa a lineal antes de subirlos. */
+const MUNDOS = [
+  {
+    id:'pueblo', nombre:'Castilla', pie:'Campo municipal · interior · tarde',
+    skyTop:[0.16,0.33,0.66], skyHorizon:[0.98,0.68,0.38],
+    sunDir:[-0.62,0.115,-0.42], sunCol:[1.00,0.66,0.30], sunSize:0.00042, sunPower:1.25,
+    haze:[0.90,0.68,0.46], stars:0, exposure:1.05,
+    cloud:0.55, cloudHeight:900, cloudCol:[1.00,0.80,0.66],
+    ridge:[
+      {base:0.090, amp:0.085, freq:3.4, haze:0.62, seed:12.3, col:[0.36,0.40,0.56]},
+      {base:0.048, amp:0.055, freq:6.2, haze:0.48, seed:41.7, col:[0.30,0.35,0.38]},
+      {base:0.017, amp:0.026, freq:11.0, haze:0.22, seed:77.1, col:[0.24,0.30,0.20]},
+    ],
+    water:0, waterAz:0, waterWide:0, waterDist:0, waterCol:[0,0,0], noche:0,
+    suelo:'hierba', sueloCol:[0.26,0.40,0.17], niebla:0.00013,
+  },
+  {
+    id:'costa', nombre:'Cantábrico', pie:'Campo junto al mar · amanecer',
+    skyTop:[0.10,0.26,0.55], skyHorizon:[0.86,0.86,0.88],
+    sunDir:[0.70,0.085,0.30], sunCol:[1.00,0.80,0.60], sunSize:0.00040, sunPower:1.05,
+    haze:[0.72,0.79,0.86], stars:0, exposure:1.04,
+    cloud:0.70, cloudHeight:1100, cloudCol:[0.94,0.95,0.98],
+    ridge:[
+      {base:0.072, amp:0.070, freq:2.8, haze:0.70, seed:5.5,  col:[0.34,0.42,0.54]},
+      {base:0.034, amp:0.036, freq:5.4, haze:0.56, seed:33.2, col:[0.24,0.34,0.36]},
+      {base:0.012, amp:0.018, freq:9.5, haze:0.30, seed:61.8, col:[0.20,0.30,0.24]},
+    ],
+    water:1, waterAz:0.55, waterWide:1.55, waterDist:150, waterCol:[0.020,0.075,0.135], noche:0,
+    suelo:'hierba', sueloCol:[0.22,0.38,0.19], niebla:0.00012,
+  },
+  {
+    id:'sabana', nombre:'Sabana', pie:'Campo de tierra · lago · media tarde',
+    skyTop:[0.20,0.42,0.72], skyHorizon:[0.96,0.84,0.58],
+    sunDir:[0.34,0.26,-0.72], sunCol:[1.00,0.84,0.48], sunSize:0.00038, sunPower:1.40,
+    haze:[0.88,0.76,0.54], stars:0, exposure:1.12,
+    cloud:0.30, cloudHeight:1500, cloudCol:[1.00,0.98,0.94],
+    ridge:[
+      {base:0.048, amp:0.030, freq:2.2, haze:0.74, seed:19.1, col:[0.44,0.42,0.46]},
+      {base:0.022, amp:0.017, freq:4.4, haze:0.60, seed:52.4, col:[0.44,0.38,0.24]},
+      {base:0.008, amp:0.011, freq:8.0, haze:0.34, seed:88.9, col:[0.40,0.33,0.17]},
+    ],
+    water:1, waterAz:-2.30, waterWide:0.62, waterDist:380, waterCol:[0.030,0.095,0.115], noche:0,
+    suelo:'tierra', sueloCol:[0.50,0.31,0.17], niebla:0.00016,
+  },
+  {
+    id:'invierno', nombre:'Invierno', pie:'Campo helado · focos encendidos · noche',
+    skyTop:[0.012,0.022,0.055], skyHorizon:[0.07,0.11,0.20],
+    sunDir:[0.40,0.50,0.60], sunCol:[0.55,0.65,0.90], sunSize:0.00075, sunPower:0.35,
+    haze:[0.09,0.13,0.22], stars:1, exposure:1.45,
+    cloud:0.18, cloudHeight:1000, cloudCol:[0.12,0.16,0.26],
+    ridge:[
+      {base:0.100, amp:0.090, freq:3.0, haze:0.62, seed:8.8,  col:[0.26,0.33,0.50]},
+      {base:0.050, amp:0.050, freq:5.8, haze:0.42, seed:27.6, col:[0.17,0.22,0.34]},
+      {base:0.018, amp:0.024, freq:10.5, haze:0.22, seed:70.2, col:[0.11,0.15,0.24]},
+    ],
+    water:0, waterAz:0, waterWide:0, waterDist:0, waterCol:[0,0,0], noche:1,
+    suelo:'nieve', sueloCol:[0.55,0.62,0.76], niebla:0.00015,
+  },
+];
+
+/* Interpolación lineal entre dos mundos: es toda la transición. */
+function mezclarMundos(a,b,t){
+  const L =(x,y)=> x+(y-x)*t;
+  const LV=(x,y)=> x.map((v,i)=> v+(y[i]-v)*t);
+  return {
+    skyTop:LV(a.skyTop,b.skyTop), skyHorizon:LV(a.skyHorizon,b.skyHorizon),
+    sunDir:LV(a.sunDir,b.sunDir), sunCol:LV(a.sunCol,b.sunCol),
+    sunSize:L(a.sunSize,b.sunSize), sunPower:L(a.sunPower,b.sunPower),
+    haze:LV(a.haze,b.haze), stars:L(a.stars,b.stars), exposure:L(a.exposure,b.exposure),
+    cloud:L(a.cloud,b.cloud), cloudHeight:L(a.cloudHeight,b.cloudHeight),
+    cloudCol:LV(a.cloudCol,b.cloudCol),
+    ridge:a.ridge.map((r,i)=>({
+      base:L(r.base,b.ridge[i].base), amp:L(r.amp,b.ridge[i].amp),
+      freq:L(r.freq,b.ridge[i].freq), haze:L(r.haze,b.ridge[i].haze),
+      seed:L(r.seed,b.ridge[i].seed), col:LV(r.col,b.ridge[i].col),
+    })),
+    water:L(a.water,b.water), waterAz:L(a.waterAz,b.waterAz),
+    waterWide:L(a.waterWide,b.waterWide), waterCol:LV(a.waterCol,b.waterCol),
+    waterDist:L(a.waterDist||300,b.waterDist||300),
+    sueloCol:LV(a.sueloCol,b.sueloCol), niebla:L(a.niebla,b.niebla),
+    noche:L(a.noche,b.noche),
+    tierra:L(a.suelo==='tierra'?1:0, b.suelo==='tierra'?1:0),
+    nieve: L(a.suelo==='nieve' ?1:0, b.suelo==='nieve' ?1:0),
+  };
+}
+
+/* sRGB -> lineal. La paleta se escribe como se quiere ver; el shader
+   trabaja en lineal y devuelve a pantalla al final. */
+const aLineal = c => c.map(v => Math.pow(v, 2.2));
+
+function subirMundo(gl, prog, m){
+  gl.uniform3fv(prog.u.uSkyTop,     aLineal(m.skyTop));
+  gl.uniform3fv(prog.u.uSkyHorizon, aLineal(m.skyHorizon));
+  gl.uniform3fv(prog.u.uSunCol,     aLineal(m.sunCol));
+  gl.uniform3fv(prog.u.uHaze,       aLineal(m.haze));
+  gl.uniform3fv(prog.u.uCloudCol,   aLineal(m.cloudCol));
+  gl.uniform3fv(prog.u.uWaterCol,   aLineal(m.waterCol));
+  gl.uniform3fv(prog.u.uSueloCol,   aLineal(m.sueloCol));
+  gl.uniform3fv(prog.u.uSunDir, m.sunDir);
+  gl.uniform1f(prog.u.uSunSize, m.sunSize);
+  gl.uniform1f(prog.u.uSunPower, m.sunPower);
+  gl.uniform1f(prog.u.uStars, m.stars);
+  gl.uniform1f(prog.u.uExposure, m.exposure);
+  gl.uniform1f(prog.u.uCloud, m.cloud);
+  gl.uniform1f(prog.u.uCloudHeight, m.cloudHeight);
+  gl.uniform1f(prog.u.uWater, m.water);
+  gl.uniform1f(prog.u.uWaterAz, m.waterAz);
+  gl.uniform1f(prog.u.uWaterWide, m.waterWide);
+  gl.uniform1f(prog.u.uTierra, m.tierra);
+  gl.uniform1f(prog.u.uNieve, m.nieve);
+  gl.uniform1f(prog.u.uNiebla, m.niebla);
+  const rc=[],rb=[],ra=[],rf=[],rh=[],rs=[];
+  m.ridge.forEach(r=>{ rc.push(...aLineal(r.col)); rb.push(r.base); ra.push(r.amp);
+                       rf.push(r.freq); rh.push(r.haze); rs.push(r.seed); });
+  gl.uniform3fv(prog.u.uRidgeCol, rc);
+  gl.uniform1fv(prog.u.uRidgeBase, rb); gl.uniform1fv(prog.u.uRidgeAmp, ra);
+  gl.uniform1fv(prog.u.uRidgeFreq, rf); gl.uniform1fv(prog.u.uRidgeHaze, rh);
+  gl.uniform1fv(prog.u.uRidgeSeed, rs);
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   OBJETOS DEL ENTORNO — arbolado, torres de luz, caserío y valla.
+
+   Son lo que convierte un plano en un sitio. Van instanciados: una sola
+   llamada de dibujado para todos los árboles del mundo.
+
+   Cada hueco de la escena (un árbol, una casa) tiene una apariencia por
+   mundo, y en cada frame se sube la mezcla de las dos apariencias activas.
+   Así los árboles se TRANSFORMAN de roble a acacia en vez de aparecer de
+   golpe, que es justo lo que pide "el mundo cambia, el juego no".
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ---------- carteles (árboles, arbustos, matorral) ---------- */
+const CART_VS = `#version 300 es
+in vec2 esq;              /* esquina del cartel, -0.5..0.5 */
+in vec3 iPos;             /* posición en el mundo */
+in vec4 iForma;           /* ancho, alto, tipoA, semilla */
+in vec2 iForma2;          /* tipoB, mezcla */
+in vec3 iCol;
+out vec2 vUv;
+out vec3 vCol;
+out float vTipoA, vTipoB, vMez, vSemilla, vDist;
+
+uniform mat4 uViewProj;
+uniform vec3 uCamPos;
+
+void main(){
+  vec3 haciaCam = uCamPos - iPos;
+  vec3 der = normalize(vec3(-haciaCam.z, 0.0, haciaCam.x));   /* siempre de frente */
+  vec3 p = iPos + der*esq.x*iForma.x + vec3(0.0, (esq.y+0.5)*iForma.y, 0.0);
+  vUv = esq + 0.5;
+  vCol = iCol; vTipoA = iForma.z; vTipoB = iForma2.x; vMez = iForma2.y;
+  vSemilla = iForma.w;
+  vDist = length(haciaCam);
+  gl_Position = uViewProj*vec4(p,1.0);
+}`;
+
+const CART_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+in vec3 vCol;
+in float vTipoA, vTipoB, vMez, vSemilla, vDist;
+out vec4 frag;
+
+uniform vec3  uHaze, uSunDir, uSunCol, uSkyTop;
+uniform float uNiebla, uExposure, uNoche;
+
+float hash21(vec2 p){
+  vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float vnoise2(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),
+             mix(hash21(i+vec2(0,1)),hash21(i+vec2(1,1)),f.x),f.y);
+}
+float fbm(vec2 p){
+  float s=0.0,a=0.5;
+  for(int i=0;i<4;i++){ s+=a*vnoise2(p); p*=2.05; a*=0.5; }
+  return s;
+}
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+vec3 ambiente(vec3 cielo){
+  float g = dot(cielo, vec3(0.2126,0.7152,0.0722));
+  return mix(cielo, vec3(g), 0.60);
+}
+
+/* Silueta por tipo. Devuelve (masa, tronco) para poder mezclar dos tipos
+   y que el arbolado se TRANSFORME al cambiar de mundo. */
+vec2 silueta(vec2 uv, float tipo, float sem, float ruido){
+  float x = uv.x-0.5, y = uv.y;
+  float dens = 0.0, tronco = 0.0;
+
+  if(tipo < 0.5){
+    /* copa redonda (roble, chopo) */
+    vec2 q = vec2(x/0.42, (y-0.63)/0.36);
+    dens = 1.0 - smoothstep(0.72, 1.02, length(q) - ruido*0.30);
+    tronco = (1.0-smoothstep(0.030,0.055,abs(x)))*(1.0-smoothstep(0.30,0.42,y));
+  } else if(tipo < 1.5){
+    /* acacia: copa ancha y plana, tronco largo */
+    float copa  = 1.0 - smoothstep(0.06,0.20, abs(y-0.78));
+    float ancho = 1.0 - smoothstep(0.26,0.50, abs(x));
+    dens = 1.0 - smoothstep(0.30,0.62, 1.0-copa*ancho + ruido*0.26);
+    tronco = (1.0-smoothstep(0.020,0.040,abs(x+(y-0.4)*0.09)))
+           * (1.0-smoothstep(0.62,0.80,y));
+  } else if(tipo < 2.5){
+    /* árbol desnudo de invierno */
+    float ramas = 0.0;
+    for(int i=0;i<5;i++){
+      float f=float(i);
+      float ang=(hash21(vec2(sem,f))-0.5)*1.5;
+      float alt=0.42+f*0.115;
+      float dx=abs(x-(y-0.36)*ang);
+      ramas=max(ramas,(1.0-smoothstep(0.008,0.026,dx))*(1.0-smoothstep(alt,alt+0.22,y)));
+    }
+    dens = ramas*0.85;
+    tronco = (1.0-smoothstep(0.022,0.042,abs(x)))*(1.0-smoothstep(0.55,0.78,y));
+  } else {
+    /* matorral bajo */
+    vec2 q = vec2(x/0.5,(y-0.24)/0.26);
+    dens = 1.0 - smoothstep(0.70,1.05, length(q) - ruido*0.36);
+  }
+  return vec2(dens, tronco);
+}
+
+void main(){
+  vec2 uv = vUv;
+  float x = uv.x-0.5, y = uv.y;
+  float sem = vSemilla*37.0;
+  float ruido = fbm(uv*7.0 + sem) - 0.5;
+
+  vec2 sa = silueta(uv, vTipoA, sem, ruido);
+  vec2 sb = silueta(uv, vTipoB, sem, ruido);
+  vec2 sil = mix(sa, sb, vMez);
+  float dens = sil.x, tronco = sil.y;
+
+  float a = max(dens, tronco);
+  if(a < 0.02) discard;
+
+  /* Volumen barato y MULTIPLICATIVO: si la luz se suma, el follaje oscuro
+     se convierte en un borrón del color del sol y pierde el verde. */
+  float sunX = normalize(uSunDir).x;
+  float lado = 0.40 + 0.60*smoothstep(-0.6,0.6, x*sign(sunX)+0.10);
+  float base = 0.42 + 0.58*smoothstep(0.0,0.60,y);
+  vec3 luz = ambiente(uSkyTop)*0.55 + uSunCol*lado*1.10*(1.0-uNoche*0.85);
+
+  vec3 propio = mix(vCol, vec3(0.055,0.038,0.026), tronco*0.9);  /* corteza */
+  vec3 col = propio*luz*base;
+
+  float niebla = 1.0 - exp(-vDist*uNiebla);
+  col = mix(col, uHaze, niebla);
+
+  col = aces(col*uExposure);
+  col = pow(max(col,0.0), vec3(1.0/2.2));
+  frag = vec4(col, a);
+}`;
+
+/* ---------- cajas (casas, torres, vallas, porterías) ---------- */
+const CAJA_VS = `#version 300 es
+in vec3 pos;
+in vec3 nor;
+in vec3 iPos;
+in vec3 iEsc;
+in vec4 iCol;      /* rgb + tipo(a): 0 muro, 1 tejado, 2 metal */
+out vec3 vNor, vCol, vMundo, vLocal, vEsc;
+out float vTipo, vDist, vAlt;
+uniform mat4 uViewProj;
+uniform vec3 uCamPos;
+void main(){
+  vec3 p = iPos + pos*iEsc;
+  vMundo = p;
+  vLocal = pos; vEsc = iEsc;
+  vNor = nor; vCol = iCol.rgb; vTipo = iCol.a;
+  vAlt = p.y;
+  vDist = length(uCamPos - p);
+  gl_Position = uViewProj*vec4(p,1.0);
+}`;
+
+const CAJA_FS = `#version 300 es
+precision highp float;
+in vec3 vNor, vCol, vMundo, vLocal, vEsc;
+in float vTipo, vDist, vAlt;
+out vec4 frag;
+uniform vec3 uHaze, uSunDir, uSunCol, uSkyTop;
+uniform float uNiebla, uExposure, uNoche;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+` + SOMBRA_GLSL + `
+vec3 ambiente(vec3 cielo){
+  float g = dot(cielo, vec3(0.2126,0.7152,0.0722));
+  return mix(cielo, vec3(g), 0.60);
+}
+void main(){
+  vec3 n = normalize(vNor), sd = normalize(uSunDir);
+  float dif = max(dot(n, sd), 0.0);
+  float cielo = 0.5 + 0.5*n.y;
+  float sm = enSombra(vMundo, 1.0-dif);                    /* luz ambiente del cielo */
+  float sombraVis = mix(1.0, 0.46, (1.0 - sm)*(1.0 - uNoche*0.85));
+  vec3 col = vCol*(ambiente(uSkyTop)*cielo*0.70
+                 + uSunCol*dif*1.25*(1.0-uNoche*0.8))*sombraVis;
+
+  /* Ventanas de verdad, en rejilla y medidas en metros sobre la fachada.
+     Un muro liso es lo que hacía que el caserío pareciera cajas. */
+  if(vTipo < 0.5 && abs(n.y) < 0.5){
+    float ancho = abs(n.x) > 0.5 ? vEsc.z : vEsc.x;
+    float u = (abs(n.x) > 0.5 ? vLocal.z : vLocal.x) * ancho;
+    float v = vLocal.y * vEsc.y;
+    /* una ventana cada 2,6 m de ancho y cada 3,1 m de alto */
+    vec2 c = vec2(u/2.6, (v-1.1)/3.1);
+    vec2 f = abs(fract(c) - 0.5);
+    float hueco = (1.0 - smoothstep(0.20,0.30,f.x)) * (1.0 - smoothstep(0.16,0.26,f.y));
+    /* ni bajo el alero ni pegadas al suelo */
+    hueco *= step(1.0, v) * (1.0 - step(vEsc.y - 0.9, v));
+    /* de lejos la rejilla haría moiré: se apaga con la distancia */
+    hueco *= 1.0 - smoothstep(160.0, 420.0, vDist);
+    if(hueco > 0.01){
+      vec3 cristal = mix(vec3(0.10,0.13,0.17), uSkyTop*1.4, 0.45);
+      col = mix(col, cristal, hueco*0.85);
+      /* de noche, algunas encendidas */
+      float enc = step(0.45, fract(sin(floor(c.x)*12.9 + floor(c.y)*78.2 + vEsc.x)*43758.5));
+      col += vec3(1.0,0.76,0.40)*hueco*enc*uNoche*1.4;
+    }
+  }
+  if(vTipo > 1.5 && vTipo < 2.5) col *= 0.8;      /* metal, más mate */
+
+  float niebla = 1.0 - exp(-vDist*uNiebla);
+  col = mix(col, uHaze, niebla);
+  col = aces(col*uExposure);
+  col = pow(max(col,0.0), vec3(1.0/2.2));
+  frag = vec4(col, 1.0);
+}`;
+
+/* ═══════════ Distribución de la escena ═══════════
+   Un solo reparto de huecos que sirve para los cuatro mundos. Las
+   coordenadas están en metros, con el campo (105 x 68) centrado en 0. */
+
+/* Relieve del terreno, réplica exacta del shader. Todo lo que se planta
+   en el mundo tiene que apoyarse en él o quedará flotando. */
+/* Réplica EXACTA del hash y el ruido del shader. Si difieren aunque sea un
+   poco, los árboles y las casas quedan flotando o enterrados. */
+const fract = v => v - Math.floor(v);
+
+function hash21j(px, py){
+  /* GLSL: q = fract(vec3(p.xyx)*0.1031)  →  qz es igual que qx */
+  let qx = fract(px*0.1031), qy = fract(py*0.1031), qz = fract(px*0.1031);
+  const d = qx*(qy+33.33) + qy*(qz+33.33) + qz*(qx+33.33);
+  qx += d; qy += d; qz += d;
+  return fract((qx+qy)*qz);
+}
+function vnoise2j(x, y){
+  const ix = Math.floor(x), iy = Math.floor(y);
+  let fx = fract(x), fy = fract(y);
+  fx = fx*fx*(3-2*fx); fy = fy*fy*(3-2*fy);
+  const a = hash21j(ix,iy),   b = hash21j(ix+1,iy);
+  const c = hash21j(ix,iy+1), d = hash21j(ix+1,iy+1);
+  const ab = a + (b-a)*fx, cd = c + (d-c)*fx;
+  return ab + (cd-ab)*fy;
+}
+function fbm2j(x, y, oct){
+  let s = 0, a = 0.5;
+  for(let i=0;i<oct;i++){ s += a*vnoise2j(x,y); x*=2.02; y*=2.02; a*=0.5; }
+  return s;
+}
+function alturaTerreno(x, z){
+  const h = 78.0*(fbm2j(x*0.00052 + 31.7, z*0.00052 + 12.3, 4) - 0.46)
+          + 21.0*(fbm2j(x*0.0024  +  7.1, z*0.0024  + 55.9, 3) - 0.46);
+  const dx = Math.max(Math.abs(x) - 88.0, 0);
+  const dz = Math.max(Math.abs(z) - 60.0, 0);
+  const t = Math.min(Math.hypot(dx, dz)/130.0, 1);
+  const explanada = 1 - t*t*(3-2*t);
+  return h*(1 - explanada);
+}
+
+function rnd(semilla){                      /* aleatorio reproducible */
+  let s = semilla >>> 0;
+  return () => {
+    s = (s*1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/* Apariencia del arbolado en cada mundo: tipo, tamaño y color. */
+/* sector de agua por mundo, para no plantar árboles en el mar */
+const AGUA_MUNDO = {
+  pueblo:{w:0,az:0,ancho:0,dist:1e9}, costa:{w:1,az:0.55,ancho:1.55,dist:150},
+  sabana:{w:1,az:-2.30,ancho:0.62,dist:380}, invierno:{w:0,az:0,ancho:0,dist:1e9},
+};
+
+const ARBOL_MUNDO = {
+  pueblo:   {tipo:0, alto:[7,13],  ancho:[5,9],  col:[0.19,0.31,0.12], densidad:1.0},
+  costa:    {tipo:0, alto:[5,9],   ancho:[4,7],  col:[0.16,0.30,0.18], densidad:0.7},
+  sabana:   {tipo:1, alto:[6,10],  ancho:[9,15], col:[0.34,0.36,0.17], densidad:0.85},
+  invierno: {tipo:2, alto:[7,12],  ancho:[5,8],  col:[0.30,0.26,0.24], densidad:0.9},
+};
+
+/* Caserío: en la sabana desaparece (escala 0) y deja sitio a unas casas bajas. */
+const CASA_MUNDO = {
+  pueblo:   {n:1.0, alto:[6,13], muro:[0.78,0.70,0.58], tejado:[0.52,0.26,0.17]},
+  costa:    {n:0.7, alto:[6,11], muro:[0.86,0.86,0.84], tejado:[0.38,0.36,0.40]},
+  sabana:   {n:0.35,alto:[3, 5], muro:[0.72,0.58,0.40], tejado:[0.46,0.36,0.22]},
+  invierno: {n:0.9, alto:[6,12], muro:[0.62,0.60,0.60], tejado:[0.82,0.84,0.88]},
+};
+
+function generarEscena(){
+  const r = rnd(20260821);
+  const arboles = [], casas = [], estructuras = [];
+
+  /* ── arbolado: anillo alrededor del campo, más denso en el lado lejano ── */
+  for(let i=0;i<260;i++){
+    const ang = r()*Math.PI*2;
+    const rad = 78 + Math.pow(r(),0.55)*420;
+    const x = Math.cos(ang)*rad*1.35, z = Math.sin(ang)*rad;
+    /* despeja el rectángulo del campo y sus bandas */
+    if(Math.abs(x) < 74 && Math.abs(z) < 50) continue;
+    arboles.push({x, z, s:r(), esc:0.6+r()*0.8, tipoLado: Math.sin(ang)});
+  }
+
+  /* ── caserío: un pueblo agrupado en un lado ── */
+  for(let i=0;i<54;i++){
+    const ang = -0.9 + (r()-0.5)*1.5;
+    const rad = 160 + Math.pow(r(),0.7)*300;
+    casas.push({x:Math.cos(ang)*rad*1.2, z:Math.sin(ang)*rad, s:r(),
+                w:7+r()*9, d:7+r()*9, giro:r()*Math.PI});
+  }
+
+  /* ── torres de luz: cuatro, en las esquinas del recinto ── */
+  for(const sx of [-1,1]) for(const sz of [-1,1])
+    estructuras.push({tipo:'torre', x:sx*61, z:sz*42});
+
+  /* ── porterías ── */
+  for(const s of [-1,1]) estructuras.push({tipo:'porteria', x:s*52.5, z:0, lado:s});
+
+  /* ── valla perimetral ── */
+  estructuras.push({tipo:'valla'});
+
+  return {arboles, casas, estructuras};
+}
+
+/* Malla de una caja unitaria centrada en XZ y apoyada en y=0. */
+function mallaCaja(){
+  const p=[], n=[];
+  const caras = [
+    {nor:[0,0,1],  v:[[-.5,0,.5],[.5,0,.5],[.5,1,.5],[-.5,1,.5]]},
+    {nor:[0,0,-1], v:[[.5,0,-.5],[-.5,0,-.5],[-.5,1,-.5],[.5,1,-.5]]},
+    {nor:[1,0,0],  v:[[.5,0,.5],[.5,0,-.5],[.5,1,-.5],[.5,1,.5]]},
+    {nor:[-1,0,0], v:[[-.5,0,-.5],[-.5,0,.5],[-.5,1,.5],[-.5,1,-.5]]},
+    {nor:[0,1,0],  v:[[-.5,1,.5],[.5,1,.5],[.5,1,-.5],[-.5,1,-.5]]},
+  ];
+  for(const c of caras){
+    const [a,b,cc,d] = c.v;
+    for(const v of [a,b,cc, a,cc,d]){ p.push(...v); n.push(...c.nor); }
+  }
+  return {pos:new Float32Array(p), nor:new Float32Array(n), cuenta:p.length/3};
+}
+
+/* Disco de suelo por anillos concéntricos: mucha resolución cerca del campo
+   y triángulos grandes lejos, donde nadie los mira. */
+function mallaSuelo(){
+  const radios = [0,4,9,18,30,46,66,92,124,164,214,276,352,448,568,
+                720,910,1150,1450,1830,2300,2900,3700,4700,6000,
+                8000,11000,15000,20000];
+  const SEG = 120, p = [];
+  for(let r=0; r<radios.length-1; r++){
+    const r0 = radios[r], r1 = radios[r+1];
+    for(let i=0;i<SEG;i++){
+      const a0 = i/SEG*Math.PI*2, a1 = (i+1)/SEG*Math.PI*2;
+      const c0=Math.cos(a0), s0=Math.sin(a0), c1=Math.cos(a1), s1=Math.sin(a1);
+      /* estirado en X para que el disco cubra bien el campo, que es alargado */
+      const K = 1.35;
+      p.push(r0*c0*K, r0*s0,  r1*c0*K, r1*s0,  r1*c1*K, r1*s1);
+      p.push(r0*c0*K, r0*s0,  r1*c1*K, r1*s1,  r0*c1*K, r0*s1);
+    }
+  }
+  return {pos:new Float32Array(p), cuenta:p.length/2};
+}
+
+/* Prisma triangular: el tejado a dos aguas. Una caja plana como cubierta
+   es lo que delataba que las casas eran cajas apiladas. */
+function mallaTejado(){
+  const pos=[], nor=[];
+  const V=(x,y,z,n)=>{ pos.push(x,y,z); nor.push(...n); };
+  const s2 = Math.SQRT1_2;
+  /* faldón +z y faldón -z */
+  V(-.5,0,.5,[0,s2,s2]); V(.5,0,.5,[0,s2,s2]); V(.5,1,0,[0,s2,s2]);
+  V(-.5,0,.5,[0,s2,s2]); V(.5,1,0,[0,s2,s2]); V(-.5,1,0,[0,s2,s2]);
+  V(.5,0,-.5,[0,s2,-s2]); V(-.5,0,-.5,[0,s2,-s2]); V(-.5,1,0,[0,s2,-s2]);
+  V(.5,0,-.5,[0,s2,-s2]); V(-.5,1,0,[0,s2,-s2]); V(.5,1,0,[0,s2,-s2]);
+  /* hastiales */
+  V(.5,0,.5,[1,0,0]); V(.5,0,-.5,[1,0,0]); V(.5,1,0,[1,0,0]);
+  V(-.5,0,-.5,[-1,0,0]); V(-.5,0,.5,[-1,0,0]); V(-.5,1,0,[-1,0,0]);
+  return {pos:new Float32Array(pos), nor:new Float32Array(nor), cuenta:pos.length/3};
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   EL PARTIDO — simulación sintética de once contra once.
+
+   Todo es artificial: ni un dato ni una imagen del material del proyecto.
+   El modelo es deliberadamente simple (posición de referencia + atracción
+   al balón + separación entre compañeros), pero produce movimiento
+   colectivo creíble: el bloque bascula, se estira y se comprime solo.
+
+   Eso importa porque la capa táctica que se dibuja encima MIDE esta
+   simulación. Las cifras que aparecen en pantalla no están escritas a
+   mano: salen de las posiciones que el usuario está viendo.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const CAMPO_X = 105, CAMPO_Y = 68;
+
+/* Formaciones en fracción de campo: x hacia la portería rival, y a lo ancho. */
+const F_433 = [
+  [-0.42, 0.00],                                            /* portero */
+  [-0.24,-0.26],[-0.26,-0.09],[-0.26, 0.09],[-0.24, 0.26],  /* defensa */
+  [-0.10,-0.15],[-0.12, 0.00],[-0.10, 0.15],                /* medio */
+  [ 0.04,-0.27],[ 0.07, 0.00],[ 0.04, 0.27],                /* ataque */
+];
+const F_442 = [
+  [-0.42, 0.00],
+  [-0.25,-0.24],[-0.27,-0.08],[-0.27, 0.08],[-0.25, 0.24],
+  [-0.11,-0.24],[-0.13,-0.07],[-0.13, 0.07],[-0.11, 0.24],
+  [ 0.04,-0.10],[ 0.04, 0.10],
+];
+
+function crearPartido(semilla){
+  const r = rnd(semilla || 987654);
+
+  const jugadores = [];
+  const nuevo = (eq, i, form, sentido) => {
+    const f = form[i];
+    const x = f[0]*CAMPO_X*sentido, y = f[1]*CAMPO_Y;
+    jugadores.push({
+      eq, dorsal: i+1, portero: i===0, sentido,
+      hx: x, hy: y,                 /* posición de referencia */
+      x, y, vx:0, vy:0,
+      fase: r()*6.28,               /* desfase del ciclo de zancada */
+      tono: r(),                    /* variación de tono de piel */
+      id: (eq==='A'?0:11) + i,
+    });
+  };
+  for(let i=0;i<11;i++) nuevo('A', i, F_433,  1);
+  for(let i=0;i<11;i++) nuevo('B', i, F_442, -1);
+
+  /* Balón: recorre una secuencia de destinos, como una posesión larga. */
+  const balon = {x:0, y:0, z:0, vx:0, vy:0, destino:0, t:0};
+  const jugada = [];
+  for(let i=0;i<26;i++){
+    /* una posesión que progresa hacia la portería de B y luego se pierde */
+    const av = i/26;
+    jugada.push({
+      x: mez(-28, 42, av) + (r()-0.5)*22,
+      y: (r()-0.5)*CAMPO_Y*0.72,
+      dur: 1.1 + r()*1.5,
+    });
+  }
+
+  let t = 0;
+
+  function paso(dt){
+    dt = Math.min(dt, 0.05);
+    t += dt;
+
+    /* ── balón ── */
+    balon.t += dt;
+    const d = jugada[balon.destino % jugada.length];
+    const k = lim(balon.t / d.dur, 0, 1);
+    const sig = jugada[(balon.destino+1) % jugada.length];
+    balon.x = mez(d.x, sig.x, easeIO(k));
+    balon.y = mez(d.y, sig.y, easeIO(k));
+    /* parábola del pase: sube y baja entre destino y destino */
+    balon.z = Math.sin(k*Math.PI) * Math.min(2.6, Math.hypot(sig.x-d.x, sig.y-d.y)*0.07);
+    if(k >= 1){ balon.destino++; balon.t = 0; }
+
+    /* ── jugadores ── */
+    for(const j of jugadores){
+      let ox = j.hx, oy = j.hy;
+
+      if(j.portero){
+        /* el portero se mueve poco, sigue la línea del balón */
+        ox = j.hx + lim(balon.x*0.05*j.sentido, -3, 3);
+        oy = lim(balon.y*0.42, -6, 6);
+      } else {
+        /* el bloque bascula hacia el balón y se desplaza a lo largo */
+        const haciaBalonY = (balon.y - j.hy)*0.24;
+        const bloqueX = balon.x*0.22;
+        ox = j.hx + bloqueX;
+        oy = j.hy + haciaBalonY;
+
+        /* los tres más cercanos al balón lo presionan de verdad */
+        const dist = Math.hypot(balon.x-j.x, balon.y-j.y);
+        if(dist < 14){
+          const w = (1 - dist/14)*0.55;
+          const tx = mez(ox, balon.x, w), ty = mez(oy, balon.y, w);
+          /* nadie abandona su zona más de 9 m: si no, el bloque se rompe */
+          const dx = lim(tx-ox, -9, 9), dy = lim(ty-oy, -9, 9);
+          ox += dx; oy += dy;
+        }
+        /* respiración: nadie está quieto */
+        ox += Math.sin(t*0.7 + j.fase)*1.5;
+        oy += Math.cos(t*0.5 + j.fase*1.7)*1.5;
+      }
+
+      /* separación: evita que se amontonen */
+      let sx=0, sy=0;
+      for(const o of jugadores){
+        if(o===j || o.eq!==j.eq) continue;
+        const dx=j.x-o.x, dy=j.y-o.y, d2=dx*dx+dy*dy;
+        if(d2 < 64 && d2 > 0.01){
+          const f = (8 - Math.sqrt(d2))/8;
+          sx += dx*f*0.5; sy += dy*f*0.5;
+        }
+      }
+
+      /* aceleración hacia el objetivo, con tope de velocidad humano */
+      const ax = (ox - j.x)*1.6 + sx*2.2;
+      const ay = (oy - j.y)*1.6 + sy*2.2;
+      j.vx += ax*dt; j.vy += ay*dt;
+      const v = Math.hypot(j.vx, j.vy), VMAX = j.portero ? 3.2 : 7.4;
+      if(v > VMAX){ j.vx = j.vx/v*VMAX; j.vy = j.vy/v*VMAX; }
+      j.vx *= 0.90; j.vy *= 0.90;
+      j.x += j.vx*dt; j.y += j.vy*dt;
+      j.x = lim(j.x, -CAMPO_X*0.5-2, CAMPO_X*0.5+2);
+      j.y = lim(j.y, -CAMPO_Y*0.5-2, CAMPO_Y*0.5+2);
+      j.v = Math.hypot(j.vx, j.vy);
+    }
+  }
+
+  /* ── métricas colectivas, medidas sobre lo que se está viendo ── */
+  function metricas(eq){
+    const campo = jugadores.filter(j=> j.eq===eq && !j.portero);
+    const xs = campo.map(j=>j.x), ys = campo.map(j=>j.y);
+    const cx = xs.reduce((a,b)=>a+b,0)/xs.length;
+    const cy = ys.reduce((a,b)=>a+b,0)/ys.length;
+    const amplitud = Math.max(...ys) - Math.min(...ys);
+    const profundidad = Math.max(...xs) - Math.min(...xs);
+    const compacidad = campo.reduce((a,j)=>a+Math.hypot(j.x-cx, j.y-cy),0)/campo.length;
+
+    /* línea defensiva: los cuatro más retrasados respecto a su portería */
+    const sentido = campo[0].sentido;
+    const orden = [...campo].sort((a,b)=> (a.x-b.x)*sentido);
+    const linea = orden.slice(0,4);
+    const xLinea = linea.reduce((a,j)=>a+j.x,0)/4;
+    const alturaLinea = (xLinea + sentido*CAMPO_X*0.5)*sentido;
+    const ataque = orden.slice(-3);
+    const xAtaque = ataque.reduce((a,j)=>a+j.x,0)/3;
+    const entreLineas = Math.abs(xAtaque - xLinea);
+    const vmax = Math.max(...campo.map(j=>j.v));
+
+    return {cx, cy, amplitud, profundidad, compacidad,
+            alturaLinea, entreLineas, vmax, linea};
+  }
+
+  return {jugadores, balon, paso, metricas, get t(){return t;}};
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   JUGADORES — figuras de baja poligonización, instanciadas.
+
+   Una sola malla humana (piernas, torso, brazos, cabeza) dibujada 22 veces
+   en una llamada. La zancada se resuelve en el vertex shader rotando las
+   extremidades según la fase y la velocidad, así que no hay esqueletos ni
+   animaciones que cargar.
+
+   El tono de piel y la equipación son parámetros del mundo: en cada sitio
+   juegan equipos distintos, que es justo lo que la página quiere decir.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const JUG_VS = `#version 300 es
+in vec3 pos;
+in vec3 nor;
+in float region;        /* 0 torso · 1 cabeza · 2 pierna izq · 3 pierna der
+                           4 brazo izq · 5 brazo der */
+in vec3  iPos;
+in vec4  iDir;          /* cos, sin del rumbo · fase · velocidad */
+in vec3  iKit;
+in vec3  iPiel;
+in float iMarca;        /* 0..1 resalte del jugador seguido */
+
+out vec3 vNor, vCol, vMundo;
+out float vDist, vMarca, vArriba;
+
+uniform mat4 uViewProj;
+uniform vec3 uCamPos;
+
+void main(){
+  vec3 p = pos;
+  vec3 n = nor;
+
+  /* zancada: piernas y brazos oscilan en oposición, con amplitud
+     proporcional a la velocidad real del jugador */
+  float amp = clamp(iDir.w/7.0, 0.0, 1.0);
+  float sw  = sin(iDir.z)*amp;
+  float ang = 0.0;
+  if(region > 1.5 && region < 3.5) ang = (region < 2.5 ?  sw : -sw)*0.85;
+  if(region > 3.5)                 ang = (region < 4.5 ? -sw :  sw)*0.55;
+
+  if(ang != 0.0){
+    float piv = (region < 3.5) ? 0.86 : 1.40;     /* cadera u hombro */
+    float c = cos(ang), s = sin(ang);
+    float y = p.y - piv, z = p.z;
+    p.y = piv + y*c - z*s;
+    p.z =        y*s + z*c;
+    float ny = n.y, nz = n.z;
+    n.y = ny*c - nz*s; n.z = ny*s + nz*c;
+  }
+  /* rebote del cuerpo al correr */
+  p.y += abs(sin(iDir.z))*amp*0.055;
+
+  /* rumbo */
+  float c = iDir.x, s = iDir.y;
+  vec3 q = vec3(p.x*c - p.z*s, p.y, p.x*s + p.z*c);
+  vec3 qn = vec3(n.x*c - n.z*s, n.y, n.x*s + n.z*c);
+
+  vec3 w = iPos + q;
+  vMundo = w;
+  vNor = qn;
+  vCol = (region > 0.5 && region < 1.5) ? iPiel
+       : (region > 3.5 ? iPiel : iKit);           /* brazos y cara al aire */
+  vArriba = p.y;
+  vMarca = iMarca;
+  vDist = length(uCamPos - w);
+  gl_Position = uViewProj*vec4(w, 1.0);
+}`;
+
+const JUG_FS = `#version 300 es
+precision highp float;
+in vec3 vNor, vCol, vMundo;
+in float vDist, vMarca, vArriba;
+out vec4 frag;
+uniform vec3 uHaze, uSunDir, uSunCol, uSkyTop, uMarcaCol;
+uniform float uNiebla, uExposure, uNoche;
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+` + SOMBRA_GLSL + `
+vec3 ambiente(vec3 cielo){
+  float g = dot(cielo, vec3(0.2126,0.7152,0.0722));
+  return mix(cielo, vec3(g), 0.60);
+}
+void main(){
+  vec3 n = normalize(vNor), sd = normalize(uSunDir);
+  float dif = max(dot(n, sd), 0.0);
+  float cielo = 0.45 + 0.55*n.y;
+  float sm = enSombra(vMundo, 1.0-dif);
+  float sombraVis = mix(1.0, 0.44, (1.0 - sm)*(1.0 - uNoche*0.85));
+  vec3 luz = (ambiente(uSkyTop)*cielo*0.75 + uSunCol*dif*1.6*(1.0-uNoche*0.75)
+           + vec3(0.06)*(1.0-uNoche*0.4)) * sombraVis;
+  vec3 col = vCol*luz;
+
+  /* resalte del jugador que sigue el sistema: un borde frío, no un tinte */
+  float borde = 1.0 - abs(dot(n, normalize(vec3(0.0,0.0,1.0))));
+  col = mix(col, uMarcaCol, vMarca*0.30);
+
+  float niebla = 1.0 - exp(-vDist*uNiebla);
+  col = mix(col, uHaze, niebla);
+  col = aces(col*uExposure);
+  col = pow(max(col,0.0), vec3(1.0/2.2));
+  frag = vec4(col, 1.0);
+}`;
+
+/* ---------- malla humana ---------- */
+function mallaJugador(){
+  const pos=[], nor=[], reg=[];
+  function caja(x0,y0,z0, x1,y1,z1, region){
+    const v=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],
+             [x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
+    const caras=[
+      {i:[4,5,6,7], n:[0,0,1]}, {i:[1,0,3,2], n:[0,0,-1]},
+      {i:[5,1,2,6], n:[1,0,0]}, {i:[0,4,7,3], n:[-1,0,0]},
+      {i:[3,2,6,7], n:[0,1,0]}, {i:[0,1,5,4], n:[0,-1,0]},
+    ];
+    for(const f of caras){
+      const [a,b,c,d]=f.i;
+      for(const k of [a,b,c, a,c,d]){
+        pos.push(...v[k]); nor.push(...f.n); reg.push(region);
+      }
+    }
+  }
+  /* proporciones en metros, altura total ~1,78 */
+  caja(-0.19,0.00,-0.08, -0.03,0.86,0.08, 2);   /* pierna izquierda */
+  caja( 0.03,0.00,-0.08,  0.19,0.86,0.08, 3);   /* pierna derecha  */
+  caja(-0.21,0.84,-0.11,  0.21,1.46,0.11, 0);   /* torso */
+  caja(-0.32,0.92,-0.07, -0.22,1.42,0.07, 4);   /* brazo izquierdo */
+  caja( 0.22,0.92,-0.07,  0.32,1.42,0.07, 5);   /* brazo derecho */
+  caja(-0.10,1.46,-0.10,  0.10,1.72,0.10, 1);   /* cabeza */
+  return {pos:new Float32Array(pos), nor:new Float32Array(nor),
+          reg:new Float32Array(reg), cuenta:pos.length/3};
+}
+
+/* ---------- equipaciones y tonos de piel por mundo ---------- */
+const EQUIPO_MUNDO = {
+  pueblo:   {A:[0.72,0.10,0.12], B:[0.94,0.94,0.92],
+             piel:[[0.76,0.58,0.44],[0.52,0.36,0.26]]},
+  costa:    {A:[0.94,0.78,0.16], B:[0.10,0.16,0.38],
+             piel:[[0.78,0.60,0.46],[0.48,0.33,0.24]]},
+  /* En la sabana juegan equipos locales: pieles oscuras, con la misma
+     variación entre jugadores que en cualquier otro sitio. */
+  sabana:   {A:[0.12,0.44,0.24], B:[0.92,0.44,0.10],
+             piel:[[0.40,0.25,0.16],[0.20,0.12,0.08]]},
+  invierno: {A:[0.95,0.95,0.96], B:[0.13,0.13,0.16],
+             piel:[[0.80,0.63,0.50],[0.50,0.35,0.26]]},
+};
+
+function crearJugadores(gl){
+  const prog = programa(gl, JUG_VS, JUG_FS, 'jugador');
+  const malla = mallaJugador();
+
+  const bufPos = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufPos);
+  gl.bufferData(gl.ARRAY_BUFFER, malla.pos, gl.STATIC_DRAW);
+  const bufNor = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufNor);
+  gl.bufferData(gl.ARRAY_BUFFER, malla.nor, gl.STATIC_DRAW);
+  const bufReg = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufReg);
+  gl.bufferData(gl.ARRAY_BUFFER, malla.reg, gl.STATIC_DRAW);
+
+  const MAX = 24;
+  const datos = new Float32Array(MAX*14);
+  const bufInst = gl.createBuffer();
+  let n = 0;
+
+  function construir(partido, mA, mB, t, seguido){
+    const eA = EQUIPO_MUNDO[mA.id], eB = EQUIPO_MUNDO[mB.id];
+    const L = (x,y)=> x+(y-x)*t;
+    n = 0;
+    for(const j of partido.jugadores){
+      const kitA = j.eq==='A' ? eA.A : eA.B;
+      const kitB = j.eq==='A' ? eB.A : eB.B;
+      /* el portero va de otro color, como en cualquier campo */
+      const kit = j.portero ? [0.85,0.80,0.20] : [0,1,2].map(k=> L(kitA[k], kitB[k]));
+      const pielA = eA.piel[0].map((v,k)=> mez(v, eA.piel[1][k], j.tono));
+      const pielB = eB.piel[0].map((v,k)=> mez(v, eB.piel[1][k], j.tono));
+      const piel = [0,1,2].map(k=> L(pielA[k], pielB[k]));
+
+      const rumbo = Math.atan2(j.vy, j.vx) || 0;
+      const o = n*14;
+      datos[o  ]=j.x; datos[o+1]=0; datos[o+2]=j.y;
+      datos[o+3]=Math.cos(rumbo); datos[o+4]=Math.sin(rumbo);
+      datos[o+5]=partido.t*7.0 + j.fase; datos[o+6]=j.v;
+      for(let k=0;k<3;k++) datos[o+7+k]  = Math.pow(kit[k], 2.2);
+      for(let k=0;k<3;k++) datos[o+10+k] = Math.pow(piel[k], 2.2);
+      datos[o+13] = (seguido!=null && j.id===seguido) ? 1 : 0;
+      n++;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufInst);
+    gl.bufferData(gl.ARRAY_BUFFER, datos, gl.DYNAMIC_DRAW);
+  }
+
+  function dibujar(est, attr, comunes){
+    const {viewProj, camPos, m} = est;
+    gl.useProgram(prog);
+    attr(prog, 'pos', bufPos, 3, 0, 0, 0);
+    attr(prog, 'nor', bufNor, 3, 0, 0, 0);
+    attr(prog, 'region', bufReg, 1, 0, 0, 0);
+    attr(prog, 'iPos',  bufInst, 3, 56, 0,  1);
+    attr(prog, 'iDir',  bufInst, 4, 56, 12, 1);
+    attr(prog, 'iKit',  bufInst, 3, 56, 28, 1);
+    attr(prog, 'iPiel', bufInst, 3, 56, 40, 1);
+    attr(prog, 'iMarca',bufInst, 1, 56, 52, 1);
+    comunes(prog, m, camPos, viewProj);
+    gl.uniform3fv(prog.u.uMarcaCol, aLineal([0.62,0.91,1.0]));
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, malla.cuenta, n);
+  }
+
+  /* El pase de sombra reutiliza los mismos búferes: la sombra tiene que
+     salir de la MISMA geometría deformada, o no cuadra con el cuerpo. */
+  function dibujarSombra(prog, attr){
+    gl.useProgram(prog);
+    attr(prog, 'pos', bufPos, 3, 0, 0, 0);
+    attr(prog, 'region', bufReg, 1, 0, 0, 0);
+    attr(prog, 'iPos', bufInst, 3, 56, 0,  1);
+    attr(prog, 'iDir', bufInst, 4, 56, 12, 1);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, malla.cuenta, n);
+  }
+
+  return {construir, dibujar, dibujarSombra};
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   CAPA DE ANÁLISIS — lo que ve el sistema, dibujado sobre el partido.
+
+   Dos piezas:
+
+   1. Geometría PLANA sobre el césped (estelas, anillos de detección,
+      líneas y zonas tácticas). Va en un único búfer dinámico y un solo
+      dibujado. Al estar pegada al suelo se lee como una proyección sobre
+      el campo, que es exactamente lo que es.
+
+   2. Etiquetas en un lienzo 2D por encima (dorsales, coordenadas, cifras).
+      El texto nítido en WebGL es un incordio; proyectando a pantalla y
+      pintando en 2D sale perfecto a cualquier resolución.
+
+   Regla de color: el mundo es cálido y la máquina es fría. Todo lo que
+   dibuja el sistema usa el mismo cian pálido, y nunca se confunde con
+   la escena.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const FRIO      = [0.62, 0.91, 1.00];   /* la capa máquina */
+const FRIO_2    = [0.35, 0.78, 0.96];
+const CALIENTE  = [1.00, 0.74, 0.35];   /* resaltes puntuales */
+
+const CAPA_VS = `#version 300 es
+in vec3 pos;              /* x, y (altura sobre el césped), z */
+in vec4 col;
+out vec4 vCol;
+out float vDist;
+uniform mat4 uViewProj;
+uniform vec3 uCamPos;
+void main(){
+  vCol = col;
+  vDist = length(uCamPos - pos);
+  gl_Position = uViewProj*vec4(pos, 1.0);
+}`;
+
+const CAPA_FS = `#version 300 es
+precision highp float;
+in vec4 vCol;
+in float vDist;
+out vec4 frag;
+uniform float uNiebla;
+void main(){
+  /* la capa se desvanece con la distancia como todo lo demás, si no
+     flotaría por delante de la niebla y delataría que es un dibujo */
+  float niebla = 1.0 - exp(-vDist*uNiebla*0.6);
+  frag = vec4(vCol.rgb, vCol.a*(1.0-niebla*0.85));
+}`;
+
+function crearAnalisis(gl, lienzo2d){
+  const prog = programa(gl, CAPA_VS, CAPA_FS, 'capa');
+  const MAXV = 90000;
+  const datos = new Float32Array(MAXV*7);
+  const buf = gl.createBuffer();
+  let nv = 0;
+  const ctx = lienzo2d.getContext('2d');
+  let etiquetas = [];
+
+  /* ---------- primitivas planas ---------- */
+  function vert(x,y,z, c, a){
+    if(nv >= MAXV) return;
+    const o = nv*7;
+    datos[o]=x; datos[o+1]=y; datos[o+2]=z;
+    datos[o+3]=c[0]; datos[o+4]=c[1]; datos[o+5]=c[2]; datos[o+6]=a;
+    nv++;
+  }
+  const ALTURA = 0.045;          /* justo por encima del césped */
+
+  /* Segmento de anchura constante, tumbado en el plano del campo. */
+  function segmento(x0,z0, x1,z1, w, c, a0, a1){
+    const dx=x1-x0, dz=z1-z0, L=Math.hypot(dx,dz);
+    if(L < 1e-5) return;
+    const nx=-dz/L*w*0.5, nz=dx/L*w*0.5;
+    vert(x0-nx,ALTURA,z0-nz,c,a0); vert(x0+nx,ALTURA,z0+nz,c,a0);
+    vert(x1+nx,ALTURA,z1+nz,c,a1);
+    vert(x0-nx,ALTURA,z0-nz,c,a0); vert(x1+nx,ALTURA,z1+nz,c,a1);
+    vert(x1-nx,ALTURA,z1-nz,c,a1);
+  }
+
+  function anillo(cx,cz, r, w, c, a, seg){
+    seg = seg||28;
+    for(let i=0;i<seg;i++){
+      const u0=i/seg*6.2832, u1=(i+1)/seg*6.2832;
+      segmento(cx+Math.cos(u0)*r, cz+Math.sin(u0)*r,
+               cx+Math.cos(u1)*r, cz+Math.sin(u1)*r, w, c, a, a);
+    }
+  }
+
+  function rectangulo(x0,z0,x1,z1, w, c, a){
+    segmento(x0,z0, x1,z0, w, c, a, a);
+    segmento(x1,z0, x1,z1, w, c, a, a);
+    segmento(x1,z1, x0,z1, w, c, a, a);
+    segmento(x0,z1, x0,z0, w, c, a, a);
+  }
+
+  function relleno(x0,z0,x1,z1, c, a){
+    vert(x0,ALTURA,z0,c,a); vert(x1,ALTURA,z0,c,a); vert(x1,ALTURA,z1,c,a);
+    vert(x0,ALTURA,z0,c,a); vert(x1,ALTURA,z1,c,a); vert(x0,ALTURA,z1,c,a);
+  }
+
+  /* Polígono convexo relleno (abanico desde el primer vértice). */
+  function poligono(pts, c, a){
+    for(let i=1;i<pts.length-1;i++){
+      vert(pts[0][0],ALTURA,pts[0][1],c,a);
+      vert(pts[i][0],ALTURA,pts[i][1],c,a);
+      vert(pts[i+1][0],ALTURA,pts[i+1][1],c,a);
+    }
+  }
+
+  /* ---------- historial de posiciones para las estelas ---------- */
+  const historia = new Map();
+  const LARGO = 90;
+  function registrar(partido){
+    for(const j of partido.jugadores){
+      let h = historia.get(j.id);
+      if(!h){ h = []; historia.set(j.id, h); }
+      h.push(j.x, j.y);
+      if(h.length > LARGO*2) h.splice(0, h.length - LARGO*2);
+    }
+  }
+
+  /* ---------- construcción de la capa ---------- */
+  /* `peso` marca cuánto pesa cada capa: así el scroll enciende y apaga
+     sin que haya que reescribir nada. */
+  function construir(partido, peso, camPos, viewProj, W, H, seguido){
+    nv = 0; etiquetas = [];
+    const P = k => peso[k] || 0;
+
+    /* — anillos de detección bajo los pies —
+       El radio crece con la distancia de cámara: desde 130 m un anillo de
+       0,85 m es un píxel y el cenital se queda sin marcar a nadie. */
+    if(P('deteccion') > 0.004){
+      const a = P('deteccion');
+      const dCam = Math.hypot(camPos[0], camPos[1], camPos[2]);
+      const r = Math.max(0.85, dCam*0.0075);
+      for(const j of partido.jugadores){
+        anillo(j.x, j.y, r, r*0.16, FRIO, a*0.95, 20);
+        anillo(j.x, j.y, r*0.34, r*0.34, FRIO, a*0.55, 12);
+      }
+    }
+
+    /* — estelas: el camino que ha recorrido cada jugador — */
+    if(P('estela') > 0.004){
+      const a = P('estela');
+      for(const j of partido.jugadores){
+        const h = historia.get(j.id);
+        if(!h || h.length < 6) continue;
+        const n = h.length/2;
+        const esA = j.eq === 'A';
+        const c = esA ? FRIO : FRIO_2;
+        for(let i=1;i<n;i++){
+          const f0=(i-1)/(n-1), f1=i/(n-1);
+          segmento(h[(i-1)*2], h[(i-1)*2+1], h[i*2], h[i*2+1],
+                   0.16+0.42*f1, c, a*f0*f0*0.85, a*f1*f1*0.85);
+        }
+      }
+    }
+
+    /* — vectores de velocidad — */
+    if(P('movimiento') > 0.004){
+      const a = P('movimiento');
+      for(const j of partido.jugadores){
+        if(j.v < 0.5) continue;
+        const L = lim(j.v*0.75, 0.8, 6.0);
+        const ux = j.vx/j.v, uy = j.vy/j.v;
+        segmento(j.x, j.y, j.x+ux*L, j.y+uy*L, 0.26, FRIO, a*0.9, a*0.15);
+      }
+    }
+
+    /* — geometría táctica del equipo A — */
+    if(P('tactica') > 0.004){
+      const a = P('tactica');
+      const M = partido.metricas('A');
+      const campoA = partido.jugadores.filter(j=> j.eq==='A' && !j.portero);
+      const ys = campoA.map(j=>j.y), xs = campoA.map(j=>j.x);
+      const y0=Math.min(...ys), y1=Math.max(...ys);
+      const x0=Math.min(...xs), x1=Math.max(...xs);
+
+      relleno(x0,y0,x1,y1, FRIO, a*0.055);
+      rectangulo(x0,y0,x1,y1, 0.22, FRIO, a*0.55);
+
+      /* la línea defensiva, trazada entre los cuatro más retrasados */
+      const linea = [...M.linea].sort((p,q)=> p.y-q.y);
+      for(let i=1;i<linea.length;i++)
+        segmento(linea[i-1].x, linea[i-1].y, linea[i].x, linea[i].y,
+                 0.30, CALIENTE, a*0.95, a*0.95);
+      for(const j of linea) anillo(j.x, j.y, 1.15, 0.18, CALIENTE, a*0.9, 18);
+
+      etiquetas.push({t:`AMPLITUD ${M.amplitud.toFixed(1)} m`, x:(x0+x1)/2, z:y0-3.5, c:'frio'});
+      etiquetas.push({t:`PROFUNDIDAD ${M.profundidad.toFixed(1)} m`, x:x1+4.5, z:(y0+y1)/2, c:'frio'});
+      etiquetas.push({t:`LÍNEA A ${M.alturaLinea.toFixed(0)} m`,
+                      x:linea[0].x, z:linea[0].y-3.0, c:'calido'});
+      etiquetas.push({t:`ENTRE LÍNEAS ${M.entreLineas.toFixed(1)} m`,
+                      x:(x0+x1)/2, z:y1+3.5, c:'frio'});
+    }
+
+    /* — tercios y pasillos: la ocupación del campo — */
+    if(P('zonas') > 0.004){
+      const a = P('zonas');
+      for(let i=-1;i<=1;i++){
+        const x = i*CAMPO_X/6;
+        segmento(x, -CAMPO_Y/2, x, CAMPO_Y/2, 0.14, FRIO, a*0.35, a*0.35);
+      }
+      for(let i=-1;i<=1;i++){
+        const y = i*CAMPO_Y/6;
+        segmento(-CAMPO_X/2, y, CAMPO_X/2, y, 0.14, FRIO, a*0.35, a*0.35);
+      }
+      /* tinte por presencia real de jugadores en cada casilla */
+      for(let cx=-1;cx<=1;cx++) for(let cz=-1;cz<=1;cz++){
+        const x0=cx*CAMPO_X/3-CAMPO_X/6, x1=x0+CAMPO_X/3;
+        const z0=cz*CAMPO_Y/3-CAMPO_Y/6, z1=z0+CAMPO_Y/3;
+        let n=0;
+        for(const j of partido.jugadores)
+          if(j.x>=x0&&j.x<x1&&j.y>=z0&&j.y<z1) n++;
+        if(n) relleno(x0+0.4,z0+0.4,x1-0.4,z1-0.4, FRIO, a*Math.min(n/6,1)*0.14);
+      }
+    }
+
+    /* — el balón — */
+    if(P('balon') > 0.004){
+      const a = P('balon'), b = partido.balon;
+      anillo(b.x, b.y, 1.5, 0.16, CALIENTE, a*0.85, 20);
+      anillo(b.x, b.y, 2.6, 0.10, CALIENTE, a*0.35, 24);
+      etiquetas.push({t:'BALÓN', x:b.x, z:b.y-3.4, c:'calido'});
+    }
+
+    /* — jugador seguido: su ficha — */
+    if(P('jugador') > 0.004 && seguido != null){
+      const j = partido.jugadores.find(p=> p.id===seguido);
+      if(j){
+        const a = P('jugador');
+        anillo(j.x, j.y, 1.6, 0.20, FRIO, a*0.95, 26);
+        etiquetas.push({t:`#${j.dorsal}`, x:j.x, z:j.y-3.2, c:'frio', grande:true});
+        etiquetas.push({t:`${j.x.toFixed(1)} , ${j.y.toFixed(1)} m`,
+                        x:j.x, z:j.y+3.0, c:'frio'});
+        etiquetas.push({t:`${j.v.toFixed(1)} m/s`, x:j.x+3.6, z:j.y, c:'frio'});
+      }
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, datos.subarray(0, nv*7), gl.DYNAMIC_DRAW);
+  }
+
+  /* ---------- etiquetas en 2D, proyectadas desde el mundo ---------- */
+  function proyectar(x, y, z, viewProj, W, H){
+    const cx = viewProj[0]*x + viewProj[4]*y + viewProj[8]*z + viewProj[12];
+    const cy = viewProj[1]*x + viewProj[5]*y + viewProj[9]*z + viewProj[13];
+    const cw = viewProj[3]*x + viewProj[7]*y + viewProj[11]*z + viewProj[15];
+    if(cw <= 0.001) return null;
+    return [(cx/cw*0.5+0.5)*W, (1-(cy/cw*0.5+0.5))*H];
+  }
+
+  function pintarEtiquetas(viewProj, W, H, dpr){
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,lienzo2d.width, lienzo2d.height);
+    if(!etiquetas.length) return;
+    ctx.scale(dpr, dpr);
+
+    /* Separación vertical: en cenital varias etiquetas caen casi en el mismo
+       punto y se pisan. Se proyectan, se ordenan y se empujan lo justo. */
+    const puestas = [];
+    for(const e of etiquetas){
+      const q = proyectar(e.x, 0.1, e.z, viewProj, W/dpr, H/dpr);
+      if(q) puestas.push({e, x:q[0], y:q[1]});
+    }
+    puestas.sort((a,b)=> a.y-b.y);
+    const ALTO = 19;
+    for(let i=1;i<puestas.length;i++){
+      const a = puestas[i-1], b = puestas[i];
+      if(Math.abs(b.x-a.x) < 130 && b.y-a.y < ALTO) b.y = a.y + ALTO;
+    }
+
+    for(const {e, x, y} of puestas){
+      const p = [x, y];
+      const col = e.c==='calido' ? 'rgba(255,196,107,0.96)' : 'rgba(180,236,255,0.96)';
+      ctx.font = `600 ${e.grande?15:11}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      const w = ctx.measureText(e.t).width;
+      ctx.fillStyle='rgba(6,12,20,0.55)';
+      ctx.fillRect(p[0]-w/2-5, p[1]-8, w+10, 16);
+      ctx.fillStyle=col;
+      ctx.fillText(e.t, p[0], p[1]);
+    }
+  }
+
+  function dibujar(est, attr){
+    if(!nv) return;
+    const {viewProj, camPos, m} = est;
+    gl.useProgram(prog);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    attr(prog, 'pos', buf, 3, 28, 0, 0);
+    attr(prog, 'col', buf, 4, 28, 12, 0);
+    gl.uniformMatrix4fv(prog.u.uViewProj, false, viewProj);
+    gl.uniform3fv(prog.u.uCamPos, camPos);
+    gl.uniform1f(prog.u.uNiebla, m.niebla);
+    gl.drawArrays(gl.TRIANGLES, 0, nv);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+
+  return {registrar, construir, dibujar, pintarEtiquetas};
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   EL GUION — recorrido de cámara y encendido de capas, por scroll.
+
+   La altura de la cámara ES la narrativa: baja hasta el fútbol y vuelve a
+   subir hasta el dato. Cada hito define dónde está la cámara y qué capas
+   del sistema están encendidas; entre hitos se interpola.
+
+   El cambio de MUNDO no vive aquí: va por tiempo, independiente del
+   scroll, para que el entorno se transforme a tu alrededor mientras el
+   partido y el análisis siguen. Esa es la idea de la marca.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* dist: distancia al centro del campo · alt: altura · az: azimut de cámara
+   mira: [x,y,z] objetivo, o 'balon' para seguir la jugada
+   fov: campo de visión en grados */
+const HITOS = [
+  { s:0.00, dist:1250, alt:300, az:2.30, fov:42, mira:[0,150,0],
+    capas:{} },
+  { s:0.11, dist:700,  alt:190, az:2.05, fov:43, mira:[0,86,0],
+    capas:{} },
+  { s:0.22, dist:300,  alt:88,  az:1.80, fov:45, mira:[0,26,0],
+    capas:{} },
+  { s:0.32, dist:118,  alt:24,  az:1.62, fov:49, mira:[0,6,0],
+    capas:{} },
+  { s:0.41, dist:52,   alt:7.5, az:1.50, fov:52, mira:'balon',
+    capas:{} },
+  { s:0.50, dist:34,   alt:5.5, az:1.34, fov:54, mira:'balon',
+    capas:{jugador:1, deteccion:0.35} },
+  { s:0.59, dist:48,   alt:15,  az:1.16, fov:50, mira:'balon',
+    capas:{jugador:0.5, deteccion:1, balon:1} },
+  { s:0.68, dist:78,   alt:36,  az:1.02, fov:46, mira:[0,0,0],
+    capas:{deteccion:0.7, estela:1, balon:0.8} },
+  { s:0.77, dist:104,  alt:72,  az:0.90, fov:42, mira:[0,0,0],
+    capas:{deteccion:0.3, estela:0.9, movimiento:1, balon:0.6} },
+  { s:0.87, dist:96,   alt:132, az:0.80, fov:38, mira:[0,0,0],
+    capas:{estela:0.35, tactica:1, zonas:0.8, balon:0.4, deteccion:0.55} },
+  { s:0.96, dist:34,   alt:172, az:0.74, fov:36, mira:[0,0,0],
+    capas:{tactica:1, zonas:1, deteccion:0.6} },
+  { s:1.00, dist:26,   alt:186, az:0.72, fov:34, mira:[0,0,0],
+    capas:{tactica:0.8, zonas:0.8, deteccion:0.5} },
+];
+
+const CAPAS = ['deteccion','estela','movimiento','tactica','zonas','balon','jugador'];
+
+function estadoGuion(s, partido){
+  s = lim(s, 0, 1);
+  let i = 0;
+  while(i < HITOS.length-2 && HITOS[i+1].s < s) i++;
+  const a = HITOS[i], b = HITOS[i+1];
+  const t = easeIO(lim((s - a.s)/(b.s - a.s || 1), 0, 1));
+
+  const dist = mez(a.dist, b.dist, t);
+  const alt  = mez(a.alt,  b.alt,  t);
+  const az   = mez(a.az,   b.az,   t);
+  const fov  = mez(a.fov,  b.fov,  t);
+
+  /* objetivo: el centro del campo o la jugada, con transición suave */
+  const oa = a.mira === 'balon' ? [partido.balon.x, 1.2, partido.balon.y] : a.mira;
+  const ob = b.mira === 'balon' ? [partido.balon.x, 1.2, partido.balon.y] : b.mira;
+  const mira = [mez(oa[0],ob[0],t), mez(oa[1],ob[1],t), mez(oa[2],ob[2],t)];
+
+  const capas = {};
+  for(const k of CAPAS) capas[k] = mez(a.capas[k]||0, b.capas[k]||0, t);
+
+  const camPos = [mira[0] + Math.cos(az)*dist, alt, mira[2] + Math.sin(az)*dist];
+  return {camPos, mira, fov, capas, hito:i};
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   ESCENA — orquesta los pases de dibujado.
+
+   Orden: entorno (cielo, terreno, suelo y campo, escribiendo profundidad)
+   → cajas opacas (caserío, torres, porterías, valla) → arbolado con
+   transparencia, ordenado de lejos a cerca.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* El cielo es de baja frecuencia (degradados, nubes, bruma) pero cuesta lo
+   mismo que cualquier otro pase a pantalla completa. Se dibuja a media
+   resolución y se estira: la diferencia no se ve y libera la mitad del
+   presupuesto de fragmento, que es lo que permite subir a 4K. */
+const BLIT_VS = `#version 300 es
+in vec2 pos;
+out vec2 vUv;
+void main(){ vUv = pos*0.5 + 0.5; gl_Position = vec4(pos, 0.0, 1.0); }`;
+
+const BLIT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 frag;
+uniform sampler2D uTex;
+void main(){ frag = texture(uTex, vUv); }`;
+
+function crearEscena(gl, lienzo2d){
+  const progEnv   = programa(gl, ENV_VS,  ENV_FS,  'env');
+  const progCart  = programa(gl, CART_VS, CART_FS, 'cartel');
+  const progCaja  = programa(gl, CAJA_VS, CAJA_FS, 'caja');
+  const progSuelo = programa(gl, SUELO_VS, SUELO_FS, 'suelo');
+  const jugadores = crearJugadores(gl);
+  const analisis = crearAnalisis(gl, lienzo2d);
+  const som = crearSombras(gl);
+  const progBlit = programa(gl, BLIT_VS, BLIT_FS, 'blit');
+
+  /* destino de media resolución para el cielo */
+  const cieloTex = gl.createTexture();
+  const cieloFbo = gl.createFramebuffer();
+  let cieloW = 0, cieloH = 0;
+  function ajustarCielo(W, H){
+    const w = Math.max(2, W>>1), h = Math.max(2, H>>1);
+    if(w === cieloW && h === cieloH) return;
+    cieloW = w; cieloH = h;
+    gl.bindTexture(gl.TEXTURE_2D, cieloTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, cieloFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, cieloTex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  const quad  = bufferQuad(gl);
+  const caja  = mallaCaja();
+  const disp  = generarEscena();
+  const suelo = mallaSuelo();
+  const bufSuelo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufSuelo);
+  gl.bufferData(gl.ARRAY_BUFFER, suelo.pos, gl.STATIC_DRAW);
+
+  /* ---------- geometría estática ---------- */
+  const bufCajaPos = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufCajaPos);
+  gl.bufferData(gl.ARRAY_BUFFER, caja.pos, gl.STATIC_DRAW);
+  const bufCajaNor = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufCajaNor);
+  gl.bufferData(gl.ARRAY_BUFFER, caja.nor, gl.STATIC_DRAW);
+
+  const tejado = mallaTejado();
+  const bufTejPos = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufTejPos);
+  gl.bufferData(gl.ARRAY_BUFFER, tejado.pos, gl.STATIC_DRAW);
+  const bufTejNor = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufTejNor);
+  gl.bufferData(gl.ARRAY_BUFFER, tejado.nor, gl.STATIC_DRAW);
+  const datosTej = new Float32Array(80*10);
+  const bufTej = gl.createBuffer();
+  let nTej = 0;
+
+  const bufEsq = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bufEsq);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -.5,-.5,  .5,-.5,  .5,.5,   -.5,-.5,  .5,.5,  -.5,.5]), gl.STATIC_DRAW);
+
+  /* ---------- búferes de instancia ---------- */
+  const N_ARB = disp.arboles.length;
+  const datosArb = new Float32Array(N_ARB*12);
+  const bufArb = gl.createBuffer();
+
+  const N_CAJA = disp.casas.length*2 + 4*2 + 2*3 + 44;
+  const datosCaja = new Float32Array(N_CAJA*10);
+  const bufCaja = gl.createBuffer();
+  let nCajas = 0;
+
+  const orden = disp.arboles.map((_,i)=>i);   /* índices para ordenar por z */
+
+  /* ---------- construcción por frame ---------- */
+  function construir(mA, mB, t, camPos, partido, seguido, peso, vp, W, H){
+    if(partido){
+      jugadores.construir(partido, mA, mB, t, seguido);
+      analisis.registrar(partido);
+      if(peso) analisis.construir(partido, peso, camPos, vp, W, H, seguido);
+    }
+    const aA = ARBOL_MUNDO[mA.id], aB = ARBOL_MUNDO[mB.id];
+    const gA = AGUA_MUNDO[mA.id], gB = AGUA_MUNDO[mB.id];
+    /* 1 si el hueco cae dentro del agua de ese mundo */
+    const enAgua = (a, g) => {
+      if(!g.w) return 0;
+      const az = Math.atan2(a.z, a.x);
+      const da = Math.abs(Math.atan2(Math.sin(az-g.az), Math.cos(az-g.az)));
+      const radio = Math.hypot(a.x*0.80, a.z);
+      return (da < g.ancho && radio > g.dist*0.86) ? 1 : 0;
+    };
+    const cA = CASA_MUNDO[mA.id],  cB = CASA_MUNDO[mB.id];
+    const L = (x,y)=> x+(y-x)*t;
+
+    /* arbolado, ordenado de lejos a cerca para que la transparencia case */
+    for(const i of orden){
+      const a = disp.arboles[i];
+      const dx = a.x-camPos[0], dz = a.z-camPos[2];
+      a._d = dx*dx + dz*dz;
+    }
+    orden.sort((p,q)=> disp.arboles[q]._d - disp.arboles[p]._d);
+
+    for(let k=0;k<N_ARB;k++){
+      const a = disp.arboles[orden[k]];
+      const alto  = L(mez(aA.alto[0], aA.alto[1], a.s),  mez(aB.alto[0], aB.alto[1], a.s))*a.esc;
+      const ancho = L(mez(aA.ancho[0],aA.ancho[1],a.s),  mez(aB.ancho[0],aB.ancho[1],a.s))*a.esc;
+      const dens  = L(aA.densidad, aB.densidad);
+      const moja  = L(enAgua(a,gA), enAgua(a,gB));
+      const vis   = (a.s < dens ? 1 : 0) * (1 - moja);
+      const o = k*12;
+      datosArb[o  ] = a.x; datosArb[o+1] = alturaTerreno(a.x, a.z); datosArb[o+2] = a.z;
+      datosArb[o+3] = ancho*vis; datosArb[o+4] = alto*vis;
+      datosArb[o+5] = aA.tipo;   datosArb[o+6] = a.s;
+      datosArb[o+7] = aB.tipo;   datosArb[o+8] = t;
+      for(let c=0;c<3;c++)
+        datosArb[o+9+c] = Math.pow(L(aA.col[c], aB.col[c]), 2.2);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufArb);
+    gl.bufferData(gl.ARRAY_BUFFER, datosArb, gl.DYNAMIC_DRAW);
+
+    /* cajas */
+    nCajas = 0; nTej = 0;
+    const push = (x,y,z, sx,sy,sz, r,g,b, tipo)=>{
+      const o = nCajas*10;
+      datosCaja[o]=x; datosCaja[o+1]=y; datosCaja[o+2]=z;
+      datosCaja[o+3]=sx; datosCaja[o+4]=sy; datosCaja[o+5]=sz;
+      datosCaja[o+6]=Math.pow(r,2.2); datosCaja[o+7]=Math.pow(g,2.2);
+      datosCaja[o+8]=Math.pow(b,2.2); datosCaja[o+9]=tipo;
+      nCajas++;
+    };
+
+    /* caserío: cuerpo + tejado. En la sabana encoge a casa baja. */
+    const nCasas = L(cA.n, cB.n);
+    for(let i=0;i<disp.casas.length;i++){
+      const c = disp.casas[i];
+      if(c.s > nCasas) continue;
+      /* tampoco hay caserío dentro del agua */
+      if(L(enAgua(c,gA), enAgua(c,gB)) > 0.5) continue;
+      const h = L(mez(cA.alto[0],cA.alto[1],c.s), mez(cB.alto[0],cB.alto[1],c.s));
+      const muro = [0,1,2].map(k=> L(cA.muro[k], cB.muro[k]));
+      const tej  = [0,1,2].map(k=> L(cA.tejado[k], cB.tejado[k]));
+      const y0 = alturaTerreno(c.x, c.z);
+      push(c.x, y0, c.z, c.w, h, c.d, muro[0],muro[1],muro[2], 0);
+      if(nTej < 80){
+        const o = nTej*10;
+        datosTej[o]=c.x; datosTej[o+1]=y0+h; datosTej[o+2]=c.z;
+        /* el faldón vuela un poco sobre la fachada, como un alero */
+        datosTej[o+3]=c.w*1.12; datosTej[o+4]=Math.min(c.w,c.d)*0.42; datosTej[o+5]=c.d*1.12;
+        datosTej[o+6]=Math.pow(tej[0],2.2); datosTej[o+7]=Math.pow(tej[1],2.2);
+        datosTej[o+8]=Math.pow(tej[2],2.2); datosTej[o+9]=1;
+        nTej++;
+      }
+    }
+
+    /* torres de luz */
+    for(const e of disp.estructuras){
+      if(e.tipo === 'torre'){
+        const yt = alturaTerreno(e.x, e.z);
+        push(e.x, yt, e.z, 0.9, 17, 0.9, 0.30,0.31,0.33, 2);
+        push(e.x, yt+17, e.z, 5.2, 1.5, 1.0, 0.36,0.37,0.39, 2);
+      }
+      if(e.tipo === 'porteria'){
+        const L_ = e.lado;
+        push(e.x, 0,  3.66, 0.14, 2.44, 0.14, 0.92,0.93,0.94, 2);
+        push(e.x, 0, -3.66, 0.14, 2.44, 0.14, 0.92,0.93,0.94, 2);
+        push(e.x, 2.44, 0, 0.14, 0.14, 7.32, 0.92,0.93,0.94, 2);
+      }
+      if(e.tipo === 'valla'){
+        /* postes del cierre perimetral */
+        for(let i=0;i<22;i++){
+          const u = i/22*Math.PI*2;
+          const vx=Math.cos(u)*62, vz=Math.sin(u)*44;
+          push(vx, alturaTerreno(vx,vz), vz, 0.16, 2.1, 0.16, 0.30,0.32,0.30, 2);
+        }
+      }
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufCaja);
+    gl.bufferData(gl.ARRAY_BUFFER, datosCaja, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufTej);
+    gl.bufferData(gl.ARRAY_BUFFER, datosTej, gl.DYNAMIC_DRAW);
+  }
+
+  /* ---------- ayudantes de atributos ----------
+     Se usa el VAO por defecto, así que los arrays activos y sus divisores
+     son estado GLOBAL y se filtran de un programa al siguiente. Con varios
+     programas de distinta disposición eso acaba en INVALID_OPERATION, así
+     que antes de configurar cada uno se limpia lo que dejó el anterior. */
+  const MAX_ATTR = Math.min(gl.getParameter(gl.MAX_VERTEX_ATTRIBS), 16);
+  function limpiarAttrs(){
+    for(let i=0;i<MAX_ATTR;i++){
+      gl.disableVertexAttribArray(i);
+      gl.vertexAttribDivisor(i, 0);
+    }
+  }
+  function attr(prog, nombre, buf, tam, stride, offset, divisor){
+    const loc = gl.getAttribLocation(prog, nombre);
+    if(loc < 0) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, tam, gl.FLOAT, false, stride, offset);
+    gl.vertexAttribDivisor(loc, divisor||0);
+  }
+
+  function comunes(prog, m, camPos, viewProj){
+    /* mapa de sombras: unidad 0 para todos los receptores */
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, som.tex);
+    gl.uniform1i(prog.u.uMapaSombra, 0);
+    gl.uniformMatrix4fv(prog.u.uLuzVP, false, som.luzVP);
+    gl.uniform1f(prog.u.uSombraFuerza, som.ok ? (1.0 - m.noche*0.78) : 0.0);
+    gl.uniformMatrix4fv(prog.u.uViewProj, false, viewProj);
+    gl.uniform3fv(prog.u.uCamPos, camPos);
+    gl.uniform3fv(prog.u.uHaze, aLineal(m.haze));
+    gl.uniform3fv(prog.u.uSunDir, m.sunDir);
+    gl.uniform3fv(prog.u.uSunCol, aLineal(m.sunCol));
+    gl.uniform3fv(prog.u.uSkyTop, aLineal(m.skyTop));
+    gl.uniform1f(prog.u.uNiebla, m.niebla);
+    gl.uniform1f(prog.u.uExposure, m.exposure);
+    gl.uniform1f(prog.u.uNoche, m.noche);
+  }
+
+  /* ---------- dibujado ---------- */
+  function dibujar(est){
+    const {W,H, viewProj, invViewProj, camPos, m, tiempo, campo} = est;
+    const pases = est.pases || 'todo';
+    const hacer = n => pases==='todo' || pases.indexOf(n)>=0;
+
+    /* ── 0 · mapa de sombras, desde el sol ── */
+    if(som.ok && hacer('sombra')){
+      som.calcularLuzVP(m.sunDir);
+      /* La textura de sombra sigue enlazada a la unidad 0 desde el frame
+         anterior. Si se deja así al enlazar SU propio framebuffer se forma
+         un bucle de realimentación y el driver descarta el dibujado. */
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, som.fbo);
+      gl.viewport(0, 0, SOMBRA_LADO, SOMBRA_LADO);
+      gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+
+      limpiarAttrs(); gl.useProgram(som.progCaja);
+      gl.uniformMatrix4fv(som.progCaja.u.uLuzVP, false, som.luzVP);
+      attr(som.progCaja, 'pos', bufCajaPos, 3, 0, 0, 0);
+      attr(som.progCaja, 'iPos', bufCaja, 3, 40, 0,  1);
+      attr(som.progCaja, 'iEsc', bufCaja, 3, 40, 12, 1);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, caja.cuenta, nCajas);
+
+      limpiarAttrs();
+      attr(som.progCaja, 'pos', bufTejPos, 3, 0, 0, 0);
+      attr(som.progCaja, 'iPos', bufTej, 3, 40, 0,  1);
+      attr(som.progCaja, 'iEsc', bufTej, 3, 40, 12, 1);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, tejado.cuenta, nTej);
+
+      limpiarAttrs();
+      gl.useProgram(som.progJug);
+      gl.uniformMatrix4fv(som.progJug.u.uLuzVP, false, som.luzVP);
+      jugadores.dibujarSombra(som.progJug, attr);
+
+      limpiarAttrs(); gl.useProgram(som.progCart);
+      gl.uniformMatrix4fv(som.progCart.u.uLuzVP, false, som.luzVP);
+      gl.uniform3fv(som.progCart.u.uLuzDir, m.sunDir);
+      attr(som.progCart, 'esq', bufEsq, 2, 0, 0, 0);
+      attr(som.progCart, 'iPos',   bufArb, 3, 48, 0,  1);
+      attr(som.progCart, 'iForma', bufArb, 4, 48, 12, 1);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, N_ARB);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    gl.viewport(0,0,W,H);
+    gl.disable(gl.BLEND);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+
+    /* 1 · cielo, a media resolución y estirado después */
+    if(hacer('cielo')){
+    ajustarCielo(W, H);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, null);        /* nunca leer lo que se escribe */
+    gl.bindFramebuffer(gl.FRAMEBUFFER, cieloFbo);
+    gl.viewport(0, 0, cieloW, cieloH);
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    limpiarAttrs(); gl.useProgram(progEnv);
+    attr(progEnv, 'pos', quad, 2, 0, 0, 0);
+    gl.uniform2f(progEnv.u.uRes, cieloW, cieloH);
+    gl.uniformMatrix4fv(progEnv.u.uInvViewProj, false, invViewProj);
+    gl.uniform3fv(progEnv.u.uCamPos, camPos);
+    gl.uniform1f(progEnv.u.uTime, tiempo);
+    subirMundo(gl, progEnv, m);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, W, H);
+    limpiarAttrs(); gl.useProgram(progBlit);
+    attr(progBlit, 'pos', quad, 2, 0, 0, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, cieloTex);
+    gl.uniform1i(progBlit.u.uTex, 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+
+    /* 2 · suelo y campo, ya con profundidad de rasterizador */
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    if(hacer('suelo')){
+    limpiarAttrs(); gl.useProgram(progSuelo);
+    attr(progSuelo, 'pos', bufSuelo, 2, 0, 0, 0);
+    gl.uniform3fv(progSuelo.u.uSueloCol, aLineal(m.sueloCol));
+    gl.uniform1f(progSuelo.u.uTierra, m.tierra);
+    gl.uniform1f(progSuelo.u.uNieve, m.nieve);
+    gl.uniform1f(progSuelo.u.uCampo, campo);
+    gl.uniform1f(progSuelo.u.uWater, m.water);
+    gl.uniform1f(progSuelo.u.uWaterAz, m.waterAz);
+    gl.uniform1f(progSuelo.u.uWaterWide, m.waterWide);
+    gl.uniform1f(progSuelo.u.uWaterDist, m.waterDist);
+    gl.uniform1f(progSuelo.u.uTime, tiempo);
+    gl.uniform3fv(progSuelo.u.uWaterCol, aLineal(m.waterCol));
+    gl.uniform3fv(progSuelo.u.uSkyHorizon, aLineal(m.skyHorizon));
+    comunes(progSuelo, m, camPos, viewProj);
+    gl.drawArrays(gl.TRIANGLES, 0, suelo.cuenta);
+    }
+
+    /* 3 · cajas opacas */
+    if(hacer('cajas')){
+    limpiarAttrs(); gl.useProgram(progCaja);
+    attr(progCaja, 'pos', bufCajaPos, 3, 0, 0, 0);
+    attr(progCaja, 'nor', bufCajaNor, 3, 0, 0, 0);
+    attr(progCaja, 'iPos', bufCaja, 3, 40, 0,  1);
+    attr(progCaja, 'iEsc', bufCaja, 3, 40, 12, 1);
+    attr(progCaja, 'iCol', bufCaja, 4, 40, 24, 1);
+    comunes(progCaja, m, camPos, viewProj);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, caja.cuenta, nCajas);
+
+    limpiarAttrs();
+    attr(progCaja, 'pos', bufTejPos, 3, 0, 0, 0);
+    attr(progCaja, 'nor', bufTejNor, 3, 0, 0, 0);
+    attr(progCaja, 'iPos', bufTej, 3, 40, 0,  1);
+    attr(progCaja, 'iEsc', bufTej, 3, 40, 12, 1);
+    attr(progCaja, 'iCol', bufTej, 4, 40, 24, 1);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, tejado.cuenta, nTej);
+    }
+
+    /* 4 · jugadores */
+    if(hacer('jug')){ limpiarAttrs(); jugadores.dibujar(est, attr, comunes); }
+
+    /* 5 · arbolado, transparente y ya ordenado de lejos a cerca */
+    if(hacer('arb')){
+    limpiarAttrs(); gl.useProgram(progCart);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    attr(progCart, 'esq', bufEsq, 2, 0, 0, 0);
+    attr(progCart, 'iPos',    bufArb, 3, 48, 0,  1);
+    attr(progCart, 'iForma',  bufArb, 4, 48, 12, 1);
+    attr(progCart, 'iForma2', bufArb, 2, 48, 28, 1);
+    attr(progCart, 'iCol',    bufArb, 3, 48, 36, 1);
+    comunes(progCart, m, camPos, viewProj);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, N_ARB);
+    }
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+
+    /* 6 · capa de análisis, siempre por encima de la escena */
+    if(hacer('capa')){ limpiarAttrs(); analisis.dibujar(est, attr); }
+  }
+
+  return {construir, dibujar, disp, analisis};
+}
+
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   MOTOR DE LA PÁGINA
+
+   Une las piezas: simulación → cámara por scroll → escena → capa de
+   análisis → lecturas en el texto.
+
+   Dos relojes independientes, y esa es la idea de la marca:
+   · el SCROLL mueve la cámara y enciende las capas del sistema,
+   · el TIEMPO cambia el mundo alrededor cada 30 segundos.
+   El partido y el análisis nunca se interrumpen.
+   ═══════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+
+const MENOS_MOV = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const cv    = document.getElementById('escena');
+const cvEt  = document.getElementById('etiq');
+const gl    = cv.getContext('webgl2', {antialias:true, alpha:false, powerPreference:'high-performance'});
+
+if(!gl){
+  document.getElementById('cargando').innerHTML =
+    '<span>Este navegador no admite WebGL2</span>';
+  return;
+}
+
+const esc = crearEscena(gl, cvEt);
+const par = crearPartido(20260821);
+
+/* ─────────── resolución adaptativa ───────────
+   El coste es de fragmento, así que la palanca correcta es la resolución.
+   Se sube o se baja sola buscando 55 fps, sin preguntar al usuario. */
+let escala = 1.0, W=0, H=0, DPR=1;
+/* Sin techo artificial: en una pantalla Retina esto llega a 4K de verdad.
+   Si la GPU no da, la escala adaptativa baja sola; si da, se aprovecha. */
+const DPR_MAX = Math.min(devicePixelRatio||1, 2);
+const PIX_MAX = 9.0e6;      /* tope de píxeles por frame, ~4K */
+
+function medir(){
+  DPR = DPR_MAX * escala;
+  W = Math.max(2, Math.round(innerWidth*DPR));
+  H = Math.max(2, Math.round(innerHeight*DPR));
+  if(W*H > PIX_MAX){                     /* nunca por encima del tope */
+    const k = Math.sqrt(PIX_MAX/(W*H));
+    DPR *= k; W = Math.round(W*k); H = Math.round(H*k);
+  }
+  cv.width=W; cv.height=H;
+  cvEt.width=W; cvEt.height=H;
+  cvEt.style.width=innerWidth+'px'; cvEt.style.height=innerHeight+'px';
+}
+medir();
+addEventListener('resize', ()=>{ medir(); grano(); });
+
+let acumFps=0, nFps=0, ultimoAjuste=0;
+function ajustarEscala(dt, ahora){
+  acumFps += 1/Math.max(dt,0.001); nFps++;
+  if(ahora - ultimoAjuste < 1400) return;
+  const fps = acumFps/nFps; acumFps=0; nFps=0; ultimoAjuste=ahora;
+  const antes = escala;
+  if(fps < 44 && escala > 0.45) escala = Math.max(0.45, escala-0.12);
+  else if(fps > 57 && escala < 1.0) escala = Math.min(1.0, escala+0.06);
+  if(escala !== antes) medir();
+}
+
+/* ─────────── grano de película ───────────
+   Fijo y con pointer-events desactivados: nunca sobre un contenedor que
+   haga scroll, o el repintado continuo se come el móvil. */
+const cvG = document.getElementById('grano');
+function grano(){
+  const g = cvG.getContext('2d');
+  const w = 220, h = 220;
+  cvG.width=w; cvG.height=h;
+  cvG.style.width=innerWidth+'px'; cvG.style.height=innerHeight+'px';
+  const d = g.createImageData(w,h);
+  let s = 12345;
+  for(let i=0;i<d.data.length;i+=4){
+    s = (s*1664525 + 1013904223) >>> 0;
+    const v = 110 + (s % 40);
+    d.data[i]=d.data[i+1]=d.data[i+2]=v; d.data[i+3]=30;
+  }
+  g.putImageData(d,0,0);
+}
+grano();
+
+/* ─────────── ciclo de mundos, por tiempo ─────────── */
+const DUR_MUNDO = 30000, DUR_TRANS = 5200;
+let relojMundo = 0;
+const elMundoN = document.getElementById('mundo-n');
+const elMundoB = document.getElementById('mundo-b');
+
+/* ─────────── hitos del guion en el raíl lateral ─────────── */
+const elFases = document.getElementById('fases');
+for(let i=0;i<HITOS.length-1;i++) elFases.appendChild(document.createElement('i'));
+const marcasFase = [...elFases.children];
+
+/* ─────────── lecturas del texto ─────────── */
+const lect = id => document.getElementById(id);
+const mN=lect('m-n'), mPunta=lect('m-punta'), mRitmo=lect('m-ritmo');
+const mAmp=lect('m-amp'), mProf=lect('m-prof'), mEnt=lect('m-ent');
+const iAmp=lect('i-amp'), iProf=lect('i-prof'), iLinea=lect('i-linea'), iEnt=lect('i-ent');
+let punta=0, ritmo=0, tick=0;
+/* medias del tramo, que es lo que iría en un informe de verdad */
+let acAmp=0, acProf=0, acLinea=0, acEnt=0, nAc=0;
+
+function lecturas(){
+  const M = par.metricas('A');
+  const vmax = Math.max(...par.jugadores.map(j=>j.v));
+  punta = Math.max(punta*0.997, vmax);
+  const media = par.jugadores.reduce((a,j)=>a+j.v,0)/par.jugadores.length;
+  ritmo = ritmo ? mez(ritmo, media*60, 0.02) : media*60;
+
+  acAmp+=M.amplitud; acProf+=M.profundidad;
+  acLinea+=M.alturaLinea; acEnt+=M.entreLineas; nAc++;
+
+  if((tick++ % 8) !== 0) return;
+  if(mN) mN.textContent = par.jugadores.length;
+  if(mPunta) mPunta.innerHTML = punta.toFixed(1)+'<u>m/s</u>';
+  if(mRitmo) mRitmo.innerHTML = Math.round(ritmo)+'<u>m/min</u>';
+  if(mAmp)  mAmp.innerHTML  = M.amplitud.toFixed(1)+'<u>m</u>';
+  if(mProf) mProf.innerHTML = M.profundidad.toFixed(1)+'<u>m</u>';
+  if(mEnt)  mEnt.innerHTML  = M.entreLineas.toFixed(1)+'<u>m</u>';
+  if(iAmp)  iAmp.innerHTML  = (acAmp/nAc).toFixed(1)+'<u>m</u>';
+  if(iProf) iProf.innerHTML = (acProf/nAc).toFixed(1)+'<u>m</u>';
+  if(iLinea)iLinea.innerHTML= (acLinea/nAc).toFixed(0)+'<u>m</u>';
+  if(iEnt)  iEnt.innerHTML  = (acEnt/nAc).toFixed(1)+'<u>m</u>';
+}
+
+/* ─────────── progreso de scroll ───────────
+   Se lee dentro del bucle que ya está corriendo, no con un escuchador de
+   scroll: así no hay trabajo sin agrupar en cada evento. */
+function progreso(){
+  const alto = document.documentElement.scrollHeight - innerHeight;
+  const inf = document.getElementById('informe');
+  /* el recorrido 3D ocupa hasta donde empieza el informe */
+  const finEscena = inf.getBoundingClientRect().top + scrollY - innerHeight*0.5;
+  return lim(scrollY / Math.max(finEscena, 1), 0, 1);
+}
+
+/* actos, cacheados: consultarlos cada frame con querySelectorAll es tirar trabajo */
+const ACTOS = [...document.querySelectorAll('.acto')].map(el=>({
+  el, caja: el.querySelector('.caja'), der: el.classList.contains('derecha')
+}));
+
+/* ─────────── bucle ─────────── */
+let ultimo = 0, arrancado = false;
+const seguido = 9;                     /* el jugador que sigue la cámara */
+
+function frame(ahora){
+  requestAnimationFrame(frame);
+  const dt = ultimo ? Math.min((ahora-ultimo)/1000, 0.05) : 0.016;
+  ultimo = ahora;
+
+  par.paso(MENOS_MOV ? 0.016 : dt);
+  relojMundo += (MENOS_MOV ? 0 : dt*1000);
+
+  /* mundo activo y transición */
+  const ciclo = Math.floor(relojMundo/DUR_MUNDO) % MUNDOS.length;
+  const sig   = (ciclo+1) % MUNDOS.length;
+  const dentro = relojMundo % DUR_MUNDO;
+  const tt = dentro > DUR_MUNDO-DUR_TRANS
+           ? easeIO((dentro-(DUR_MUNDO-DUR_TRANS))/DUR_TRANS) : 0;
+  const mA = MUNDOS[ciclo], mB = MUNDOS[sig];
+  const m = mezclarMundos(mA, mB, tt);
+
+  elMundoN.innerHTML = tt > 0.5 ? `<b>${mB.nombre}</b>` : `<b>${mA.nombre}</b>`;
+  elMundoB.style.width = (dentro/DUR_MUNDO*100)+'%';
+
+  /* cámara y capas según el scroll */
+  const s = progreso();
+  const g = estadoGuion(s, par);
+  marcasFase.forEach((el,i)=> i===g.hito ? el.setAttribute('data-on','')
+                                         : el.removeAttribute('data-on'));
+
+  const view = M4.mirar(g.camPos, g.mira, [0,1,0]);
+  const proj = M4.perspectiva(g.fov*Math.PI/180, W/H, 0.4, 30000);
+  const vp = M4.mul(proj, view);
+
+  esc.construir(mA, mB, tt, g.camPos, par, seguido, g.capas, vp, W, H);
+  esc.dibujar({W,H, viewProj:vp, invViewProj:M4.invertir(vp),
+               camPos:g.camPos, m, tiempo:ahora*0.001, campo:1});
+  esc.analisis.pintarEtiquetas(vp, W, H, DPR);
+
+  /* Sólo se lee el acto que está centrado: los demás se apagan. Sin esto
+     se solapan dos textos a la vez y con la cabecera fija. */
+  let derecha = false, mejor = 1e9;
+  for(const a of ACTOS){
+    const r = a.el.getBoundingClientRect();
+    const centro = r.top + r.height*0.5 - innerHeight*0.5;
+    const d = Math.abs(centro)/(innerHeight*0.5);
+    const vis = lim(1 - Math.max(0, d-0.16)/0.42, 0, 1);
+    a.caja.style.opacity = vis.toFixed(3);
+    a.caja.style.transform = `translateY(${(centro*0.055).toFixed(1)}px)`;
+    a.caja.style.pointerEvents = vis > 0.6 ? 'auto' : 'none';
+    if(d < mejor){ mejor = d; derecha = a.der; }
+  }
+  document.body.classList.toggle('der', derecha);
+
+  lecturas();
+  ajustarEscala(dt, ahora);
+
+  if(!arrancado){
+    arrancado = true;
+    document.getElementById('cargando').classList.add('fuera');
+  }
+}
+requestAnimationFrame(frame);
+
+})();
+
+</script>
+</body>
+</html>

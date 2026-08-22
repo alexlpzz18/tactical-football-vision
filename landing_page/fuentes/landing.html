@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACIIES · Cualquier campo, cualquier partido</title>
+<meta name="description" content="Visión artificial aplicada al fútbol. Convertimos el vídeo de tus partidos en análisis táctico, juegues donde juegues.">
+<style>
+  /* ═══ Identidad: el mundo es cálido, la máquina es fría ═══
+     Todo lo que dibuja el sistema usa el mismo cian pálido y nunca se
+     confunde con la escena. Es la única regla de color de la página. */
+  :root{
+    --noche:#05080C; --noche-2:#0A1018; --noche-3:#111A25;
+    --tinta:#EAF2F8; --tinta-2:#9DB0C2; --tinta-3:#5E7286;
+    --frio:#9FE8FF; --frio-2:#4FC3EC;
+    --calido:#FFC46B;
+    --linea:rgba(159,232,255,.16); --linea-2:rgba(159,232,255,.32);
+    --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:auto}
+  body{background:var(--noche);color:var(--tinta);font-family:var(--sans);
+       font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased;
+       overflow-x:hidden}
+  ::selection{background:var(--frio);color:var(--noche)}
+  :focus-visible{outline:2px solid var(--frio);outline-offset:3px}
+  a{color:inherit;text-decoration:none}
+
+  /* ═══ Lienzos ═══ */
+  #escena,#etiq{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+  #escena{z-index:0}
+  #etiq{z-index:1;pointer-events:none}
+  /* velo que oscurece la escena bajo el texto, para que siempre se lea */
+  /* Dos capas: una lateral para la columna de texto y otra arriba y abajo
+     para la cabecera y los indicadores. Sin esto el titular compite con el
+     terreno iluminado y se pierde. */
+  #velo{position:fixed;inset:0;z-index:2;pointer-events:none;
+        background:
+          linear-gradient(180deg,rgba(5,8,12,.72) 0%,rgba(5,8,12,0) 18%,
+                          rgba(5,8,12,0) 74%,rgba(5,8,12,.66) 100%),
+          linear-gradient(90deg,rgba(5,8,12,.90) 0%,rgba(5,8,12,.72) 26%,
+                          rgba(5,8,12,.24) 46%,rgba(5,8,12,0) 62%)}
+  .acto.derecha ~ #velo{}
+  @media(max-width:820px){
+    #velo{background:linear-gradient(180deg,rgba(5,8,12,.72) 0%,rgba(5,8,12,.30) 26%,
+                    rgba(5,8,12,.62) 62%,rgba(5,8,12,.92) 100%)}
+  }
+  #grano{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:.35;
+         mix-blend-mode:overlay}
+
+  /* ═══ Cabecera ═══ */
+  header{position:fixed;top:0;left:0;right:0;z-index:20;
+         padding:22px clamp(18px,4vw,42px);
+         display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .marca{display:flex;align-items:baseline;gap:11px}
+  .marca b{font-size:19px;font-weight:700;letter-spacing:.16em}
+  .marca span{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;
+              color:var(--tinta-3);text-transform:uppercase}
+  @media(max-width:600px){.marca span{display:none}}
+
+  .cta{display:inline-flex;align-items:center;gap:9px;white-space:nowrap;
+       font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+       text-transform:uppercase;padding:11px 18px;border-radius:2px;
+       background:var(--frio);color:#04131B;font-weight:600;
+       transition:transform .15s ease, background .2s ease}
+  .cta:hover{background:#C4F0FF}
+  .cta:active{transform:translateY(1px)}
+  .cta.fantasma{background:transparent;color:var(--frio);
+                border:1px solid var(--linea-2)}
+  .cta.fantasma:hover{background:rgba(159,232,255,.08)}
+
+  /* ═══ Contenido sobre la escena ═══ */
+  main{position:relative;z-index:10}
+  /* cuando el texto va a la derecha, el velo se refleja */
+  body.der #velo{transform:scaleX(-1)}
+  body.der #velo{transition:none}
+  .acto{min-height:100vh;display:flex;align-items:center;
+        padding:120px clamp(18px,4vw,42px) 80px;pointer-events:none}
+  .caja{max-width:520px;pointer-events:auto;
+        will-change:opacity,transform}
+  .acto.derecha{justify-content:flex-end}
+  .acto.derecha .caja{text-align:right}
+
+  .clave{font-family:var(--mono);font-size:11px;letter-spacing:.26em;
+         text-transform:uppercase;color:var(--frio);margin-bottom:20px;
+         display:flex;align-items:center;gap:11px}
+  .acto.derecha .clave{justify-content:flex-end}
+  .clave::before{content:"";width:26px;height:1px;background:var(--frio);opacity:.6}
+  .acto.derecha .clave::before{display:none}
+
+  h1{font-size:clamp(38px,6.4vw,86px);line-height:.98;letter-spacing:-.04em;
+     font-weight:700;text-wrap:balance}
+  h1 em{font-style:normal;color:var(--frio);display:block}
+  h2{font-size:clamp(28px,3.9vw,50px);line-height:1.04;letter-spacing:-.032em;
+     font-weight:650;text-wrap:balance}
+  p.dice{font-size:clamp(16px,1.35vw,18.5px);color:var(--tinta-2);
+         margin-top:20px;max-width:44ch}
+  .acto.derecha p.dice{margin-left:auto}
+
+  .botones{display:flex;gap:12px;margin-top:34px;flex-wrap:wrap}
+
+  /* lecturas técnicas: aparecen con moderación, como un instrumento */
+  .lectura{display:flex;gap:0;margin-top:30px;border-top:1px solid var(--linea)}
+  .lectura div{flex:1;padding:13px 16px 11px 0}
+  .lectura div+div{padding-left:18px;border-left:1px solid var(--linea)}
+  .lectura .k{display:block;font-family:var(--mono);font-size:9.5px;
+              letter-spacing:.18em;text-transform:uppercase;color:var(--tinta-3);
+              margin-bottom:6px}
+  .lectura .v{display:block;font-family:var(--mono);font-size:19px;font-weight:600;
+              color:var(--frio);font-variant-numeric:tabular-nums}
+  .lectura .v u{text-decoration:none;font-size:11px;color:var(--tinta-3);
+                margin-left:3px;font-weight:400}
+
+  /* ═══ Informe final ═══ */
+  #informe{position:relative;z-index:12;background:var(--noche);
+           border-top:1px solid var(--linea);
+           padding:clamp(64px,9vw,120px) clamp(18px,4vw,42px)}
+  .envoltura{max-width:1080px;margin:0 auto}
+  .cabecera-inf{display:flex;justify-content:space-between;align-items:flex-end;
+                gap:24px;flex-wrap:wrap;padding-bottom:22px;
+                border-bottom:1px solid var(--linea)}
+  .cabecera-inf .t{font-size:clamp(24px,3vw,34px);font-weight:650;letter-spacing:-.03em}
+  .cabecera-inf .f{font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+                   text-transform:uppercase;color:var(--tinta-3)}
+
+  .rejilla{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+           background:var(--linea);margin-top:1px}
+  .ficha{background:var(--noche);padding:22px 20px}
+  .ficha .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;
+            text-transform:uppercase;color:var(--tinta-3);display:block;margin-bottom:10px}
+  .ficha .v{display:block;font-family:var(--mono);font-size:clamp(24px,2.6vw,32px);font-weight:600;
+            color:var(--tinta);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .ficha .v u{text-decoration:none;font-size:12px;color:var(--tinta-3);margin-left:4px}
+  .ficha .d{display:block;font-size:13px;color:var(--tinta-3);margin-top:10px;line-height:1.45}
+  @media(max-width:860px){.rejilla{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:480px){.rejilla{grid-template-columns:1fr}}
+
+  .conclusiones{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(24px,4vw,52px);
+                margin-top:clamp(40px,5vw,64px);align-items:start}
+  @media(max-width:860px){.conclusiones{grid-template-columns:1fr}}
+  .lista{list-style:none}
+  .lista li{padding:18px 0;border-bottom:1px solid var(--linea);display:flex;gap:16px}
+  .lista li:first-child{border-top:1px solid var(--linea)}
+  .lista .n{font-family:var(--mono);font-size:11px;color:var(--frio);padding-top:3px;
+            flex-shrink:0}
+  .lista b{display:block;font-weight:650;margin-bottom:5px}
+  .lista span{color:var(--tinta-2);font-size:15px}
+
+  .nota{background:var(--noche-2);border:1px solid var(--linea);padding:24px;
+        border-radius:3px}
+  .nota .k{font-family:var(--mono);font-size:10px;letter-spacing:.2em;
+           text-transform:uppercase;color:var(--frio);display:block;margin-bottom:12px}
+  .nota p{font-size:15px;color:var(--tinta-2)}
+  .nota p+p{margin-top:12px}
+
+  #cierre{position:relative;z-index:12;background:var(--noche);
+          padding:clamp(64px,9vw,120px) clamp(18px,4vw,42px) 90px;
+          border-top:1px solid var(--linea);text-align:center}
+  #cierre h2{max-width:16ch;margin:0 auto}
+  #cierre p{color:var(--tinta-2);margin:20px auto 0;max-width:48ch}
+  #cierre .botones{justify-content:center}
+
+  footer{position:relative;z-index:12;background:var(--noche);
+         border-top:1px solid var(--linea);padding:26px clamp(18px,4vw,42px);
+         display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+         font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+         color:var(--tinta-3);text-transform:uppercase}
+
+  /* ═══ Indicador de mundo ═══ */
+  #mundo{position:fixed;left:clamp(18px,4vw,42px);bottom:26px;z-index:20;
+         font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;
+         text-transform:uppercase;color:var(--tinta-3);
+         display:flex;align-items:center;gap:12px;pointer-events:none}
+  #mundo b{color:var(--frio);font-weight:600}
+  #mundo .barra{width:52px;height:1px;background:var(--linea-2);position:relative}
+  #mundo .barra i{position:absolute;inset:0 auto 0 0;background:var(--frio);width:0}
+  @media(max-width:820px){#mundo{bottom:14px}}
+
+  /* ═══ Progreso de fase ═══ */
+  #fases{position:fixed;right:clamp(18px,4vw,42px);top:50%;transform:translateY(-50%);
+         z-index:20;display:flex;flex-direction:column;gap:0;pointer-events:none}
+  #fases i{display:block;width:1px;height:26px;background:var(--linea-2);
+           position:relative;transition:background .4s ease}
+  #fases i[data-on]{background:var(--frio)}
+  @media(max-width:820px){#fases{display:none}}
+
+  .cargando{position:fixed;inset:0;z-index:60;background:var(--noche);
+            display:grid;place-items:center;transition:opacity .8s ease}
+  .cargando.fuera{opacity:0;pointer-events:none}
+  .cargando span{font-family:var(--mono);font-size:11px;letter-spacing:.3em;
+                 text-transform:uppercase;color:var(--tinta-3)}
+
+  @media(prefers-reduced-motion:reduce){
+    .cta{transition:none}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="escena"></canvas>
+<canvas id="etiq"></canvas>
+<div id="velo"></div>
+<canvas id="grano"></canvas>
+
+<header>
+  <div class="marca"><b>ACIIES</b><span>Visión artificial · Fútbol</span></div>
+  <a href="#contacto" class="cta">Pedir una demo</a>
+</header>
+
+<div id="mundo"><span id="mundo-n">—</span><span class="barra"><i id="mundo-b"></i></span></div>
+<div id="fases"></div>
+
+<main>
+  <section class="acto">
+    <div class="caja">
+      <div class="clave">Cualquier campo</div>
+      <h1>El mundo cambia.<em>El juego no.</em></h1>
+      <p class="dice">Visión artificial que convierte el vídeo de un partido en análisis táctico. Da igual el campo, el clima o la categoría.</p>
+      <div class="botones">
+        <a href="#contacto" class="cta">Pedir una demo</a>
+        <a href="#informe" class="cta fantasma">Ver un informe</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="acto derecha">
+    <div class="caja">
+      <div class="clave">El sitio da igual</div>
+      <h2>Un pueblo del interior. Un campo junto al mar. Tierra roja.</h2>
+      <p class="dice">El fútbol se juega en sitios que no se parecen en nada. Lo que ocurre dentro de las líneas es siempre lo mismo: veintidós personas ocupando un espacio.</p>
+    </div>
+  </section>
+
+  <section class="acto">
+    <div class="caja">
+      <div class="clave">El punto de partida</div>
+      <h2>Una cámara. Nada más.</h2>
+      <p class="dice">Sin sensores, sin petos con GPS, sin instalar nada. El vídeo que tu club ya graba desde la banda o desde la grada es suficiente.</p>
+    </div>
+  </section>
+
+  <section class="acto derecha">
+    <div class="caja">
+      <div class="clave">Lo que ves tú</div>
+      <h2>Desde la banda solo se ve el balón.</h2>
+      <p class="dice">Es el problema de siempre. Donde está la pelota hay veintiún jugadores más colocándose, y esa es la parte que decide los partidos.</p>
+    </div>
+  </section>
+
+  <section class="acto">
+    <div class="caja">
+      <div class="clave">Lo que ve el sistema</div>
+      <h2>Cada jugador, una posición en el campo.</h2>
+      <p class="dice">No un recorte de vídeo: una coordenada en metros sobre el terreno, fotograma a fotograma, con su identidad mantenida durante todo el partido.</p>
+      <div class="lectura">
+        <div><span class="k">Seguidos</span><span class="v" id="m-n">22</span></div>
+        <div><span class="k">Frecuencia</span><span class="v" id="m-fps">25<u>Hz</u></span></div>
+        <div><span class="k">Campo</span><span class="v">105<u>× 68 m</u></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="acto derecha">
+    <div class="caja">
+      <div class="clave">Movimiento</div>
+      <h2>Las líneas no se dibujan. Se recorren.</h2>
+      <p class="dice">Cada trazo del campo es el camino que alguien ha hecho de verdad. De ahí salen las distancias, las velocidades y los metros recorridos.</p>
+      <div class="lectura">
+        <div><span class="k">Punta</span><span class="v" id="m-punta">0<u>m/s</u></span></div>
+        <div><span class="k">Ritmo</span><span class="v" id="m-ritmo">0<u>m/min</u></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="acto">
+    <div class="caja">
+      <div class="clave">Estructura</div>
+      <h2>La forma del equipo, en metros.</h2>
+      <p class="dice">Amplitud, profundidad, altura de la línea defensiva, distancia entre líneas y ocupación por zonas. El vocabulario que ya usas en la pizarra, medido.</p>
+      <div class="lectura">
+        <div><span class="k">Amplitud</span><span class="v" id="m-amp">0<u>m</u></span></div>
+        <div><span class="k">Profundidad</span><span class="v" id="m-prof">0<u>m</u></span></div>
+        <div><span class="k">Entre líneas</span><span class="v" id="m-ent">0<u>m</u></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="acto derecha">
+    <div class="caja">
+      <div class="clave">El resultado</div>
+      <h2>Todo esto acaba en un informe.</h2>
+      <p class="dice">El partido entero se convierte en un documento que puedes leer antes del entrenamiento del martes.</p>
+    </div>
+  </section>
+</main>
+
+<section id="informe">
+  <div class="envoltura">
+    <div class="cabecera-inf">
+      <div class="t">Informe del partido</div>
+      <div class="f">Ejemplo · generado automáticamente</div>
+    </div>
+
+    <div class="rejilla">
+      <div class="ficha"><span class="k">Amplitud media</span>
+        <span class="v" id="i-amp">—<u>m</u></span>
+        <span class="d">Cuánto se abre el equipo a lo ancho del campo.</span></div>
+      <div class="ficha"><span class="k">Profundidad</span>
+        <span class="v" id="i-prof">—<u>m</u></span>
+        <span class="d">Distancia entre el jugador más retrasado y el más adelantado.</span></div>
+      <div class="ficha"><span class="k">Altura de línea</span>
+        <span class="v" id="i-linea">—<u>m</u></span>
+        <span class="d">A qué distancia de su portería defiende la última línea.</span></div>
+      <div class="ficha"><span class="k">Entre líneas</span>
+        <span class="v" id="i-ent">—<u>m</u></span>
+        <span class="d">Separación entre la línea defensiva y la de ataque.</span></div>
+    </div>
+
+    <div class="conclusiones">
+      <div>
+        <ul class="lista">
+          <li><span class="n">01</span><div><b>Qué corregir</b>
+            <span>Dónde te generan superioridad y por qué banda te atacan más.</span></div></li>
+          <li><span class="n">02</span><div><b>Qué reforzar</b>
+            <span>Lo que ya funciona, con la evidencia para enseñarlo en el vestuario.</span></div></li>
+          <li><span class="n">03</span><div><b>Qué entrenar</b>
+            <span>Las dos o tres cosas concretas en las que merece la pena invertir la semana.</span></div></li>
+        </ul>
+      </div>
+      <div class="nota">
+        <span class="k">Cómo se redacta</span>
+        <p>El código calcula las métricas y la IA solo las redacta. El modelo recibe las cifras ya calculadas y sus definiciones, nunca el vídeo ni las posiciones en bruto.</p>
+        <p>No puede afirmar nada que no salga de esos números. Es la diferencia entre un informe y una opinión.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="cierre">
+  <div class="envoltura">
+    <h2>Tu próximo partido, analizado.</h2>
+    <p>Cuéntanos de qué club eres y te enseñamos el informe de uno de tus partidos.</p>
+    <div class="botones"><a href="mailto:hola@aciies.com" class="cta" id="contacto">Pedir una demo</a></div>
+  </div>
+</section>
+
+<footer>
+  <span>ACIIES · Visión artificial aplicada al deporte</span>
+  <span>hola@aciies.com</span>
+</footer>
+
+<div class="cargando" id="cargando"><span>Preparando la escena</span></div>
+
+<script src="core.js"></script>
+<script src="sombras.js"></script>
+<script src="env.js"></script>
+<script src="props.js"></script>
+<script src="partido.js"></script>
+<script src="jugadores.js"></script>
+<script src="analisis.js"></script>
+<script src="guion.js"></script>
+<script src="escena.js"></script>
+<script src="landing.js"></script>
+</body>
+</html>

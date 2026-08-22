@@ -338,3 +338,76 @@ Merece la pena probar la geometría en los cruces, con dos condiciones:
 2. **Medir contra este 52 % de fallos como línea base**, no contra
    métricas de producto: el efecto sobre el centroide llegará después, y
    diluido.
+
+---
+
+# EL DISEÑO QUE NO SE VA A CONSTRUIR, y por qué (20-ago-2026)
+
+Alex pidió ver el diseño antes de implementarlo. Al prepararlo salió el
+dato que lo invalida, así que va aquí en vez de en el código.
+
+## El diseño que iba a proponer
+
+**Pre-proceso descartado de entrada**: separar las cajas antes de
+dárselas a ByteTrack falsea la entrada y la posición final sale mal. No
+hay forma honesta de separar dos cuerpos que de verdad están juntos.
+
+**Post-proceso**, con la misma forma que la puerta de re-entrada:
+detectar el cruce sobre las identidades ya formadas y, si la continuidad
+de movimiento dice que se intercambiaron, **intercambiar las colas** desde
+el frame del cruce. No crea ni destruye observaciones, solo las reasigna.
+
+## El dato que lo invalida
+
+El swap de colas solo arregla **intercambios**. Desglose real de los 24
+fallos en cruces:
+
+| tipo | n | % | del mismo equipo |
+|---|---|---|---|
+| **ROTURA de uno** (se parte y abre id nueva) | 18 | **75 %** | 7 |
+| ROTURA de los dos | 3 | 12 % | 0 |
+| **INTERCAMBIO limpio (A↔B)** | **3** | **12 %** | 0 |
+
+**El swap arreglaría 3 de 24.** No paga.
+
+## Y algo más importante: el modelo mental no se sostiene
+
+Llevamos semanas asumiendo que "las quimeras nacen en los cruces". Estos
+datos dicen otra cosa: **los cruces producen ROTURAS, no mezclas.** Y una
+rotura no contamina — fragmenta, y es recuperable.
+
+Eso encaja con dos medidas anteriores que apuntaban en la misma dirección
+y que no supimos leer juntas:
+
+1. El paso 0 midió que el solape de cajas era señal **débil** (1,8×) para
+   predecir un cambio de persona.
+2. El oráculo del grafo midió que unir perfectamente las piezas —que es
+   exactamente lo que arregla una rotura— deja el centroide en 1,68 m.
+
+Es decir: **ya sabíamos que reparar roturas no arregla el producto**, y
+ahora sabemos que las roturas son el 87 % de lo que pasa en los cruces.
+
+## Dónde está entonces la contaminación
+
+Sin respuesta con los datos actuales. 15 de las 24 identidades contienen
+más de una persona, así que la mezcla existe; pero no aparece en los
+eventos de cruce que este test detecta (dos personas a menos de 2,5 m con
+mínimo local de distancia).
+
+Hipótesis pendientes de medir, si se retoma:
+- Contaminación en aproximaciones que no llegan a 2,5 m.
+- Absorciones lentas, sin un instante de cruce identificable.
+- Mi clasificación usa el id **dominante** en ventanas de ±1 s, que es
+  gruesa: una identidad puede contaminarse sin que cambie su dominante.
+
+## Recomendación: aplicar la regla de los dos intentos
+
+Es la **segunda** medición que dice que los cruces no son la vía —la
+primera fue el paso 0 con su 1,8×—. Por la regla que fijó Alex, se
+abandona.
+
+Y su plan B ya estaba anunciado en el propio encargo: **admitir identidad
+desconocida** en vez de seguir peleando por resolverla. Con estos
+números tiene mejor pinta que nunca: si el 87 % de los fallos en cruces
+son roturas y unir roturas no mueve el producto, lo honesto puede ser
+marcar esos tramos como incertidumbre en vez de inventar una identidad.
