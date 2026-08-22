@@ -109,3 +109,13 @@ Y la mezcla no está donde creíamos: sin re-entrada la pureza sube solo de
 80,1 % a 84,4 %, así que **el 16 % restante se contamina DENTRO del
 seguimiento continuo**, en los cruces. Un grafo global que solo una
 tracklets tiene ahí su techo: hay que **partir y luego unir**.
+
+## Lección de método: mirar el ÍNDICE, no lo que añades
+Antes de commitear, `git status` para ver **qué hay staged**, no solo qué
+acabas de añadir. Un `git add -A` que el hook aborta **deja los ficheros
+en el índice**, y el siguiente `git commit` se los lleva aunque el `git
+add` posterior nombrara solo dos.
+
+Ya ha pasado dos veces: ficheros de scratch en un commit pusheado, y la
+`landing_page/` entera (20-ago-2026), que el propio .gitignore marcaba
+como "no versionar".

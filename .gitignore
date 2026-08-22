@@ -50,3 +50,7 @@ data/reports/
 
 # Vista previa local de la landing 3D (no versionar)
 .preview-3d/
+# La landing vive fuera del repo; si se copia aquí para trabajar, no se
+# versiona. Se coló entera en un commit el 20-ago-2026 porque estaba en
+# el índice de un `git add -A` que el hook había abortado.
+landing_page/
