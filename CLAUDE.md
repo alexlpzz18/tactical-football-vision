@@ -119,3 +119,18 @@ add` posterior nombrara solo dos.
 Ya ha pasado dos veces: ficheros de scratch en un commit pusheado, y la
 `landing_page/` entera (20-ago-2026), que el propio .gitignore marcaba
 como "no versionar".
+
+## Dos hallazgos que orientan dónde invertir (20-ago-2026)
+
+**1. Las reglas posicionales valen MÁS que el clasificador.** Color puro
+da 8,7 m de centroide; con las reglas de portero, staff, árbitro y
+`solo_cercanos` puestas, 1,55 m. El valor está en el **conocimiento del
+dominio** —campo, áreas, banquillo, reglas del juego— no en la visión.
+Antes de mejorar un modelo, preguntarse qué sabe uno del fútbol que el
+sistema todavía no usa.
+
+**2. El voto mayoritario no era robusto, era SESGADO.** Promediar toda la
+vida de la identidad mete observaciones lejanas malas en la decisión.
+Etiquetar por observación gana **+6,2 puntos incluso en identidades
+PURAS**, donde no había contaminación que arreglar. La robustez de un
+promedio depende de que lo que promedia no esté sesgado.

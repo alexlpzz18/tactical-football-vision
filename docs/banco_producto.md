@@ -124,3 +124,52 @@ funcionado antes: añadir donde falta, no sustituir lo que gana.
 No adoptado: falta medirlo con las reglas posicionales puestas, que es
 donde vive el 1,55 m. Esta tabla dice que la idea tiene fundamento, no
 que esté lista.
+
+---
+
+# EL HÍBRIDO POR PROFUNDIDAD, con las reglas puestas (20-ago-2026)
+
+`scripts/hibrido_profundidad.py`. Identidad cerca, observación en el
+fondo **solo si la identidad es sospechosa**, y solo re-etiquetando lo
+que decidió el COLOR: si a un portero lo fijó la regla de área o a un
+árbitro el catálogo, el color no lo pisa.
+
+| variante | centroide | anchura | ocupación | 10-20 m | 20-30 m | 30+ m |
+|---|---|---|---|---|---|---|
+| **SISTEMA (referencia)** | 1,55 m | 0,93 m | **15,5 %** | 100,0 % | 98,6 % | 84,1 % |
+| dispersión > 0,5 | 1,51 m | 0,95 m | 15,7 % | 100,0 % | 98,6 % | 89,8 % |
+| **dispersión > 0,7** | **1,34 m** | 0,91 m | 15,7 % | 100,0 % | 98,6 % | 87,9 % |
+| dispersión > 0,9 | 1,55 m | 0,93 m | 15,5 % | 100,0 % | 98,6 % | 84,1 % |
+| proximidad > 10 % | 1,51 m | 0,95 m | 15,7 % | 100,0 % | 98,6 % | **91,7 %** |
+| **proximidad > 30 %** | 1,41 m | **0,86 m** | 15,7 % | 100,0 % | 98,6 % | 91,2 % |
+| proximidad > 50 % | 1,64 m | 0,89 m | 15,5 % | 100,0 % | 98,6 % | 85,5 % |
+
+## Cumple el criterio: mejora el fondo sin tocar lo de cerca
+
+**Ninguna variante degrada el 100 % de cerca ni el 98,6 % de 20-30 m.**
+La restricción a la banda lejana funciona: lo que ya acertaba, se queda
+como estaba.
+
+Dos puntos de operación, según qué se quiera:
+
+- **dispersión > 0,7**: el mejor **centroide (1,34 m, −0,21)**, fondo
+  +3,8 puntos.
+- **proximidad > 30 %**: la mejor **anchura (0,86 m)** y el mejor
+  equilibrio: fondo +7,1 puntos, centroide 1,41 m.
+
+## Dos avisos honestos
+
+1. **La ocupación empeora 0,2 puntos** (15,5 → 15,7 %) en todas las
+   variantes que actúan. Es pequeño, pero es sistemático y no se puede
+   llamar "sin degradar nada". El intercambio es favorable —21 cm de
+   centroide por 0,2 puntos de ocupación— pero hay que decirlo.
+2. **El tramo es de 30 s y 14 jugadores.** La diferencia entre 1,34 y
+   1,41 m no es distinguible con esta muestra, y que dispersión 0,7 bata
+   a 0,5 y a 0,9 puede ser ruido. Lo que sí es sólido es la dirección: el
+   fondo mejora entre 4 y 8 puntos y lo de cerca no se toca.
+
+## Nada adoptado
+
+Falta medirlo en Villaviciosa, que es la otra pata. Y con dos puntos de
+operación tan próximos, elegir entre ellos con 30 segundos de vídeo sería
+elegir ruido.
