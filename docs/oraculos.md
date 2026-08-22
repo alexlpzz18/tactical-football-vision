@@ -484,3 +484,87 @@ Pero el diagnóstico ya no está abierto: **la contaminación tiene patrón,
 y es accionable.** El plan B (admitir incertidumbre) sigue disponible, y
 ahora además sabría DÓNDE aplicarse: en los tramos de proximidad en el
 fondo del campo.
+
+---
+
+# LA PUERTA DE PROXIMIDAD EN METROS: medida con su coste (20-ago-2026)
+
+`scripts/puerta_proximidad.py`. Tres formas de actuar, cuatro distancias,
+con y sin condicionar a la profundidad. **Todos los centroides de esta
+tabla suponen UNIÓN PERFECTA** (las piezas se agrupan por su persona del
+GT): son techos, no resultados de producción.
+
+| variante | tracklets | pureza | %puros | frag. | centroide | riesgos | cortes |
+|---|---|---|---|---|---|---|---|
+| **BASE (sin puerta)** | 24 | 80,1 % | 38 % | 1,7 | **1,81 m** | — | — |
+| cortar 1,5 m | 162 | 97,9 % | 91 % | 11,6 | 1,24 m | 1.101 | 1.101 |
+| cortar 2,0 m | 244 | 98,7 % | 96 % | 17,4 | **1,22 m** | 1.830 | 1.830 |
+| cortar 3,0 m | 368 | 99,2 % | 98 % | 26,3 | 1,26 m | 3.128 | 3.128 |
+| apariencia 1,5 m | 31 | 83,5 % | 45 % | 2,2 | 1,69 m | 1.101 | 30 |
+| apariencia 2,0 m | 35 | 85,0 % | 49 % | 2,5 | 1,64 m | 1.830 | 49 |
+| **apariencia 3,0 m** | 39 | 87,4 % | 54 % | **2,8** | **1,57 m** | 3.128 | **79** |
+| marcar (cualquier dist.) | 24 | 80,1 % | 38 % | 1,7 | 1,81 m | 1.101-3.128 | 0 |
+
+## El modo "cortar" es la trampa de siempre
+
+Pureza del 99 % y el mejor centroide (1,22 m)… con **fragmentación ×10 a
+×17**: 244 trozos para 14 personas. Es exactamente la trampa que ya nos
+ha pillado tres veces: **trozos cortos son puros por definición**, y el
+centroide sale bien solo porque lo estamos midiendo con unión perfecta.
+En producción habría que unir 244 piezas de verdad, y el oráculo del
+grafo ya dijo que unir no llega.
+
+## El modo "apariencia" es el compromiso real
+
+Usa la proximidad como **puerta** y la apariencia como **sentencia**: de
+3.128 momentos de riesgo examinados, corta 79. Fragmentación ×1,6, no
+×17.
+
+Y aporta sobre la partición del 4a (que cortaba en cualquier punto de
+cambio, sin condicionar a la proximidad):
+
+| | pureza | frag. | centroide |
+|---|---|---|---|
+| 4a: partir por apariencia (0,08) | 87,8 % | 2,5 | 1,68 m |
+| **proximidad 3 m + apariencia** | 87,4 % | 2,8 | **1,57 m** |
+
+Misma pureza, algo más de fragmentación, **11 cm mejor de centroide**.
+Condicionar el corte a los momentos de proximidad coloca mejor los
+cortes, aunque no aumente su número.
+
+Del margen total (1,81 → 0,42 m = 1,39 m), recupera **0,24 m: un 17 %**.
+
+## Lo que NO funciona: condicionar a la profundidad
+
+La intuición era buena —el patrón está concentrado en el fondo (1,65×)—
+pero medida no paga:
+
+| | todo el campo | solo fondo 30+ m |
+|---|---|---|
+| cortar 2,0 m | **1,22 m** | 1,34 m |
+| apariencia 3,0 m | **1,57 m** | 1,59 m |
+
+Restringir al fondo toca menos casos **y recupera menos**. El 1,65× de
+enriquecimiento no basta para que la restricción compense lo que deja
+fuera: el 5 % de contaminaciones que ocurren fuera del fondo también
+cuentan, y cerca de la cámara la puerta no estorba porque casi nunca se
+dispara.
+
+## Lo que dice el modo "marcar", para el plan B
+
+Los momentos de riesgo son **1.101 a 3.128 de 9.511 observaciones**: entre
+el **12 % y el 33 %** del tiempo quedaría marcado como dudoso (8-23 % si
+se restringe al fondo).
+
+Es mucho. Un producto que dice "no sé" un tercio del tiempo no es un
+producto. Si se va al plan B, habría que marcar solo el subconjunto más
+sospechoso, no todos los momentos de proximidad.
+
+## Balance
+
+**Hay mejora real y modesta**: 1,81 → 1,57 m de centroide con
+fragmentación ×1,6, sin hundir nada. Es el 17 % del margen.
+
+No es el 0,42 m del oráculo, y conviene no venderlo como tal. Pero es la
+primera vía de las cuatro investigadas (re-entrada, grafo, cruces,
+proximidad) que **mueve el centroide sin pagar con cobertura**.
