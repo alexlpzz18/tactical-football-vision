@@ -568,3 +568,87 @@ fragmentación ×1,6, sin hundir nada. Es el 17 % del margen.
 No es el 0,42 m del oráculo, y conviene no venderlo como tal. Pero es la
 primera vía de las cuatro investigadas (re-entrada, grafo, cruces,
 proximidad) que **mueve el centroide sin pagar con cobertura**.
+
+---
+
+# CORRECCIÓN DE MÉTODO: el centroide NO mide asociación (20-ago-2026)
+
+Al explorar el 1,22 m salió un fallo que afecta a varias tablas
+anteriores y hay que corregir antes de seguir.
+
+**Prueba**: tres agrupaciones radicalmente distintas de las mismas
+observaciones —**14 identidades** (unión perfecta) y **1.914**
+(prácticamente sin unir)— dan **exactamente el mismo centroide: 1,22 m**.
+
+La causa está en `metricas_producto`: agrupa los puntos por
+`(frame, equipo)` y calcula la media. **No usa la identidad para nada.**
+
+## Qué significa
+
+El centroide del equipo depende **solo de qué etiqueta de equipo lleva
+cada observación**, no de cómo se agrupen en identidades. Por tanto:
+
+- Lo que hemos llamado **"oráculo de asociación" (0,42 m) es en realidad
+  un oráculo de ETIQUETA DE EQUIPO**: da a cada observación el equipo de
+  su persona real.
+- El **oráculo del grafo (1,68 m)** salía peor porque etiquetaba por la
+  persona dominante del grupo fusionado, y los grupos contaminados
+  mezclan equipos.
+- **Cortar mejora el centroide** no porque mejore la identidad, sino
+  porque **trozos más puros llevan etiquetas de equipo más acertadas**.
+- **Las quimeras del MISMO equipo son literalmente gratis** para esta
+  métrica. El caso #43 de Alex no cuesta un céntimo de centroide.
+
+O sea: el margen de 1,39 m que llevamos semanas persiguiendo es margen en
+**etiquetado de equipo por observación**, y la asociación solo influye
+como vehículo — a través del 68 % de contaminaciones que cruzan equipos.
+
+## Segunda corrección: la fragmentación estaba subestimada
+
+`analizar` cuenta solo los tracklets que tienen alguna observación casada
+con el GT. El "cortar 2 m" que la tabla anterior daba como **244
+tracklets** son en realidad **1.919 trozos** para 14 personas: no
+fragmentación ×17 sino **×137**.
+
+## Y la hipótesis de las uniones fáciles: FALSA
+
+Se comprobó sobre esos 1.919 trozos:
+
+| | |
+|---|---|
+| hueco temporal entre trozos | mediana **1,60 s** · p90 2,70 s |
+| salto de posición | mediana **4,11 m** · p90 11,39 m |
+| candidatas plausibles por trozo | media **61,6** · mediana 54 |
+| trozos con una sola candidata | **10 de 1.919 (1 %)** |
+| trozos con más de dos | 1.845 (**96 %**) |
+
+Uniones por candidata única y mutua: **5**. De 1.919 trozos.
+
+No son uniones fáciles: son uniones **imposibles**. Cortar en cada
+momento de proximidad trocea tanto que cada pedazo tiene 54 candidatas
+plausibles.
+
+## Veredicto: se abandona, y el criterio estaba fijado antes
+
+El criterio era "si unir por plausibilidad no baja de 1,57 m, es el mismo
+callejón del grafo con otro nombre". No baja: **no une nada** (5 uniones
+de 1.919). Se aplica la regla de los dos intentos.
+
+Y el 1,22 m nunca fue una promesa: era el mismo artefacto de medir el
+centroide sobre etiquetas de equipo más puras, sin que la unión tuviera
+nada que ver.
+
+## Lo que esto reordena
+
+La palanca del producto no es la asociación: es **la etiqueta de equipo
+por observación**. Y ahí caben dos vías que nunca hemos mirado con esta
+luz:
+
+1. Etiquetar el equipo **por observación** y no por identidad, para que
+   una identidad contaminada no arrastre a todas sus observaciones a la
+   etiqueta equivocada.
+2. Mejorar el clasificador donde el 68 % de las contaminaciones cruzan
+   equipos — que es donde el color y el embedding sí tienen señal, al
+   contrario que en las del mismo equipo.
+
+Ninguna de las dos requiere tocar el tracker.
