@@ -652,3 +652,56 @@ luz:
    contrario que en las del mismo equipo.
 
 Ninguna de las dos requiere tocar el tracker.
+
+---
+
+# ⚠ QUÉ HAY QUE RELEER TRAS LA CORRECCIÓN DEL CENTROIDE
+
+El centroide de equipo **no depende de la identidad** (ver arriba). Estas
+son las conclusiones de la semana, separadas por si las toca o no.
+
+## SIGUEN EN PIE (medidas con pureza, quimeras, IDF1 o cobertura)
+
+- **Sin re-entrada la pureza sube de 80,1 % a 84,4 %**, así que el 16 %
+  restante se contamina dentro del seguimiento continuo.
+- **Partir por apariencia aporta +6 puntos de pureza REAL** sobre el
+  control de cortes al azar, y el óptimo es 0,08 (el que menos corta).
+- **El 87 % de los fallos en cruces son ROTURAS**, no intercambios.
+- **La contaminación nace por proximidad en metros (2,42×)** y en el
+  fondo del campo (1,65×), no por solape de cajas.
+- **El filtro de plausibilidad descarta el 94 % de las uniones** y deja
+  mediana de 2 candidatas (sobre los tracklets partidos por apariencia).
+- **La puerta con embedding baja las quimeras de 4 a 3** y las del mismo
+  equipo de 2 a 1.
+- **El v4 con su propia configuración** bate al v4pre en cobertura, IDF1,
+  tasa de IDSW y concurrencia.
+
+## HAY QUE RELEERLAS: medidas con métrica INSENSIBLE A LA IDENTIDAD
+
+Estas usaban el centroide, así que **medían etiqueta de equipo por
+observación, no asociación**:
+
+- **"La asociación es el 100 % del margen; el anclaje es cero"**
+  (1,55 → 0,42 m). Lo correcto: *el margen está en la ETIQUETA DE EQUIPO
+  por observación*. La asociación influye a través del 68 % de
+  contaminaciones que cruzan equipos; las del mismo equipo son gratis
+  para esta métrica.
+- **"El oráculo del grafo (1,68 m) no bate al sistema actual"**. Sigue
+  siendo cierto que no merece construirlo, pero por otro motivo: sus
+  grupos fusionados etiquetan por persona dominante y los contaminados
+  mezclan equipos.
+- **"La puerta de proximidad recupera el 17 % del margen"**
+  (1,81 → 1,57 m). Lo que recupera es **etiquetado de equipo**, no
+  identidad.
+- **"El anclaje por pose no mejora el producto"**. Sigue en pie como
+  conclusión práctica —el anclaje no movía el centroide— pero ahora se
+  entiende por qué: un sesgo sistemático no cambia qué equipo lleva cada
+  observación.
+
+## La regla que queda
+
+Cuando una conclusión se apoye en el centroide, la anchura, la
+profundidad o la ocupación por zonas, **decir explícitamente que es
+insensible a la identidad**. Para juzgar el tracker: pureza, quimeras,
+IDF1, cobertura, y las nuevas de la familia A
+(`docs/banco_producto.md`).
