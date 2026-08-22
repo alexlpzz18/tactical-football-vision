@@ -70,6 +70,8 @@ def main() -> None:
     p.add_argument("--config", default="configs/processor_benja_v4_ajustado.yaml")
     p.add_argument("--gt", default="data/annotations/gt_benja/annotations.xml")
     p.add_argument("--y-fondo", type=float, default=30.0)
+    p.add_argument("--frame-ini", type=int, default=9750)
+    p.add_argument("--paso-gt", type=int, default=15)
     args = p.parse_args()
     logging.basicConfig(level=logging.CRITICAL)
 
@@ -81,9 +83,13 @@ def main() -> None:
         colores = pickle.load(f)
     conf = float(cfg_tr.get("confianza_min", 0) or 0)
     cache, colores = filtrar_por_confianza(datos["cache"], colores, conf)
-    cfg_eq = cargar_config_equipos(cfg["config_equipos"])
+    cfg_eq = cargar_config_equipos(
+        cfg.get("config_equipos", "configs/team_classification.yaml")
+    )
     clf = entrenar_clasificador(colores, cfg_eq, cache)
-    gt = gt_a_por_frame(parsear_cvat(args.gt), H, frame_offset=9750, paso_gt=15)
+    gt = gt_a_por_frame(
+        parsear_cvat(args.gt), H, frame_offset=args.frame_ini, paso_gt=args.paso_gt
+    )
     mapa = duenos(cache, gt)
     cfg_oc = cfg_eq.get("oclusion", {})
     try:
@@ -143,6 +149,18 @@ def main() -> None:
                     break
     frac_prox = {k: proxima[k] / max(len(pares), 1) for k, pares in obs_de.items()}
 
+    # Dónde se DECIDIÓ la etiqueta: profundidad mediana de las
+    # observaciones que `solo_cercanos` deja entrar en la media. Si esa
+    # restricción ya elige las buenas, el problema no sería el voto sino
+    # CUÁNTO se propaga la decisión.
+    umbral_cercanos = float(
+        cfg_eq.get("agregacion", {}).get("umbral_profundidad_m", 45.0)
+    )
+    y_decision = {}
+    for k, pares in obs_de.items():
+        ys = [pos[p][1] for p in pares if pos[p][1] < umbral_cercanos]
+        y_decision[k] = float(np.median(ys)) if ys else 0.0
+
     eq_gt, pf_gt = {}, {}
     for f, obs in gt.items():
         for o in obs:
@@ -164,15 +182,19 @@ def main() -> None:
                 sospechosa = False
             elif criterio == "dispersion":
                 sospechosa = dispersion.get(k, 0.0) > umbral
-            else:
+            elif criterio == "proximidad":
                 sospechosa = frac_prox.get(k, 0.0) > umbral
+            else:  # alcance: la etiqueta solo se propaga hasta cierta
+                # distancia de donde se DECIDIÓ. Si `solo_cercanos` ya
+                # restringe la decisión a las observaciones buenas, el
+                # problema no sería el voto sino cuánto se propaga.
+                sospechosa = True
             for par in pares:
-                if (
-                    reetiquetable
-                    and sospechosa
-                    and pos[par][1] >= args.y_fondo
-                    and par in colores
-                ):
+                if criterio == "alcance":
+                    lejos = pos[par][1] - y_decision.get(k, 0.0) > umbral
+                else:
+                    lejos = pos[par][1] >= args.y_fondo
+                if reetiquetable and sospechosa and lejos and par in colores:
                     m = color_medio_limpio([(par, colores[par])], ocluidas)
                     et[par] = clf.predict_color(m) if m is not None else base
                 else:
@@ -235,6 +257,8 @@ def main() -> None:
         variantes.append((f"dispersión > {u}", "dispersion", u))
     for u in (0.1, 0.3, 0.5):
         variantes.append((f"proximidad > {u:.0%} del tiempo", "proximidad", u))
+    for u in (1.0, 2.0, 3.0, 5.0):
+        variantes.append((f"ALCANCE: propagar {u:.0f} m", "alcance", u))
 
     for nombre, crit, u in variantes:
         cen, anc, oc, fr = evalua(etiquetas_hibridas(crit, u))

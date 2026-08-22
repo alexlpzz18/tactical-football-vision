@@ -173,3 +173,39 @@ Dos puntos de operación, según qué se quiera:
 Falta medirlo en Villaviciosa, que es la otra pata. Y con dos puntos de
 operación tan próximos, elegir entre ellos con 30 segundos de vídeo sería
 elegir ruido.
+
+## La idea simple (propagación acotada) NO sustituye al híbrido
+
+`alcance`: propagar la etiqueta solo mientras la identidad no se aleje N
+metros de donde se decidió. Rango derivado de la distribución real de
+`y_obs − y_decision` (p75 = 1,6 m, p90 = 3,3 m; el primer intento usó
+5-20 m y no disparaba en absoluto — cuatro filas idénticas).
+
+| variante | centroide | 10-20 m | 20-30 m | 30+ m |
+|---|---|---|---|---|
+| SISTEMA | 1,55 m | **100,0 %** | 98,6 % | 84,1 % |
+| alcance 1 m | 1,56 m | **95,5 %** ⚠ | 98,6 % | 88,6 % |
+| alcance 2 m | 1,61 m | **95,5 %** ⚠ | 98,6 % | 87,0 % |
+| alcance 3 m | 1,53 m | 100,0 % | 98,6 % | 85,8 % |
+| alcance 5 m | 1,55 m | 100,0 % | 98,6 % | 83,9 % |
+
+**No cumple el criterio.** A 1-2 m degrada lo de cerca (100 % → 95,5 %);
+a 3-5 m respeta lo de cerca pero apenas toca el fondo (+1,7 puntos frente
+a los +7,1 de la puerta por proximidad).
+
+La hipótesis era buena —si `solo_cercanos` ya elige bien, el problema
+sería el alcance— pero medida no se sostiene: **acotar la propagación por
+distancia no distingue entre identidades sanas y contaminadas**, y acaba
+cortando la propagación buena junto con la mala. El híbrido gana porque
+condiciona a que la identidad sea *sospechosa*, no solo a que esté lejos.
+
+## PENDIENTE: Villaviciosa necesita adaptar el arnés
+
+Al lanzarlo sobre Villaviciosa salen números imposibles —centroide 13,75
+m y 1,1 % de acierto en la franja cercana— así que **no se reportan**. El
+arnés está escrito para el F7: campo de 62×40 m frente a 100×64, franjas
+de profundidad distintas, y `processor_v4.yaml` ni siquiera declara
+`config_equipos`.
+
+Adaptarlo es trabajo, no un parámetro. Hasta entonces, **el híbrido está
+medido en UNA sola pata** y no se adopta.
