@@ -411,3 +411,76 @@ desconocida** en vez de seguir peleando por resolverla. Con estos
 números tiene mejor pinta que nunca: si el 87 % de los fallos en cruces
 son roturas y unir roturas no mueve el producto, lo honesto puede ser
 marcar esos tramos como incertidumbre en vez de inventar una identidad.
+
+---
+
+# DÓNDE NACE LA CONTAMINACIÓN: hay patrón, y no es el que atacábamos
+
+`scripts/donde_nace_la_contaminacion.py` (20-ago-2026). 15 identidades
+contaminadas, **75 cambios de persona** localizados y caracterizados.
+
+## Con control, que es lo que da sentido a los números
+
+Decir "el 99 % tenía a alguien a menos de 5 m" no significa nada: en un
+F7 casi siempre hay alguien cerca. La comparación es contra las 814
+observaciones del GT.
+
+| señal en el instante del cambio | contaminaciones | base | **enriquecimiento** |
+|---|---|---|---|
+| **vecino a menos de 2,5 m** | 65 % | 27 % | **2,42×** |
+| vecino a menos de 5 m | 99 % | 65 % | 1,53× |
+| **fondo del campo (30+ m)** | 95 % | 57 % | **1,65×** |
+| solape de cajas > 0,1 | 25 % | — | — |
+| caja cortada por el borde | 5 % | — | — |
+| hueco de detección > 0,3 s | 5 % | — | — |
+
+Distancia mediana al vecino: **1,70 m frente a 3,78 m** de base. Menos de
+la mitad.
+
+## El patrón: proximidad en METROS, no solape en PÍXELES
+
+**La contaminación nace cuando dos personas están cerca en METROS, en el
+fondo del campo, con seguimiento continuo y SIN solape de cajas.**
+
+- No es solape: solo el 25 % lo tiene.
+- No es el borde del encuadre: 5 %.
+- No es una re-entrada: 5 % viene de un hueco.
+- Es **proximidad física** (2,42×, el factor más fuerte medido en todo el
+  proyecto — más que el 1,8× del solape y comparable al 3,0× de la
+  re-entrada) **y profundidad** (1,65×).
+
+Y eso explica por qué las dos vías anteriores fallaron: **llevamos
+semanas midiendo IoU en píxeles y huecos temporales, y el factor
+dominante es la distancia en metros** — justo la magnitud en la que
+trabaja nuestro pipeline y que ByteTrack **no** usa, porque asocia por
+IoU.
+
+En el fondo del campo dos jugadores a 1,7 m ocupan muy pocos píxeles de
+separación; sus cajas pueden quedar próximas sin llegar a solaparse, y el
+IoU no ve riesgo donde lo hay.
+
+El 32 % de los cambios son entre compañeros del MISMO equipo, y el 95 %
+en la franja donde el color da 0,000 separando equipos y el embedding
+solo 0,20. O sea: donde la geometría en píxeles no avisa y la apariencia
+tampoco distingue.
+
+## Qué se puede hacer con esto
+
+Una **puerta de ambigüedad en METROS**, no en IoU: cuando dos identidades
+están a menos de ~2,5 m, la asociación es de riesgo, y ahí se decide con
+más cuidado o se marca incertidumbre. Es la misma forma que ha funcionado
+antes (puerta de re-entrada) aplicada a la señal correcta.
+
+Con dos avisos honestos:
+
+1. **2,42× no es un interruptor.** El 27 % de las observaciones normales
+   también tiene un vecino a menos de 2,5 m, así que una regla ahí
+   tocaría muchos casos sanos. Hay que medir el coste, no solo el
+   beneficio.
+2. **El techo sigue siendo el del oráculo**: arreglar la asociación por
+   completo da 0,42 m de centroide. Esta vía ataca una parte, no todo.
+
+Pero el diagnóstico ya no está abierto: **la contaminación tiene patrón,
+y es accionable.** El plan B (admitir incertidumbre) sigue disponible, y
+ahora además sabría DÓNDE aplicarse: en los tramos de proximidad en el
+fondo del campo.
