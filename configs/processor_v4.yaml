@@ -31,6 +31,9 @@ muestreo:
 tracking:
   perfil: bytetrack
 config_tracking: configs/tracking.yaml
+# Faltaba: sin esta clave, cualquier script que la lea cae al default
+# y puede estar midiendo con la configuración de OTRO campo.
+config_equipos: configs/team_classification.yaml
 equipos:
   activo: true
 campo_m:

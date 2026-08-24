@@ -52,6 +52,7 @@ from src.team_classification.oclusion import (  # noqa: E402
     detecciones_ocluidas,
 )
 from src.team_classification.pipeline_equipos import (  # noqa: E402
+    _profundidad_configurada,
     cargar_config_equipos,
     clasificar_identidades,
     entrenar_clasificador,
@@ -61,7 +62,36 @@ from src.tracking.filtro_confianza import filtrar_por_confianza  # noqa: E402
 from src.tracking.perfiles import correr_perfil  # noqa: E402
 
 logger = logging.getLogger("hibrido")
-FRANJAS = [("10-20 m", 10, 20), ("20-30 m", 20, 30), ("30+ m", 30, 1e9)]
+
+
+def franjas_de(alturas, n=3):
+    """Franjas por TAMAÑO APARENTE de la caja, en píxeles.
+
+    Sustituye a las "franjas de profundidad", que estaban mal planteadas:
+    la profundidad solo es un eje cuando la cámara está en la banda. En el
+    benjamín está detrás de la portería y la distancia es RADIAL, así que
+    ninguna coordenada sirve — medido: corr(x, alto) = +0,13 y
+    corr(y, alto) = +0,15, las dos débiles. En Villaviciosa, en cambio,
+    corr(y, alto) = −0,51.
+
+    El tamaño aparente de la caja es lo que de verdad determina con qué
+    resolución se ve a un jugador, y es **agnóstico a la cámara**: vale
+    para las dos patas y para el siguiente campo, sin configurar nada.
+
+    Los cortes salen de los TERCILES de la distribución real, no de
+    números elegidos a mano.
+    """
+    v = np.asarray([a for a in alturas if a > 0])
+    if len(v) < 10:
+        return [("todo", 0, 1e9)]
+    q1, q2 = np.percentile(v, [100 / n, 200 / n])
+    return [
+        (f"<{q1:.0f} px", 0, q1),
+        (f"{q1:.0f}-{q2:.0f} px", q1, q2),
+        (f">{q2:.0f} px", q2, 1e9),
+    ]
+
+
 ZONAS = 3
 
 
@@ -69,7 +99,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", default="configs/processor_benja_v4_ajustado.yaml")
     p.add_argument("--gt", default="data/annotations/gt_benja/annotations.xml")
-    p.add_argument("--y-fondo", type=float, default=30.0)
+    p.add_argument(
+        "--alto-max-px",
+        type=float,
+        default=30.0,
+        help="Se re-etiqueta donde la caja mide MENOS de esto (px)",
+    )
     p.add_argument("--frame-ini", type=int, default=9750)
     p.add_argument("--paso-gt", type=int, default=15)
     args = p.parse_args()
@@ -110,6 +145,28 @@ def main() -> None:
         cfg_equipos=cfg_eq,
     )
     eq_id = dict(clasificar_identidades(ids, colores, clf, cfg_eq))
+
+    # La PROFUNDIDAD sale del MODELO CONFIGURADO, no de asumir el eje y:
+    # en Villaviciosa la cámara está en la banda (profundidad = ancho) y
+    # en el benjamín detrás de la portería (profundidad = largo). Dar por
+    # hecho un eje mide la ANCHURA en uno de los dos campos.
+    modelo, profundidad = _profundidad_configurada(cfg_eq)
+    largo = float(cfg["campo_m"]["largo"])
+    ancho = float(cfg["campo_m"]["ancho"])
+    alto_px = {
+        (e["flat_f"], i): float(d[5] - d[3])
+        for e in [{"flat_f": ee["frame_idx"], "dets": ee["dets"]} for ee in cache]
+        for i, d in enumerate(e["dets"])
+    }
+    FRANJAS = franjas_de(list(alto_px.values()))
+
+    def prof_de(par):
+        """Tamaño aparente en píxeles: la medida de resolución."""
+        return alto_px.get(par, 0.0)
+
+    def prof_metros(par):
+        """Profundidad en metros, solo para el criterio de 'fondo'."""
+        return float(profundidad.de(np.asarray(pos[par]), modelo))
 
     pos, obs_de = {}, {}
     for k, ident in enumerate(ids, start=1):
@@ -158,7 +215,7 @@ def main() -> None:
     )
     y_decision = {}
     for k, pares in obs_de.items():
-        ys = [pos[p][1] for p in pares if pos[p][1] < umbral_cercanos]
+        ys = [prof_metros(p) for p in pares if prof_metros(p) < umbral_cercanos]
         y_decision[k] = float(np.median(ys)) if ys else 0.0
 
     eq_gt, pf_gt = {}, {}
@@ -169,7 +226,6 @@ def main() -> None:
             if eq in ("A", "B"):
                 pf_gt.setdefault((f, eq), []).append((float(o.pos[0]), float(o.pos[1])))
     verdad = metricas_producto(pf_gt).set_index(["frame", "equipo"])
-    largo, ancho = cfg["campo_m"]["largo"], cfg["campo_m"]["ancho"]
 
     def etiquetas_hibridas(criterio, umbral):
         et = {}
@@ -191,9 +247,9 @@ def main() -> None:
                 sospechosa = True
             for par in pares:
                 if criterio == "alcance":
-                    lejos = pos[par][1] - y_decision.get(k, 0.0) > umbral
+                    lejos = prof_metros(par) - y_decision.get(k, 0.0) > umbral
                 else:
-                    lejos = pos[par][1] >= args.y_fondo
+                    lejos = prof_de(par) <= args.alto_max_px
                 if reetiquetable and sospechosa and lejos and par in colores:
                     m = color_medio_limpio([(par, colores[par])], ocluidas)
                     et[par] = clf.predict_color(m) if m is not None else base
@@ -220,7 +276,7 @@ def main() -> None:
             if g is None:
                 continue
             ok = str(eq).replace("portero_", "") == eq_gt.get(g)
-            y = pos[par][1]
+            y = prof_de(par)
             for n, lo, hi in FRANJAS:
                 if lo <= y < hi:
                     franjas[n][0] += ok

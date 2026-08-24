@@ -209,3 +209,61 @@ de profundidad distintas, y `processor_v4.yaml` ni siquiera declara
 
 Adaptarlo es trabajo, no un parámetro. Hasta entonces, **el híbrido está
 medido en UNA sola pata** y no se adopta.
+
+---
+
+# ⚠ EL EJE ERA EL EQUIVOCADO: se corrige y el híbrido se cae (21-ago-2026)
+
+## El fallo
+
+Todas las "franjas de profundidad" del benjamín estaban medidas sobre el
+eje **y**, que en ese campo es la **anchura**. Su config lo dice
+explícitamente (`profundidad: eje: x`, cámara detrás de la portería) y yo
+usaba el default de Villaviciosa.
+
+Comprobado con los datos, no con el config:
+
+| pata | corr(x, alto) | corr(y, alto) | lectura |
+|---|---|---|---|
+| Villaviciosa | +0,07 | **−0,51** | profundidad = **y**, clara |
+| benjamín | +0,13 | +0,15 | **ninguna sirve** |
+
+En el benjamín **la profundidad no es un eje**: con la cámara detrás de la
+portería la distancia es RADIAL, y por eso ninguna coordenada correlaciona
+con el tamaño aparente.
+
+## La solución de raíz: TAMAÑO APARENTE de la caja
+
+Se sustituye "franja de profundidad" por **franja de tamaño aparente en
+píxeles**, con los cortes en los terciles de la distribución real. Es lo
+que de verdad determina con qué resolución se ve a un jugador, es
+**agnóstico a la cámara**, y vale para las dos patas y para el siguiente
+cliente sin configurar nada.
+
+## Y con la medida correcta, el híbrido NO aporta
+
+| variante | centroide | anchura | ocupación | pequeñas | medias | grandes |
+|---|---|---|---|---|---|---|
+| **SISTEMA** | **1,55 m** | 0,93 m | **15,5 %** | 93,3 % | 87,8 % | 93,6 % |
+| dispersión > 0,7 | 1,55 m | 0,93 m | 15,5 % | 92,5 % | 87,8 % | 93,6 % |
+| proximidad > 30 % | 1,58 m | 0,89 m | 15,5 % | 93,3 % | 87,8 % | 93,6 % |
+| alcance 1-5 m | 1,66-1,75 m | — | 15,8 % | 90,3 % | 88,9 % | 92,8 % |
+
+**Ninguna variante mejora.** La mejora que se reportó (1,55 → 1,34 m) era
+un **artefacto de dirigir la re-etiquetación con el eje equivocado**: se
+estaba re-etiquetando la banda lateral, no los jugadores mal resueltos.
+
+Y hay un dato que tumba la premisa entera: **el peor acierto está en la
+franja MEDIA (87,8 %), no en las cajas pequeñas (93,3 %)**. Si el
+clasificador no falla especialmente donde hay poca resolución, dirigir la
+re-etiquetación por tamaño no puede funcionar.
+
+## Lo que sí sobrevive
+
+Las conclusiones medidas con **pureza, quimeras, IDF1 y cobertura** no
+dependen del eje y siguen en pie: la puerta con embedding (quimeras 4→3,
+mismo equipo 2→1), la partición (+6 puntos reales), el v4 con su config,
+y el diagnóstico de que la contaminación nace por proximidad en metros.
+
+Lo que se cae es todo lo que se apoyaba en franjas de profundidad del
+benjamín — que ahora hay que releer como "franjas de anchura".
