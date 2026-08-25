@@ -51,6 +51,18 @@ class ParametrosClasificadorColor:
     bins_s: int = 16
     # Clustering
     k_clusters: int = 8
+    # Reinicios del KMeans. NO es un detalle de rendimiento: es el canal
+    # de ruido de Villaviciosa. Con 10, dos inicializaciones distintas
+    # caen en óptimos locales distintos, y una detección de más o de
+    # menos basta para que gane otro — cambian los centros, cambia el
+    # orden de fusión del árbol jerárquico y un cluster entero se pasa de
+    # bando (medido: la partición 1259/1231 pasaba a 1408/1081).
+    # Medido con 5 detecciones quitadas al azar y 6 semillas:
+    #   n_init 10 -> cobertura 0,589-0,636 · equipos 0,719-0,804
+    #   n_init 50 -> cobertura 0,635-0,636 · equipos 0,804-0,807
+    # o sea la dispersión del fit CONGELADO, con las mismas cifras sin
+    # perturbar. Ver docs/estabilizar_fit.md.
+    n_init: int = 10
     # Barrido del umbral de fusión jerárquica
     umbral_min: float = 0.5
     umbral_max: float = 1.3
@@ -206,7 +218,9 @@ class TeamClassifierColor:
                 f"(hay {len(features)})."
             )
 
-        kmeans = KMeans(n_clusters=p.k_clusters, n_init=10, random_state=p.semilla)
+        kmeans = KMeans(
+            n_clusters=p.k_clusters, n_init=p.n_init, random_state=p.semilla
+        )
         asignacion = kmeans.fit_predict(features)
 
         # Fusión jerárquica de los CENTROS de los k clusters

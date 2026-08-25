@@ -141,10 +141,24 @@ def main() -> None:
     p.add_argument("--config-tracking", default="configs/tracking_v4.yaml")
     p.add_argument("--semillas", type=int, default=6)
     p.add_argument("--cantidades", default="5,50,200")
+    p.add_argument(
+        "--n-init",
+        type=int,
+        default=0,
+        help="si >0, sobrescribe clasificador_color.n_init",
+    )
     args = p.parse_args()
     logging.basicConfig(level=logging.CRITICAL)
 
     banco = Banco(args.config, args.config_tracking)
+    if args.n_init > 0:
+        banco.cfg_equipos = {
+            **banco.cfg_equipos,
+            "clasificador_color": {
+                **banco.cfg_equipos.get("clasificador_color", {}),
+                "n_init": args.n_init,
+            },
+        }
     cache0 = banco.datos["cache"]
     total = sum(len(e["dets"]) for e in cache0)
     print(

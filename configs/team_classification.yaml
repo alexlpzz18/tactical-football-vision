@@ -126,6 +126,12 @@ clasificador_color:
   umbral_max: 1.3
   umbral_paso: 0.05
   semilla: 0
+  # Reinicios del KMeans. ADOPTADO el 25-ago-2026: 10 era el canal de
+  # ruido de Villaviciosa (con 5 detecciones al azar la cobertura se movía
+  # 0,047 y la accuracy de equipos 0,085). Con 20 ya desaparece; 20, 30 y
+  # 50 dan cifras IDÉNTICAS, así que hay meseta y no filo. Se pone 50 por
+  # margen: cuesta 0,6 s por partido. Ver docs/estabilizar_fit.md.
+  n_init: 50
 
 # ── Rechazo por distancia a AMBOS prototipos: MEDIDO Y DESCARTADO ────
 #

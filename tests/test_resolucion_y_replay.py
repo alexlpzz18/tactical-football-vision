@@ -274,3 +274,59 @@ def test_el_replay_lleva_los_colores_reales(tmp_path):
     colores = json.loads(html.split("const COLORES = ")[1].split(";\n")[0])
     assert colores["A"][0] == "#e8721c"
     assert "#2563eb" not in html  # el azul por convenio ya no aparece
+
+
+# ── n_init del KMeans: era el canal de ruido de Villaviciosa ───────────
+
+
+def test_n_init_se_lee_del_config_y_llega_al_kmeans(monkeypatch):
+    """Si `n_init` no llega al KMeans, el arreglo no existe y nadie se entera.
+
+    Adoptado 10 → 50 el 25-ago-2026: con 10, dos inicializaciones caían en
+    óptimos locales distintos y una detección de más bastaba para que
+    ganase otro, cambiando la partición A/B entera.
+    """
+    import numpy as np
+    from sklearn.cluster import KMeans as KMeansReal
+
+    from src.team_classification import color_classifier as cc
+
+    # Se espía con una FÁBRICA y no con una subclase: sklearn valida que
+    # sus estimadores declaren los parámetros en la firma de __init__ y
+    # rechaza un *args/**kw.
+    vistos = []
+
+    def kmeans_espia(**kw):
+        vistos.append(kw.get("n_init"))
+        return KMeansReal(**kw)
+
+    monkeypatch.setattr(cc, "KMeans", kmeans_espia)
+    params = cc.ParametrosClasificadorColor.desde_dict({"k_clusters": 4, "n_init": 37})
+    assert params.n_init == 37
+    rng = np.random.RandomState(0)
+    features = np.abs(rng.randn(60, 256))
+    features /= np.linalg.norm(features, axis=1, keepdims=True)
+    cc.TeamClassifierColor(params).fit_features(features)
+    assert 37 in vistos
+
+
+def test_el_fit_es_determinista_con_los_mismos_datos():
+    """Mismo caché, mismos prototipos. Sin esto, nada de lo medido se repite."""
+    import numpy as np
+
+    from src.team_classification.color_classifier import (
+        ParametrosClasificadorColor,
+        TeamClassifierColor,
+    )
+
+    rng = np.random.RandomState(3)
+    features = np.abs(rng.randn(120, 256))
+    features /= np.linalg.norm(features, axis=1, keepdims=True)
+    params = ParametrosClasificadorColor.desde_dict({"k_clusters": 6, "n_init": 20})
+    protos = []
+    for _ in range(2):
+        clf = TeamClassifierColor(params)
+        clf.fit_features(features)
+        protos.append(clf._prototipos)
+    assert np.allclose(protos[0].a, protos[1].a)
+    assert np.allclose(protos[0].b, protos[1].b)
