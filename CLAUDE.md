@@ -61,6 +61,48 @@ el detector** (medido: 27 de 30 identidades del mini-GT del benjamín son
 otra persona con el v4, mediana 38 m). Los GT deben indexarse por
 posición y tiempo.
 
+## Suelo de ruido de Villaviciosa (25-ago-2026) — leer antes de comparar
+
+Quitando **5 detecciones al azar de 10.040**, Villaviciosa mueve la
+cobertura 0,047, la accuracy de equipos 0,085 y el centroide 0,83 m de
+mediana (p90: 2,45 m). **El benjamín no se mueve nada.**
+
+La causa está localizada: `TeamClassifierColor._umbral_auto` elige el
+umbral de fusión por **argmax sobre una rejilla**, y en Villaviciosa dos
+puntos van casi empatados — salta de 0,90 a 0,75 en **2 de cada 10**
+perturbaciones, y con él cambia la partición A/B entera. Congelando el
+fit, el ruido desaparece (0,047 → 0,001).
+
+⚠️ **No es una barra de error.** Un A/B determinista sobre el mismo caché
+no tiene ruido. Lo que dice es que la métrica es FRÁGIL, así que una
+diferencia pequeña medida una sola vez puede no viajar. El test correcto:
+**repetir el A/B sobre entradas perturbadas y comprobar que el signo
+aguanta.** Con él sobreviven `min_obs_para_otro: 25` y el v4 sobre el
+v4pre en Villaviciosa. Lo que queda en cuarentena está listado en
+`docs/suelo_de_ruido.md`.
+
+## Lo siguiente, en este orden (encargo de Alex, 25-ago-2026)
+
+1. **ESTABILIZAR EL UMBRAL DE FUSIÓN DEL FIT.** Es una línea por sí sola:
+   quitaría ruido de TODAS las mediciones de Villaviciosa de golpe. Tres
+   candidatos a medir (promediar sobre la meseta, interpolar el máximo,
+   promediar los prototipos empatados) y un criterio doble: que la
+   dispersión baje a la del fit congelado Y que las métricas sin
+   perturbar no empeoren. Detalle en `docs/suelo_de_ruido.md`.
+2. **PARTE 2: clasificación en tres grupos** (los dos colores del partido
+   + un tercer grupo relativo para todo lo demás, separado por
+   COMPORTAMIENTO). **Empezar por el PORTERO y no construir nada del
+   tercer grupo hasta tenerlo sólidamente identificado**: lleva tres
+   intentos rompiendo cosas (destrozó el doble pase por colores, casi
+   rompe la regla de staff lento, y es el más lento del partido a 0,60
+   m/s). Los dos criterios de Alex que hay que medir PRIMERO contra el
+   GT: **último hombre** de su equipo, y **no cruza el medio campo** (sí
+   se adelanta hasta el círculo: "vive en su tercio" es FALSO).
+   El tercer grupo se define de forma RELATIVA a los dos prototipos que
+   el fit encuentre en ESE partido, con el umbral derivado de SU
+   distribución. El catálogo arbitral sí puede seguir siendo absoluto,
+   con su regla de conflicto.
+
 ## Qué NO hacer
 - NO commitear datos, vídeos, modelos (.pt), caches (.pkl) ni exports de CVAT
   (están/deben estar en .gitignore; viven en Google Drive).

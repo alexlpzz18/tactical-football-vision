@@ -1,5 +1,19 @@
 # Resumen del merge a main — para revisar ANTES de fusionar
 
+> ⚠️ **Antes de citar cualquier número de Villaviciosa de este documento,
+> lee `docs/suelo_de_ruido.md`.** Medido el 25-ago-2026: quitando CINCO
+> detecciones al azar de 10.040, la cobertura de Villaviciosa se mueve
+> 0,047, la accuracy de equipos 0,085 y el centroide 0,83 m de mediana.
+> La causa es el umbral de fusión del fit de color, que se elige por
+> argmax sobre una rejilla y salta de escalón en 2 de cada 10
+> perturbaciones. **El benjamín no se mueve nada.**
+>
+> Eso NO convierte en falsas las diferencias pequeñas medidas aquí —un
+> A/B determinista sobre el mismo caché no tiene ruido— pero sí significa
+> que **una diferencia pequeña medida una sola vez puede no viajar**. El
+> test que hay que pasar antes de darla por buena es repetir el A/B sobre
+> entradas perturbadas y comprobar que el SIGNO aguanta.
+
 `v4/caches-y-informe` → `main`. **69 commits, 142 ficheros, +24.981
 líneas.** Las diez ramas apiladas de las últimas semanas están todas
 contenidas en esta, así que es un único merge y luego se pueden borrar.

@@ -1,5 +1,19 @@
 # Banco de métricas de PRODUCTO (20-ago-2026)
 
+> ⚠️ **Antes de citar cualquier número de Villaviciosa de este documento,
+> lee `docs/suelo_de_ruido.md`.** Medido el 25-ago-2026: quitando CINCO
+> detecciones al azar de 10.040, la cobertura de Villaviciosa se mueve
+> 0,047, la accuracy de equipos 0,085 y el centroide 0,83 m de mediana.
+> La causa es el umbral de fusión del fit de color, que se elige por
+> argmax sobre una rejilla y salta de escalón en 2 de cada 10
+> perturbaciones. **El benjamín no se mueve nada.**
+>
+> Eso NO convierte en falsas las diferencias pequeñas medidas aquí —un
+> A/B determinista sobre el mismo caché no tiene ruido— pero sí significa
+> que **una diferencia pequeña medida una sola vez puede no viajar**. El
+> test que hay que pasar antes de darla por buena es repetir el A/B sobre
+> entradas perturbadas y comprobar que el SIGNO aguanta.
+
 `scripts/banco_producto.py`. Nace de una corrección: el centroide de
 equipo agrupa los puntos por `(frame, equipo)` y **no usa la identidad**.
 Tres agrupaciones distintas de las mismas observaciones —14 identidades y
