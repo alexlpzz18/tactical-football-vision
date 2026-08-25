@@ -1,0 +1,46 @@
+# Villaviciosa (F11) contra los cachés del v4, en modo DESDE_CACHÉ.
+#
+# Existe para poder medir en la pata de Villaviciosa lo mismo que en el
+# benjamín sin GPU: processor_v4.yaml está en `modo: full` porque su
+# trabajo es GENERAR los cachés en Colab, y aquí solo hay que consumirlos.
+#
+# Las dos patas del banco son a propósito muy distintas: F11 contra F7,
+# cámara en la banda contra cámara detrás de la portería, adultos contra
+# niños. Una regla que funcione en las dos es una regla de producto; una
+# que solo funcione en una es un apaño.
+pipeline: nuevo
+modo: desde_cache
+deteccion:
+  modelo: models/weights/best_v4.pt
+  confianza: 0.3
+  max_area_caja: 0.05
+  sahi:
+    filas: 2
+    columnas: 4
+    solape: 0.2
+  device: cuda
+distorsion:
+  k1: -1.5
+  k2: 0.5
+muestreo:
+  sample_every: 3
+  tramo:
+    min_ini: 5.0
+    dur_seg: 60.0
+tracking:
+  perfil: bytetrack
+config_tracking: configs/tracking_v4.yaml
+equipos:
+  activo: true
+config_equipos: configs/team_classification.yaml
+campo_m:
+  largo: 100.0
+  ancho: 64.0
+  margen: 5.0
+rutas:
+  video: data/raw/villaviciosa_p1.mp4
+  cache: data/tracking/cache_detecciones_v4.pkl
+  cache_colores: data/tracking/cache_colores_v4.pkl
+  homografia: data/calibracion/homografia.npy
+  salida_csv: data/tracking/posiciones_villa_v4_cache.csv
+  salida_meta: data/tracking/posiciones_villa_v4_cache_meta.json

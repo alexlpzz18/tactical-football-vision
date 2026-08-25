@@ -322,3 +322,91 @@ def test_racha_sostenida_de_ruido_grande_si_se_corta():
         v_teleport=60.0,
     )
     assert nuevas == []  # todos los trozos quedan por debajo del mínimo
+
+
+# ── Segunda tolerancia: fuera de la línea Y casi quieto ────────────────
+#
+# Regla adoptada el 25-ago-2026. Los tres casos que la definen y que
+# salieron de medir, no de suponer:
+#   - el entrenador: 0,23 m fuera y 0,67 m/s -> staff
+#   - un jugador real: 0,22 m fuera y 3,50 m/s -> NO es staff (un
+#     centímetro separa su mediana de la del entrenador)
+#   - el portero: 0,60 m/s, el más lento del partido, pero DENTRO del
+#     campo -> NO es staff (si la velocidad mandara sola, se lo llevaría)
+
+
+def _identidad_recta(x0, y0, dx, dy, n=30, dt=0.12):
+    """Identidad que avanza (dx, dy) metros por muestra."""
+    from src.tracking.field_tracker import Tracklet
+
+    tr = Tracklet(1, 0.0, np.array([x0, y0]), 0, 0)
+    for i in range(1, n):
+        tr.anadir(i * dt, np.array([x0 + dx * i, y0 + dy * i]), i, i)
+    return [tr]
+
+
+def test_staff_lento_caza_al_entrenador_fuera_de_la_linea():
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+
+    # 0,23 m fuera de la banda y prácticamente quieto (0,67 m/s)
+    ident = _identidad_recta(31.0, -0.23, 0.0, 0.0)
+    ident[0].pos = [
+        np.array([31.0 + 0.04 * (i % 3), -0.23]) for i in range(len(ident[0].pos))
+    ]
+    regla = ReglaStaff(
+        largo=62.0,
+        ancho=40.0,
+        tolerancia_m=2.0,
+        tolerancia_lento_m=0.0,
+        vel_max_lento=1.5,
+    )
+    assert aplicar_regla_staff({1: "A"}, [ident], regla)[1] == "staff"
+
+
+def test_staff_lento_respeta_al_jugador_rapido_pisando_la_banda():
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+
+    # 0,22 m fuera de la banda contraria pero corriendo (3,5 m/s)
+    ident = _identidad_recta(27.5, 40.22, 0.42, 0.0)
+    regla = ReglaStaff(
+        largo=62.0,
+        ancho=40.0,
+        tolerancia_m=2.0,
+        tolerancia_lento_m=0.0,
+        vel_max_lento=1.5,
+    )
+    assert aplicar_regla_staff({1: "B"}, [ident], regla)[1] == "B"
+
+
+def test_staff_lento_no_toca_al_portero_aunque_sea_el_mas_lento():
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+
+    # Dentro del campo y lentísimo: es el portero, y la regla no debe verlo
+    ident = _identidad_recta(6.8, 22.2, 0.01, 0.0)
+    regla = ReglaStaff(
+        largo=62.0,
+        ancho=40.0,
+        tolerancia_m=2.0,
+        tolerancia_lento_m=0.0,
+        vel_max_lento=1.5,
+    )
+    assert aplicar_regla_staff({1: "portero_A"}, [ident], regla)[1] == "portero_A"
+
+
+def test_staff_lento_desactivado_por_defecto():
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+
+    ident = _identidad_recta(31.0, -0.23, 0.0, 0.0)
+    regla = ReglaStaff(largo=62.0, ancho=40.0, tolerancia_m=2.0)
+    assert aplicar_regla_staff({1: "A"}, [ident], regla)[1] == "A"
+
+
+def test_velocidad_media_usa_el_tiempo_real_no_el_numero_de_muestras():
+    """Una identidad con huecos no debe parecer más lenta por tenerlos."""
+    from src.team_classification.staff import velocidad_media
+
+    seguida = _identidad_recta(0.0, 0.0, 0.12, 0.0, n=11)  # 1 m/s
+    assert velocidad_media(seguida) == pytest.approx(1.0, rel=1e-6)
+    # Misma trayectoria y misma duración, pero con la mitad de muestras
+    con_hueco = _identidad_recta(0.0, 0.0, 0.24, 0.0, n=6, dt=0.24)
+    assert velocidad_media(con_hueco) == pytest.approx(1.0, rel=1e-6)

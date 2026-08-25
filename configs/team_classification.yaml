@@ -30,6 +30,38 @@ staff:
   ancho: 64.0
   tolerancia_m: 2.0
   min_observaciones: 5
+  # ── SEGUNDA TOLERANCIA, para quien además se mueve poco ──────────
+  #
+  # ADOPTADO el 25-ago-2026 (mejora TODAS las métricas del benjamín sin
+  # degradar ninguna, y es EXACTAMENTE neutro en Villaviciosa).
+  #
+  # El problema: el entrenador del chándal vive a 0,23 m fuera de la
+  # banda y mete la mitad de las fugas del sistema. Bajar `tolerancia_m`
+  # para cogerlo NO se puede — un jugador real tiene su mediana a 0,22 m
+  # fuera de la banda contraria. Un centímetro. Ninguna tolerancia los
+  # separa mirando solo la posición.
+  #
+  # Y la velocidad sola tampoco: el más lento del partido no es el
+  # entrenador (0,67 m/s) sino EL PORTERO (0,60 m/s, 526 obs). Una regla
+  # de "se mueve poco" a secas se lleva al portero por delante.
+  #
+  # Las dos juntas sí, porque el portero está DENTRO y el entrenador
+  # FUERA. Doctrina de siempre: la velocidad solo se mira en quien ya
+  # está fuera de las líneas.
+  #
+  # Medido en el benjamín (scripts/reglas_fisicas.py):
+  #   centroide  1,55 -> 1,27 m (mediana) · 2,40 -> 1,78 (media)
+  #              5,97 -> 4,17 m (p90)
+  #   anchura    0,93 -> 0,43 m   ·   ocupación 6,7 % -> 5,5 %
+  #   observaciones de personas reales perdidas: CERO
+  # En Villaviciosa: cifras IDÉNTICAS (no hay a quién coger, y no rompe).
+  #
+  # El umbral está en una MESETA ancha: 1,0 · 1,5 · 2,0 · 2,5 m/s dan
+  # exactamente el mismo resultado, así que no es un filo. El hueco real
+  # va del portero (0,60) al jugador de campo más lento (2,06).
+  tolerancia_lento_m: 0.0
+  vel_max_lento: 1.5
+
 
 # Entrenamiento del clasificador (fix del colapso en producción,
 # 12-jul-2026): el fit usa SOLO recortes cercanos (my < umbral_my), donde

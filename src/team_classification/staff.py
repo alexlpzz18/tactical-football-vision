@@ -39,6 +39,28 @@ class ReglaStaff:
     # Mínimo de observaciones para juzgar: con 2-3 posiciones la mediana no
     # significa nada (y los artefactos de proyección son cortos).
     min_observaciones: int = 5
+    # ── Tolerancia SEGUNDA, para quien además se mueve poco ──────────
+    #
+    # Por qué hace falta (medido en el benjamín, 25-ago-2026): el
+    # entrenador del chándal vive a 0,23 m fuera de la banda y mete la
+    # mitad de las fugas del sistema. Bajar `tolerancia_m` para cogerlo
+    # NO se puede: un jugador real tiene su mediana a 0,22 m fuera de la
+    # banda contraria. **Un centímetro.** Ninguna tolerancia los separa
+    # mirando solo la posición.
+    #
+    # Y la velocidad sola tampoco: el más lento del partido no es el
+    # entrenador (0,67 m/s) sino EL PORTERO (0,60 m/s), así que una regla
+    # de "se mueve poco" a secas se lleva al portero por delante.
+    #
+    # Las dos juntas sí, porque el portero está DENTRO y el entrenador
+    # FUERA. Es la doctrina de siempre: no aplicar un criterio ruidoso a
+    # todo el mundo, solo decidir mejor donde ya hay riesgo. La velocidad
+    # solo se mira en quien ya está fuera de las líneas.
+    #
+    # Margen medido: la identidad-persona más lenta después del portero va
+    # a 2,06 m/s, así que 1,5 m/s cae en un hueco ancho.
+    tolerancia_lento_m: float = 0.0
+    vel_max_lento: float = 0.0  # 0 = desactivado
 
     @classmethod
     def desde_dict(cls, d: dict) -> "ReglaStaff":
@@ -50,6 +72,27 @@ def _distancia_fuera(mx: float, my: float, largo: float, ancho: float) -> float:
     fuera_x = max(0.0, -mx, mx - largo)
     fuera_y = max(0.0, -my, my - ancho)
     return max(fuera_x, fuera_y)
+
+
+def velocidad_media(identidad: list[Tracklet]) -> float:
+    """Metros recorridos por segundo a lo largo de toda la identidad.
+
+    Se divide por el tiempo REAL transcurrido y no por el número de
+    observaciones: una identidad con huecos no debe parecer más lenta solo
+    por tenerlos.
+    """
+    obs = sorted(
+        ((t, p) for tr in identidad for t, p in zip(tr.ts, tr.pos)),
+        key=lambda o: o[0],
+    )
+    if len(obs) < 2:
+        return 0.0
+    recorrido = sum(
+        float(np.linalg.norm(np.asarray(obs[i][1]) - np.asarray(obs[i - 1][1])))
+        for i in range(1, len(obs))
+    )
+    duracion = obs[-1][0] - obs[0][0]
+    return recorrido / duracion if duracion > 0 else 0.0
 
 
 def aplicar_regla_staff(
@@ -76,12 +119,19 @@ def aplicar_regla_staff(
             continue
         mx, my = float(np.median(posiciones[:, 0])), float(np.median(posiciones[:, 1]))
         fuera = _distancia_fuera(mx, my, regla.largo, regla.ancho)
+        motivo = None
         if fuera > regla.tolerancia_m:
+            motivo = "fuera del campo"
+        elif regla.vel_max_lento > 0 and fuera > regla.tolerancia_lento_m:
+            if velocidad_media(identidad) < regla.vel_max_lento:
+                motivo = "fuera de la línea y casi quieto"
+        if motivo:
             resultado[id_identidad] = ETIQUETA_STAFF
             n_staff += 1
             logger.debug(
-                "Identidad %d marcada staff: mediana (%.1f, %.1f), %.1f m fuera",
+                "Identidad %d marcada staff (%s): mediana (%.1f, %.1f), %.1f m fuera",
                 id_identidad,
+                motivo,
                 mx,
                 my,
                 fuera,
