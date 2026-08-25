@@ -59,12 +59,36 @@ class ReglaStaff:
     #
     # Margen medido: la identidad-persona más lenta después del portero va
     # a 2,06 m/s, así que 1,5 m/s cae en un hueco ancho.
-    tolerancia_lento_m: float = 0.0
+    # ⚠️ Margen de proyección: 0,15 m, no 0. Con 0 exacto, un portero cuya
+    # mediana caiga UN CENTÍMETRO por detrás de la línea de fondo —cosa
+    # normalísima, ahí es donde vive— se marcaría staff, y eso cuesta más
+    # de lo que la regla gana. Medido: 0,15 m sigue cogiendo al entrenador
+    # (0,23 m fuera) y no cambia ninguna cifra.
+    tolerancia_lento_m: float = 0.15
     vel_max_lento: float = 0.0  # 0 = desactivado
+    # Observaciones mínimas para juzgar una VELOCIDAD, que no es lo mismo
+    # que juzgar una mediana de posición: `min_observaciones` (5) se eligió
+    # para lo segundo. Con 5 muestras en medio segundo, "se mueve poco" no
+    # significa nada — le pasaba a la identidad 53 del benjamín, de 6
+    # observaciones.
+    min_obs_lento: int = 25
 
     @classmethod
     def desde_dict(cls, d: dict) -> "ReglaStaff":
-        return cls(**d)
+        regla = cls(**d)
+        # `_distancia_fuera` está acotada con max(0, ...), así que una
+        # tolerancia NEGATIVA no significa "dentro por ese margen": la
+        # comparación `0 > -1` es cierta para todo el mundo y marcaría
+        # staff al campo entero. Ya pasó en un barrido. Se rechaza en vez
+        # de dejar la trampa abierta en el YAML.
+        for nombre in ("tolerancia_m", "tolerancia_lento_m"):
+            if getattr(regla, nombre) < 0:
+                raise ValueError(
+                    f"{nombre} no puede ser negativa ({getattr(regla, nombre)}): "
+                    "la distancia al campo está acotada a 0 y una tolerancia "
+                    "negativa marcaría staff a TODAS las identidades."
+                )
+        return regla
 
 
 def _distancia_fuera(mx: float, my: float, largo: float, ancho: float) -> float:
@@ -74,25 +98,33 @@ def _distancia_fuera(mx: float, my: float, largo: float, ancho: float) -> float:
     return max(fuera_x, fuera_y)
 
 
-def velocidad_media(identidad: list[Tracklet]) -> float:
-    """Metros recorridos por segundo a lo largo de toda la identidad.
+def velocidad_media(identidad: list[Tracklet]) -> float | None:
+    """Metros por segundo a lo largo de la identidad, o None si no se sabe.
 
     Se divide por el tiempo REAL transcurrido y no por el número de
     observaciones: una identidad con huecos no debe parecer más lenta solo
     por tenerlos.
+
+    ⚠️ Devuelve **None**, no 0.0, cuando no hay con qué calcularla (una
+    sola observación, o todas con la misma marca de tiempo). Codificar
+    "no lo sé" como 0 la mandaba justo al lado que DISPARA la regla: una
+    identidad de 5 muestras con el mismo instante y 12 m recorridos salía
+    a 0 m/s y se marcaba staff.
     """
     obs = sorted(
         ((t, p) for tr in identidad for t, p in zip(tr.ts, tr.pos)),
         key=lambda o: o[0],
     )
     if len(obs) < 2:
-        return 0.0
+        return None
+    duracion = obs[-1][0] - obs[0][0]
+    if duracion <= 0:
+        return None
     recorrido = sum(
         float(np.linalg.norm(np.asarray(obs[i][1]) - np.asarray(obs[i - 1][1])))
         for i in range(1, len(obs))
     )
-    duracion = obs[-1][0] - obs[0][0]
-    return recorrido / duracion if duracion > 0 else 0.0
+    return recorrido / duracion
 
 
 def aplicar_regla_staff(
@@ -122,8 +154,20 @@ def aplicar_regla_staff(
         motivo = None
         if fuera > regla.tolerancia_m:
             motivo = "fuera del campo"
-        elif regla.vel_max_lento > 0 and fuera > regla.tolerancia_lento_m:
-            if velocidad_media(identidad) < regla.vel_max_lento:
+        elif (
+            regla.vel_max_lento > 0
+            and fuera > regla.tolerancia_lento_m
+            and len(posiciones) >= regla.min_obs_lento
+            # ⚠️ La rama lenta NO puede sobrescribir a un portero. Es el
+            # único jugador del campo que puede estar quieto Y sobre la
+            # línea de fondo a la vez, y la etiqueta de portero la ha
+            # puesto la regla de área, que sabe más que esta. Sin esta
+            # guarda, un portero un centímetro por detrás de su línea sale
+            # de staff y el centroide del benjamín se va de 1,27 a 2,04 m.
+            and not str(equipos.get(id_identidad, "")).startswith("portero")
+        ):
+            velocidad = velocidad_media(identidad)
+            if velocidad is not None and velocidad < regla.vel_max_lento:
                 motivo = "fuera de la línea y casi quieto"
         if motivo:
             resultado[id_identidad] = ETIQUETA_STAFF

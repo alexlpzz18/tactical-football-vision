@@ -357,7 +357,7 @@ def test_staff_lento_caza_al_entrenador_fuera_de_la_linea():
         largo=62.0,
         ancho=40.0,
         tolerancia_m=2.0,
-        tolerancia_lento_m=0.0,
+        tolerancia_lento_m=0.15,
         vel_max_lento=1.5,
     )
     assert aplicar_regla_staff({1: "A"}, [ident], regla)[1] == "staff"
@@ -372,7 +372,7 @@ def test_staff_lento_respeta_al_jugador_rapido_pisando_la_banda():
         largo=62.0,
         ancho=40.0,
         tolerancia_m=2.0,
-        tolerancia_lento_m=0.0,
+        tolerancia_lento_m=0.15,
         vel_max_lento=1.5,
     )
     assert aplicar_regla_staff({1: "B"}, [ident], regla)[1] == "B"
@@ -387,10 +387,86 @@ def test_staff_lento_no_toca_al_portero_aunque_sea_el_mas_lento():
         largo=62.0,
         ancho=40.0,
         tolerancia_m=2.0,
-        tolerancia_lento_m=0.0,
+        tolerancia_lento_m=0.15,
         vel_max_lento=1.5,
     )
     assert aplicar_regla_staff({1: "portero_A"}, [ident], regla)[1] == "portero_A"
+
+
+def test_staff_lento_no_toca_al_portero_NI_DETRAS_DE_SU_LINEA():
+    """El caso de borde, que es el que de verdad muerde.
+
+    Un portero vive SOBRE la línea de fondo y se mueve poco: cumple las
+    dos condiciones de la rama lenta a la vez. La primera versión de la
+    regla lo convertía en staff, y eso costaba más de lo que la regla
+    gana (centroide del benjamín de 1,27 a 2,04 m).
+    """
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+
+    # Mediana 20 cm POR DETRÁS de la línea de fondo, y a 0,4 m/s
+    ident = _identidad_recta(-0.20, 20.0, 0.05, 0.0, n=40)
+    regla = ReglaStaff(
+        largo=62.0,
+        ancho=40.0,
+        tolerancia_m=2.0,
+        tolerancia_lento_m=0.15,
+        vel_max_lento=1.5,
+    )
+    assert aplicar_regla_staff({1: "portero_A"}, [ident], regla)[1] == "portero_A"
+
+
+def test_staff_lento_rechaza_tolerancia_negativa():
+    """Una tolerancia negativa marcaría staff a TODO el campo.
+
+    `_distancia_fuera` está acotada con max(0, ...), así que `0 > -1` es
+    cierto para cualquiera. Se rechaza al construir en vez de dejar la
+    trampa abierta en el YAML.
+    """
+    from src.team_classification.staff import ReglaStaff
+
+    with pytest.raises(ValueError, match="no puede ser negativa"):
+        ReglaStaff.desde_dict(
+            {"largo": 62.0, "ancho": 40.0, "tolerancia_lento_m": -1.0}
+        )
+
+
+def test_velocidad_media_devuelve_None_cuando_no_se_puede_saber():
+    """No lo sé NO es 0, que es justo el lado que dispara la regla."""
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+    from src.team_classification.staff import velocidad_media
+    from src.tracking.field_tracker import Tracklet
+
+    # 30 observaciones, todas con la MISMA marca de tiempo, yendo y
+    # viniendo 3 m (recorrido real ~87 m) pero con la mediana quieta a
+    # 0,30 m por fuera de la banda: el caso que la rama lenta mira.
+    tr = Tracklet(1, 5.0, np.array([31.0, -0.30]), 0, 0)
+    for i in range(1, 30):
+        tr.anadir(5.0, np.array([31.0 + 3.0 * (i % 2), -0.30]), i, i)
+    assert velocidad_media([tr]) is None
+    regla = ReglaStaff(
+        largo=62.0,
+        ancho=40.0,
+        tolerancia_m=2.0,
+        tolerancia_lento_m=0.15,
+        vel_max_lento=1.5,
+    )
+    assert aplicar_regla_staff({1: "A"}, [[tr]], regla)[1] == "A"
+
+
+def test_staff_lento_no_juzga_la_velocidad_de_una_identidad_corta():
+    """Con 5 muestras en medio segundo, "se mueve poco" no significa nada."""
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+
+    ident = _identidad_recta(31.0, -0.30, 0.0, 0.0, n=6)
+    regla = ReglaStaff(
+        largo=62.0,
+        ancho=40.0,
+        tolerancia_m=2.0,
+        tolerancia_lento_m=0.15,
+        vel_max_lento=1.5,
+        min_obs_lento=25,
+    )
+    assert aplicar_regla_staff({1: "A"}, [ident], regla)[1] == "A"
 
 
 def test_staff_lento_desactivado_por_defecto():

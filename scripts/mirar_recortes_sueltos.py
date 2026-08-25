@@ -178,6 +178,21 @@ def colocar(ocupados, x, y, ancho, alto):
     return y
 
 
+def _regla_staff(cfg_eq: dict, modelo) -> ReglaStaff:
+    """ReglaStaff construida DESDE EL CONFIG, con todas sus claves.
+
+    Enumerar claves a mano (`tolerancia_m=..., min_observaciones=...`)
+    parece inofensivo y no lo es: cuando la regla gana un parámetro nuevo,
+    el banco se queda midiendo el sistema VIEJO **sin fallar**, que es la
+    peor forma de romperse. Pasó con la rama de "fuera de la línea y
+    lento".
+    """
+    opciones = {k: v for k, v in cfg_eq.get("staff", {}).items() if k != "activo"}
+    opciones.setdefault("largo", modelo.largo)
+    opciones.setdefault("ancho", modelo.ancho)
+    return ReglaStaff.desde_dict(opciones)
+
+
 # ────────────────── reglas transpuestas a la observación ───────────────
 
 
@@ -306,13 +321,11 @@ def main() -> None:
     regla_p = ReglaPorteros.desde_modelo(
         modelo, margen=margen, equipo_mx_bajo=bajo, equipo_mx_alto=alto
     )
-    cfg_s = cfg_eq.get("staff", {})
-    regla_s = ReglaStaff(
-        largo=modelo.largo,
-        ancho=modelo.ancho,
-        tolerancia_m=cfg_s.get("tolerancia_m", 2.0),
-        min_observaciones=cfg_s.get("min_observaciones", 5),
-    )
+    # ⚠️ Del CONFIG, no a mano. Construir ReglaStaff enumerando claves
+    # deja fuera las que se añadan después —pasó con la rama de "fuera de
+    # la línea y lento"— y entonces el banco mide un sistema que ya no es
+    # el que corre en producción, sin fallar.
+    regla_s = _regla_staff(cfg_eq, modelo)
     activos = arquetipos_activos([proto_a, proto_b])
     print(
         f"Campo {modelo.largo:.1f} x {modelo.ancho:.1f} m · "

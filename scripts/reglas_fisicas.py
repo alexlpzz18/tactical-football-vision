@@ -49,7 +49,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 warnings.filterwarnings("ignore")
 
 from fugas_en_el_campo import casar_con_gt  # noqa: E402
-from mirar_recortes_sueltos import regla_de_la_observacion  # noqa: E402
+from mirar_recortes_sueltos import (  # noqa: E402
+    _regla_staff,
+    regla_de_la_observacion,
+)
 from oraculos import metricas_producto  # noqa: E402
 from src.evaluation.gt_parser import gt_a_por_frame, parsear_cvat  # noqa: E402
 from src.team_classification.arbitro import arquetipos_activos  # noqa: E402
@@ -63,7 +66,6 @@ from src.team_classification.porteros import (  # noqa: E402
     ReglaPorteros,
     deducir_lados,
 )
-from src.team_classification.staff import ReglaStaff  # noqa: E402
 from src.tracking.cache_io import cargar_cache  # noqa: E402
 from src.tracking.filtro_confianza import filtrar_por_confianza  # noqa: E402
 from src.tracking.perfiles import correr_perfil  # noqa: E402
@@ -158,13 +160,7 @@ class Banco:
         self.regla_p = ReglaPorteros.desde_modelo(
             self.modelo, margen=margen, equipo_mx_bajo=bajo, equipo_mx_alto=alto
         )
-        cfg_s = self.cfg_eq.get("staff", {})
-        self.regla_s = ReglaStaff(
-            largo=self.modelo.largo,
-            ancho=self.modelo.ancho,
-            tolerancia_m=cfg_s.get("tolerancia_m", 2.0),
-            min_observaciones=cfg_s.get("min_observaciones", 5),
-        )
+        self.regla_s = _regla_staff(self.cfg_eq, self.modelo)
 
         # Poblaciones sobre las que se mide TODO
         self.reales, self.otras, self.fugas = [], [], []

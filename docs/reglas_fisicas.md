@@ -7,17 +7,29 @@ Medido antes: sacar del bloque a quien no es una persona real vale
 **0,68 m de media de centroide y el 61 % del error de anchura**, el doble
 que arreglar los cruces de equipo (`docs/cruce_de_equipos.md`).
 
-## El resultado
+## El resultado, con su alcance
 
-| variante | mediana | media | p90 | anchura | ocupación |
-|---|---|---|---|---|---|
-| antes | 1,55 m | 2,40 m | 5,97 m | 0,93 m | 6,7 % |
-| **staff lento (ADOPTADO)** | **1,27 m** | **1,78 m** | **4,17 m** | **0,43 m** | **5,5 %** |
-| + filtro físico "gratis" | 1,31 m | 1,63 m | 3,79 m | 0,52 m | 4,3 % |
-| *oráculo (equipo perfecto y sin basura)* | *1,47 m* | *1,55 m* | *3,52 m* | *0,33 m* | — |
+⚠️ **Los titulares dependen del config, y la primera versión de este
+documento daba los del que NO está adoptado.** Corregido tras la
+verificación adversarial. Las tres patas, con la regla ya blindada:
 
-Con una sola regla, **la anchura mejora un 54 %** y el p90 del centroide
-un 30 %. Y ya está por debajo del oráculo en la mediana.
+| config | | mediana | media | p90 | anchura | ocupación |
+|---|---|---|---|---|---|---|
+| **benja PRODUCCIÓN** | antes | 1,30 m | 1,89 m | 4,77 m | 0,74 m | 4,6 % |
+| `processor_benja.yaml` | **después** | 1,30 m | **1,64 m** | **3,25 m** | **0,64 m** | **4,0 %** |
+| benja v4 ajustado | antes | 1,55 m | 2,40 m | 5,97 m | 0,93 m | 6,7 % |
+| *(caja de cambios NO adoptada)* | **después** | **1,27 m** | **1,78 m** | **4,17 m** | **0,43 m** | **5,5 %** |
+| **Villaviciosa** | antes | 3,55 m | 3,87 m | 6,42 m | 3,81 m | 9,0 % |
+| | después | 3,55 m | 3,87 m | 6,42 m | 3,81 m | 9,0 % |
+
+En el config que de verdad se ejecuta: **media −13 %, p90 −32 %, anchura
+−14 %, ocupación −13 %**, y la mediana ni mejora ni empeora. El −54 % de
+anchura del titular original era del `processor_benja_v4_ajustado.yaml`,
+que es la caja de cambios del v4 y **no está adoptada**.
+
+Sigue cumpliendo el criterio de adopción —mejora cuatro métricas de una
+pata, no degrada ninguna en ninguna— pero el tamaño del premio es la
+mitad de lo que dije.
 
 ## 1. El entrenador: la tolerancia sola NO puede
 
@@ -75,9 +87,19 @@ está fuera de las líneas.
 
 Se adopta como **unión** con la regla de siempre, no como sustituta.
 
-**El umbral está en una MESETA**: 1,0 · 1,5 · 2,0 · 2,5 m/s dan
-resultados IDÉNTICOS. No es un filo. El hueco real va del portero (0,60)
-al jugador de campo más lento (2,06); 1,5 cae en medio.
+**En el benjamín el umbral está en una MESETA**: 1,5 · 2,0 · 2,5 m/s dan
+resultados IDÉNTICOS, y el hueco real va del portero (0,60) al jugador de
+campo más lento (2,06).
+
+⚠️ **En Villaviciosa NO hay meseta, hay filo.** Las velocidades de las
+identidades que son personas del GT allí son
+`1,12 · 1,46 · 1,65 · 1,72 · 2,16 …`: el umbral de 1,5 cae **entre 1,46 y
+1,65**, a 4 cm/s de una persona real. Lo único que salva a esas dos
+identidades es que están DENTRO del campo — la geometría, no el umbral.
+El valor se deja puesto porque allí hoy es un no-op literal, pero con el
+aviso en el YAML: **se comparte la representación, nunca el umbral**, y
+escribir la justificación del benjamín en el config de Villaviciosa fue
+exactamente el error que ese principio prohíbe.
 
 **Villaviciosa: cifras idénticas a antes.** Allí no hay a quién coger
 —su GT anota a 23 personas, incluido el árbitro, y solo quedan 41
@@ -146,12 +168,33 @@ caótico. Se midió quitando detecciones **al azar**, 5 semillas:
 | Villaviciosa | 100 al azar | 3,31-4,57 | 3,80-5,29 | 6,32-10,68 | 3,92-6,25 |
 
 **En Villaviciosa el suelo de ruido es de 0,83 m en la mediana y 2,45 m
-en el p90 para una perturbación de CINCO detecciones.** Quitar una
-detección cambia una asociación, que cambia una identidad, que cambia una
-etiqueta de equipo. Consecuencias:
+en el p90 para una perturbación de CINCO detecciones.**
+
+⚠️ **El mecanismo que escribí aquí primero era FALSO.** Dije que "quitar
+una detección cambia una asociación, que cambia una identidad, que cambia
+una etiqueta". Medido detección a detección con tres semillas:
+
+| semilla | detecciones que cambian de EQUIPO | que cambian de IDENTIDAD |
+|---|---|---|
+| 1 | **1411 de 9507 (15 %)** | 55 |
+| 2 | 0 | 0 |
+| 3 | 0 | 0 |
+
+Dos cosas, y las dos importan: el ruido es **bimodal** —casi todas las
+perturbaciones no hacen nada y de vez en cuando una lo vuelca entero— y
+el canal dominante **no es la asociación** sino **el fit del clasificador
+de color**, cuyo umbral de fusión se elige por argmax sobre una rejilla
+(`color_classifier.py::_umbral_auto`). Es una decisión DISCRETA, y una
+detección de más o de menos puede hacerla saltar de escalón. En el
+benjamín no salta nunca; en Villaviciosa sí.
+
+Consecuencias:
 
 1. La "degradación" del filtro físico en Villaviciosa **está dentro del
    ruido** y no significa nada.
+0. El umbral de fusión del fit es un punto frágil del sistema que no
+   sabíamos que existía, y es una línea de trabajo por sí sola:
+   estabilizarlo quitaría ruido de TODAS las mediciones de Villaviciosa.
 2. **Ninguna comparación de Villaviciosa por debajo de ~1 m de centroide
    es interpretable**, y hay que releer con eso en la mano todo lo medido
    allí.
@@ -162,3 +205,33 @@ etiqueta de equipo. Consecuencias:
 
 El benjamín es estable (cero cambio con 5 detecciones al azar), así que
 sus mediciones sí se pueden leer con más finura.
+
+
+## 6. Lo que encontró la verificación adversarial (y no yo)
+
+Cuatro revisores independientes atacaron la adopción. Sobrevivió, pero
+con tres bugs REALES que había que blindar, los tres reproducidos
+ejecutando:
+
+1. **La regla convertía a un PORTERO en staff.** Es el único jugador que
+   puede estar quieto Y sobre la línea de fondo a la vez, o sea que cumple
+   las dos condiciones. Reproducido: portero a 0,90 m/s con la mediana
+   1,3 cm por detrás de la línea → `staff`. Coste medido si pasa: el
+   centroide se va de 1,27 a 2,04 m, entre 3 y 5 veces lo que la regla
+   gana. **Arreglo**: la rama lenta no toca etiquetas que empiecen por
+   `portero`, más `tolerancia_lento_m` a 0,15 m para devolverle margen de
+   proyección (gratis en las tres patas).
+2. **`tolerancia_lento_m` negativa marcaba staff a TODO el campo** — el
+   mismo `max(0, ...)` que ya había cazado en el barrido, pero esta vez
+   en `src/`. El arreglo se había quedado en el script y no llegó al
+   producto. **Arreglo**: `ReglaStaff.desde_dict` lo rechaza.
+3. **`velocidad_media` codificaba "no lo sé" como 0 m/s**, que es
+   justamente el lado que dispara la regla. **Arreglo**: devuelve `None`
+   y la rama se abstiene. Y un mínimo propio de observaciones (25) para
+   juzgar una velocidad, que no es lo mismo que juzgar una mediana.
+
+Y un cuarto, de método: **el banco y el producto habían dejado de aplicar
+la misma regla.** Los scripts construían `ReglaStaff(tolerancia_m=...,
+min_observaciones=...)` enumerando claves a mano, así que la clave nueva
+no llegaba y medían el sistema de ANTES **sin fallar**. Ahora todos pasan
+por `_regla_staff(cfg, modelo)`, que sale del config entero.

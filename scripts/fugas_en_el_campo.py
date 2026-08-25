@@ -52,6 +52,7 @@ warnings.filterwarnings("ignore")
 
 from mirar_recortes_sueltos import (  # noqa: E402
     FRAC_TOLERANCIA,
+    _regla_staff,
     regla_de_la_observacion,
     texto,
 )
@@ -71,7 +72,6 @@ from src.team_classification.porteros import (  # noqa: E402
     ReglaPorteros,
     deducir_lados,
 )
-from src.team_classification.staff import ReglaStaff  # noqa: E402
 from src.tracking.cache_io import cargar_cache  # noqa: E402
 from src.tracking.filtro_confianza import filtrar_por_confianza  # noqa: E402
 from src.tracking.perfiles import correr_perfil  # noqa: E402
@@ -146,13 +146,7 @@ def main() -> None:
     regla_p = ReglaPorteros.desde_modelo(
         modelo, margen=margen, equipo_mx_bajo=bajo, equipo_mx_alto=alto
     )
-    cfg_s = cfg_eq.get("staff", {})
-    regla_s = ReglaStaff(
-        largo=modelo.largo,
-        ancho=modelo.ancho,
-        tolerancia_m=cfg_s.get("tolerancia_m", 2.0),
-        min_observaciones=cfg_s.get("min_observaciones", 5),
-    )
+    regla_s = _regla_staff(cfg_eq, modelo)
 
     tracks = parsear_cvat(args.gt)
     gt_frames = {}
