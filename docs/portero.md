@@ -372,3 +372,71 @@ redundante con el propio Wilson —que ya penaliza la muestra pequeña— y
 quitarla o rebajarla hay que medirlo contra las métricas de producto en
 las dos patas, como todo. Contexto y celdas de la pasada entera:
 `docs/colab_parte_entera_benja.md`.
+
+## Arreglado: el portero es un CONJUNTO (26-ago-2026)
+
+El supuesto roto no era el umbral, era que el portero fuese UNA
+identidad. Encargo de Alex: coronar al conjunto de fragmentos que
+cumplen los dos criterios —pisa su área y es el último hombre de ese
+lado— en vez de al mayor.
+
+**Las dos señales que ya eran invariantes a la escala.** `pisa` y
+`ultimo_hombre` se normalizan por la propia identidad, así que no
+dependen de lo largo que sea el tramo. La única que dependía era
+`presencia`. Por eso el arreglo es exactamente ese: seguir usando las
+dos primeras por fragmento y medir la tercera sobre la UNIÓN del
+conjunto.
+
+**El umbral del último hombre sale de una ventana medida**, no de un
+número que suene bien. Sobre las dos patas y las dos longitudes:
+
+| medida | portero del GT | impostor verificado más alto |
+|---|---|---|
+| benja 60 s A | 0,989 | 0,032 |
+| benja 60 s B | 0,978 | 0,002 |
+| benja 5 min A | 0,996 | — |
+| benja 5 min B | 0,791 | 0,257 |
+| Villaviciosa A | 0,992 | 0,003 |
+| Villaviciosa B | 0,739 / 0,648 (¡dos!) | 0,000 |
+
+Ventana común (0,34 · 0,79), centro **0,55**. Por arriba el límite es
+duro y no teórico: con 0,80 el piloto pierde al portero_B de verdad y
+con 0,90 se abstiene.
+
+**La restricción física que hizo falta y no estaba prevista.** El primer
+intento degradaba Villaviciosa (+0,86 m de centroide mediano, +1,95 de
+p90) aunque el GT dijera que los fragmentos añadidos eran el portero. La
+causa, medida: el id 40 solapa el **100 %** de sus frames con el id 15, y
+los dos son el `obj 1`. No es el portero antes y después — es el portero
+**a la vez**, detectado dos veces. Coronar los dos lo mete dos veces en
+el centroide de su equipo. En el benjamín, en cambio, los cinco
+fragmentos del lado A solapan **0 frames** entre sí.
+
+> Una persona no puede estar en dos sitios a la vez. Un fragmento que no
+> aporta frames nuevos no es una continuación, es un duplicado.
+
+Con `min_frames_nuevos: 0.50` (separación medida 0 % contra 100 %, así
+que el valor solo tiene que caer en medio) Villaviciosa vuelve a quedar
+bit a bit igual.
+
+**Resultado, centroide mediano contra el GT** (`scripts/adoptar_portero_conjunto.py`):
+
+| pata | antes | ahora |
+|---|---|---|
+| benja 60 s | 1,30 m | 1,30 m (idéntico) |
+| **benja 5 min** | **5,30 m** | **1,25 m** |
+| Villaviciosa 60 s | 4,49 m | 4,49 m (idéntico) |
+
+Lo que se pedía era la invariancia a la escala, y es lo que se consigue:
+la misma regla daba 1,30 a 60 s y 5,30 a 5 min —se degradaba 4× solo por
+alargar el tramo— y ahora da 1,30 y 1,25.
+
+**Caso negativo: 4 de 4** en las dos patas (`scripts/portero_escala.py
+--caso-negativo`). Borrado un portero del caché, la regla se abstiene en
+SU lado y sigue coronando bien el otro.
+
+⚠️ Y una trampa que volvió a morder: el caso negativo **solo vale con el
+caché recortado al rango del GT**. Sin recortar, las detecciones del
+portero fuera de los frames anotados sobreviven al borrado y la regla lo
+corona a él — parecía un fallo y era el propio portero. Ya estaba escrito
+en `scripts/portero_identidades.py` y aun así pasó otra vez.

@@ -119,6 +119,23 @@ porteros:
   # y mover su centroide. Por eso la abstención sale por el log como
   # WARNING: si empieza a pasar en partidos reales hay que enterarse por
   # el log y no por el replay.
+  # ── EL PORTERO ES UN CONJUNTO (26-ago-2026) ────────────────────────
+  # La regla coronaba UNA identidad por lado y medía SU presencia. Sobre
+  # tramos largos el seguimiento parte al portero en trozos y se abstenía
+  # teniéndolo delante (piloto de 5 min: 49 % de presencia contra el
+  # mínimo de 0,50, pisando el área el 88 %). Ahora corona al conjunto y
+  # mide la presencia de la UNIÓN. Resultado: el benjamín pasa de 5,30 a
+  # 1,25 m de centroide a 5 min, y de 1,30 a 1,30 a 60 s — la regla deja
+  # de depender de lo largo que sea el tramo, que era el objetivo.
+  #
+  # De paso resuelve lo que avisaba el párrafo de arriba: cuando el
+  # portero se parte en trozos, ya no gana un jugador de campo, porque el
+  # criterio de último hombre se aplica a CADA trozo. El impostor
+  # verificado más alto de las dos patas saca 0,257.
+  #
+  # Los dos umbrales, medidos y no elegidos a ojo (docs/portero.md):
+  min_ultimo_hombre: 0.55 # ventana común (0,34 · 0,79); esto es su centro
+  min_frames_nuevos: 0.50 # separación medida 0 % (benja) contra 100 % (villa)
   metodo: ultimo_hombre
   activo: true
   desde_modelo: true

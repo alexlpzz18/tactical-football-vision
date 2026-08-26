@@ -776,3 +776,100 @@ def test_staff_sigue_exigiendo_el_minimo_cerca_de_la_linea():
     cerca = _identidad_recta(31.0, -3.0, 0.0, 0.0, n=3)
     regla = ReglaStaff(largo=62.0, ancho=40.0, tolerancia_m=2.0, min_obs_lejos_m=6.0)
     assert aplicar_regla_staff({1: "A"}, [cerca], regla)[1] == "A"
+
+
+# ── EL PORTERO ES UN CONJUNTO, no una identidad (26-ago-2026) ─────────
+#
+# Sobre tramos largos el seguimiento parte al portero en trozos y la
+# regla, que coronaba a uno solo y medía SU presencia, se abstenía
+# teniéndolo delante: 87 % de presencia a 60 s, 49 % a 5 min contra un
+# mínimo de 0,50 (docs/portero.md). Ahora corona al conjunto y mide la
+# presencia de la UNIÓN.
+#
+# Con una restricción física que hay que blindar: dos fragmentos
+# presentes en el MISMO frame no son el portero antes y después, son el
+# portero detectado dos veces, y coronar los dos lo mete dos veces en el
+# centroide de su equipo (medido en Villaviciosa: +0,86 m de centroide).
+
+
+def _ident_en_frames(x, y, frames, dt=0.12):
+    """Identidad quieta en (x, y) presente exactamente en esos frames."""
+    from src.tracking.field_tracker import Tracklet
+
+    frames = list(frames)
+    tr = Tracklet(1, frames[0] * dt, np.array([x, y]), 0, frames[0])
+    for f in frames[1:]:
+        tr.anadir(f * dt, np.array([x, y]), 0, f)
+    return [tr]
+
+
+def _coronar(identidades, equipos, lados, **kwargs):
+    from src.team_classification.porteros import (
+        ReglaPorteroUltimoHombre,
+        aplicar_regla_portero_ultimo_hombre,
+    )
+
+    return aplicar_regla_portero_ultimo_hombre(
+        equipos,
+        identidades,
+        _campo_f7(),
+        lados,
+        ReglaPorteroUltimoHombre(activo=True, **kwargs),
+    )
+
+
+def test_portero_partido_en_dos_trozos_corona_LOS_DOS():
+    """Dos mitades consecutivas del mismo portero: las dos son portero."""
+    primera = _ident_en_frames(4.0, 20.0, range(0, 20))
+    segunda = _ident_en_frames(4.5, 20.0, range(20, 40))
+    campo = _ident_en_frames(30.0, 20.0, range(0, 40))
+    salida = _coronar(
+        [primera, segunda, campo], {1: "otro", 2: "otro", 3: "A"}, {"A": -1}
+    )
+    assert salida[1] == "portero_A"
+    assert salida[2] == "portero_A"
+    assert salida[3] == "A"
+
+
+def test_trozo_simultaneo_es_un_DUPLICADO_y_no_se_corona():
+    """Mismo sitio y MISMOS frames: es el portero detectado dos veces."""
+    portero = _ident_en_frames(4.0, 20.0, range(0, 40))
+    duplicado = _ident_en_frames(4.2, 20.0, range(0, 40))
+    campo = _ident_en_frames(30.0, 20.0, range(0, 40))
+    salida = _coronar(
+        [portero, duplicado, campo], {1: "otro", 2: "otro", 3: "A"}, {"A": -1}
+    )
+    coronados = [k for k, v in salida.items() if str(v).startswith("portero_")]
+    assert len(coronados) == 1
+
+
+def test_trozos_sueltos_que_no_cubren_el_tramo_SE_ABSTIENEN():
+    """La unión sigue siendo una puerta: 8 frames de 40 no son un portero."""
+    trozo_a = _ident_en_frames(4.0, 20.0, range(0, 4))
+    trozo_b = _ident_en_frames(4.0, 20.0, range(30, 34))
+    campo = _ident_en_frames(30.0, 20.0, range(0, 40))
+    salida = _coronar(
+        [trozo_a, trozo_b, campo], {1: "otro", 2: "otro", 3: "A"}, {"A": -1}
+    )
+    assert not any(str(v).startswith("portero_") for v in salida.values())
+
+
+def test_la_regla_NO_depende_de_lo_largo_que_sea_el_tramo():
+    """El mismo portero partido en 2 o en 8 trozos se corona igual.
+
+    Es la propiedad que se rompió a los 5 minutos y la razón de este
+    cambio: medir la presencia por fragmento hace que la decisión dependa
+    de cuántas veces se haya partido el seguimiento.
+    """
+    for n_trozos in (2, 4, 8):
+        paso = 80 // n_trozos
+        trozos = [
+            _ident_en_frames(4.0, 20.0, range(i * paso, (i + 1) * paso))
+            for i in range(n_trozos)
+        ]
+        campo = [_ident_en_frames(30.0, 20.0, range(0, 80))]
+        equipos = {k: "otro" for k in range(1, n_trozos + 1)}
+        equipos[n_trozos + 1] = "A"
+        salida = _coronar(trozos + campo, equipos, {"A": -1})
+        coronados = [k for k, v in salida.items() if str(v).startswith("portero_")]
+        assert len(coronados) == n_trozos, f"con {n_trozos} trozos: {coronados}"

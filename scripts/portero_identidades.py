@@ -75,10 +75,17 @@ logger = logging.getLogger("portero_ids")
 RADIO_BORRADO_M = 2.5
 
 
-def cargar_todo(ruta_cfg, ruta_gt, offset, paso, recortar=True, sin_porteros=True):
+def cargar_todo(
+    ruta_cfg, ruta_gt, offset, paso, recortar=True, sin_porteros=True, ruta_eq=None
+):
     cfg = yaml.safe_load(open(ruta_cfg))
     cfg_tr = yaml.safe_load(open(cfg["config_tracking"]))
-    cfg_eq = cargar_config_equipos(cfg["config_equipos"])
+    # Algún processor del banco no trae `config_equipos` (se apoya en el
+    # default del pipeline). `ruta_eq` deja nombrarlo desde fuera sin
+    # tocar un config del banco.
+    cfg_eq = cargar_config_equipos(
+        ruta_eq or cfg.get("config_equipos", "configs/team_classification.yaml")
+    )
     datos = cargar_cache(cfg["rutas"]["cache"])
     with open(cfg["rutas"]["cache_colores"], "rb") as f:
         colores = pickle.load(f)

@@ -232,6 +232,8 @@ def clasificar_identidades(
                 "metodo",
                 "min_pisa_area",
                 "min_presencia",
+                "min_ultimo_hombre",
+                "min_frames_nuevos",
                 "margen_area_m",
             )
         }
@@ -299,7 +301,14 @@ def clasificar_identidades(
                         **{
                             k: v
                             for k, v in cfg_porteros.items()
-                            if k in ("min_pisa_area", "min_presencia", "margen_area_m")
+                            if k
+                            in (
+                                "min_pisa_area",
+                                "min_presencia",
+                                "min_ultimo_hombre",
+                                "min_frames_nuevos",
+                                "margen_area_m",
+                            )
                         },
                         "activo": True,
                     }

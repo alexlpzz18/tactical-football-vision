@@ -26,70 +26,68 @@ longitudes reales del MISMO partido: 60 s, 5 min y la extrapolación a 20.
 
 ---
 
-## Aviso 1 — La regla del portero se va a abstener (y ya falla hoy)
+## Aviso 1 — La regla del portero: ARREGLADO (26-ago-2026)
 
-Este es el problema de verdad, y no es una predicción: **ya pasa en el
-piloto de 5 minutos**.
+Este era el problema de verdad, y no era una predicción: **ya fallaba en
+el piloto de 5 minutos**, con el portero delante pisando el área el 88 %.
 
-`porteros.min_presencia: 0.50` pide que la identidad coronada esté
-presente en más de la mitad **del tramo**. Presencia del mejor candidato
-de cada lado:
+`min_presencia: 0.50` pedía que la identidad coronada estuviera presente
+en más de la mitad **del tramo**. Pero el portero no es una identidad:
 
 | lado | 60 s | 5 min |
 |---|---|---|
-| bajo | id 24 — **87 %** (524/600) | id 24 — **49 %** (1467/2997) |
-| alto | id 8 — **100 %** (599/600) | id 90 — 66 % · id 49 — 51 % · id 112 — 31 % · id 8 — 26 % |
+| bajo | id 24 — **87 %** | id 24 — **49 %** (+ 225, 139, 162, 173) |
+| alto | id 8 — 100 % | id 90 66 % · id 8 26 % |
 
-A 5 minutos el lado bajo cae al 49 % y la regla **se abstiene** — con el
-WARNING que se puso justo para esto:
+Los cinco trozos del lado bajo viven en el mismo metro cuadrado
+—(7,2 · 20,4), (8,3 · 20,3), (6,5 · 23,7), (6,9 · 23,0), (6,6 · 24,4)—
+y **solapan cero frames entre sí**: son la misma persona, uno detrás de
+otro. Y el GT de Villaviciosa lo confirma sin ambigüedad: los ids 16 y
+37 son **los dos el `obj 1`**, el mismo portero_B.
 
-> `SIN PORTERO en el lado de A: la mejor candidata (identidad 24) solo pisa el área el 88 % y está presente el 49 %.`
+**La regla ahora corona al CONJUNTO** y mide la presencia de la UNIÓN de
+sus frames. Con una restricción física añadida: un fragmento presente en
+los MISMOS frames que otro ya coronado no es su continuación, es el
+portero detectado dos veces, y coronar los dos lo metía dos veces en el
+centroide de su equipo (medido en Villaviciosa: +0,86 m antes de añadir
+la restricción; con ella, 0,00).
 
-Fíjate en el dato que lo delata: **pisa el área el 88 %**. Es el portero,
-sin discusión. Lo que falla no es identificarlo, es la puerta de
-presencia. Y el resultado se ve en la cuenta: **2 porteros a 60 s, 1 a 5
-minutos**.
+Lo que se midió (`scripts/adoptar_portero_conjunto.py`), centroide
+mediano contra el GT:
 
-Extrapolando el trozo dominante (524 frames a 60 s → 1467 a 5 min: el
-tramo crece ×5 y el trozo solo ×2,8), a 20 minutos serían ~3500 de
-11.988 = **~29 %**. Muy por debajo de 0,50: **se abstendrá en los dos
-lados**.
+| pata | antes | ahora |
+|---|---|---|
+| benja 60 s | 1,30 m | **1,30 m** (idéntico) |
+| benja 5 min | 5,30 m | **1,25 m** |
+| Villaviciosa 60 s | 4,49 m | **4,49 m** (idéntico) |
 
-**Y no es un umbral mal puesto, es un supuesto que se rompe.** Mira otra
-vez el lado alto a 5 min: el portero no es *una* identidad, son cuatro
-(66 %, 51 %, 31 %, 26 %). Bajar el mínimo coronaría al trozo mayor y
-dejaría los otros tres con su etiqueta de color — que es poco fiable por
-diseño, que es justo el riesgo que la regla existía para tapar. Sobre 20
-minutos **el portero es N identidades**, y una regla que corona una por
-lado se queda corta por construcción, con el umbral que le pongas.
+Y lo que importaba de verdad, que es **la invariancia a la escala**:
+antes la misma regla daba 1,30 m a 60 s y 5,30 m a 5 min — se degradaba
+4× solo por alargar el tramo. Ahora da 1,30 y 1,25. Caso negativo: 4 de
+4 en las dos patas (borrado el portero del caché, se abstiene en su
+lado). Detalle en `docs/portero.md`.
 
-No lo he tocado. Se decide midiendo contra las métricas de producto,
-como todo, y eso es una tarea entera. Lo que sí hará el sistema es
-avisar: el WARNING está puesto y saldrá en el log de Colab.
+## Aviso 2 — El caché a medias: ARREGLADO (26-ago-2026)
 
----
+Antes, `procesar_full` acumulaba todo en RAM y el `pickle.dump` estaba
+**después** del bucle: una caída en el minuto 55 de una pasada de 60 lo
+perdía todo, y como el log también estaba fuera del bucle, la celda no
+imprimía nada en 45-60 minutos.
 
-## Aviso 2 — El caché se escribe UNA sola vez, al final
+Ahora, con `checkpoint: {cada_frames: 500, reanudar: true}` en el config:
 
-En `procesar_full` (src/tracking_data/processor.py) el bucle acumula
-`cache` y `colores` en RAM y el `pickle.dump` está **después** del
-`while`. No hay checkpoint ni reanudación.
-
-Traducido: si la sesión se cae en el minuto 55 de una pasada de 60,
-**se pierde entera**. Y como el `logger.info` también está fuera del
-bucle, la celda **no imprime nada** mientras corre: 45-60 minutos de
-silencio en los que no se distingue "va bien" de "está colgado".
-
-Por eso la celda 3 es una sonda de ritmo: 60 s de vídeo, cronometrados,
-para saber la duración real ANTES de comprometer la sesión.
-
-Arreglarlo son ~15 líneas (volcar cada N frames a las mismas rutas y
-reanudar si el fichero existe) más un log de progreso. **No lo he hecho:**
-toca el camino de producción y hoy tocaba preparar la pasada. Dime y va
-en la siguiente sesión — y si la sonda dice que la pasada son 25 minutos,
-igual no compensa.
-
----
+- **Vuelca cada 500 frames procesados**, de forma atómica (temporal +
+  rename): o está el checkpoint anterior o está el nuevo, nunca medio
+  fichero. Coste medido: ~2,8 s por volcado con el caché lleno, ~0,6 min
+  en toda la pasada.
+- **Reanuda solo**. Si vuelves a lanzar la celda, arranca donde lo dejó.
+- **Se niega a reanudar sobre otra configuración de detección.** El
+  checkpoint guarda una firma (vídeo, modelo, confianza, SAHI, k1/k2,
+  sample, tramo); si no coincide, avisa y lo rehace. Mezclar dos
+  detectores en un mismo caché es peor que perder la pasada — los
+  umbrales van pegados al detector.
+- **Imprime progreso** en cada volcado: frames hechos, porcentaje,
+  ms/frame y minutos que faltan.
 
 ## Aviso 3 — Memoria y tiempo de fit: NO son el problema
 
@@ -217,7 +215,16 @@ H = np.load(cfg['rutas']['homografia']); chk(H.shape == (3, 3), f'homografía {H
 chk(shutil.disk_usage('.').free/1e9 > 3, f"disco libre {shutil.disk_usage('.').free/1e9:.1f} GB (hacen falta ~0,5)")
 import psutil; chk(psutil.virtual_memory().available/1e9 > 4,
                    f'RAM libre {psutil.virtual_memory().available/1e9:.1f} GB (el caché de colores pide ~0,5)')
-chk(not os.path.exists(cfg['rutas']['cache']), 'el caché de salida NO existe todavía (no se pisa nada)')
+if os.path.exists(cfg['rutas']['cache']):
+    import pickle
+    from src.tracking_data.processor import _firma_de_deteccion
+    prev = pickle.load(open(cfg['rutas']['cache'], 'rb'))
+    misma = prev.get('firma') == _firma_de_deteccion(cfg)
+    print(('✓ ' if misma else '⚠️ ') + f"ya hay un caché de {len(prev.get('cache', []))} frames: "
+          + ('se REANUDA' if misma and not prev.get('completo')
+             else 'se SOBRESCRIBE (completo)' if misma else 'se SOBRESCRIBE (otra config)'))
+else:
+    print('✓ no hay caché previo: pasada desde cero')
 print('\n' + ('TODO OK, sigue a la sonda.' if ok else '⚠️ ARREGLA LO DE ARRIBA ANTES DE SEGUIR.'))
 ```
 
@@ -250,9 +257,8 @@ print(f'\n──────── SONDA ────────')
 print(f'  {ritmo*1000:.0f} ms por frame')
 print(f'  parte entera: {ritmo*n_total/60:.0f} min de GPU')
 print(f'  caché de colores estimado: {os.path.getsize("data/tracking_benja/_sonda_col.pkl")/1e6*n_total/n_sonda:.0f} MB')
-print('  → si pasa de ~70 min, NO lances la pasada entera: el caché se')
-print('    escribe solo al final y una caída lo pierde todo. Avísame y')
-print('    meto el checkpoint, o tira por tramos (configs/tramos_benja).')
+print('  → con el checkpoint puesto, una caída ya no cuesta la pasada:')
+print('    relanzas la celda 4 y sigue donde lo dejó.')
 ```
 
 ## Celda 4 — La pasada entera
@@ -264,13 +270,15 @@ t0 = time.time()
 print(f'\nTardó {(time.time()-t0)/60:.1f} min')
 ```
 
-⚠️ **No imprime nada hasta el final** (aviso 2). Que esté callada 40
-minutos es lo normal, no es que se haya colgado. Y no cierres la pestaña.
+Ahora imprime una línea de progreso cada 500 frames con los minutos que
+faltan (aviso 2). Si la sesión se cae, **vuelve a lanzar esta misma
+celda**: reanuda donde lo dejó.
 
 Lo que **sí** hay que leer cuando acabe, en el log:
 
-- `SIN PORTERO en el lado de ...` → lo esperado (aviso 1). Apunta la
-  presencia que reporta: es el número con el que se recalibra.
+- `Portero de X: N fragmento(s) [...]` → lo esperado. Si en vez de eso
+  sale `SIN PORTERO en el lado de ...`, el arreglo del aviso 1 no ha
+  aguantado los 20 minutos y hay que mirarlo antes de seguir.
 - `TERCER GRUPO CON N IDENTIDADES` → si N es mucho mayor que 5, el
   catálogo arbitral está robando jugadores a esta escala.
 - `Detección cacheada: N frames, M features` → N debe ser **11.988**.
@@ -323,9 +331,9 @@ python scripts/procesar_partido.py --config configs/processor_benja_parte_entera
 Bajar `cache_*_benja_p1.pkl` a `data/tracking_benja/`. Y lo primero que
 hay que mirar, en este orden:
 
-1. **¿Se abstuvo la regla del portero?** (aviso 1). Es la predicción
-   concreta de este documento y la primera que hay que confirmar o
-   tumbar.
+1. **¿Cuántos fragmentos coronó por lado?** (aviso 1). Sobre 20 minutos
+   deberían ser más que los 5 y 2 del piloto. Si coronó 0, la regla se
+   ha vuelto a romper a esta escala.
 2. **El fit único**: ¿los dos prototipos separan igual de bien en el
    minuto 19 que en el 1? Es medio motivo de la pasada.
 3. **El replay**, que es lo que de verdad se ve.

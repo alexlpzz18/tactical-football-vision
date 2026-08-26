@@ -57,6 +57,19 @@ muestreo:
   # y con sample_every 3 se procesan 11.988.
   tramo: null
 
+# ── Checkpoint ───────────────────────────────────────────────────────
+# El caché se vuelca cada N frames procesados (atómicamente) y la pasada
+# se reanuda sola si la sesión se cae: al arrancar, si hay un caché a
+# medias hecho con ESTA MISMA configuración de detección, sigue donde lo
+# dejó. Con otro modelo o otro tramo se niega a reanudar y lo rehace —
+# mezclar dos detectores en un caché es peor que perder la pasada.
+# Coste medido: ~2,8 s por volcado con el caché ya lleno, unos 0,6 min
+# en toda la parte entera. Cada volcado imprime además el progreso y una
+# estimación de lo que falta.
+checkpoint:
+  cada_frames: 500 # 0 = desactivado
+  reanudar: true
+
 # ── Tracking ─────────────────────────────────────────────────────────
 tracking:
   perfil: bytetrack
@@ -86,10 +99,10 @@ rutas:
 # No es una extrapolación a ojo: está medido comparando el tramo de 60 s
 # con el piloto de 5 min del MISMO partido (docs/colab_parte_entera_benja.md).
 #
-#   - La regla del portero SE ABSTIENE. A 60 s el portero del lado bajo
-#     está presente el 87 % del tramo; a 5 min, el 49 %, y el mínimo es
-#     0,50. Ya falla hoy en el piloto. No se toca aquí: el umbral se
-#     decide midiendo, no adivinando.
+#   - El portero se corona por CONJUNTO de fragmentos (arreglado el
+#     26-ago-2026). A 60 s era 1 por lado; a 5 min son 5 y 2, todos la
+#     misma persona. Sobre 20 min serán más: lo que hay que mirar en el
+#     log es que NO salga "SIN PORTERO".
 #   - Las identidades se multiplican (67 → 254 al pasar de 1 a 5 min) y
 #     la mediana de observaciones BAJA (54 → 40,5): los tramos largos no
 #     dan identidades más largas, dan más trozos.

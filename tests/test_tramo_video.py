@@ -173,3 +173,116 @@ def test_con_distorsion_real_si_corrige():
     salida = _corregir_distorsion(frame, K, np.array([-0.30, 0.10, 0, 0, 0], float))
     assert salida is not frame
     assert not np.array_equal(salida, frame)
+
+
+# ── Checkpoint del modo full ─────────────────────────────────────────
+#
+# El caché se escribía UNA vez, al final del bucle: una caída de sesión
+# en el minuto 55 de una pasada de 60 lo perdía todo. Estos tests cubren
+# lo que no necesita GPU: la firma que decide si un caché a medias es
+# reanudable, y el volcado atómico.
+
+
+def _cfg_full(tmp_path, **cambios):
+    cfg = {
+        "rutas": {
+            "video": "v.mp4",
+            "cache": str(tmp_path / "det.pkl"),
+            "cache_colores": str(tmp_path / "col.pkl"),
+        },
+        "deteccion": {
+            "modelo": "m.pt",
+            "confianza": 0.3,
+            "max_area_caja": 0.05,
+            "sahi": {"filas": 2, "columnas": 4, "solape": 0.2},
+        },
+        "distorsion": {"k1": 0.0, "k2": 0.0},
+        "muestreo": {"sample_every": 3},
+    }
+    for ruta, valor in cambios.items():
+        nodo = cfg
+        partes = ruta.split(".")
+        for parte in partes[:-1]:
+            nodo = nodo[parte]
+        nodo[partes[-1]] = valor
+    return cfg
+
+
+def test_volcado_atomico_no_deja_temporales(tmp_path):
+    from src.tracking_data.processor import _volcar
+
+    destino = tmp_path / "sub" / "x.pkl"
+    _volcar(str(destino), {"hola": 1})
+    assert destino.exists()
+    assert list(tmp_path.rglob("*.tmp")) == []
+
+
+def test_la_firma_cambia_con_el_modelo_y_con_el_tramo(tmp_path):
+    """Reanudar con otro detector mezclaría dos detectores en un fichero."""
+    from src.tracking_data.processor import _firma_de_deteccion
+
+    base = _firma_de_deteccion(_cfg_full(tmp_path))
+    assert base == _firma_de_deteccion(_cfg_full(tmp_path))
+    otro = _firma_de_deteccion(_cfg_full(tmp_path, **{"deteccion.modelo": "v4.pt"}))
+    assert otro != base
+    conf = _firma_de_deteccion(_cfg_full(tmp_path, **{"deteccion.confianza": 0.45}))
+    assert conf != base
+    tramo = _firma_de_deteccion(
+        _cfg_full(tmp_path, **{"muestreo.tramo": {"min_ini": 5.0, "dur_seg": 60.0}})
+    )
+    assert tramo != base
+
+
+def _guardar(tmp_path, firma, completo, frames=(0, 3, 6)):
+    from src.tracking_data.processor import _guardar_caches
+
+    cache = [{"frame_idx": f, "t": f / 30.0, "dets": []} for f in frames]
+    _guardar_caches(
+        _cfg_full(tmp_path), cache, {"c": 1}, 30.0, 3, (1920, 1080), completo, firma
+    )
+    return cache
+
+
+def test_reanuda_un_checkpoint_compatible(tmp_path):
+    from src.tracking_data.processor import _firma_de_deteccion, _reanudar
+
+    firma = _firma_de_deteccion(_cfg_full(tmp_path))
+    _guardar(tmp_path, firma, completo=False)
+    cache, colores = _reanudar(_cfg_full(tmp_path), firma)
+    assert cache is not None and cache[-1]["frame_idx"] == 6
+    assert colores == {"c": 1}
+
+
+def test_NO_reanuda_si_el_detector_es_otro(tmp_path):
+    """Lo importante del checkpoint: negarse antes que mezclar detectores."""
+    from src.tracking_data.processor import _firma_de_deteccion, _reanudar
+
+    _guardar(tmp_path, _firma_de_deteccion(_cfg_full(tmp_path)), completo=False)
+    otra = _firma_de_deteccion(_cfg_full(tmp_path, **{"deteccion.modelo": "v4.pt"}))
+    assert _reanudar(_cfg_full(tmp_path), otra) == (None, None)
+
+
+def test_NO_reanuda_un_cache_ya_completo(tmp_path):
+    from src.tracking_data.processor import _firma_de_deteccion, _reanudar
+
+    firma = _firma_de_deteccion(_cfg_full(tmp_path))
+    _guardar(tmp_path, firma, completo=True)
+    assert _reanudar(_cfg_full(tmp_path), firma) == (None, None)
+
+
+def test_sin_cache_previo_no_reanuda_nada(tmp_path):
+    from src.tracking_data.processor import _firma_de_deteccion, _reanudar
+
+    firma = _firma_de_deteccion(_cfg_full(tmp_path))
+    assert _reanudar(_cfg_full(tmp_path), firma) == (None, None)
+
+
+def test_el_checkpoint_sigue_siendo_un_cache_valido(tmp_path):
+    """Un checkpoint a medias tiene que poder cargarse con cargar_cache."""
+    from src.tracking.cache_io import cargar_cache
+    from src.tracking_data.processor import _firma_de_deteccion
+
+    firma = _firma_de_deteccion(_cfg_full(tmp_path))
+    _guardar(tmp_path, firma, completo=False)
+    datos = cargar_cache(str(tmp_path / "det.pkl"))
+    assert len(datos["cache"]) == 3 and datos["sample"] == 3

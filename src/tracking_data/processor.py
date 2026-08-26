@@ -7,7 +7,9 @@ con la homografía. Produce una tabla de posiciones (CSV) + metadatos (JSON).
 
 import json
 import logging
+import os
 import pickle
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -359,6 +361,91 @@ def _corregir_distorsion(frame, K, dist):
     return cv2.undistort(frame, K, dist)
 
 
+def _firma_de_deteccion(cfg: dict) -> dict:
+    """Lo que tiene que coincidir para poder REANUDAR un caché a medias.
+
+    Reanudar sobre un caché hecho con otro modelo, otra confianza u otro
+    tramo mezclaría dos detectores en el mismo fichero, y los umbrales de
+    asociación van pegados al detector (CLAUDE.md). Antes que arriesgar
+    eso se rehace la pasada.
+    """
+    return {
+        "video": cfg["rutas"]["video"],
+        "modelo": cfg["deteccion"]["modelo"],
+        "confianza": cfg["deteccion"]["confianza"],
+        "max_area_caja": cfg["deteccion"]["max_area_caja"],
+        "sahi": dict(cfg["deteccion"]["sahi"]),
+        "k1": cfg["distorsion"]["k1"],
+        "k2": cfg["distorsion"]["k2"],
+        "sample_every": cfg["muestreo"]["sample_every"],
+        "tramo": dict(cfg["muestreo"].get("tramo") or {}),
+        "max_frames": cfg["muestreo"].get("max_frames"),
+    }
+
+
+def _volcar(ruta: str, objeto) -> None:
+    """Escribe un pickle de forma ATÓMICA (temporal + rename).
+
+    Un checkpoint que se corta a medias es peor que no tener checkpoint:
+    dejaría un .pkl truncado donde antes había uno bueno. Con el rename
+    del final, o está el anterior o está el nuevo, nunca medio fichero.
+    """
+    ruta = Path(ruta)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    tmp = ruta.with_suffix(ruta.suffix + ".tmp")
+    with open(tmp, "wb") as f:
+        pickle.dump(objeto, f)
+    os.replace(tmp, ruta)
+
+
+def _guardar_caches(cfg, cache, colores, fps, sample, wh, completo, firma) -> None:
+    """Vuelca los dos cachés. `completo` distingue final de checkpoint."""
+    _volcar(
+        cfg["rutas"]["cache"],
+        {
+            "cache": cache,
+            "fps": fps,
+            "sample": sample,
+            "wh": wh,
+            "completo": completo,
+            "firma": firma,
+        },
+    )
+    _volcar(cfg["rutas"]["cache_colores"], colores)
+
+
+def _reanudar(cfg, firma):
+    """Recupera un checkpoint compatible, o (None, None) si no lo hay."""
+    ruta = Path(cfg["rutas"]["cache"])
+    if not ruta.exists():
+        return None, None
+    try:
+        with open(ruta, "rb") as f:
+            previo = pickle.load(f)
+        with open(cfg["rutas"]["cache_colores"], "rb") as f:
+            colores = pickle.load(f)
+    except (OSError, pickle.UnpicklingError, EOFError) as err:
+        logger.warning("No se pudo leer el caché previo (%s); se rehace.", err)
+        return None, None
+    if previo.get("firma") != firma:
+        logger.warning(
+            "Hay un caché en %s hecho con OTRA configuración de detección: "
+            "se ignora y se SOBRESCRIBE. (Si lo querías, muévelo antes.)",
+            ruta,
+        )
+        return None, None
+    if previo.get("completo"):
+        logger.warning(
+            "Hay un caché COMPLETO en %s con esta misma configuración: se "
+            "sobrescribe. (Si lo querías, muévelo antes.)",
+            ruta,
+        )
+        return None, None
+    if not previo.get("cache"):
+        return None, None
+    return previo["cache"], colores
+
+
 def _rango_de_frames(cfg_muestreo: dict, fps: float) -> tuple[int, int | None]:
     """Rango [frame_ini, frame_fin) de frames ORIGINALES a procesar.
 
@@ -518,8 +605,42 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
             f", hasta el {frame_fin}" if frame_fin is not None else "",
         )
 
+    # ── Checkpoint y progreso ────────────────────────────────────────
+    #
+    # Antes de esto el caché se escribía UNA vez, al final del bucle, y no
+    # se imprimía nada mientras corría. Sobre una parte entera son 45-60
+    # min de GPU en los que una caída de sesión lo perdía todo y en los
+    # que no se distinguía "va bien" de "colgado".
+    cfg_ck = cfg.get("checkpoint") or {}
+    cada = int(cfg_ck.get("cada_frames", 500) or 0)
+    firma = _firma_de_deteccion(cfg)
+
     cache, colores = [], {}
     frame_idx = frame_ini
+    if cada and cfg_ck.get("reanudar", True):
+        previo, colores_previos = _reanudar(cfg, firma)
+        if previo:
+            cache, colores = previo, colores_previos
+            frame_idx = cache[-1]["frame_idx"] + 1
+            posicionar_en_frame(cap, frame_idx)
+            logger.info(
+                "REANUDANDO: %d frames ya cacheados, se sigue desde el %d "
+                "(t=%.1f s)",
+                len(cache),
+                frame_idx,
+                frame_idx / fps,
+            )
+
+    # Cuántos frames se van a procesar en total, para el porcentaje y la
+    # estimación. Si no hay tope, manda la longitud del vídeo.
+    fin_real = frame_fin
+    if fin_real is None:
+        total_video = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        fin_real = total_video if total_video > 0 else None
+    a_procesar = (fin_real - frame_ini) // sample if fin_real else None
+    t_arranque = time.time()
+    hechos_esta_sesion = 0
+
     while True:
         if frame_fin is not None and frame_idx >= frame_fin:
             break
@@ -560,14 +681,31 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
                     colores[(frame_idx, det_idx)] = feat
         cache.append({"frame_idx": frame_idx, "t": frame_idx / fps, "dets": dets})
         frame_idx += 1
+        hechos_esta_sesion += 1
+        if cada and hechos_esta_sesion % cada == 0:
+            _guardar_caches(cfg, cache, colores, fps, sample, (w, h), False, firma)
+            ritmo = (time.time() - t_arranque) / hechos_esta_sesion
+            if a_procesar:
+                faltan = max(a_procesar - len(cache), 0) * ritmo
+                logger.info(
+                    "%d/%d frames (%.0f %%) · %.0f ms/frame · faltan ~%.0f min "
+                    "· checkpoint guardado",
+                    len(cache),
+                    a_procesar,
+                    100 * len(cache) / a_procesar,
+                    1000 * ritmo,
+                    faltan / 60,
+                )
+            else:
+                logger.info(
+                    "%d frames · %.0f ms/frame · checkpoint guardado",
+                    len(cache),
+                    1000 * ritmo,
+                )
     cap.release()
 
+    _guardar_caches(cfg, cache, colores, fps, sample, (w, h), True, firma)
     datos = {"cache": cache, "fps": fps, "sample": sample, "wh": (w, h)}
-    Path(cfg["rutas"]["cache"]).parent.mkdir(parents=True, exist_ok=True)
-    with open(cfg["rutas"]["cache"], "wb") as f:
-        pickle.dump(datos, f)
-    with open(cfg["rutas"]["cache_colores"], "wb") as f:
-        pickle.dump(colores, f)
     logger.info(
         "Detección cacheada: %d frames, %d features de color", len(cache), len(colores)
     )
