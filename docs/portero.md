@@ -151,3 +151,100 @@ adelantado: es que ahí es donde mejor funciona.
 3. **Un tramo con córner a favor**, donde el portero sube del todo. En
    60-100 segundos no hay ninguno, así que el punto (c) de arriba mide el
    portero adelantado pero no el portero en el área contraria.
+
+---
+
+# El examen que decide: con NUESTRAS identidades, y el caso negativo
+
+*26-ago-2026. Reproducir: `python scripts/portero_identidades.py` y con
+`--config configs/processor_villa_v4_cache.yaml --gt
+data/annotations/ground_truth_tracking/annotations.xml --offset 7500`.*
+
+Todo lo de arriba es con el GT, o sea con identidad perfecta. Aquí se
+mide con las identidades reales —repartidas en una mediana de 6
+fragmentos por jugador— y, sobre todo, con **el caso negativo**: se le
+borran al caché las observaciones del portero y se mira si la regla sabe
+decir "aquí no hay portero". Una regla que siempre corona a alguien es
+peligrosa: en un partido donde el portero no se vea coronaría a un
+central, y ese central saldría del cómputo de su equipo.
+
+## El resultado: 8 de 8
+
+| pata | caso | corona a | punt. | pisa área | presencia | decisión |
+|---|---|---|---|---|---|---|
+| benjamín | x=0, portero presente | **portero 6** | 0,99 | 100 % | 99 % | corona ✓ |
+| benjamín | x=largo, portero presente | **portero 7** | 0,93 | 99 % | 100 % | corona ✓ |
+| benjamín | x=0, portero BORRADO | impostor | 0,85 | 100 % | **7 %** | **se abstiene** ✓ |
+| benjamín | x=largo, portero BORRADO | impostor | 0,75 | **16 %** | 99 % | **se abstiene** ✓ |
+| Villaviciosa | x=0, portero presente | **portero 1** | 0,99 | 100 % | 100 % | corona ✓ |
+| Villaviciosa | x=largo, portero presente | **portero 0** | 0,99 | 100 % | 100 % | corona ✓ |
+| Villaviciosa | x=0, portero BORRADO | impostor | 0,81 | **0 %** | 21 % | **se abstiene** ✓ |
+| Villaviciosa | x=largo, portero BORRADO | impostor | 0,93 | **26 %** | 99 % | **se abstiene** ✓ |
+
+Y en los dos casos negativos donde el portero del OTRO lado sigue estando,
+se le sigue coronando bien. No hay daño colateral.
+
+## La puntuación sola NO sirve: hacen falta las dos salvaguardas
+
+| | porteros de verdad | impostores |
+|---|---|---|
+| puntuación | 0,93 - 0,99 | **0,75 - 0,93** |
+| pisa área | 99 - 100 % | 0 - **100 %** |
+| presencia | 99 - 100 % | 7 - **99 %** |
+
+- **La puntuación se solapa** (0,93 en los dos lados): un umbral ahí
+  estaría ajustado a nada.
+- **Ninguna salvaguarda separa sola**: un impostor vive dentro del área
+  el 100 % del tiempo (un fragmento de 21 frames detrás de la portería) y
+  otro tiene el 99 % de presencia (un defensa).
+- **Pero cada impostor falla al menos una.** Exigiendo las dos: 8 de 8.
+  Los huecos son anchos (27-98 % en área, 22-98 % en presencia), así que
+  0,50 no es un filo.
+
+La tercera idea de Alex —que el color esté lejos de los dos prototipos—
+**no se adopta**: los porteros dan 0,55-0,99 y los impostores 0,35-0,83,
+o sea que se solapan. Es la más débil de las tres.
+
+## Tres correcciones de diseño que salieron de medir
+
+**1. El voto tiene que incluir a las identidades etiquetadas 'otro'.** El
+portero cercano del benjamín viste azul eléctrico, el catálogo arbitral
+lo manda a 'otro', y un ranking de solo A/B **no puede encontrarlo**.
+Pedirle al color que acierte con el portero es circular: su color no es
+fiable, que es la razón de buscarlo por comportamiento.
+
+**2. Y no basta con 'otro': tienen que competir TODAS en los dos lados.**
+Medido: al borrar un portero, el fit cambia y el clasificador metió al
+OTRO portero en el equipo contrario; como su voto solo contaba en el lado
+de su etiqueta, sacó **0 de 494** y la regla se abstuvo teniéndolo
+delante. El LADO dice el equipo, igual que en la regla de área.
+
+**3. La presencia se cuenta por LADO, no global.** Una identidad que
+compite en las dos votaciones tenía la presencia duplicada y el ratio
+partido por dos: el portero cercano salía 523/1048 = 0,47 y perdía contra
+un fragmento de 50/51.
+
+## Dos trampas del banco que había que quitar antes
+
+- **El caché se recorta al rango del GT.** Va del frame 8991 al 10788 y
+  el GT solo del 9750 al 10635: fuera de ahí no se sabe dónde está el
+  portero, así que no se le borraba, y el "impostor" del caso negativo
+  era el propio portero en los frames sin anotar. Sobrevivían 343 de sus
+  524 observaciones.
+- **Se reporta por LADO, no por etiqueta de equipo.** Las etiquetas A/B
+  salen del fit y son arbitrarias: al borrar un portero se
+  intercambiaron, y la tabla parecía decir un disparate.
+
+## Estado
+
+El portero **pasa el caso negativo**. La regla queda definida así:
+
+> Por cada lado del campo, el portero es la identidad no-staff con la
+> mayor cota inferior de Wilson de ser el último hombre de ese lado,
+> **siempre que** viva dentro de su área más de la mitad del tiempo y
+> esté presente más de la mitad del tramo. Si nadie cumple las dos, **no
+> hay portero en ese lado**.
+
+Falta llevarla a `src/` como regla de producto y medirla contra las
+métricas de producto frente a la regla de área actual. Y eso es una
+adopción, así que necesita el OK de Alex.
