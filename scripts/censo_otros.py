@@ -211,7 +211,7 @@ def main() -> None:
     )
     print(cab3)
     print("    " + "-" * (len(cab3) - 4))
-    for margen in (0.0, 0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9):
+    for margen in (0.60, 0.62, 0.68, 0.75, 0.78):
         cfg2 = {
             **cfg_eq,
             "arbitro": {**cfg_eq.get("arbitro", {}), "margen_equipo": margen},

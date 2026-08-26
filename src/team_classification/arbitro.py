@@ -186,6 +186,28 @@ def identificar_arbitros(
             cerca = min(float(np.linalg.norm(hs - a)), float(np.linalg.norm(hs - b)))
             if separacion > 0 and cerca < margen_equipo * separacion:
                 # Se parece a un equipo: manda el equipo, no el catálogo.
+                #
+                # ⚠️ Y se AVISA cuando la identidad vetada es grande. Este
+                # margen se adoptó a 0,68 y hubo que revertirlo el mismo
+                # día: con otro caché del mismo partido vetaba al ÁRBITRO
+                # —583 observaciones en el centro del campo— que se colaba
+                # entero en un equipo. La guarda que contaba identidades
+                # en el tercer grupo daba el visto bueno, porque no puede
+                # saber si la que queda es la correcta. Esta sí lo habría
+                # cazado.
+                if len(feats) >= 100:
+                    logger.warning(
+                        "El margen del catálogo VETA a la identidad %d, que "
+                        "tiene %d observaciones y casaba un arquetipo "
+                        "arbitral (distancia al equipo más cercano %.2f de "
+                        "%.2f × %.2f). Si era el árbitro, va a contar para "
+                        "un equipo.",
+                        indice,
+                        len(feats),
+                        cerca,
+                        margen_equipo,
+                        separacion,
+                    )
                 continue
         for arq in activos:
             if arq.contiene(tono[0], tono[1], brillo):

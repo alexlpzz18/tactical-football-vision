@@ -1,5 +1,7 @@
 """Tests de la regla de staff, la consolidación final y la concurrencia."""
 
+import logging
+
 import numpy as np
 import pytest
 
@@ -605,3 +607,68 @@ def test_wilson_penaliza_la_muestra_pequena():
 
     assert _wilson(1, 1) < _wilson(55, 60)  # el impostor de una observación
     assert _wilson(0, 0) == 0.0
+
+
+# ── La guarda del tercer grupo ────────────────────────────────────────
+#
+# El árbitro sale por ELIMINACIÓN, no porque ninguna señal lo distinga.
+# Eso depende de `arbitro.margen_equipo`, cuya ventana en el benjamín es
+# 0,62-0,75 con acantilado en 0,78: estrecha. En otro campo puede caerse,
+# y el síntoma sería silencioso. Estos tests fijan que el aviso salte.
+
+
+def _ident_simple(x, y, n=30):
+    from src.tracking.field_tracker import Tracklet
+
+    tr = Tracklet(1, 0.0, np.array([x, y]), 0, 0)
+    for i in range(1, n):
+        tr.anadir(i * 0.12, np.array([x + 0.02 * (i % 3), y]), i, i)
+    return [tr]
+
+
+def _modelo_f7():
+    from src.campo_modelo import cargar_modelo
+
+    return cargar_modelo("f7").con_dimensiones(62.0, 40.0)
+
+
+def test_tercer_grupo_con_uno_es_lo_esperado(caplog):
+    from src.team_classification.pipeline_equipos import avisar_tercer_grupo
+
+    idents = [_ident_simple(31.0, 20.0), _ident_simple(20.0, 20.0)]
+    with caplog.at_level(logging.WARNING):
+        n = avisar_tercer_grupo({1: "otro", 2: "A"}, idents, _modelo_f7())
+    assert n == 1
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_tercer_grupo_VACIO_avisa(caplog):
+    """El árbitro se ha colado en un equipo: hay que enterarse por el log."""
+    from src.team_classification.pipeline_equipos import avisar_tercer_grupo
+
+    idents = [_ident_simple(31.0, 20.0), _ident_simple(20.0, 20.0)]
+    with caplog.at_level(logging.WARNING):
+        n = avisar_tercer_grupo({1: "A", 2: "B"}, idents, _modelo_f7())
+    assert n == 0
+    assert any("TERCER GRUPO VACÍO" in r.message for r in caplog.records)
+
+
+def test_tercer_grupo_con_DOS_avisa(caplog):
+    """El catálogo está robando jugadores."""
+    from src.team_classification.pipeline_equipos import avisar_tercer_grupo
+
+    idents = [_ident_simple(31.0, 20.0), _ident_simple(25.0, 30.0)]
+    with caplog.at_level(logging.WARNING):
+        n = avisar_tercer_grupo({1: "otro", 2: "otro"}, idents, _modelo_f7())
+    assert n == 2
+    assert any("TERCER GRUPO CON 2" in r.message for r in caplog.records)
+
+
+def test_tercer_grupo_no_cuenta_lo_de_fuera_del_campo(caplog):
+    """El público proyectado a 176 m no es un candidato a árbitro."""
+    from src.team_classification.pipeline_equipos import avisar_tercer_grupo
+
+    idents = [_ident_simple(31.0, 20.0), _ident_simple(176.0, 15.0)]
+    with caplog.at_level(logging.WARNING):
+        n = avisar_tercer_grupo({1: "otro", 2: "otro"}, idents, _modelo_f7())
+    assert n == 1

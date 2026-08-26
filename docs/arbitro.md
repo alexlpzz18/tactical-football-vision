@@ -167,3 +167,55 @@ solo: es decisión de Alex.
   apagado).
 - Sigue valiendo menos que el suelo de ruido, así que no se ha invertido
   más de lo que costaba.
+
+---
+
+# ⛔ Y el margen se revirtió el mismo día: la ventana se mueve con el detector
+
+*26-ago-2026, horas después de adoptarlo.*
+
+Alex pidió dos cosas al adoptar `margen_equipo`: elegir el centro de la
+zona común (0,68 en vez de 0,70) y **una guarda por si en otro campo se
+cae**. Se cayó antes: en el mismo partido, con otro caché.
+
+| caché | margen 0,00 | margen 0,68 |
+|---|---|---|
+| benjamín **v3** (producción) | 18 de 309 = 5,8 % | 18 de 309 = 5,8 % |
+| benjamín **v4** | 26 de 380 = 6,8 % | **85 de 380 = 22,4 %** |
+
+*(fugas = detecciones que no son ninguna de las 14 personas y salen
+etiquetadas como jugador)*
+
+Con el caché v4, el margen 0,68 deja fuera al **árbitro** —583
+observaciones en el centro del campo— y se cuela entero en el equipo B.
+El valor al que el árbitro sobrevive es **0,62-0,75 con el v3 y ≤0,50 con
+el v4**: no hay ningún valor común.
+
+No es que la ventana sea estrecha: es que **se mueve con el detector**.
+Mismo patrón que ya conocíamos —"los parámetros van pegados al
+detector"— pero aquí la consecuencia es que el parámetro no existe.
+
+## La lección de método: contar no basta
+
+La guarda que se añadió (`avisar_tercer_grupo`) contaba las identidades
+del tercer grupo y exigía que fuera 1. **Daba el visto bueno** en el caso
+roto: quedaba 1 identidad… pero no era el árbitro, era otra persona, y el
+árbitro estaba dentro del equipo B.
+
+> Una guarda que cuenta no puede detectar un fallo de IDENTIDAD.
+
+Se añade la que sí lo habría cazado, en `arbitro.py`: **avisar cuando el
+margen veta a una identidad grande** (≥100 observaciones) que casaba un
+arquetipo arbitral. Ese es el evento, y es observable sin GT.
+
+## Estado
+
+- `margen_equipo` vuelve a **0,0**.
+- El árbitro **sigue saliendo por eliminación** en las tres patas, solo
+  que acompañado de una segunda identidad. Para quedarse con una sola
+  haría falta separar esas dos, y el color no puede.
+- El **bug del id 40 de Villaviciosa** (jugador robado por el catálogo)
+  sigue sin arreglar: era lo que el margen resolvía.
+- Lo bueno: las fugas de hoy están en **5,8 % (v3) y 6,8 % (v4)**, contra
+  el 13,4 % que se midió antes de esta semana. El staff lento y el
+  portero por último hombre ya se llevaron la mitad.

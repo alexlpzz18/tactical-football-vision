@@ -324,4 +324,70 @@ def clasificar_identidades(
     logger.info(
         "Equipos por identidad: %d/%d clasificadas", len(equipos), len(identidades)
     )
+    avisar_tercer_grupo(equipos, identidades, modelo)
     return equipos
+
+
+def avisar_tercer_grupo(equipos: dict[int, str], identidades, modelo) -> int:
+    """Comprueba que en el TERCER GRUPO quede exactamente una persona.
+
+    La guarda que pidió Alex, y protege de un umbral frágil. El árbitro no
+    se identifica con ninguna señal de comportamiento —los cinco medidos
+    fallan (docs/arbitro.md)— sino **por eliminación**: dentro del campo,
+    quitando los dos equipos, los dos porteros y el staff, debería quedar
+    él y nadie más. Medido: queda exactamente 1 en las dos patas.
+
+    Pero eso depende de `arbitro.margen_equipo`, cuya ventana en el
+    benjamín es de solo 0,62-0,75, con acantilado en 0,78. En otro campo
+    puede caerse, y el síntoma sería silencioso: o el árbitro se cuela en
+    un equipo (0 en el tercer grupo) o el catálogo roba jugadores (2 o
+    más). Las dos cosas salen por el log.
+
+    No corrige nada a propósito: solo avisa. Corregir a ciegas con una
+    señal que no separa es exactamente lo que este proyecto lleva
+    aprendiendo a no hacer.
+
+    Returns:
+        Cuántas identidades quedan en el tercer grupo.
+    """
+    quedan = []
+    for indice, identidad in enumerate(identidades, start=1):
+        etiqueta = str(equipos.get(indice, "otro"))
+        if etiqueta in ("A", "B") or etiqueta.startswith("portero"):
+            continue
+        if etiqueta == "staff":
+            continue
+        posiciones = np.array([pos for tr in identidad for pos in tr.pos])
+        if len(posiciones) < 25:
+            continue
+        mx = float(np.median(posiciones[:, 0]))
+        my = float(np.median(posiciones[:, 1]))
+        if not (0.0 <= mx <= modelo.largo and 0.0 <= my <= modelo.ancho):
+            continue
+        quedan.append((indice, len(posiciones), mx, my))
+
+    if len(quedan) == 1:
+        logger.info(
+            "Tercer grupo: 1 identidad (la %d, %d obs en (%.1f, %.1f)) — "
+            "el árbitro sale por eliminación",
+            *quedan[0],
+        )
+    elif not quedan:
+        logger.warning(
+            "TERCER GRUPO VACÍO: no queda nadie dentro del campo que no sea "
+            "jugador, portero o staff. Si hay árbitro en este partido, está "
+            "contando para un equipo. Revisa arbitro.margen_equipo (ventana "
+            "medida: 0,62-0,75)."
+        )
+    else:
+        detalle = ", ".join(
+            f"{i} ({n} obs en {mx:.0f},{my:.0f})" for i, n, mx, my in quedan
+        )
+        logger.warning(
+            "TERCER GRUPO CON %d IDENTIDADES: debería quedar solo el árbitro. "
+            "Puede que el catálogo esté robando jugadores. Candidatas: %s. "
+            "Revisa arbitro.margen_equipo (ventana medida: 0,62-0,75).",
+            len(quedan),
+            detalle,
+        )
+    return len(quedan)

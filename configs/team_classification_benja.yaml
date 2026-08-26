@@ -213,5 +213,65 @@ agregacion_dist_max_prototipo_nota: ver arriba
 # El arquetipo NEGRO está declarado pero inactivo: la feature de color es
 # un histograma HS y sin V el negro no se distingue del blanco.
 arbitro:
+  # ── margen_equipo: ADOPTADO el 26-ago-2026 (decisión de Alex) ──────
+  #
+  # El catálogo SOLO manda cuando el color de la identidad está a más de
+  # `margen_equipo × d(A,B)` del prototipo más cercano. Sin esto, la regla
+  # de conflicto protege al PROTOTIPO del equipo pero no a la dispersión
+  # alrededor, y un jugador cuyo color se aparta cae en un arquetipo.
+  #
+  # Lo que desbloquea: **el árbitro sale por ELIMINACIÓN**. Dentro del
+  # campo, quitando los dos equipos, los dos porteros y el staff, queda él
+  # y nadie más. No hace falta ninguna señal de comportamiento — los cinco
+  # medidos fallan (docs/arbitro.md).
+  #
+  # EL BARRIDO, en las dos patas (cuántas identidades quedan en el tercer
+  # grupo; el objetivo es exactamente 1, el árbitro):
+  #
+  #   margen   benjamín              Villaviciosa
+  #   0,55     2                     1  (el árbitro)
+  #   0,60     2                     1
+  #   0,62     1  (el árbitro)       1
+  #   0,68     1  ← ADOPTADO         1
+  #   0,75     1                     1
+  #   0,78     0  ← SE PIERDE        1
+  #   0,85     0                     1
+  #
+  # ⚠️ AVISO: en el BENJAMÍN la ventana es ESTRECHA — 0,62 a 0,75, con
+  # acantilado en 0,78, donde el árbitro se pierde. Villaviciosa tiene
+  # meseta ancha (0,55-0,85+). Se elige 0,68 porque es el CENTRO de la
+  # zona común (0,62-0,75), no el valor que va justo. En otro campo esta
+  # ventana puede caerse, y por eso hay una guarda:
+  # `pipeline_equipos.avisar_tercer_grupo` avisa por el log si el tercer
+  # grupo se queda vacío (el árbitro se coló en un equipo) o con dos o más
+  # (el catálogo está robando jugadores).
+  #
+  # ⛔ REVERTIDO A 0 EL 26-ago-2026, HORAS DESPUÉS DE ADOPTARLO.
+  #
+  # La ventana no es solo estrecha: **se MUEVE con el detector**. Medido
+  # sobre el MISMO partido con dos cachés distintos, contando las
+  # detecciones que no son ninguna de las 14 personas y salen como
+  # jugador:
+  #
+  #   caché              margen 0,00        margen 0,68
+  #   benjamín v3        18 de 309 (5,8 %)  18 de 309 (5,8 %)
+  #   benjamín v4        26 de 380 (6,8 %)  85 de 380 (22,4 %)  ← TRIPLICA
+  #
+  # Con el caché v4 el margen 0,68 deja fuera al ÁRBITRO (583
+  # observaciones en el centro del campo) y se cuela entero en el equipo
+  # B. El valor al que el árbitro sobrevive es 0,62-0,75 con el v3 y
+  # ≤0,50 con el v4: **no hay ningún valor común**. Es el mismo patrón que
+  # ya conocíamos con otros umbrales — los parámetros van pegados al
+  # detector — pero aquí la consecuencia es que el parámetro no existe.
+  #
+  # Y hay una lección de método: la guarda de `avisar_tercer_grupo`
+  # contaba 1 identidad en el tercer grupo y daba el visto bueno, porque
+  # no puede saber si ESA 1 es el árbitro. Contar no basta cuando lo que
+  # falla es la identidad de quien queda.
+  #
+  # Lo que sí queda: el árbitro sale por eliminación con margen 0 en las
+  # tres patas, solo que acompañado de una segunda identidad. Y el bug
+  # del id 40 de Villaviciosa sigue sin arreglar.
+  margen_equipo: 0.0
   activo: true
   min_observaciones: 25
