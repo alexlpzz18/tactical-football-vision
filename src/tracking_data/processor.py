@@ -167,7 +167,7 @@ def process_video(
             continue
 
         # 1. Corregir distorsión
-        frame = cv2.undistort(frame, K, dist)
+        frame = _corregir_distorsion(frame, K, dist)
 
         # 2. Detectar con SAHI
         from sahi.predict import get_sliced_prediction
@@ -342,6 +342,23 @@ def validar_config(cfg: dict, claves_obligatorias: tuple) -> None:
         )
 
 
+def _corregir_distorsion(frame, K, dist):
+    """Corrige la distorsión de lente, SALTÁNDOSE el trabajo si no hay.
+
+    Con k1=k2=0 el mapa de `cv2.undistort` es la identidad y devuelve el
+    frame bit a bit igual (comprobado sobre 10 frames reales del vídeo del
+    benjamín), pero el remap se hace igual: 27,8 ms por frame a 1080p en
+    este Mac. Sobre los 11.988 frames de una parte entera son **5,6
+    minutos de CPU tirados**, y en Colab la CPU es la que alimenta a la
+    GPU. La cámara del benjamín no es gran angular y su config tiene
+    k1=k2=0 a propósito, así que este atajo es todo el ahorro y ningún
+    cambio de resultado. Villaviciosa sí distorsiona y no entra por aquí.
+    """
+    if float(dist[0]) == 0.0 and float(dist[1]) == 0.0:
+        return frame
+    return cv2.undistort(frame, K, dist)
+
+
 def _rango_de_frames(cfg_muestreo: dict, fps: float) -> tuple[int, int | None]:
     """Rango [frame_ini, frame_fin) de frames ORIGINALES a procesar.
 
@@ -512,7 +529,7 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
         if frame_idx % sample != 0:
             frame_idx += 1
             continue
-        frame = cv2.undistort(frame, K, dist_lente)
+        frame = _corregir_distorsion(frame, K, dist_lente)
         resultado = get_sliced_prediction(
             frame,
             modelo,

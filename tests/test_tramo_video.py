@@ -125,3 +125,51 @@ def test_posicionar_avisa_si_el_tramo_excede_el_video(tmp_path):
     with pytest.raises(RuntimeError, match="No se pudo posicionar"):
         posicionar_en_frame(cap, 500)
     cap.release()
+
+
+# ── Atajo de distorsión nula ─────────────────────────────────────────
+#
+# La cámara del benjamín no distorsiona (k1=k2=0 en su config), y ahí
+# `cv2.undistort` es la identidad: hace un remap completo del frame para
+# devolverlo igual. Medido a 1080p: 27,8 ms por frame, que sobre los
+# 11.988 frames de una parte entera son 5,6 minutos de CPU.
+
+
+def test_distorsion_nula_devuelve_el_frame_intacto():
+    """Con k1=k2=0 no se toca el frame: el MISMO objeto, sin copiar."""
+    import numpy as np
+
+    from src.tracking_data.processor import _build_camera_matrix, _corregir_distorsion
+
+    frame = np.random.default_rng(0).integers(0, 255, (48, 64, 3), dtype=np.uint8)
+    K = _build_camera_matrix(64, 48)
+    salida = _corregir_distorsion(frame, K, np.array([0.0, 0.0, 0, 0, 0], float))
+    assert salida is frame
+
+
+def test_atajo_bit_a_bit_igual_que_undistort():
+    """El atajo no cambia el resultado: se compara contra cv2.undistort."""
+    import cv2
+    import numpy as np
+
+    from src.tracking_data.processor import _build_camera_matrix, _corregir_distorsion
+
+    frame = np.random.default_rng(1).integers(0, 255, (120, 160, 3), dtype=np.uint8)
+    K = _build_camera_matrix(160, 120)
+    cero = np.array([0.0, 0.0, 0, 0, 0], float)
+    assert np.array_equal(
+        _corregir_distorsion(frame, K, cero), cv2.undistort(frame, K, cero)
+    )
+
+
+def test_con_distorsion_real_si_corrige():
+    """Con k1≠0 el atajo NO se activa y el frame cambia (Villaviciosa)."""
+    import numpy as np
+
+    from src.tracking_data.processor import _build_camera_matrix, _corregir_distorsion
+
+    frame = np.random.default_rng(2).integers(0, 255, (120, 160, 3), dtype=np.uint8)
+    K = _build_camera_matrix(160, 120)
+    salida = _corregir_distorsion(frame, K, np.array([-0.30, 0.10, 0, 0, 0], float))
+    assert salida is not frame
+    assert not np.array_equal(salida, frame)

@@ -335,3 +335,40 @@ Con un coste conocido: abstenerse no es gratis. Si la regla se abstiene
 con un portero presente pero mal seguido, ese portero se queda con su
 etiqueta de color, que puede ser la del equipo contrario. En los cuatro
 casos medidos solo se abstuvo cuando el portero no estaba.
+
+## El coste ya se cobró: `min_presencia` no sobrevive a un tramo largo (26-ago-2026)
+
+"En los cuatro casos medidos solo se abstuvo cuando el portero no
+estaba" era cierto **sobre tramos de 60 segundos**. Al medir el piloto de
+5 minutos del mismo partido del benjamín, la regla se abstiene con el
+portero delante:
+
+> `SIN PORTERO en el lado de A: la mejor candidata (identidad 24) solo pisa el área el 88 % y está presente el 49 %.`
+
+**Pisa el área el 88 %**: es el portero. Lo que falla es
+`min_presencia: 0.50`, que mide presencia como fracción **del tramo
+entero**:
+
+| lado | 60 s | 5 min |
+|---|---|---|
+| bajo | id 24 — 87 % (524/600) | id 24 — **49 %** (1467/2997) |
+| alto | id 8 — 100 % (599/600) | id 90 66 % · id 49 51 % · id 112 31 % · id 8 26 % |
+
+Resultado: **2 porteros coronados a 60 s, 1 a 5 minutos.**
+
+Y el lado alto enseña que **no es un umbral mal elegido, es un supuesto
+roto**. Ahí el portero no es una identidad, son cuatro (66/51/31/26 %).
+Bajar el mínimo coronaría al trozo mayor y dejaría los otros tres con su
+etiqueta de color — el riesgo exacto que la regla existe para tapar.
+Sobre 20 minutos el portero es **N identidades**, y una regla que corona
+una por lado se queda corta por construcción, con el umbral que sea.
+
+Extrapolación a la parte entera (el trozo dominante crece ×2,8 cuando el
+tramo crece ×5): ~29 % de presencia sobre 11.988 frames. **Se abstendrá
+en los dos lados.**
+
+Qué NO hacer: bajar `min_presencia` a ojo. La puerta de presencia es
+redundante con el propio Wilson —que ya penaliza la muestra pequeña— y
+quitarla o rebajarla hay que medirlo contra las métricas de producto en
+las dos patas, como todo. Contexto y celdas de la pasada entera:
+`docs/colab_parte_entera_benja.md`.
