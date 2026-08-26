@@ -221,6 +221,107 @@ def main() -> None:
     print("\n  ('x más lejos' = metros que pasó del medio campo hacia el campo")
     print("   contrario; negativo significa que nunca lo cruzó)")
 
+    robustez(datos, por_frame, porteros, lados, largo)
+
+
+def _mas_ultimo_hombre(
+    por_frame, datos, porteros, lados, equipo, frames=None, ocultar=None
+):
+    """(persona con más votos de último hombre, su ratio, ratio del segundo).
+
+    `ocultar` es un conjunto de (frame, persona) que se quita antes de
+    votar: sirve para simular que el detector no vio a alguien.
+    """
+    veces, presente = {}, {}
+    for (f, eq), gente in por_frame.items():
+        if eq != equipo or (frames is not None and f not in frames):
+            continue
+        suyo = [o for o in porteros if datos[o]["equipo"] == eq]
+        if not suyo:
+            continue
+        lado = lados[suyo[0]]
+        visibles = [g for g in gente if not (ocultar and (f, g[0]) in ocultar)]
+        if not visibles:
+            continue
+        extremo = min(visibles, key=lambda g: -lado * g[1])
+        for oid, _x, _y in visibles:
+            presente[oid] = presente.get(oid, 0) + 1
+        veces[extremo[0]] = veces.get(extremo[0], 0) + 1
+    if not presente:
+        return None, 0.0, 0.0
+    orden = sorted(presente, key=lambda o: -veces.get(o, 0) / max(presente[o], 1))
+    r1 = veces.get(orden[0], 0) / max(presente[orden[0]], 1)
+    r2 = veces.get(orden[1], 0) / max(presente[orden[1]], 1) if len(orden) > 1 else 0.0
+    return orden[0], r1, r2
+
+
+def robustez(datos, por_frame, porteros, lados, largo):
+    """¿Aguanta el criterio 1 lo que le va a pasar en producción?
+
+    Se mide contra las dos cosas que el GT esconde: que el tramo sea corto
+    y que el detector se deje gente. Si el criterio necesita 60 frames y
+    que estén todos, no sirve.
+    """
+    import random
+
+    print("\n" + "=" * 74)
+    print("ROBUSTEZ DEL CRITERIO 1 (es de lo que depende la Parte 2)")
+    print("=" * 74)
+    frames = sorted({f for f, _eq in por_frame})
+
+    print("\n  a) ¿Cuántos frames hace falta? (ventanas desde el principio)")
+    cab = f"    {'ventana':<10}{'equipo A':<28}{'equipo B':<28}"
+    print(cab)
+    print("    " + "-" * (len(cab) - 4))
+    for n in (5, 10, 20, 30, len(frames)):
+        celdas = []
+        for equipo in ("A", "B"):
+            oid, r1, r2 = _mas_ultimo_hombre(
+                por_frame, datos, porteros, lados, equipo, frames=set(frames[:n])
+            )
+            ok = "✔" if oid is not None and datos[oid]["portero"] else "✘"
+            celdas.append(f"{ok} persona {oid} ({r1:.0%}, 2º {r2:.0%})")
+        print(f"    {f'{n} frames':<10}{celdas[0]:<28}{celdas[1]:<28}")
+
+    print("\n  b) ¿Y si el detector NO ve al portero en parte de los frames?")
+    cab2 = f"    {'portero oculto':<16}{'equipo A':<28}{'equipo B':<28}"
+    print(cab2)
+    print("    " + "-" * (len(cab2) - 4))
+    for frac in (0.0, 0.2, 0.5, 0.8, 1.0):
+        rnd = random.Random(7)
+        ocultar = {(f, o) for o in porteros for f in frames if rnd.random() < frac}
+        celdas = []
+        for equipo in ("A", "B"):
+            oid, r1, r2 = _mas_ultimo_hombre(
+                por_frame, datos, porteros, lados, equipo, ocultar=ocultar
+            )
+            ok = "✔" if oid is not None and datos[oid]["portero"] else "✘"
+            celdas.append(f"{ok} persona {oid} ({r1:.0%}, 2º {r2:.0%})")
+        print(f"    {f'{frac:.0%}':<16}{celdas[0]:<28}{celdas[1]:<28}")
+    print("\n    (al 100 % el portero no existe para el criterio: lo que salga")
+    print("     ahí es el falso positivo que habría que descartar por el veto)")
+
+    print("\n  c) ¿Sigue siendo último hombre cuando MÁS adelantado está?")
+    for oid in porteros:
+        d = datos[oid]
+        lado = lados[oid]
+        pos = sorted(d["pos"], key=lambda p: -lado * p[1], reverse=True)
+        adelantados = {f for f, _x, _y in pos[: max(len(pos) // 5, 1)]}
+        _o, r1, _r2 = _mas_ultimo_hombre(
+            por_frame, datos, porteros, lados, d["equipo"], frames=adelantados
+        )
+        veces = 0
+        for (f, eq), gente in por_frame.items():
+            if eq != d["equipo"] or f not in adelantados:
+                continue
+            if min(gente, key=lambda g: -lado * g[1])[0] == oid:
+                veces += 1
+        print(
+            f"    portero {oid} (equipo {d['equipo']}), en el 20 % de frames en que "
+            f"más sube: último hombre {veces}/{len(adelantados)} = "
+            f"{veces/max(len(adelantados),1):.0%}"
+        )
+
 
 if __name__ == "__main__":
     main()

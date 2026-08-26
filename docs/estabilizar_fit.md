@@ -75,6 +75,39 @@ La meseta empieza en **20** y 20/30/50 dan cifras idénticas: no es un
 filo. Se pone **50** por margen — son 0,6 segundos más **una vez por
 partido**, y el fit no está en ningún bucle.
 
+## Hasta dónde llega (y hasta dónde NO)
+
+Repetido con semillas **completamente distintas** (100-111, en vez de las
+1-8 con las que se adoptó) y con una perturbación más dura: quitar un
+FOTOGRAMA entero, o sea las ~20 detecciones de un frame, que imita al
+detector atragantándose en vez de un muestreo uniforme.
+
+| perturbación | n_init | dispersión cobertura | dispersión equipos |
+|---|---|---|---|
+| 5 detecciones al azar | 10 | 0,049 | 0,072 |
+| 5 detecciones al azar | **50** | **0,003** | **0,004** |
+| un frame entero (~20 dets) | 10 | 0,047 | 0,075 |
+| un frame entero (~20 dets) | **50** | 0,010 | **0,035** |
+
+Dos lecturas, y la segunda corrige lo que escribí antes:
+
+1. **La estabilidad no era de las semillas 1-8.** Con otras doce
+   completamente distintas sale igual: la dispersión cae 16× en cobertura
+   y 18× en accuracy de equipos.
+2. ⚠️ **`n_init: 50` no hace el fit inmune, lo hace mucho menos
+   sensible.** Con una perturbación del tamaño de un fotograma entero la
+   accuracy de equipos todavía se mueve 0,035 — mejor que 0,075, pero
+   lejos del 0,003 del fit congelado. La frase "cae exactamente a la del
+   fit congelado" vale para perturbaciones de un puñado de detecciones,
+   que son las que estaban confundiendo las mediciones, **no para
+   cualquier perturbación**.
+
+Consecuencia práctica: sigue sin poderse comparar Villaviciosa entre
+CACHÉS DISTINTOS (v4 contra v4pre, por ejemplo) con diferencias pequeñas,
+porque ahí la perturbación es de miles de detecciones, no de cinco. Para
+eso sigue valiendo el test de supervivencia del signo de
+`docs/suelo_de_ruido.md`.
+
 ## Comprobación en la otra pata
 
 El benjamín sale **idéntico dígito a dígito** (1,30 / 1,89 / 4,77 / 0,74

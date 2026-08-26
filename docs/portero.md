@@ -70,13 +70,49 @@ exclusividad):
 - No depende del color, que en un portero es basura por diseño.
 - Funciona con el portero adelantado, que es donde la regla de área falla.
 
+## ¿Aguanta lo que le va a pasar en producción?
+
+Tres ataques al criterio 1, en las dos patas:
+
+**a) ¿Cuántos frames hace falta?** Con **5 frames** ya acierta al portero
+de los dos equipos, al 100 % y con el segundo a 0 %, en las dos patas. No
+necesita el tramo entero, así que sirve en cuanto arranca el partido.
+
+**b) ¿Y si el detector no ve al portero?** Ocultándolo a propósito:
+
+| oculto | benjamín A | benjamín B | Villa A | Villa B |
+|---|---|---|---|---|
+| 20 % | ✔ 100 % | ✔ 90 % | ✔ 100 % | ✔ 100 % |
+| 50 % | ✔ 100 % | ✔ 84 % | ✔ 100 % | ✔ 100 % |
+| 80 % | ✔ 100 % | ✔ 100 % | ✔ 100 % | ✔ 100 % |
+| 100 % | ✘ | ✘ | ✘ | ✘ |
+
+Aguanta hasta el 80 %. Nuestro detector se deja el 8 %, así que hay
+muchísimo margen.
+
+⚠️ **Y aquí está el agujero**: al 100 % —un portero que no se detecte
+NUNCA en el tramo— el criterio devuelve un jugador de campo, y **el veto
+del medio campo no lo caza**, porque los falsos positivos que aparecen
+(persona 8 en el benjamín, personas 10 y 19 en Villaviciosa) están
+justamente entre los que tampoco cruzan. Hace falta otra salvaguarda: la
+más obvia es exigir que el candidato pase también por el área de portería
+alguna vez.
+
+**c) ¿Y cuando el portero está más adelantado?** Que es la corrección de
+Alex, y donde las reglas obvias fallan. En el 20 % de frames en que más
+sube: **último hombre 11/11 y 12/12 en el benjamín, 20/20 y 20/20 en
+Villaviciosa. El 100 %.** El criterio no solo sobrevive al portero
+adelantado: es que ahí es donde mejor funciona.
+
 ## Lo que falta antes de construir
 
 1. **Medirlo con NUESTRAS identidades, no con el GT.** Cada jugador está
    repartido en una mediana de 6 identidades, así que "la identidad que
    más veces es último hombre" no es lo mismo que "la persona que más
-   veces lo es". Es la medición que decide si la regla es implementable.
-2. **Qué pasa cuando el portero no está detectado** en un frame: el
-   último hombre pasa a ser un defensa y el criterio le da su voto.
-3. **Un tramo con córner a favor**, donde el portero sube. En 60-100
-   segundos no hay ninguno.
+   veces lo es". Es la medición que decide si la regla es implementable, y
+   es lo siguiente.
+2. **La salvaguarda para el portero nunca detectado** (ver el agujero de
+   arriba): exigir que el candidato pise el área alguna vez.
+3. **Un tramo con córner a favor**, donde el portero sube del todo. En
+   60-100 segundos no hay ninguno, así que el punto (c) de arriba mide el
+   portero adelantado pero no el portero en el área contraria.

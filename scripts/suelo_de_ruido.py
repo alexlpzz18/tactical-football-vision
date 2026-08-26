@@ -66,11 +66,32 @@ METRICAS = [
 ]
 
 
-def quitar_al_azar(cache, colores, n, semilla):
-    """Caché sin n detecciones elegidas al azar, con los colores remapeados."""
+def quitar_al_azar(cache, colores, n, semilla, modo="azar"):
+    """Caché sin n detecciones, con los colores remapeados.
+
+    `modo` cambia QUÉ se quita, porque un muestreo uniforme es la
+    perturbación más benigna posible y no prueba gran cosa:
+      - "azar": n detecciones al azar.
+      - "frame": todas las detecciones de un frame entero elegido al azar
+        (imita que el detector se atragante con un fotograma).
+      - "confianza": las n detecciones de MAYOR confianza, que son las que
+        más pesan en el fit. Es el caso adverso.
+    """
     rnd = random.Random(semilla)
     todas = [(e["frame_idx"], i) for e in cache for i in range(len(e["dets"]))]
-    fuera = set(rnd.sample(todas, min(n, len(todas))))
+    if modo == "frame":
+        objetivo = rnd.choice([e["frame_idx"] for e in cache if e["dets"]])
+        fuera = {(f, i) for f, i in todas if f == objetivo}
+    elif modo == "confianza":
+        por_conf = sorted(
+            todas,
+            key=lambda k: -float(
+                next(e for e in cache if e["frame_idx"] == k[0])["dets"][k[1]][6]
+            ),
+        )
+        fuera = set(por_conf[:n])
+    else:
+        fuera = set(rnd.sample(todas, min(n, len(todas))))
     nuevo, nuevos_colores = [], {}
     for entrada in cache:
         f = entrada["frame_idx"]
@@ -141,6 +162,13 @@ def main() -> None:
     p.add_argument("--config-tracking", default="configs/tracking_v4.yaml")
     p.add_argument("--semillas", type=int, default=6)
     p.add_argument("--cantidades", default="5,50,200")
+    # Las semillas 1-8 no son sagradas: si la estabilidad solo aparece con
+    # ellas, es de las semillas y no del arreglo.
+    p.add_argument("--semilla-inicial", type=int, default=1)
+    # Un muestreo uniforme es la perturbacion mas benigna posible. "frame"
+    # quita un fotograma entero (el detector se atraganta) y "confianza"
+    # quita las detecciones que MAS pesan en el fit: el caso adverso.
+    p.add_argument("--modo", default="azar", choices=["azar", "frame", "confianza"])
     p.add_argument(
         "--n-init",
         type=int,
@@ -175,11 +203,13 @@ def main() -> None:
     base = evaluar(banco, cache0, banco.colores, refit=True)
     print(fila("ninguna (referencia)", [base]))
 
-    semillas = list(range(1, args.semillas + 1))
+    semillas = list(range(args.semilla_inicial, args.semilla_inicial + args.semillas))
     for n in [int(x) for x in args.cantidades.split(",")]:
         res = []
         for semilla in semillas:
-            cache, colores = quitar_al_azar(cache0, banco.colores, n, semilla)
+            cache, colores = quitar_al_azar(
+                cache0, banco.colores, n, semilla, args.modo
+            )
             res.append(evaluar(banco, cache, colores, refit=True))
         print(fila(f"{n} al azar ({len(semillas)} semillas)", res))
 
@@ -192,7 +222,9 @@ def main() -> None:
     for n in [int(x) for x in args.cantidades.split(",")]:
         res = []
         for semilla in semillas:
-            cache, colores = quitar_al_azar(cache0, banco.colores, n, semilla)
+            cache, colores = quitar_al_azar(
+                cache0, banco.colores, n, semilla, args.modo
+            )
             res.append(evaluar(banco, cache, colores, refit=False))
         print(fila(f"{n} al azar, fit congelado", res))
 
