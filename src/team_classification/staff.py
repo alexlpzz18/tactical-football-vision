@@ -64,6 +64,15 @@ class ReglaStaff:
     # normalísima, ahí es donde vive— se marcaría staff, y eso cuesta más
     # de lo que la regla gana. Medido: 0,15 m sigue cogiendo al entrenador
     # (0,23 m fuera) y no cambia ninguna cifra.
+    # Distancia a partir de la cual NO se exige `min_observaciones`. Una
+    # identidad de 3 detecciones a 17 m fuera del campo es basura aunque
+    # su mediana esté hecha con tres puntos: no hay error de proyección
+    # que explique eso. Medido en las dos patas: **ninguna persona real
+    # tiene su mediana fuera del campo** (máximo 0,0 m), y la identidad
+    # corta más cercana al borde está a 0,8 m — así que 6 m deja un margen
+    # de sobra. Sin esto, un señor jugando con sus hijos en el campo de al
+    # lado (4 observaciones, 17 m fuera) se colaba como jugador.
+    min_obs_lejos_m: float = 6.0
     tolerancia_lento_m: float = 0.15
     vel_max_lento: float = 0.0  # 0 = desactivado
     # Observaciones mínimas para juzgar una VELOCIDAD, que no es lo mismo
@@ -147,10 +156,13 @@ def aplicar_regla_staff(
     n_staff = 0
     for id_identidad, identidad in enumerate(identidades, start=1):
         posiciones = np.array([pos for tracklet in identidad for pos in tracklet.pos])
-        if len(posiciones) < regla.min_observaciones:
-            continue
         mx, my = float(np.median(posiciones[:, 0])), float(np.median(posiciones[:, 1]))
         fuera = _distancia_fuera(mx, my, regla.largo, regla.ancho)
+        # El mínimo de observaciones existe porque con 2-3 posiciones la
+        # mediana no significa nada. Pero eso vale cerca de la línea, no a
+        # 17 m fuera: ahí no hay error de proyección que lo explique.
+        if len(posiciones) < regla.min_observaciones and fuera <= regla.min_obs_lejos_m:
+            continue
         motivo = None
         if fuera > regla.tolerancia_m:
             motivo = "fuera del campo"

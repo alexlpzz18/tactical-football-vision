@@ -34,6 +34,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from src.team_classification.color_classifier import _Prototipos
 from src.team_classification.feature_v2 import brillo_medio
 
 logger = logging.getLogger(__name__)
@@ -224,3 +225,129 @@ def identificar_arbitros(
                 )
                 break
     return encontrados
+
+
+def un_solo_arbitro(
+    equipos: dict[int, str],
+    identidades,
+    colores: dict,
+    prototipos_equipo: list[np.ndarray],
+    modelo,
+    min_observaciones: int = 25,
+    devolver_por_color: bool = False,
+) -> dict[int, str]:
+    """Dentro del campo hay exactamente UN árbitro: corona a uno y suelta al resto.
+
+    Misma forma que la exclusividad un-portero-por-área, y por la misma
+    razón: es conocimiento del reglamento, no un umbral. De todas las
+    identidades que acaban en el tercer grupo DENTRO del campo —las
+    marque el catálogo de equipaciones o el prototipo 'otro' del color—
+    se queda una y **las demás vuelven a su equipo por color**.
+
+    Por qué hace falta, y es lo que Alex vio en el vídeo: el catálogo roba
+    jugadores. En Villaviciosa se lleva a un naranja (id 40, 110
+    observaciones en el centro del campo) y ni siquiera marca al árbitro,
+    que llega al tercer grupo por el prototipo 'otro'. Sin exclusividad,
+    ese jugador se queda fuera del cómputo de su equipo.
+
+    LA EVIDENCIA son dos señales, y hacen falta las dos porque cada una es
+    estrecha en una pata y ancha en la otra (medido):
+
+    | pata | candidato | obs | distancia al prototipo | qué es |
+    |---|---|---|---|---|
+    | benjamín | 28 | **493** | **0,76** | el árbitro |
+    | benjamín | 1 | 204 | 0,60 | otro |
+    | Villaviciosa | 67 | **136** | **0,96** | el árbitro |
+    | Villaviciosa | 40 | 110 | 0,40 | un jugador |
+
+    Por observaciones el margen es 2,4× en el benjamín y solo 1,24× en
+    Villaviciosa; por color, 1,27× y 2,4×. **Multiplicadas, 3,0× en las
+    dos.** Es el mismo patrón que la regla del staff lento y que las
+    salvaguardas del portero: dos señales débiles que juntas son fuertes.
+
+    No hay ningún umbral que calibrar: es un ranking, así que no se puede
+    mover con el detector como se movió `margen_equipo`.
+
+    ⚠️ Si no hay árbitro en el tramo, esto corona igualmente al mejor
+    candidato. No es una regresión: hoy ESE candidato ya está fuera del
+    cómputo por estar en el tercer grupo, así que la regla nunca deja las
+    cosas peor de como están — solo devuelve a los demás.
+    """
+    resultado = dict(equipos)
+    candidatos = []
+    for indice, identidad in enumerate(identidades, start=1):
+        if str(equipos.get(indice, "otro")) != "otro":
+            continue
+        posiciones = np.array([pos for tr in identidad for pos in tr.pos])
+        if len(posiciones) < min_observaciones:
+            continue
+        mx = float(np.median(posiciones[:, 0]))
+        my = float(np.median(posiciones[:, 1]))
+        if not (0.0 <= mx <= modelo.largo and 0.0 <= my <= modelo.ancho):
+            continue  # fuera del campo: eso es staff, no árbitro
+        pares = [tuple(par) for tr in identidad for par in tr.det_idxs]
+        feats = [colores[par] for par in pares if par in colores]
+        if not feats or len(prototipos_equipo) < 2:
+            continue
+        from src.team_classification.feature_v2 import parte_camiseta_hs
+
+        media = parte_camiseta_hs(np.mean(feats, axis=0))
+        a, b = prototipos_equipo[0], prototipos_equipo[1]
+        separacion = float(np.linalg.norm(a - b)) or 1.0
+        distancia = (
+            min(float(np.linalg.norm(media - a)), float(np.linalg.norm(media - b)))
+            / separacion
+        )
+        candidatos.append((len(pares) * distancia, indice, len(pares), distancia))
+
+    if len(candidatos) <= 1:
+        return resultado
+    candidatos.sort(reverse=True)
+    _ev, elegido, n_obs, dist = candidatos[0]
+    logger.info(
+        "Un solo árbitro: identidad %d (%d obs, color a %.2f del prototipo). "
+        "Las otras %d vuelven a su equipo.",
+        elegido,
+        n_obs,
+        dist,
+        len(candidatos) - 1,
+    )
+    for _ev, indice, n_obs, dist in candidatos[1:]:
+        if not devolver_por_color:
+            # ⚠️ NO se les devuelve el equipo por COLOR, y es una renuncia
+            # medida: al jugador robado de Villaviciosa (id 40, del equipo
+            # A) el clasificador lo manda a B —es justo la identidad cuyo
+            # color engañó al catálogo, así que pedirle a ese mismo color
+            # que la reasigne es circular—. Medido: devolviéndolos por
+            # color el centroide de Villaviciosa empeora de 3,55 a 3,65 m.
+            # Se quedan en 'otro', que es donde ya estaban: la regla
+            # garantiza UN árbitro sin inventarse equipos.
+            logger.info(
+                "  identidad %d (%d obs, color a %.2f) NO es el árbitro, "
+                "pero se queda en 'otro': su color no es de fiar",
+                indice,
+                n_obs,
+                dist,
+            )
+            continue
+        feats = [
+            colores[tuple(par)]
+            for tr in identidades[indice - 1]
+            for par in tr.det_idxs
+            if tuple(par) in colores
+        ]
+        if not feats:
+            continue
+        from src.team_classification.color_classifier import TeamClassifierColor
+
+        aux = TeamClassifierColor()
+        aux._prototipos = _Prototipos(a=prototipos_equipo[0], b=prototipos_equipo[1])
+        resultado[indice] = aux.predict_color(np.mean(feats, axis=0), solo_equipos=True)
+        logger.info(
+            "  identidad %d (%d obs, color a %.2f) NO es el árbitro: vuelve a '%s'",
+            indice,
+            n_obs,
+            dist,
+            resultado[indice],
+        )
+    return resultado

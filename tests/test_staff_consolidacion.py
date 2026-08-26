@@ -60,11 +60,19 @@ def test_staff_usa_la_mediana_no_un_pico():
 
 
 def test_staff_no_juzga_con_pocas_observaciones():
-    """Con menos de min_observaciones no se decide (evita artefactos)."""
+    """Con menos de min_observaciones no se decide CERCA DE LA LÍNEA.
+
+    ⚠️ El caso que probaba antes —3 observaciones a (-200, -300), o sea
+    300 m fuera— ya NO se abstiene, y es a propósito: desde el
+    26-ago-2026 hay `min_obs_lejos_m`, porque a esa distancia no hay error
+    de proyección que lo explique y un señor del campo de al lado con 4
+    detecciones se colaba como jugador. El mínimo sigue valiendo donde
+    tiene sentido: junto a la línea.
+    """
     resultado = aplicar_regla_staff(
         {1: "A"},
-        [_identidad([(-200.0, -300.0)] * 3)],
-        ReglaStaff(LARGO, ANCHO, min_observaciones=5),
+        [_identidad([(-3.0, 20.0)] * 3)],
+        ReglaStaff(LARGO, ANCHO, min_observaciones=5, min_obs_lejos_m=6.0),
     )
     assert resultado[1] == "A"
 
@@ -672,3 +680,95 @@ def test_tercer_grupo_no_cuenta_lo_de_fuera_del_campo(caplog):
     with caplog.at_level(logging.WARNING):
         n = avisar_tercer_grupo({1: "otro", 2: "otro"}, idents, _modelo_f7())
     assert n == 1
+
+
+# ── Un solo árbitro dentro del campo ──────────────────────────────────
+#
+# Misma forma que la exclusividad un-portero-por-área: conocimiento del
+# reglamento, no un umbral. Y la evidencia son DOS señales porque cada una
+# es estrecha en una pata: por observaciones el margen es 2,4× en el
+# benjamín y 1,24× en Villaviciosa; por color 1,27× y 2,4×. Multiplicadas,
+# 3,0× en las dos.
+
+
+def _protos():
+    a = np.zeros(256)
+    a[10] = 1.0
+    b = np.zeros(256)
+    b[200] = 1.0
+    return [a, b]
+
+
+def _ident_con_color(x, y, n, color_idx, colores, base_frame):
+    from src.tracking.field_tracker import Tracklet
+
+    tr = Tracklet(1, 0.0, np.array([x, y]), 0, base_frame)
+    colores[(base_frame, 0)] = np.eye(256)[color_idx]
+    for i in range(1, n):
+        tr.anadir(i * 0.12, np.array([x, y]), i, base_frame + i)
+        colores[(base_frame + i, i)] = np.eye(256)[color_idx]
+    return [tr]
+
+
+def test_un_solo_arbitro_corona_al_de_mas_evidencia():
+    from src.team_classification.arbitro import un_solo_arbitro
+
+    colores = {}
+    modelo = _modelo_f7()
+    # el árbitro: muchas observaciones Y color lejos de los dos equipos
+    arbitro = _ident_con_color(31.0, 20.0, 60, 120, colores, 0)
+    # un jugador robado: menos observaciones y color cerca del equipo A
+    robado = _ident_con_color(25.0, 20.0, 30, 11, colores, 1000)
+    salida = un_solo_arbitro(
+        {1: "otro", 2: "otro"}, [arbitro, robado], colores, _protos(), modelo
+    )
+    assert salida[1] == "otro"  # el árbitro se queda
+    assert salida[2] == "otro"  # el otro NO se reasigna por color (medido)
+
+
+def test_un_solo_arbitro_no_toca_nada_si_solo_hay_uno():
+    from src.team_classification.arbitro import un_solo_arbitro
+
+    colores = {}
+    arbitro = _ident_con_color(31.0, 20.0, 60, 120, colores, 0)
+    equipos = {1: "otro"}
+    assert (
+        un_solo_arbitro(equipos, [arbitro], colores, _protos(), _modelo_f7()) == equipos
+    )
+
+
+def test_un_solo_arbitro_ignora_lo_de_fuera_del_campo():
+    """Quien está fuera es staff, no árbitro, y no debe competir."""
+    from src.team_classification.arbitro import un_solo_arbitro
+
+    colores = {}
+    arbitro = _ident_con_color(31.0, 20.0, 40, 120, colores, 0)
+    publico = _ident_con_color(176.0, 15.0, 200, 120, colores, 1000)
+    salida = un_solo_arbitro(
+        {1: "otro", 2: "otro"}, [arbitro, publico], colores, _protos(), _modelo_f7()
+    )
+    # el público tiene MÁS observaciones pero está fuera: ni se le mira
+    assert salida[1] == "otro" and salida[2] == "otro"
+
+
+def test_staff_no_exige_minimo_de_observaciones_muy_lejos():
+    """Un señor en el campo de al lado con 3 detecciones es basura igual.
+
+    El mínimo existe porque con 2-3 posiciones la mediana no significa
+    nada. Eso vale cerca de la línea, no a 17 m fuera. Medido: ninguna
+    persona real tiene su mediana fuera del campo.
+    """
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+
+    lejano = _identidad_recta(80.0, 56.0, 0.0, 0.0, n=3)
+    regla = ReglaStaff(largo=62.0, ancho=40.0, tolerancia_m=2.0, min_obs_lejos_m=6.0)
+    assert aplicar_regla_staff({1: "A"}, [lejano], regla)[1] == "staff"
+
+
+def test_staff_sigue_exigiendo_el_minimo_cerca_de_la_linea():
+    from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
+
+    # 3 m fuera: dentro del margen donde la proyección puede engañar
+    cerca = _identidad_recta(31.0, -3.0, 0.0, 0.0, n=3)
+    regla = ReglaStaff(largo=62.0, ancho=40.0, tolerancia_m=2.0, min_obs_lejos_m=6.0)
+    assert aplicar_regla_staff({1: "A"}, [cerca], regla)[1] == "A"

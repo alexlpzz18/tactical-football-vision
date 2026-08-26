@@ -20,7 +20,7 @@ from src.team_classification.color_classifier import (
     TeamClassifierColor,
 )
 from src.campo_modelo import MODELO_F11, EjeProfundidad, cargar_modelo
-from src.team_classification.arbitro import identificar_arbitros
+from src.team_classification.arbitro import identificar_arbitros, un_solo_arbitro
 from src.team_classification.oclusion import color_medio_limpio
 from src.team_classification.porteros import (
     ReglaPorteros,
@@ -307,6 +307,29 @@ def clasificar_identidades(
             )
         else:
             equipos = aplicar_regla_porteros(equipos, identidades, regla)
+
+    # UN SOLO ÁRBITRO dentro del campo. Va DESPUÉS de porteros y antes de
+    # staff, y el orden importa: los porteros están en el tercer grupo
+    # hasta que su regla los saca —el color de un portero no es fiable por
+    # diseño— así que ponerlo antes hacía que un PORTERO ganase la
+    # exclusividad (medido en Villaviciosa: la identidad 19, con 498
+    # observaciones, se llevaba el puesto y el árbitro de verdad volvía al
+    # equipo A). Lo cazó la guarda `avisar_tercer_grupo` avisando de
+    # "TERCER GRUPO VACÍO".
+    #
+    # Y va antes de staff porque staff mira geometría, no color: quien
+    # esté fuera del campo no es árbitro y da igual el orden.
+    if cfg_equipos.get("arbitro", {}).get("uno_solo", True):
+        equipos = un_solo_arbitro(
+            equipos,
+            identidades,
+            colores,
+            [clasificador._prototipos.a, clasificador._prototipos.b],
+            modelo,
+            min_observaciones=cfg_equipos.get("arbitro", {}).get(
+                "min_observaciones", 25
+            ),
+        )
 
     # Regla de staff: quien vive FUERA del campo no juega (línier, cuerpo
     # técnico). Va DESPUÉS de porteros: un portero está dentro del campo,
