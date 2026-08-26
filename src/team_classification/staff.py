@@ -73,6 +73,10 @@ class ReglaStaff:
     # de sobra. Sin esto, un señor jugando con sus hijos en el campo de al
     # lado (4 observaciones, 17 m fuera) se colaba como jugador.
     min_obs_lejos_m: float = 6.0
+    # ⚠️ Puede ser NEGATIVA, y aquí sí significa algo: "hasta X metros
+    # DENTRO de la línea". Se compara contra `_distancia_con_signo`, no
+    # contra `_distancia_fuera`. Sin esto la rama lenta no puede alcanzar
+    # al entrenador, que vive 80 cm dentro del campo.
     tolerancia_lento_m: float = 0.15
     vel_max_lento: float = 0.0  # 0 = desactivado
     # Observaciones mínimas para juzgar una VELOCIDAD, que no es lo mismo
@@ -90,7 +94,9 @@ class ReglaStaff:
         # comparación `0 > -1` es cierta para todo el mundo y marcaría
         # staff al campo entero. Ya pasó en un barrido. Se rechaza en vez
         # de dejar la trampa abierta en el YAML.
-        for nombre in ("tolerancia_m", "tolerancia_lento_m"):
+        # `tolerancia_lento_m` SÍ puede ser negativa: usa la distancia con
+        # signo (ver arriba). La otra no, que va contra la acotada.
+        for nombre in ("tolerancia_m",):
             if getattr(regla, nombre) < 0:
                 raise ValueError(
                     f"{nombre} no puede ser negativa ({getattr(regla, nombre)}): "
@@ -105,6 +111,21 @@ def _distancia_fuera(mx: float, my: float, largo: float, ancho: float) -> float:
     fuera_x = max(0.0, -mx, mx - largo)
     fuera_y = max(0.0, -my, my - ancho)
     return max(fuera_x, fuera_y)
+
+
+def _distancia_con_signo(mx: float, my: float, largo: float, ancho: float) -> float:
+    """Distancia al borde del campo, NEGATIVA si está DENTRO.
+
+    `_distancia_fuera` está acotada con max(0, ...), lo que impide
+    expresar "a menos de X metros de la línea, por dentro". Y hace falta:
+    el entrenador del benjamín vive a 0,04 y 0,84 m **dentro** de la
+    banda, así que ninguna tolerancia positiva puede alcanzarlo.
+
+    Medido en las dos patas: las personas reales nunca acercan su mediana
+    a menos de **3,05 m** (benjamín) ni **6,27 m** (Villaviciosa) de la
+    línea, y las que más se acercan van a 4-7 m/s. Hay hueco de sobra.
+    """
+    return max(-mx, mx - largo, -my, my - ancho)
 
 
 def velocidad_media(identidad: list[Tracklet]) -> float | None:
@@ -168,7 +189,8 @@ def aplicar_regla_staff(
             motivo = "fuera del campo"
         elif (
             regla.vel_max_lento > 0
-            and fuera > regla.tolerancia_lento_m
+            and _distancia_con_signo(mx, my, regla.largo, regla.ancho)
+            > regla.tolerancia_lento_m
             and len(posiciones) >= regla.min_obs_lento
             # ⚠️ La rama lenta NO puede sobrescribir a un portero. Es el
             # único jugador del campo que puede estar quieto Y sobre la

@@ -219,3 +219,55 @@ arquetipo arbitral. Ese es el evento, y es observable sin GT.
 - Lo bueno: las fugas de hoy están en **5,8 % (v3) y 6,8 % (v4)**, contra
   el 13,4 % que se midió antes de esta semana. El staff lento y el
   portero por último hombre ya se llevaron la mitad.
+
+---
+
+# Un solo árbitro: la exclusividad (adoptada) y su limitación
+
+*26-ago-2026. Alex, viendo el vídeo: "hay que dejar claro que dentro del
+campo solo puede haber un árbitro".*
+
+Implementada en `arbitro.py::un_solo_arbitro`, misma forma que la
+exclusividad un-portero-por-área: conocimiento del reglamento, **no un
+umbral**, así que no puede moverse con el detector como se movió
+`margen_equipo`.
+
+| pata | candidato | obs | distancia al prototipo | qué es |
+|---|---|---|---|---|
+| benjamín | **28** | **493** | **0,76** | **el árbitro** |
+| benjamín | 1 | 204 | 0,60 | otro |
+| Villaviciosa | **67** | **136** | **0,96** | **el árbitro** |
+| Villaviciosa | 40 | 110 | 0,40 | un jugador robado |
+
+Las dos señales hacen falta: por observaciones el margen es 2,4× y solo
+1,24×; por color 1,27× y 2,4×. **Multiplicadas, 3,0× en las dos patas.**
+Producto idéntico a antes en las dos.
+
+## ⚠️ Limitación conocida: NO se abstiene
+
+Si en el tramo no hay árbitro, corona igualmente al mejor candidato.
+Verificado borrando al árbitro del caché de Villaviciosa: corona a la
+identidad 39 (106 obs). **No es una regresión** —ese candidato ya estaba
+fuera del cómputo por estar en 'otro'— pero al revés que la regla del
+portero, que sí sabe decir "aquí no hay portero", esta no.
+
+**Una forma barata de resolverlo, si algún día interesa** (no construida):
+exigir que el coronado recorra el campo. El árbitro, aunque en 50 s no
+cruce de área a área, sí se mueve con el juego; los candidatos falsos que
+han aparecido son fragmentos casi estáticos o gente de un punto fijo. La
+señal sería la MISMA que ya usa el staff lento —velocidad media— pero al
+revés: exigir un mínimo en vez de un máximo. Está por medir: el árbitro
+del benjamín va a 1,91 m/s y el de Villaviciosa a 2,68, mientras que la
+identidad 39 del caso negativo habría que mirarla.
+
+## Dos cosas que hubo que corregir midiendo
+
+- **El orden.** Puesta ANTES de la regla de porteros, ganaba un portero
+  (Villaviciosa, identidad 19 con 498 observaciones) y el árbitro de
+  verdad volvía al equipo A. La guarda `avisar_tercer_grupo` lo cazó
+  avisando de "TERCER GRUPO VACÍO". Va después de porteros.
+- **No se devuelve el equipo por color** a los no coronados: al jugador
+  robado de Villaviciosa (equipo A) el clasificador lo manda a B — es
+  justo el color que engañó al catálogo, así que pedirle a ese mismo
+  color que lo reasigne es circular. Devolviéndolos, el centroide
+  empeoraba de 3,55 a 3,65 m. Se quedan en 'otro'.

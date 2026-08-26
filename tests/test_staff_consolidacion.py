@@ -425,19 +425,23 @@ def test_staff_lento_no_toca_al_portero_NI_DETRAS_DE_SU_LINEA():
     assert aplicar_regla_staff({1: "portero_A"}, [ident], regla)[1] == "portero_A"
 
 
-def test_staff_lento_rechaza_tolerancia_negativa():
-    """Una tolerancia negativa marcaría staff a TODO el campo.
+def test_staff_rechaza_tolerancia_negativa_en_la_rama_NO_lenta():
+    """`tolerancia_m` va contra la distancia ACOTADA: negativa no significa nada.
 
-    `_distancia_fuera` está acotada con max(0, ...), así que `0 > -1` es
-    cierto para cualquiera. Se rechaza al construir en vez de dejar la
-    trampa abierta en el YAML.
+    ⚠️ `tolerancia_lento_m` SÍ puede serlo desde el 26-ago-2026: esa rama
+    usa distancia CON SIGNO, y ahí "-1,5" quiere decir "hasta 1,5 m DENTRO
+    de la línea", que es lo que hace falta para alcanzar al entrenador.
+    Son dos comparaciones contra dos distancias distintas, y por eso una
+    acepta negativos y la otra no.
     """
     from src.team_classification.staff import ReglaStaff
 
     with pytest.raises(ValueError, match="no puede ser negativa"):
-        ReglaStaff.desde_dict(
-            {"largo": 62.0, "ancho": 40.0, "tolerancia_lento_m": -1.0}
-        )
+        ReglaStaff.desde_dict({"largo": 62.0, "ancho": 40.0, "tolerancia_m": -1.0})
+    regla = ReglaStaff.desde_dict(
+        {"largo": 62.0, "ancho": 40.0, "tolerancia_lento_m": -1.5}
+    )
+    assert regla.tolerancia_lento_m == -1.5
 
 
 def test_velocidad_media_devuelve_None_cuando_no_se_puede_saber():

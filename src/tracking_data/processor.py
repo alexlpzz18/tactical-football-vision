@@ -567,6 +567,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     )
     from src.tracking.cache_io import cargar_cache
     from src.tracking.filtro_confianza import filtrar_por_confianza
+    from src.tracking.plausibilidad_fisica import filtrar_por_plausibilidad
     from src.tracking.perfiles import correr_perfil
 
     validar_config(cfg, _CLAVES_DESDE_CACHE)
@@ -587,6 +588,21 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     if conf_min > 0:
         datos["cache"], colores = filtrar_por_confianza(
             datos["cache"], colores, conf_min
+        )
+
+    # Filtro de PLAUSIBILIDAD FÍSICA, en el mismo sitio y por la misma
+    # razón. Usa la escala del suelo que da la homografía para preguntar
+    # cuánto mide en metros lo que hay dentro de cada caja: una línea del
+    # campo mide 0,22 m de ancho y la persona real más estrecha 0,39, así
+    # que hay hueco. Ver src/tracking/plausibilidad_fisica.py.
+    cfg_fisica = cfg_tracking.get("plausibilidad_fisica", {}) or {}
+    if cfg_fisica.get("activo", False):
+        homografia_f = np.load(cfg["rutas"]["homografia"])
+        datos["cache"], colores, _n = filtrar_por_plausibilidad(
+            datos["cache"],
+            colores,
+            homografia_f,
+            **{k: v for k, v in cfg_fisica.items() if k != "activo"},
         )
 
     # Caché de embeddings de apariencia (opcional). Se filtra con el

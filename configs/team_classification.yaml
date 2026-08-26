@@ -91,8 +91,31 @@ staff:
   # centroide del benjamín se iba de 1,27 a 2,04 m, entre 3 y 5 veces lo
   # que la regla gana). 0,15 m sigue cogiendo al entrenador, que está a
   # 0,23 m, y no cambia ninguna cifra.
-  tolerancia_lento_m: 0.15
-  vel_max_lento: 1.5
+  # ── ACTUALIZADO el 26-ago-2026: alcanza al ENTRENADOR ────────────
+  #
+  # La tolerancia pasa a NEGATIVA, y aquí sí significa algo porque la
+  # rama lenta usa distancia CON SIGNO: "hasta 1,5 m DENTRO de la línea".
+  # Hacía falta porque el entrenador del benjamín vive a 0,04 y 0,84 m
+  # dentro de la banda, partido en dos identidades, y ninguna tolerancia
+  # positiva podía alcanzarlo.
+  #
+  # Por qué es seguro, medido en las dos patas: las personas reales nunca
+  # acercan su mediana a menos de **3,05 m** (benjamín) ni **6,27 m**
+  # (Villaviciosa) de la línea, y las que más se acercan van a 4-7 m/s.
+  #
+  # LOS DOS BARRIDOS, y los dos tienen meseta:
+  #   tolerancia  -1,0 / -1,5 / -2,5 m   -> mismas cifras
+  #   velocidad    2,5 / 3,0 m/s          -> mismas cifras
+  #                3,5 m/s                -> ROMPE el caché v4 (p90 de
+  #                                          4,17 a 5,96: se come a alguien)
+  # Se eligen los CENTROS: -1,5 m y 2,75 m/s. El fragmento más rápido del
+  # entrenador va a 1,98 m/s y el jugador real más cercano a la línea a
+  # 4,1: 2,75 cae en medio.
+  #
+  # Efecto: benjamín media 1,58 -> 1,55 m y ocupación 4,1 -> 3,9 %;
+  # Villaviciosa idéntico. No degrada nada en ninguna pata.
+  tolerancia_lento_m: -1.5
+  vel_max_lento: 2.75
   # Y 25 observaciones, no 5: juzgar una VELOCIDAD no es juzgar una
   # mediana de posición. Con 5 muestras en medio segundo "se mueve poco"
   # no significa nada.
@@ -193,6 +216,14 @@ agregacion_dist_max_prototipo_nota: ver arriba
 # El arquetipo NEGRO está declarado pero inactivo: la feature de color es
 # un histograma HS y sin V el negro no se distingue del blanco.
 arbitro:
+  # ⚠️ LIMITACIÓN CONOCIDA Y ACEPTADA (26-ago-2026): la exclusividad NO
+  # se abstiene. Si en el tramo no hay árbitro, corona igualmente al mejor
+  # candidato del tercer grupo. No es una regresión —ese candidato ya
+  # estaba fuera del cómputo de equipos por estar en 'otro'— pero tampoco
+  # es correcto, y al revés que la regla del portero, que sí sabe decir
+  # "aquí no hay". Verificado en Villaviciosa: borrando al árbitro del
+  # caché, corona a la identidad 39 (106 obs).
+  uno_solo: true
   # ── margen_equipo: ADOPTADO el 26-ago-2026 (decisión de Alex) ──────
   #
   # El catálogo SOLO manda cuando el color de la identidad está a más de
