@@ -486,3 +486,122 @@ def test_velocidad_media_usa_el_tiempo_real_no_el_numero_de_muestras():
     # Misma trayectoria y misma duración, pero con la mitad de muestras
     con_hueco = _identidad_recta(0.0, 0.0, 0.24, 0.0, n=6, dt=0.24)
     assert velocidad_media(con_hueco) == pytest.approx(1.0, rel=1e-6)
+
+
+# ── El portero por ÚLTIMO HOMBRE, con sus dos salvaguardas ────────────
+#
+# Los tres hallazgos de diseño que costó medir y que hay que blindar:
+#   (a) el voto incluye a las identidades 'otro' — pedirle al color que
+#       identifique al portero es circular, viste distinto por reglamento;
+#   (b) compiten en LOS DOS lados — su etiqueta de equipo no es fiable;
+#   (c) ninguna salvaguarda separa sola, pero cada impostor falla una.
+
+
+def _campo_f7():
+    from src.campo_modelo import cargar_modelo
+
+    return cargar_modelo("f7").con_dimensiones(62.0, 40.0)
+
+
+def _ident_en(x, y, n=40, dt=0.12, ruido=0.05):
+    from src.tracking.field_tracker import Tracklet
+
+    tr = Tracklet(1, 0.0, np.array([x, y]), 0, 0)
+    for i in range(1, n):
+        tr.anadir(i * dt, np.array([x + ruido * (i % 3), y]), i, i)
+    return [tr]
+
+
+def test_portero_ultimo_hombre_corona_al_de_su_area():
+    from src.team_classification.porteros import (
+        ReglaPorteroUltimoHombre,
+        aplicar_regla_portero_ultimo_hombre,
+    )
+
+    modelo = _campo_f7()
+    portero = _ident_en(4.0, 20.0)  # dentro del área de x=0
+    defensa = _ident_en(20.0, 20.0)
+    delantero = _ident_en(45.0, 20.0)
+    equipos = {1: "otro", 2: "A", 3: "A"}  # el portero, en 'otro' (hallazgo a)
+    salida = aplicar_regla_portero_ultimo_hombre(
+        equipos,
+        [portero, defensa, delantero],
+        modelo,
+        {"A": -1, "B": +1},
+        ReglaPorteroUltimoHombre(activo=True),
+    )
+    assert salida[1] == "portero_A"
+    assert salida[2] == "A" and salida[3] == "A"
+
+
+def test_portero_ultimo_hombre_SE_ABSTIENE_si_nadie_pisa_el_area():
+    """El caso negativo: sin portero, la regla no puede coronar a un central."""
+    from src.team_classification.porteros import (
+        ReglaPorteroUltimoHombre,
+        aplicar_regla_portero_ultimo_hombre,
+    )
+
+    modelo = _campo_f7()
+    central = _ident_en(20.0, 20.0)
+    delantero = _ident_en(45.0, 20.0)
+    equipos = {1: "A", 2: "A"}
+    salida = aplicar_regla_portero_ultimo_hombre(
+        equipos,
+        [central, delantero],
+        modelo,
+        {"A": -1},
+        ReglaPorteroUltimoHombre(activo=True),
+    )
+    assert salida == equipos  # nadie coronado
+
+
+def test_portero_ultimo_hombre_SE_ABSTIENE_con_un_fragmento_del_area():
+    """Vive en el área el 100 % pero solo aparece en 4 de 40 frames."""
+    from src.team_classification.porteros import (
+        ReglaPorteroUltimoHombre,
+        aplicar_regla_portero_ultimo_hombre,
+    )
+
+    modelo = _campo_f7()
+    fragmento = _ident_en(4.0, 20.0, n=4)
+    central = _ident_en(20.0, 20.0, n=40)
+    salida = aplicar_regla_portero_ultimo_hombre(
+        {1: "otro", 2: "A"},
+        [fragmento, central],
+        modelo,
+        {"A": -1},
+        ReglaPorteroUltimoHombre(activo=True),
+    )
+    assert salida[1] == "otro"
+
+
+def test_portero_ultimo_hombre_ignora_el_fondo_lejano():
+    """Sin este filtro, el público proyectado a x=176 ganaba la votación.
+
+    La regla filtra por la etiqueta 'staff', pero en el pipeline el staff
+    se etiqueta DESPUÉS, así que hace falta un filtro geométrico propio.
+    """
+    from src.team_classification.porteros import (
+        ReglaPorteroUltimoHombre,
+        aplicar_regla_portero_ultimo_hombre,
+    )
+
+    modelo = _campo_f7()
+    portero = _ident_en(58.0, 20.0)  # área de x=62
+    publico = _ident_en(176.0, 15.0)  # detrás del fondo, fuera del campo
+    salida = aplicar_regla_portero_ultimo_hombre(
+        {1: "otro", 2: "otro"},
+        [portero, publico],
+        modelo,
+        {"B": +1},
+        ReglaPorteroUltimoHombre(activo=True),
+    )
+    assert salida[1] == "portero_B"
+    assert salida[2] == "otro"
+
+
+def test_wilson_penaliza_la_muestra_pequena():
+    from src.team_classification.porteros import _wilson
+
+    assert _wilson(1, 1) < _wilson(55, 60)  # el impostor de una observación
+    assert _wilson(0, 0) == 0.0

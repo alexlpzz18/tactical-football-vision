@@ -248,3 +248,90 @@ El portero **pasa el caso negativo**. La regla queda definida así:
 Falta llevarla a `src/` como regla de producto y medirla contra las
 métricas de producto frente a la regla de área actual. Y eso es una
 adopción, así que necesita el OK de Alex.
+
+---
+
+# La adopción: último hombre contra la regla de área
+
+*26-ago-2026. Reproducir: `python scripts/adoptar_portero.py` y con
+`--config configs/processor_villa_v4_cache.yaml --gt
+data/annotations/ground_truth_tracking/annotations.xml --offset 7500`.*
+
+Implementada en `src/team_classification/porteros.py` como
+`aplicar_regla_portero_ultimo_hombre`, seleccionable con
+`porteros.metodo: area | ultimo_hombre`.
+
+## Las métricas de producto: EMPATE EXACTO
+
+| pata | variante | mediana | media | p90 | anchura | ocupación |
+|---|---|---|---|---|---|---|
+| benjamín | área (hoy) | 1,30 m | 1,64 m | 3,25 m | 0,64 m | 4,0 % |
+| benjamín | **último hombre** | 1,30 m | 1,64 m | 3,25 m | 0,64 m | 4,0 % |
+| Villaviciosa | área (hoy) | 3,55 m | 3,87 m | 6,42 m | 3,81 m | 9,0 % |
+| Villaviciosa | **último hombre** | 3,55 m | 3,87 m | 6,42 m | 3,81 m | 9,0 % |
+
+Dígito a dígito. Las dos reglas coronan a los mismos cuatro porteros
+—correctos los cuatro— así que **no hay nada que mejorar en estos dos
+tramos**. Por el criterio de adopción de Alex ("mejora todas sin degradar
+ninguna"), un empate NO se adopta solo: la decisión de cambiar el default
+es suya. Se deja el default en `area` y la nueva seleccionable.
+
+## Dónde SÍ gana: el caso del id 55
+
+La identidad **55 del benjamín tiene 123 observaciones, su dueño en el GT
+es la persona 11 —un jugador de campo del equipo B— y su mediana cae
+dentro de un área de penalti.** Es el caso que Alex recordaba.
+
+| regla | criterio | portero | id 55 |
+|---|---|---|---|
+| **área** | observaciones dentro del área | 599 | **123 (segundo candidato)** |
+| **último hombre** | cota de Wilson | 0,98 | **0,00 (0 de 123)** |
+
+La regla vieja no lo corona **solo porque la exclusividad lo tapa**: es el
+segundo, al 21 % de la permanencia del ganador. Si la identidad del
+portero se fragmentara en trozos de menos de 123 observaciones —y se
+fragmenta en 6 de mediana— el id 55 se llevaría el área.
+
+La regla nueva no lo pone segundo: lo pone **a cero**. Nunca es el último
+hombre, ni una vez en 123 apariciones.
+
+Y hay más población en riesgo: en el benjamín **10 identidades tienen la
+mediana dentro de un área**, de las cuales solo 2 son porteros. En
+Villaviciosa son 2 y las 2 son porteros — o sea que el riesgo es del F7,
+donde el área ocupa el 39 % del campo entre las dos.
+
+## El orden de las reglas, comprobado
+
+Catálogo arbitral → porteros → staff. Comprobado en las dos patas:
+**ningún portero acaba como 'otro' ni como 'staff'** con ninguno de los
+dos métodos. El catálogo corre ANTES y puede mandar al portero a 'otro'
+(en el benjamín lo hace: viste azul eléctrico); las dos reglas de portero
+corren DESPUÉS y lo sobrescriben, así que **la posición manda sobre el
+color**. Y ninguna de las dos vuelve a mirar el color, así que el catálogo
+no puede pisarlas luego.
+
+⚠️ Un fallo de orden que sí apareció, y no era el que se vigilaba: la
+regla nueva filtraba candidatas por la etiqueta `staff`, **pero staff se
+etiqueta DESPUÉS**. Así que competían las identidades del fondo lejano
+—público y árboles proyectados a x=79, 101 y hasta 176 m sobre un campo
+de 62— y, como son las que más x tienen, ganaban la votación del lado
+lejano: la regla se abstenía teniendo al portero delante con 283/296.
+Arreglado con un filtro GEOMÉTRICO dentro de la propia regla (la mediana
+tiene que estar dentro del rectángulo), sin reordenar nada: que la
+geometría de "no juega" sea la última palabra está puesto a propósito.
+
+## Recomendación
+
+Cambiar el default a `ultimo_hombre`, aunque las métricas empaten, porque
+hace tres cosas que la de área no puede:
+
+1. **Sabe abstenerse** (8 de 8 con el caso negativo).
+2. **Funciona cuando el color manda al portero a 'otro'**, que es el caso
+   normal: viste distinto por reglamento.
+3. **No depende de que el área esté bien puesta**, y en el F7 el área con
+   margen ocupa el 39 % del campo.
+
+Con un coste conocido: abstenerse no es gratis. Si la regla se abstiene
+con un portero presente pero mal seguido, ese portero se queda con su
+etiqueta de color, que puede ser la del equipo contrario. En los cuatro
+casos medidos solo se abstuvo cuando el portero no estaba.

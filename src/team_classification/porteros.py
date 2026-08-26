@@ -249,3 +249,176 @@ def aplicar_regla_porteros(
             )
     logger.info("Regla de porteros: %d identidades reetiquetadas", n_reetiquetadas)
     return resultado
+
+
+# ─────────── El portero por COMPORTAMIENTO: el último hombre ───────────
+#
+# Por qué existe, y son tres hallazgos que costó medir (docs/portero.md):
+#
+# (a) **Pedirle al color que identifique al portero es circular.** Viste
+#     distinto por reglamento, así que su color es justo el poco fiable —
+#     que es la razón de buscarlo por comportamiento. En el benjamín el
+#     catálogo arbitral lo manda al cajón 'otro' (azul eléctrico), y un
+#     ranking que solo mirase identidades A/B **no puede encontrarlo**.
+#     Por eso el voto incluye a las 'otro'.
+#
+# (b) **Y tienen que competir en LOS DOS lados**, no solo en el de su
+#     etiqueta. Medido: al perturbar el caché, el clasificador metió a un
+#     portero en el equipo contrario; como su voto solo contaba en el
+#     lado de su etiqueta, sacó 0 de 494 y la regla se abstuvo teniéndolo
+#     delante. El LADO dice el equipo, igual que en la regla de área.
+#
+# (c) **Ninguna salvaguarda separa sola, pero cada impostor falla al
+#     menos una.** Es la misma forma que la regla del staff lento: dos
+#     señales débiles que juntas son fuertes. Un impostor vive dentro del
+#     área el 100 % del tiempo (un fragmento de 21 frames detrás de la
+#     portería) y otro tiene el 99 % de presencia (un defensa); exigiendo
+#     las dos salen 8 de 8 en las dos patas.
+#
+# Y lo que gana sobre la regla de área: esta NO necesita que la mediana
+# caiga dentro del área, así que no se come al jugador de campo que pasa
+# el rato ahí (el id 55), y funciona con el portero adelantado —medido
+# contra el GT: en el 20 % de frames en que más sube sigue siendo último
+# hombre el 100 % de las veces—.
+
+Z_WILSON = 1.96
+
+
+@dataclass
+class ReglaPorteroUltimoHombre:
+    """Parámetros del portero por comportamiento."""
+
+    activo: bool = False
+    # Fracción mínima de sus observaciones dentro de su propia área.
+    # Umbrales sacados de la separación medida (porteros 99-100 %,
+    # impostores 0-100 %; el hueco útil va de 27 a 98 %), no de números
+    # que suenen bien.
+    min_pisa_area: float = 0.50
+    # Fracción mínima del tramo en la que la identidad aparece
+    # (porteros 99-100 %, impostores 7-99 %; hueco de 22 a 98 %).
+    min_presencia: float = 0.50
+    margen_area_m: float = 2.0
+
+    @classmethod
+    def desde_dict(cls, d: dict | None) -> "ReglaPorteroUltimoHombre":
+        return cls(**(d or {}))
+
+
+def _wilson(exitos: int, total: int) -> float:
+    """Cota inferior de Wilson al 95 %.
+
+    No se usa el ratio a secas porque un fragmento con UNA observación en
+    la que resulta ser último hombre puntuaría 1/1 = 100 % y le ganaría al
+    portero real con 55/60. Y filtrar por un mínimo de presencia vacía el
+    ranking, porque los fragmentos son cortos por definición: hay que
+    ponderar por presencia, no filtrar por ella.
+    """
+    if total <= 0:
+        return 0.0
+    p = exitos / total
+    centro = p + Z_WILSON**2 / (2 * total)
+    margen = Z_WILSON * (
+        (p * (1 - p) / total + Z_WILSON**2 / (4 * total * total)) ** 0.5
+    )
+    return max((centro - margen) / (1 + Z_WILSON**2 / total), 0.0)
+
+
+def aplicar_regla_portero_ultimo_hombre(
+    equipos: dict[int, str],
+    identidades: list[list[Tracklet]],
+    modelo,
+    lados: dict[str, int],
+    params: ReglaPorteroUltimoHombre,
+) -> dict[int, str]:
+    """Etiqueta como portero_X a quien más veces sea el último hombre de un lado.
+
+    Args:
+        equipos: {id: etiqueta} tal y como salen del color y del catálogo
+            arbitral. Solo se excluyen del voto las marcadas 'staff'.
+        identidades: las identidades, en el mismo orden 1..N.
+        modelo: modelo de campo (da las áreas y el largo).
+        lados: {equipo: -1 si defiende x=0, +1 si defiende x=largo}.
+        params: umbrales.
+
+    Returns:
+        Copia de `equipos` con como mucho UN portero por lado. Si nadie
+        cumple las dos salvaguardas en un lado, **no se corona a nadie**:
+        la abstención es parte de la regla, no un fallo.
+    """
+    resultado = dict(equipos)
+    if not params.activo or not lados:
+        return resultado
+
+    areas = modelo.areas_porteria(margen=params.margen_area_m)
+
+    # ⚠️ El filtro de "fuera del campo" es GEOMÉTRICO y va aquí dentro, no
+    # heredado de la etiqueta 'staff'. Motivo: en `clasificar_identidades`
+    # la regla de staff corre DESPUÉS de esta, así que cuando esto se
+    # ejecuta todavía no hay nadie marcado 'staff' y competían las
+    # identidades del fondo lejano —público y árboles proyectados a x=79,
+    # 101 y hasta 176 m sobre un campo de 62—. Como son las que más x
+    # tienen, ganaban la votación del lado lejano y la regla se abstenía
+    # teniendo al portero delante con 283/296.
+    #
+    # No se reordenan las reglas para arreglarlo: que la geometría de "no
+    # juega" sea la última palabra está puesto a propósito.
+    candidatas = []
+    for k, ident in enumerate(identidades, start=1):
+        if str(equipos.get(k, "otro")) == "staff":
+            continue
+        pos = np.array([p for tracklet in ident for p in tracklet.pos])
+        mx, my = float(np.median(pos[:, 0])), float(np.median(pos[:, 1]))
+        if not (0.0 <= mx <= modelo.largo and 0.0 <= my <= modelo.ancho):
+            continue
+        candidatas.append(k)
+    if not candidatas:
+        return resultado
+
+    # Posiciones por frame de cada candidata (una por frame aunque tenga
+    # dos cajas: si no, una identidad duplicada votaría dos veces).
+    por_frame: dict[int, dict[int, float]] = {}
+    frames_de: dict[int, set] = {k: set() for k in candidatas}
+    for k in candidatas:
+        for tracklet in identidades[k - 1]:
+            for pos, par in zip(tracklet.pos, tracklet.det_idxs):
+                por_frame.setdefault(par[0], {})
+                frames_de[k].add(par[0])
+                por_frame[par[0]][k] = float(pos[0])
+    n_frames = max(len(por_frame), 1)
+
+    for equipo, lado in lados.items():
+        veces = {k: 0 for k in candidatas}
+        for _f, gente in por_frame.items():
+            if not gente:
+                continue
+            veces[min(gente, key=lambda k: -lado * gente[k])] += 1
+        orden = sorted(candidatas, key=lambda k: -_wilson(veces[k], len(frames_de[k])))
+        elegido = orden[0]
+        pos = np.array([p for tr in identidades[elegido - 1] for p in tr.pos])
+        rx, ry = areas["bajo" if lado == -1 else "alto"]
+        pisa = float(
+            np.mean([rx[0] <= x <= rx[1] and ry[0] <= y <= ry[1] for x, y in pos])
+        )
+        presencia = len(frames_de[elegido]) / n_frames
+        if pisa < params.min_pisa_area or presencia < params.min_presencia:
+            logger.info(
+                "Lado de %s: nadie cumple las salvaguardas (mejor candidata "
+                "%d con área %.0f %% y presencia %.0f %%): NO hay portero",
+                equipo,
+                elegido,
+                100 * pisa,
+                100 * presencia,
+            )
+            continue
+        resultado[elegido] = f"portero_{equipo}"
+        logger.info(
+            "Portero de %s: identidad %d (último hombre %d/%d, área %.0f %%, "
+            "presencia %.0f %%)",
+            equipo,
+            elegido,
+            veces[elegido],
+            len(frames_de[elegido]),
+            100 * pisa,
+            100 * presencia,
+        )
+    return resultado

@@ -24,7 +24,9 @@ from src.team_classification.arbitro import identificar_arbitros
 from src.team_classification.oclusion import color_medio_limpio
 from src.team_classification.porteros import (
     ReglaPorteros,
+    ReglaPorteroUltimoHombre,
     aplicar_regla_porteros,
+    aplicar_regla_portero_ultimo_hombre,
     deducir_lados,
 )
 from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
@@ -216,10 +218,22 @@ def clasificar_identidades(
 
     cfg_porteros = cfg_equipos.get("porteros", {})
     if cfg_porteros.get("activo", False):
+        lados = None
         opciones = {
             k: v
             for k, v in cfg_porteros.items()
-            if k not in ("activo", "desde_modelo", "margen_m", "deducir_lados")
+            if k
+            not in (
+                "activo",
+                "desde_modelo",
+                "margen_m",
+                "deducir_lados",
+                # claves del método por ÚLTIMO HOMBRE: no son de ReglaPorteros
+                "metodo",
+                "min_pisa_area",
+                "min_presencia",
+                "margen_area_m",
+            )
         }
         # Qué equipo defiende cada portería NO se configura a mano: se
         # deduce de las posiciones. Configurarlo era la causa de que en
@@ -255,7 +269,44 @@ def clasificar_identidades(
             )
         else:
             regla = ReglaPorteros.desde_dict(opciones)
-        equipos = aplicar_regla_porteros(equipos, identidades, regla)
+
+        # ── Qué método decide quién es el portero ────────────────────
+        #
+        # ORDEN, que Alex pidió comprobar y no es indiferente: el
+        # catálogo arbitral ya ha corrido y puede haber mandado al
+        # portero al cajón 'otro' (en el benjamín lo hace: viste azul
+        # eléctrico). Las dos reglas de portero corren DESPUÉS y
+        # sobrescriben esa etiqueta, así que **la posición manda sobre el
+        # color**, que es lo acordado. Y ninguna de las dos vuelve a
+        # mirar el color, así que el catálogo no puede pisarlas luego.
+        metodo = cfg_porteros.get("metodo", "area")
+        if metodo == "ultimo_hombre":
+            lados_eq = None
+            if lados is not None:
+                lados_eq = {lados[0]: -1, lados[1]: +1}
+            elif "equipo_mx_bajo" in opciones:
+                lados_eq = {
+                    opciones["equipo_mx_bajo"]: -1,
+                    opciones["equipo_mx_alto"]: +1,
+                }
+            equipos = aplicar_regla_portero_ultimo_hombre(
+                equipos,
+                identidades,
+                modelo,
+                lados_eq or {},
+                ReglaPorteroUltimoHombre.desde_dict(
+                    {
+                        **{
+                            k: v
+                            for k, v in cfg_porteros.items()
+                            if k in ("min_pisa_area", "min_presencia", "margen_area_m")
+                        },
+                        "activo": True,
+                    }
+                ),
+            )
+        else:
+            equipos = aplicar_regla_porteros(equipos, identidades, regla)
 
     # Regla de staff: quien vive FUERA del campo no juega (línier, cuerpo
     # técnico). Va DESPUÉS de porteros: un portero está dentro del campo,

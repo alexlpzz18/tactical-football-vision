@@ -75,7 +75,7 @@ logger = logging.getLogger("portero_ids")
 RADIO_BORRADO_M = 2.5
 
 
-def cargar_todo(ruta_cfg, ruta_gt, offset, paso):
+def cargar_todo(ruta_cfg, ruta_gt, offset, paso, recortar=True):
     cfg = yaml.safe_load(open(ruta_cfg))
     cfg_tr = yaml.safe_load(open(cfg["config_tracking"]))
     cfg_eq = cargar_config_equipos(cfg["config_equipos"])
@@ -109,6 +109,8 @@ def cargar_todo(ruta_cfg, ruta_gt, offset, paso):
     # regla coronaba en el caso negativo era el propio portero en los
     # frames sin anotar. Medido: de sus 524 observaciones sobrevivían 343
     # al borrado.
+    if not recortar:
+        return cfg, cfg_tr, cfg_eq, datos, cache, colores, gt_m, gt_px
     f0, f1 = min(gt_m), max(gt_m)
     recortado, colores_r = [], {}
     for entrada in cache:
