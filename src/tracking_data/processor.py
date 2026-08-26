@@ -563,6 +563,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         cargar_config_equipos,
         clasificar_identidades,
         entrenar_clasificador,
+        etiquetar_por_observacion,
     )
     from src.tracking.cache_io import cargar_cache
     from src.tracking.filtro_confianza import filtrar_por_confianza
@@ -669,6 +670,17 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             datos["sample"] / datos["fps"] if datos["fps"] else 0.12
         )
 
+    # Etiqueta por OBSERVACIÓN, si el config de este partido la pide. Se
+    # calcula ANTES del post-proceso porque necesita los recortes, y el
+    # post-proceso ya trabaja con trayectorias interpoladas.
+    etiquetas_por_obs = (
+        etiquetar_por_observacion(
+            identidades, equipos, colores, clasificador, cfg_equipos
+        )
+        if clasificador is not None
+        else {}
+    )
+
     trayectorias, equipos = postprocesar(
         identidades,
         equipos,
@@ -689,6 +701,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         cfg,
         trayectorias=trayectorias,
         colores_equipo=colores_equipo,
+        etiquetas_por_obs=etiquetas_por_obs,
     )
 
 
@@ -699,6 +712,7 @@ def exportar_posiciones(
     cfg: dict,
     trayectorias=None,
     colores_equipo: dict | None = None,
+    etiquetas_por_obs: dict | None = None,
 ) -> pd.DataFrame:
     """Escribe el CSV de posiciones y el meta JSON (formato compatible).
 
@@ -730,9 +744,15 @@ def exportar_posiciones(
 
     filas = []
     for id_identidad, obs_identidad in enumerate(observaciones, start=1):
-        etiqueta = equipos.get(id_identidad, "otro")
-        entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
+        etiqueta_ident = equipos.get(id_identidad, "otro")
         for frame_idx, pos, es_real in obs_identidad:
+            # La etiqueta por observación, si la hay, manda sobre la de la
+            # identidad. Las posiciones INTERPOLADAS no tienen recorte, así
+            # que se quedan con la de su identidad.
+            etiqueta = (etiquetas_por_obs or {}).get(
+                (id_identidad, frame_idx)
+            ) or etiqueta_ident
+            entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
             mx, my = float(pos[0]), float(pos[1])
             if not (-margen <= mx <= largo + margen):
                 continue

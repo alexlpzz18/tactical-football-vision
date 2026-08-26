@@ -46,6 +46,31 @@ entrenamiento:
 # Agregación por identidad: más generoso que el fit (una identidad con
 # algún recorte decente vale más que ninguno).
 agregacion:
+  # ── Etiqueta por OBSERVACIÓN, no por voto de identidad ───────────
+  #
+  # ACTIVADA SOLO EN EL BENJAMÍN, y hay que decir por qué no es global:
+  # NO VIAJA. Medido contra las métricas de producto en las dos patas:
+  #
+  #   estrategia            benjamín centroide   Villaviciosa centroide
+  #   voto por identidad          1,30 m               3,55 m
+  #   ventana 1-2 s               0,36 m               3,94 m
+  #
+  # Aquí divide el error por 3,6; allí lo empeora. La causa está medida:
+  # en Villaviciosa el color de cada recorte es mucho menos fiable —los
+  # jugadores están a 0,19-0,80 de su prototipo contra 0,27-0,56 aquí—
+  # porque media plantilla juega en la mitad lejana. Donde el recorte es
+  # señal, decidir por recorte gana; donde es ruido, lo que salva es
+  # promediar.
+  #
+  # Con DOS partidos no se puede derivar un selector automático sin
+  # ajustarlo a dos puntos, así que es una decisión por partido.
+  #
+  # La ventana sale del barrido: 1,0 y 2,0 s empatan (0,36 y 0,37 m) y a
+  # partir de 4 s empeora. Se pone 1,5, en medio.
+  por_observacion:
+    activo: true
+    ventana_s: 1.5
+    forzar_ab: true
   # Mínimo de observaciones para poder etiquetar 'otro'. Por debajo se
   # fuerza A/B. El prototipo 'otro' es un imán para las medias ruidosas de
   # identidades cortas: con 1, 7, 14 o 16 observaciones la media de color

@@ -391,3 +391,88 @@ def avisar_tercer_grupo(equipos: dict[int, str], identidades, modelo) -> int:
             detalle,
         )
     return len(quedan)
+
+
+def etiquetar_por_observacion(
+    identidades,
+    equipos: dict[int, str],
+    colores: dict,
+    clasificador,
+    cfg_equipos: dict | None = None,
+) -> dict[tuple[int, int], str]:
+    """{(id_identidad, frame_idx): etiqueta} decidida por VENTANA de color.
+
+    Por qué existe: hoy la etiqueta de equipo la decide un voto sobre TODA
+    la identidad, así que una identidad que mezcla dos personas manda a
+    todas sus observaciones al equipo de la dominante. Medido en el
+    benjamín: **116 de 747 observaciones tienen el equipo equivocado
+    (15,5 %) y 11 identidades mezclan los dos equipos**; decidiendo por
+    ventana corta bajan a 3,2 %.
+
+    ⚠️ **NO se activa por defecto, y el motivo es que NO VIAJA.** Medido
+    contra las métricas de producto en las dos patas:
+
+    | estrategia | benjamín centroide | Villaviciosa centroide |
+    |---|---|---|
+    | voto por identidad | 1,30 m | **3,55 m** |
+    | ventana 1-2 s | **0,36 m** | 3,94 m |
+
+    En el benjamín divide el error por 3,6 y en Villaviciosa lo empeora.
+    La causa está medida: allí el color de cada recorte es MUCHO menos
+    fiable —los jugadores están a 0,19-0,80 de su prototipo, contra
+    0,27-0,56 en el benjamín— porque media plantilla juega en la mitad
+    lejana. Donde el recorte es señal, decidir por recorte gana; donde es
+    ruido, lo que salva es promediar.
+
+    Con dos partidos no se puede derivar un selector automático sin
+    ajustarlo a dos puntos, así que se deja como decisión POR PARTIDO en
+    el config (`agregacion.por_observacion`).
+
+    Las reglas posicionales mandan: un portero es portero en todas sus
+    observaciones y el staff no juega en ninguna. Lo que pasa a decidirse
+    por ventana es solo el A/B del color.
+    """
+    cfg_equipos = cfg_equipos or {}
+    cfg = cfg_equipos.get("agregacion", {}).get("por_observacion", {})
+    if not cfg.get("activo", False):
+        return {}
+    ventana = float(cfg.get("ventana_s", 1.5))
+    forzar = bool(cfg.get("forzar_ab", True))
+
+    salida: dict[tuple[int, int], str] = {}
+    n_cambios = 0
+    for id_identidad, identidad in enumerate(identidades, start=1):
+        etiqueta = str(equipos.get(id_identidad, "otro"))
+        if etiqueta not in ("A", "B"):
+            continue  # portero, staff y 'otro' los decide la posición
+        obs = sorted(
+            (
+                (t, tuple(par))
+                for tracklet in identidad
+                for t, par in zip(tracklet.ts, tracklet.det_idxs)
+            ),
+            key=lambda o: o[0],
+        )
+        for t_actual, par in obs:
+            cerca = [
+                (p, colores[p])
+                for t2, p in obs
+                if abs(t2 - t_actual) <= ventana / 2 and p in colores
+            ]
+            if not cerca:
+                continue
+            media = color_medio_limpio(cerca, None)
+            if media is None:
+                continue
+            nueva = clasificador.predict_color(media, solo_equipos=forzar)
+            salida[(id_identidad, par[0])] = nueva
+            n_cambios += nueva != etiqueta
+    if salida:
+        logger.info(
+            "Etiqueta por observación (ventana %.1f s): %d observaciones "
+            "etiquetadas, %d cambian respecto al voto de su identidad",
+            ventana,
+            len(salida),
+            n_cambios,
+        )
+    return salida
