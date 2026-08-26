@@ -75,7 +75,7 @@ logger = logging.getLogger("portero_ids")
 RADIO_BORRADO_M = 2.5
 
 
-def cargar_todo(ruta_cfg, ruta_gt, offset, paso, recortar=True):
+def cargar_todo(ruta_cfg, ruta_gt, offset, paso, recortar=True, sin_porteros=True):
     cfg = yaml.safe_load(open(ruta_cfg))
     cfg_tr = yaml.safe_load(open(cfg["config_tracking"]))
     cfg_eq = cargar_config_equipos(cfg["config_equipos"])
@@ -98,9 +98,15 @@ def cargar_todo(ruta_cfg, ruta_gt, offset, paso, recortar=True):
                     "team": ("referee" if t.label == "referee" else (c.team or t.team)),
                 }
             )
-    # La regla de área se apaga: es justo lo que este criterio quiere
-    # sustituir, y dejarla puesta sería darle la respuesta hecha.
-    cfg_eq = {**cfg_eq, "porteros": {**cfg_eq.get("porteros", {}), "activo": False}}
+    # La regla de portero se apaga POR DEFECTO: este módulo nació para
+    # medir un candidato a sustituirla, y dejarla puesta sería darle la
+    # respuesta hecha. Quien quiera el pipeline de producción entero
+    # —como el censo del tercer grupo— pasa `sin_porteros=False`.
+    if sin_porteros:
+        cfg_eq = {
+            **cfg_eq,
+            "porteros": {**cfg_eq.get("porteros", {}), "activo": False},
+        }
 
     # ⚠️ EL CACHÉ SE RECORTA AL RANGO DEL GT, y sin esto el caso negativo
     # no prueba nada. El caché del benjamín va del frame 8991 al 10788 y
