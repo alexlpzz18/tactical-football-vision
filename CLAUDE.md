@@ -103,6 +103,34 @@ v4pre en Villaviciosa. Lo que queda en cuarentena está listado en
    distribución. El catálogo arbitral sí puede seguir siendo absoluto,
    con su regla de conflicto.
 
+## Lección de guardas (26-ago-2026): contar no es comprobar QUIÉN
+
+Se adoptó `arbitro.margen_equipo: 0.68` con una guarda que contaba las
+identidades del tercer grupo y exigía que fuera 1. Con otro caché del
+mismo partido, el margen dejaba fuera al árbitro (583 obs) y se colaba
+entero en un equipo — **y la guarda daba el visto bueno**, porque quedaba
+1 identidad, solo que no era la correcta.
+
+> **Una guarda que CUENTA no puede detectar un fallo de IDENTIDAD.**
+
+Revisión del resto de guardas del proyecto con ese criterio:
+
+- `cota_plantilla`: fusiona hasta llegar a ~23. Es el caso canónico y ya
+  estaba anotado como fracaso ("ya fracasamos con la cota de plantilla
+  por confundirlo"). **No está en el perfil por defecto.**
+- `porteros.aplicar_regla_porteros` (exclusividad de área): corona a
+  quien MÁS observaciones acumula dentro del área. Cuenta para decidir
+  quién, y es justo el riesgo del `id 55`. **Ya no es el default**
+  (`metodo: ultimo_hombre`).
+- `deducir_lados`, `min_obs_para_otro`, `arbitro.min_observaciones`:
+  cuentan, pero como proxy de FIABILIDAD (¿hay bastante muestra?), no
+  para decidir quién es quién. Eso sí es legítimo.
+
+Cuando una guarda tenga que proteger una identidad, el aviso debe
+dispararse sobre el EVENTO que la cambia — por ejemplo "el margen acaba
+de vetar a una identidad de 583 observaciones" — no sobre el recuento
+final.
+
 ## Qué NO hacer
 - NO commitear datos, vídeos, modelos (.pt), caches (.pkl) ni exports de CVAT
   (están/deben estar en .gitignore; viven en Google Drive).
