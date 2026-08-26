@@ -401,9 +401,18 @@ def aplicar_regla_portero_ultimo_hombre(
         )
         presencia = len(frames_de[elegido]) / n_frames
         if pisa < params.min_pisa_area or presencia < params.min_presencia:
-            logger.info(
-                "Lado de %s: nadie cumple las salvaguardas (mejor candidata "
-                "%d con área %.0f %% y presencia %.0f %%): NO hay portero",
+            # WARNING y no INFO a propósito: abstenerse NO es gratis. El
+            # portero de ese lado, si existe, se queda con su etiqueta de
+            # COLOR, y la de un portero es poco fiable por diseño — puede
+            # acabar contando para el equipo contrario y moviendo su
+            # centroide. Es un riesgo conocido y aceptado (docs/portero.md),
+            # pero si empieza a pasar en partidos reales hay que enterarse
+            # por el log y no por el replay.
+            logger.warning(
+                "SIN PORTERO en el lado de %s: la mejor candidata (identidad "
+                "%d) solo pisa el área el %.0f %% y está presente el %.0f %%. "
+                "Si hay portero ahí, se quedará con su etiqueta de color y "
+                "puede contar para el equipo contrario.",
                 equipo,
                 elegido,
                 100 * pisa,

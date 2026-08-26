@@ -7,6 +7,25 @@
 # defiende ese lado. Verificado en GT: portero_A mediana mx=90.9,
 # portero_B mx=15.4; ningún jugador de campo tiene mediana en las áreas.
 porteros:
+  # ADOPTADO el 26-ago-2026 (decisión de Alex). Las métricas de producto
+  # EMPATAN dígito a dígito con la regla de área en las dos patas, así que
+  # no se adopta por mejorar números sino por lo que la de área no puede
+  # hacer: abstenerse cuando no hay portero, encontrarlo cuando el color
+  # lo manda al cajón 'otro', y no depender de que el área esté bien
+  # puesta. Y por el caso del id 55: un jugador de campo con 123
+  # observaciones y la mediana dentro del área, hoy SEGUNDO candidato de
+  # la regla vieja (al 21 % del ganador) y solo tapado por la
+  # exclusividad. Con las identidades fragmentándose en 6 trozos de
+  # mediana, el día que el portero se parta en trozos de menos de 123
+  # observaciones sale un jugador de campo pintado de portero — y en el
+  # benjamín hay 8 candidatos más esperando. Por último hombre, el id 55
+  # saca 0,00. Ver docs/portero.md.
+  #
+  # ⚠️ RIESGO CONOCIDO Y ACEPTADO: abstenerse no es gratis. Si la regla se
+  # abstiene con un portero presente pero mal seguido, ese portero se
+  # queda con su etiqueta de COLOR, que puede ser la del equipo contrario.
+  # Por eso la abstención sale por el log como WARNING.
+  metodo: ultimo_hombre
   activo: true
   # Límites ajustados con el GT: portero_A mediana mx=90.9 (rango 85-95.5)
   # pero los defensas de campo llegan a mediana 88.2 → corte en 88.5

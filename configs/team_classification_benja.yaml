@@ -74,6 +74,27 @@ agregacion:
 # equipo defiende cada portería en este tramo. Con la cámara tras la
 # portería x=0, "bajo" es la portería cercana a cámara.
 porteros:
+  # ADOPTADO el 26-ago-2026 (decisión de Alex). Las métricas de producto
+  # EMPATAN dígito a dígito con la regla de área en las dos patas, así que
+  # no se adopta por mejorar números sino por lo que la de área no puede
+  # hacer: abstenerse cuando no hay portero, encontrarlo cuando el color
+  # lo manda al cajón 'otro', y no depender de que el área esté bien
+  # puesta. Y sobre todo por el caso del id 55: un jugador de campo con
+  # 123 observaciones y la mediana dentro del área, hoy SEGUNDO candidato
+  # de la regla vieja (al 21 % del ganador) y solo tapado por la
+  # exclusividad. Con las identidades fragmentándose en 6 trozos de
+  # mediana, el día que el portero se parta en trozos de menos de 123
+  # observaciones sale un jugador de campo pintado de portero — y en el
+  # benjamín hay 8 candidatos más esperando. Por último hombre el id 55
+  # saca 0,00. Ver docs/portero.md.
+  #
+  # ⚠️ RIESGO CONOCIDO Y ACEPTADO: abstenerse no es gratis. Si la regla se
+  # abstiene con un portero presente pero mal seguido, ese portero se
+  # queda con su etiqueta de COLOR, que puede ser la del equipo contrario
+  # y mover su centroide. Por eso la abstención sale por el log como
+  # WARNING: si empieza a pasar en partidos reales hay que enterarse por
+  # el log y no por el replay.
+  metodo: ultimo_hombre
   activo: true
   desde_modelo: true
   margen_m: 2.0 # holgura: el portero sale a achicar
