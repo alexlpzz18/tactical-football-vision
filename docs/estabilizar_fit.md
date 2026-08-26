@@ -60,20 +60,48 @@ de depender de la muestra exacta.
 O sea: el ruido no venía de una decisión discreta mal tomada, sino de una
 **optimización no determinista mal presupuestada**.
 
+## El test de regresión, que salió de la verificación adversarial
+
+Perturbar datos es caro y ruidoso. Hay una prueba **mejor y ~30× más
+barata**: dejar el caché INTACTO y cambiar solo la semilla del KMeans.
+
+```
+$ python scripts/suelo_de_ruido.py --semillas-kmeans 8 --n-init 10
+  datos INTACTOS, 8 semillas KMeans     0.589-0.636  ...  0.732-0.804
+$ python scripts/suelo_de_ruido.py --semillas-kmeans 8
+  datos INTACTOS, 8 semillas KMeans           0.636  ...        0.804
+```
+
+Con `n_init: 10` la semilla 6 reproduce **el desplome entero** (0,589 /
+0,732, exactamente lo que salía quitando 5 detecciones) sin tocar un solo
+dato. Con 50, las ocho semillas dan lo mismo. Es la demostración limpia
+de que la causa es el óptimo local del KMeans, y queda como el test de
+regresión de este arreglo.
+
 ## El valor, elegido de la medición
 
 Barrido por el camino de producción, 8 semillas:
 
 | n_init | cobertura | equipos | coste del fit |
 |---|---|---|---|
-| 10 | 0,589-0,636 | 0,719-0,804 | 0,30 s |
-| **20** | **0,635-0,636** | **0,804-0,807** | 0,37 s |
+| 10 | 0,589-0,636 | 0,719-0,804 | 0,18 s |
+| **20** | **0,635-0,636** | **0,804-0,807** | 0,29 s |
 | 30 | 0,635-0,636 | 0,804-0,807 | 0,56 s |
-| 50 | 0,635-0,636 | 0,804-0,807 | 0,92 s |
+| 50 | 0,635-0,636 | 0,804-0,807 | 0,72 s |
 
 La meseta empieza en **20** y 20/30/50 dan cifras idénticas: no es un
-filo. Se pone **50** por margen — son 0,6 segundos más **una vez por
-partido**, y el fit no está en ningún bucle.
+filo. Se pone **50** por margen — son **0,54 segundos más una vez por
+partido** (0,18 → 0,72 s, mejor de tres con la máquina tranquila), y el
+fit no está en ningún bucle.
+
+⚠️ Matiz que salió de la verificación: la estabilidad de `n_init: 20`
+solo está medida con la perturbación suave. Bajo la dura (un fotograma
+entero) solo se midieron 10 y 50, así que "con 20 basta" **no está
+demostrado** para ese caso. Es otra razón para quedarse en 50.
+
+⚠️ El **default del dataclass** también está en 50, no en 10: un config
+de equipos sin sección `clasificador_color` volvería al camino ruidoso en
+silencio.
 
 ## Hasta dónde llega (y hasta dónde NO)
 

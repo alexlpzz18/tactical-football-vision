@@ -117,10 +117,17 @@ def features_cercanas(cache, colores, cfg_eq):
     return np.array([_solo_hs(f) for f in colores.values()])
 
 
-def _arbol(features, p, n_init=10, semilla=None):
+def _arbol(features, p, n_init=None, semilla=None):
+    """OJO: por defecto usa `p.n_init`, no un 10 hardcodeado.
+
+    Lo tenía a 10 fijo, que era lo correcto mientras la comparación
+    buscada era "10 contra 50". Ahora que producción está en 50, dejarlo
+    así haría que cualquier candidata nueva se comparase contra la línea
+    base RETIRADA, y saldría ganando por comparar con lo ruidoso.
+    """
     km = KMeans(
         n_clusters=p.k_clusters,
-        n_init=n_init,
+        n_init=p.n_init if n_init is None else n_init,
         random_state=p.semilla if semilla is None else semilla,
     )
     asign = km.fit_predict(features)

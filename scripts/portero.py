@@ -85,15 +85,54 @@ def por_persona(gt):
     return datos
 
 
-def lado_de_cada_portero(datos, largo):
-    """{obj_id del portero: -1 si defiende x=0, +1 si defiende x=largo}."""
-    lados = {}
-    for oid, d in datos.items():
-        if not d["portero"]:
+def lados_por_equipo(datos, modelo, usar_etiqueta=False):
+    """{equipo: -1 si defiende x=0, +1 si defiende x=largo}.
+
+    ⚠️ ESTO ERA CIRCULAR y lo cazó la verificación adversarial. La primera
+    versión sacaba el lado de la posición del PORTERO, buscándolo por su
+    etiqueta del GT: o sea que el banco le daba al criterio la mitad de la
+    respuesta. Con el lado invertido, la regla corona a un jugador de
+    campo al 85-91 % sin enterarse de nada.
+
+    Ahora sale de donde sale en producción (`porteros.deducir_lados`): de
+    la posición media de los jugadores de cada equipo, porque el equipo
+    que defiende x=0 tiene a sus defensas ahí. Y se excluye del voto a
+    quien viva dentro de un área de penalti —criterio GEOMÉTRICO, no la
+    etiqueta—, igual que hace producción.
+
+    `usar_etiqueta=True` reproduce el cálculo viejo, solo para poder
+    comprobar que el nuevo da lo mismo.
+    """
+    largo = modelo.largo
+    if usar_etiqueta:
+        lados = {}
+        for _oid, d in datos.items():
+            if not d["portero"]:
+                continue
+            mx = float(np.median([x for _f, x, _y in d["pos"]]))
+            lados[d["equipo"]] = -1 if mx < largo / 2 else +1
+        return lados
+
+    areas = modelo.areas_porteria(margen=2.0)
+    medias = {}
+    for _oid, d in datos.items():
+        if d["equipo"] not in ("A", "B"):
             continue
         mx = float(np.median([x for _f, x, _y in d["pos"]]))
-        lados[oid] = -1 if mx < largo / 2 else +1
-    return lados
+        my = float(np.median([y for _f, _x, y in d["pos"]]))
+        en_area = any(
+            r[0][0] <= mx <= r[0][1] and r[1][0] <= my <= r[1][1]
+            for r in areas.values()
+        )
+        if en_area:
+            continue  # vive en un área: no vota (es el portero, y su voto invierte)
+        medias.setdefault(d["equipo"], []).append(mx)
+    if len(medias) < 2:
+        return {}
+    ma = float(np.mean(medias["A"]))
+    mb = float(np.mean(medias["B"]))
+    bajo = "A" if ma < mb else "B"
+    return {bajo: -1, ("B" if bajo == "A" else "A"): +1}
 
 
 def main() -> None:
@@ -108,17 +147,21 @@ def main() -> None:
     cfg_eq, modelo, gt = cargar(args.config, args.gt, args.offset, args.paso)
     datos = por_persona(gt)
     largo = modelo.largo
-    lados = lado_de_cada_portero(datos, largo)
+    lados = lados_por_equipo(datos, modelo)
+    lados_viejo = lados_por_equipo(datos, modelo, usar_etiqueta=True)
     print(f"\n{args.config}")
     print(
         f"  campo {largo:.1f} x {modelo.ancho:.1f} m · {len(gt)} frames de GT · "
         f"{len(datos)} personas"
     )
     porteros = [o for o, d in datos.items() if d["portero"]]
-    print(
-        f"  porteros en el GT: {porteros} "
-        f"({', '.join(f'{o}: defiende x={0 if lados[o] < 0 else largo:.0f}' for o in porteros)})"
-    )
+    print(f"  porteros en el GT: {porteros}")
+    print(f"  lado DEDUCIDO de las posiciones (sin usar la etiqueta): {lados}")
+    print(f"  lado que daba el cálculo CIRCULAR viejo:                {lados_viejo}")
+    if lados != lados_viejo:
+        print("  ⚠️ NO COINCIDEN. Se mide con el deducido, que es el honesto.")
+    else:
+        print("  → coinciden: el criterio se mide sin verle la respuesta al GT.")
 
     # Posiciones por (frame, equipo)
     por_frame = defaultdict(list)
@@ -136,10 +179,9 @@ def main() -> None:
     veces_presente = defaultdict(int)
     for (f, equipo), gente in por_frame.items():
         # de qué lado defiende este equipo: el de su portero
-        suyo = [o for o in porteros if datos[o]["equipo"] == equipo]
-        if not suyo:
+        lado = lados.get(equipo)
+        if lado is None:
             continue
-        lado = lados[suyo[0]]
         # "detrás" = hacia su propia portería. OJO CON EL SIGNO: si el
         # equipo defiende x=0 (lado -1), el último hombre es el de x MÁS
         # PEQUEÑA. `min(key=lado*x)` con lado=-1 minimiza -x, o sea coge
@@ -150,12 +192,15 @@ def main() -> None:
         for oid, _x, _y in gente:
             veces_presente[oid] += 1
         veces_ultimo[extremo[0]] += 1
-    cab = f"  {'persona':<10}{'equipo':<9}{'¿portero?':<11}{'frames':>8}{'último hombre':>16}"
+    cab = (
+        f"  {'persona':<10}{'equipo':<9}{'¿portero?':<11}{'frames':>8}"
+        f"{'último hombre':>16}{'puntuación':>13}"
+    )
     print(cab)
     print("  " + "-" * (len(cab) - 2))
     filas = sorted(
         veces_presente,
-        key=lambda o: -veces_ultimo[o] / max(veces_presente[o], 1),
+        key=lambda o: -puntuacion(veces_ultimo[o], veces_presente[o]),
     )
     for oid in filas:
         n, u = veces_presente[oid], veces_ultimo[oid]
@@ -172,11 +217,20 @@ def main() -> None:
         if not gente:
             continue
         orden = sorted(
-            gente, key=lambda o: -veces_ultimo[o] / max(veces_presente[o], 1)
+            gente, key=lambda o: -puntuacion(veces_ultimo[o], veces_presente[o])
         )
         primero, segundo = orden[0], orden[1] if len(orden) > 1 else None
-        r1 = veces_ultimo[primero] / max(veces_presente[primero], 1)
-        r2 = veces_ultimo[segundo] / max(veces_presente[segundo], 1) if segundo else 0.0
+        r1 = puntuacion(veces_ultimo[primero], veces_presente[primero])
+        # OJO: `if segundo` es FALSO cuando el segundo es el obj_id 0, que
+        # existe. El script llegó a imprimir "el segundo es 0 (0%)" cuando
+        # esa persona era último hombre el 2 % — margen 98 disfrazado de
+        # 100. Con un central de obj_id 0 al 40 % habría dicho 60 en vez
+        # de 20, que es justo la cifra de la que depende la decisión.
+        r2 = (
+            puntuacion(veces_ultimo[segundo], veces_presente[segundo])
+            if segundo is not None
+            else 0.0
+        )
         ok = "✔ es el portero" if datos[primero]["portero"] else "✘ NO es el portero"
         print(
             f"    equipo {equipo}: el más 'último hombre' es la persona "
@@ -202,10 +256,9 @@ def main() -> None:
     for oid, d in sorted(datos.items()):
         if d["equipo"] not in ("A", "B"):
             continue
-        suyo = [o for o in porteros if datos[o]["equipo"] == d["equipo"]]
-        if not suyo:
+        lado = lados.get(d["equipo"])
+        if lado is None:
             continue
-        lado = lados[suyo[0]]
         xs = np.array([x for _f, x, _y in d["pos"]])
         # distancia RECORRIDA hacia campo contrario desde su portería
         avance = (xs - largo / 2) * (-lado)
@@ -224,6 +277,35 @@ def main() -> None:
     robustez(datos, por_frame, porteros, lados, largo)
 
 
+def puntuacion(veces: int, presente: int) -> float:
+    """Cota inferior de Wilson al 95 % para veces/presente.
+
+    Por qué no el ratio a secas, y lo cazó la verificación adversarial:
+    un rival con UNA SOLA observación en la que resulta ser último hombre
+    puntúa 1/1 = 100 % y le gana al portero real con 55/60 = 92 %. Con el
+    GT no muerde —todo el mundo está en casi todos los frames— pero con
+    NUESTRAS identidades, repartidas en una mediana de 6 fragmentos por
+    jugador, es exactamente lo que va a pasar.
+
+    Y filtrar por un mínimo de presencia tampoco vale: vacía el ranking,
+    porque los fragmentos son cortos por definición. Hay que PONDERAR por
+    presencia, no filtrar por ella, y para eso está esta cota: penaliza
+    la muestra pequeña sin descartarla.
+
+        1/1   -> 0,21      (el impostor de una observación se hunde)
+        55/60 -> 0,82      (el portero real aguanta)
+        59/59 -> 0,94
+    """
+    if presente <= 0:
+        return 0.0
+    z = 1.96
+    p = veces / presente
+    n = presente
+    centro = p + z * z / (2 * n)
+    margen = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)
+    return max((centro - margen) / (1 + z * z / n), 0.0)
+
+
 def _mas_ultimo_hombre(
     por_frame, datos, porteros, lados, equipo, frames=None, ocultar=None
 ):
@@ -236,10 +318,9 @@ def _mas_ultimo_hombre(
     for (f, eq), gente in por_frame.items():
         if eq != equipo or (frames is not None and f not in frames):
             continue
-        suyo = [o for o in porteros if datos[o]["equipo"] == eq]
-        if not suyo:
+        lado = lados.get(eq)
+        if lado is None:
             continue
-        lado = lados[suyo[0]]
         visibles = [g for g in gente if not (ocultar and (f, g[0]) in ocultar)]
         if not visibles:
             continue
@@ -304,7 +385,7 @@ def robustez(datos, por_frame, porteros, lados, largo):
     print("\n  c) ¿Sigue siendo último hombre cuando MÁS adelantado está?")
     for oid in porteros:
         d = datos[oid]
-        lado = lados[oid]
+        lado = lados[d["equipo"]]
         pos = sorted(d["pos"], key=lambda p: -lado * p[1], reverse=True)
         adelantados = {f for f, _x, _y in pos[: max(len(pos) // 5, 1)]}
         _o, r1, _r2 = _mas_ultimo_hombre(

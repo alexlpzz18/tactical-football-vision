@@ -62,7 +62,11 @@ class ParametrosClasificadorColor:
     #   n_init 50 -> cobertura 0,635-0,636 · equipos 0,804-0,807
     # o sea la dispersión del fit CONGELADO, con las mismas cifras sin
     # perturbar. Ver docs/estabilizar_fit.md.
-    n_init: int = 10
+    #
+    # El DEFAULT es 50, no 10: un config de equipos sin sección
+    # `clasificador_color` volvería al camino ruidoso en silencio, que es
+    # la peor forma de romperse. Lo cazó la verificación adversarial.
+    n_init: int = 50
     # Barrido del umbral de fusión jerárquica
     umbral_min: float = 0.5
     umbral_max: float = 1.3

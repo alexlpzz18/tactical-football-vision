@@ -19,18 +19,47 @@ que ni "vive en su tercio" ni "se mueve poco longitudinalmente" valen.
 si los criterios son ciertos EN EL FÚTBOL, no si nuestro tracker los
 detecta. Si fallaran aquí, no habría nada que construir encima.
 
-## Criterio 1 — ÚLTIMO HOMBRE: separa perfecto en las dos patas
+## ⚠️ La primera medición era CIRCULAR (lo cazó la verificación)
 
-| pata | portero | veces último hombre | siguiente candidato | margen |
-|---|---|---|---|---|
-| benjamín, equipo A | persona 6 | **100 %** (59/59) | 0 % | 100 puntos |
-| benjamín, equipo B | persona 7 | **92 %** (55/60) | 8 % | 83 puntos |
-| Villaviciosa, equipo A | persona 0 | **100 %** (100/100) | 0 % | 100 puntos |
-| Villaviciosa, equipo B | persona 1 | **100 %** (100/100) | 0 % | 100 puntos |
+`lado_de_cada_portero` decidía qué portería defiende cada equipo mirando
+**dónde está el portero, buscándolo por su etiqueta del GT**. O sea que
+el banco le estaba dando al criterio la mitad de la respuesta: con el
+lado invertido, la regla corona a un jugador de campo al 85-91 % sin
+enterarse de nada.
 
-**En los cuatro casos, el que más veces es último hombre ES el portero**,
-y el segundo candidato está a 83-100 puntos. No hay nada parecido a una
-zona de duda. Es el criterio más limpio que ha dado este proyecto.
+Arreglado: el lado sale ahora de donde sale en producción
+(`porteros.deducir_lados`) —la posición media de los jugadores de cada
+equipo, excluyendo por GEOMETRÍA a quien viva en un área— y el script
+imprime los dos cálculos para poder compararlos. **En las dos patas
+coinciden**, así que el resultado sobrevive; pero no se sabía hasta
+medirlo.
+
+## Criterio 1 — ÚLTIMO HOMBRE: separa en las dos patas
+
+La puntuación **no es el ratio a secas** sino la cota inferior de Wilson
+al 95 %. Por qué: un rival con UNA sola observación en la que resulta ser
+último hombre puntúa 1/1 = 100 % y le gana al portero real con 55/60. Con
+el GT no muerde —todos están en casi todos los frames— pero con nuestras
+identidades, repartidas en 6 fragmentos por jugador, es exactamente lo
+que va a pasar. Y filtrar por un mínimo de presencia vacía el ranking,
+porque los fragmentos son cortos por definición: hay que **ponderar por
+presencia, no filtrar por ella**.
+
+| pata | portero | veces último hombre | puntuación | siguiente | margen |
+|---|---|---|---|---|---|
+| benjamín, equipo A | persona 6 | 59/59 | **0,94** | 0,00 | 94 puntos |
+| benjamín, equipo B | persona 7 | 55/60 | **0,82** | 0,04 | 78 puntos |
+| Villaviciosa, equipo A | persona 0 | 100/100 | **0,96** | 0,00 | 96 puntos |
+| Villaviciosa, equipo B | persona 1 | 100/100 | **0,96** | 0,00 | 96 puntos |
+
+**En los cuatro casos el que más veces es último hombre ES el portero**,
+con 78-96 puntos de margen. No hay zona de duda.
+
+⚠️ Un tercer bug, menor pero feo: el script imprimía "el segundo es 0
+(0 %)" porque `if segundo` es **falso cuando el segundo es el obj_id 0**,
+que existe. El margen real del benjamín A era 98 y no 100. Con un central
+de obj_id 0 al 40 % habría dicho 60 en vez de 20 — justo la cifra de la
+que depende la decisión.
 
 ⚠️ Un error de signo casi lo tira: la primera versión daba **0 %** para
 los dos porteros. Con `lado = -1` (defiende x=0) el último hombre es el
@@ -46,10 +75,11 @@ releer el signo.**
 | benjamín | 0 % los dos; se quedan a 20,2 y 20,4 m del medio | **1 de 12** (llega a 5,4 m del medio) |
 | Villaviciosa | 0 % los dos; se quedan a 35,1 y 32,1 m | **5 de 20** (el que más llega, a 16,4 m) |
 
-Los porteros **nunca** lo cruzan, así que como VETO es perfecto: cero
-falsos negativos en 219 frames de las dos patas. Pero como identificador
-no vale solo, porque en una ventana de 60 segundos varios centrales
-tampoco cruzan.
+Los porteros **nunca** lo cruzan: cero falsos negativos en 219 frames.
+Pero como veto es **INERTE** — cambia 0 de 1120 decisiones, porque el
+ganador del criterio 1 nunca lo incumple. No es un veto, es
+documentación. Y como identificador no vale solo, porque en una ventana
+de 60 segundos varios centrales tampoco cruzan.
 
 Lo que sí separa es la **distancia mínima al medio campo**: los porteros
 se quedan a 20-35 m y el jugador de campo más retrasado llega a 5,4 m
@@ -58,9 +88,14 @@ estrecho en Villaviciosa.
 
 ## La regla que sale de aquí
 
-**El portero de cada equipo es la identidad que más veces es el último
-hombre de su equipo**, con "no cruza el medio campo" como **veto**: un
-candidato que lo cruce queda descartado aunque gane en último hombre.
+**El portero de cada equipo es la identidad con la mayor cota inferior de
+Wilson de "ser el último hombre de su equipo"**, con el lado del campo
+deducido de las posiciones del equipo, no de la etiqueta.
+
+La salvaguarda **no** es "no cruza el medio campo", que está medido que
+no cambia ninguna decisión. La que hace falta es otra: **exigir que el
+candidato pise el área de portería alguna vez**, que es lo que descarta
+al falso positivo cuando el portero no se detecta nunca.
 
 Ventajas sobre lo que hay hoy (mediana dentro del área de penalti +
 exclusividad):

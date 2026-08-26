@@ -19,10 +19,17 @@ semillas. Lo que quede por debajo de esa dispersión no es señal.
 ⚠️ El canal del ruido no es el que parecía. Medido detección a detección
 en Villaviciosa: quitando 5 detecciones, una semilla cambia de equipo
 1.411 de 9.507 detecciones y solo 55 de identidad. El culpable no es la
-asociación sino **el fit del clasificador de color**, cuyo umbral de
-fusión se elige por argmax sobre una rejilla (`_umbral_auto`): es una
-decisión DISCRETA y una detección de más la hace saltar de escalón. En el
-benjamín no salta nunca; en Villaviciosa, en una de cada tres semillas.
+asociación sino **el fit del clasificador de color**.
+
+⚠️ Y dentro del fit tampoco era lo que escribí primero. Culpé al `argmax`
+sobre la rejilla de umbrales de fusión, y es falso: la puntuación es una
+función escalón y la meseta ganadora es la misma con y sin perturbar. La
+causa real es el **KMeans**, que con `n_init=10` cae en óptimos locales
+distintos según la muestra. Se demuestra sin tocar los datos, cambiando
+solo su semilla (`--semillas-kmeans`): con n_init 10 la semilla 6 da
+cobertura 0,589 y equipos 0,732 sobre el caché INTACTO — el desplome
+entero; con n_init 50 las ocho semillas dan 0,636 / 0,804. Arreglado en
+`docs/estabilizar_fit.md`.
 
 Uso:
     python scripts/suelo_de_ruido.py                       # Villaviciosa
@@ -169,6 +176,17 @@ def main() -> None:
     # quita un fotograma entero (el detector se atraganta) y "confianza"
     # quita las detecciones que MAS pesan en el fit: el caso adverso.
     p.add_argument("--modo", default="azar", choices=["azar", "frame", "confianza"])
+    # TEST DE REGRESION BARATO, y mejor que perturbar datos: con el cache
+    # INTACTO, cambiar solo la semilla del KMeans reproduce el desplome
+    # entero (n_init 10, semilla 6 -> cobertura 0,589 y equipos 0,732,
+    # exactamente lo que salia quitando 5 detecciones). Aisla la causa sin
+    # tocar la entrada y cuesta ~30x menos.
+    p.add_argument(
+        "--semillas-kmeans",
+        type=int,
+        default=0,
+        help="si >0, NO perturba los datos: barre esas semillas del KMeans",
+    )
     p.add_argument(
         "--n-init",
         type=int,
@@ -202,6 +220,22 @@ def main() -> None:
 
     base = evaluar(banco, cache0, banco.colores, refit=True)
     print(fila("ninguna (referencia)", [base]))
+
+    if args.semillas_kmeans:
+        cfg0 = banco.cfg_equipos
+        res = []
+        for sem in range(args.semillas_kmeans):
+            banco.cfg_equipos = {
+                **cfg0,
+                "clasificador_color": {
+                    **cfg0.get("clasificador_color", {}),
+                    "semilla": sem,
+                },
+            }
+            res.append(evaluar(banco, cache0, banco.colores, refit=True))
+        banco.cfg_equipos = cfg0
+        print(fila(f"datos INTACTOS, {args.semillas_kmeans} semillas KMeans", res))
+        return
 
     semillas = list(range(args.semilla_inicial, args.semilla_inicial + args.semillas))
     for n in [int(x) for x in args.cantidades.split(",")]:
