@@ -169,14 +169,20 @@ from google.colab import drive; drive.mount('/content/drive')
 import os
 os.makedirs('data/raw', exist_ok=True)
 os.makedirs('models/weights', exist_ok=True)
-D = '/content/drive/MyDrive/tactical'
-# ⚠️ El nombre de DESTINO debe ser el que pide el config (rutas.video).
-!ln -sf {D}/benja/benja_gredos_p1_20min.mp4  data/raw/benja_gredos_p1_20min.mp4
-!ln -sf {D}/modelos/best_v4pre.pt            models/weights/best_v4pre.pt
+RAIZ = '/content/drive/MyDrive/tactical-football-vision-data'
+
+# ⚠️ El nombre de DESTINO debe ser el que pide el config (rutas.video y
+# deteccion.modelo), no el que tenga en Drive.
+# ⚠️ El modelo es best_v4pre, NO best_v4: el v4 no está adoptado (mejora
+# el mAP pero no la asociación, y su caja de cambios es otra).
+!ln -sf {RAIZ}/videos/raw/benja_gredos_p1_20min.mp4  data/raw/benja_gredos_p1_20min.mp4
+!ln -sf {RAIZ}/best_v4pre.pt                         models/weights/best_v4pre.pt
 !nvidia-smi --query-gpu=name,memory.total --format=csv
 ```
 
-Si en tu Drive el vídeo o los pesos están en otra carpeta, se cambia
+La homografía del benjamín (`data/calibracion_benja/homografia_benja.npy`)
+**sí viene en el repo**, comprobado con `git ls-files`; el vídeo y los
+pesos no, por eso los enlaces. Si mueves algo en Drive, se cambia
 **aquí** y en ningún sitio más.
 
 ## Celda 2 — Comprobaciones que no gastan GPU
@@ -230,35 +236,51 @@ print('\n' + ('TODO OK, sigue a la sonda.' if ok else '⚠️ ARREGLA LO DE ARRI
 
 ## Celda 3 — Sonda de ritmo: cuánto va a tardar de verdad
 
-**Esta es la celda que justifica el documento entero.** Procesa 60
-segundos con el mismo modelo y el mismo SAHI, lo cronometra y
-extrapola. Escribe en rutas de sonda, así que no toca nada.
+**Esta es la celda que justifica el documento entero.** Procesa 600
+frames con el mismo modelo y el mismo SAHI y saca el ritmo real.
+
+Dos detalles que la hacen honesta y que costaron una lectura del código:
+
+1. **Sin `tramo`, con `max_frames`.** Un tramo que empiece en el minuto 5
+   obliga a `posicionar_en_frame` a decodificar hasta allí, y eso son 27 s
+   en este vídeo (está medido en su propio docstring). Arrancando en el
+   frame 0 no hay salto, y además es el mismo camino que recorre la
+   pasada entera.
+2. **El ritmo se lee del LOG, no del reloj de pared.** El procesador ya
+   imprime sus propios ms/frame cronometrados *después* de cargar el
+   modelo, así que ese número no lleva dentro los ~20 s de arranque de
+   YOLO+SAHI. Sale por **stderr**, de ahí el `2>&1`.
 
 ```python
-import time, yaml, copy, os
+import time, yaml, copy, os, re
 cfg_sonda = copy.deepcopy(yaml.safe_load(open(CFG)))
-cfg_sonda['muestreo']['tramo'] = {'min_ini': 5.0, 'dur_seg': 60.0}
+cfg_sonda['muestreo'].pop('tramo', None)       # arranca en el frame 0: sin salto de lector
+cfg_sonda['muestreo']['max_frames'] = 1800     # 1800 / sample 3 = 600 frames procesados
+cfg_sonda['checkpoint'] = {'cada_frames': 500, 'reanudar': False}
 for k, v in (('cache','_sonda_det.pkl'), ('cache_colores','_sonda_col.pkl'),
              ('salida_csv','_sonda.csv'), ('salida_meta','_sonda.json')):
     cfg_sonda['rutas'][k] = 'data/tracking_benja/' + v
 yaml.safe_dump(cfg_sonda, open('configs/_sonda.yaml','w'), sort_keys=False, allow_unicode=True)
 
 t0 = time.time()
-!python scripts/procesar_partido.py --config configs/_sonda.yaml
-seg_60 = time.time() - t0
+salida = !python scripts/procesar_partido.py --config configs/_sonda.yaml 2>&1
+reloj = time.time() - t0
+print('\n'.join(salida[-15:]))
 
-# El número de frames NO se supone: se lee del caché que acaba de salir.
 from src.tracking.cache_io import cargar_cache
 n_sonda = len(cargar_cache('data/tracking_benja/_sonda_det.pkl')['cache'])
 n_total = 11988
-ritmo = seg_60 / n_sonda
-print(f'  sonda: {n_sonda} frames en {seg_60/60:.1f} min')
+medidos = re.findall(r'([\d.]+) ms/frame', '\n'.join(salida))
+ritmo = float(medidos[-1])/1000 if medidos else reloj/n_sonda   # log si lo hay, reloj si no
+
 print(f'\n──────── SONDA ────────')
-print(f'  {ritmo*1000:.0f} ms por frame')
-print(f'  parte entera: {ritmo*n_total/60:.0f} min de GPU')
-print(f'  caché de colores estimado: {os.path.getsize("data/tracking_benja/_sonda_col.pkl")/1e6*n_total/n_sonda:.0f} MB')
-print('  → con el checkpoint puesto, una caída ya no cuesta la pasada:')
-print('    relanzas la celda 4 y sigue donde lo dejó.')
+print(f'  {n_sonda} frames en {reloj:.0f} s de reloj')
+print(f'  {ritmo*1000:.0f} ms/frame ({"del log" if medidos else "del reloj, INFLADO por la carga del modelo"})')
+print(f'  → parte entera: {ritmo*n_total/60:.0f} min de GPU')
+mb = os.path.getsize('data/tracking_benja/_sonda_col.pkl')/1e6*n_total/n_sonda
+print(f'  → caché de colores: ~{mb:.0f} MB (lo esperado son ~467)')
+print('\n  Con el checkpoint puesto, una caída ya no cuesta la pasada:')
+print('  relanzas la celda 4 y sigue donde lo dejó.')
 ```
 
 ## Celda 4 — La pasada entera
@@ -290,12 +312,12 @@ No dejes esto para después de mirar resultados: mientras no esté en
 Drive, sigue colgando de que la sesión no se caiga.
 
 ```python
-!mkdir -p {D}/salidas
-!cp data/tracking_benja/cache_detecciones_benja_p1.pkl {D}/salidas/
-!cp data/tracking_benja/cache_colores_benja_p1.pkl     {D}/salidas/
-!cp data/tracking_benja/posiciones_benja_p1.csv        {D}/salidas/
-!cp data/tracking_benja/posiciones_benja_p1_meta.json  {D}/salidas/
-!ls -lh {D}/salidas/
+!mkdir -p {RAIZ}/salidas
+!cp data/tracking_benja/cache_detecciones_benja_p1.pkl {RAIZ}/salidas/
+!cp data/tracking_benja/cache_colores_benja_p1.pkl     {RAIZ}/salidas/
+!cp data/tracking_benja/posiciones_benja_p1.csv        {RAIZ}/salidas/
+!cp data/tracking_benja/posiciones_benja_p1_meta.json  {RAIZ}/salidas/
+!ls -lh {RAIZ}/salidas/
 ```
 
 ## Celda 6 — Control de sanidad antes de bajarlo
