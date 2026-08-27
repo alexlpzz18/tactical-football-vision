@@ -399,9 +399,25 @@ número que suene bien. Sobre las dos patas y las dos longitudes:
 | Villaviciosa A | 0,992 | 0,003 |
 | Villaviciosa B | 0,739 / 0,648 (¡dos!) | 0,000 |
 
-Ventana común (0,34 · 0,79), centro **0,55**. Por arriba el límite es
-duro y no teórico: con 0,80 el piloto pierde al portero_B de verdad y
-con 0,90 se abstiene.
+⚠️ **Corregido el 27-ago-2026 tras la verificación adversarial.** Aquí
+ponía "ventana (0,34 · 0,79)" tomando el mínimo del BENJAMÍN, pero el
+portero del GT más bajo de las dos patas es el **portero_B de
+Villaviciosa v4pre con 0,739** — y estaba en la tabla de arriba, tres
+líneas antes. Cruzar las patas lo desmiente: con `min_ultimo_hombre:
+0.75`, un valor que la ventana vieja declaraba seguro, **Villaviciosa
+descorona a su portero real**.
+
+Ventana común real **(0,341 · 0,739)**, centro **0,54**. El 0,55 adoptado
+está prácticamente en él, así que la elección sobrevive; lo que estaba
+mal eran los límites, y con ellos la sensación de holgura.
+
+**Y qué separa de verdad este umbral**, dicho sin adornos: la cota de
+Wilson de un fragmento que es último hombre en TODOS sus frames vale
+0,207 con 1 frame, 0,342 con 2, 0,510 con 4 y 0,566 con 5. Así que 0,55
+dice *"cualquier fragmento de 5 frames o más (0,6 s) que sea el más
+profundo de su área"*. **Separa LONGITUD tanto como comportamiento**, y
+por eso no puede sostenerse solo: hacen falta la puerta de duplicados y
+la de presencia.
 
 **La restricción física que hizo falta y no estaba prevista.** El primer
 intento degradaba Villaviciosa (+0,86 m de centroide mediano, +1,95 de
@@ -418,6 +434,46 @@ fragmentos del lado A solapan **0 frames** entre sí.
 Con `min_frames_nuevos: 0.50` (separación medida 0 % contra 100 %, así
 que el valor solo tiene que caer en medio) Villaviciosa vuelve a quedar
 bit a bit igual.
+
+### La puerta de duplicados era ASIMÉTRICA (arreglado el 27-ago-2026)
+
+Los fragmentos se examinaban ordenados por `ultimo_hombre`, y eso dejaba
+un agujero: **al primero no lo examinaba nadie**, porque con la unión
+vacía aporta el 100 % de frames nuevos por construcción.
+
+Y Wilson premia al fragmento CORTO y puro, así que el primero no es
+necesariamente el bueno: un intruso de 60 frames en la línea de gol saca
+**0,940** contra los **0,924** del portero de 1000 frames. Entraba
+primero y ya no había quien lo echara. Al revés también fallaba: un
+duplicado parcial bien puntuado podía expulsar al trozo que cubría el
+tramo entero, o provocar una abstención con la unión al 36 % teniendo
+delante un conjunto que cubría el 70 %.
+
+**Arreglo**: anclar la unión en el fragmento que MÁS FRAMES cubre, no en
+el mejor puntuado. Los criterios de admisión no cambian, solo el orden en
+que se examinan. Medido en las tres patas: **ninguna métrica se mueve**, y
+el conjunto del piloto de 5 min baja de 7 fragmentos a 6 — la puerta
+descarta ahora un duplicado que antes se colaba por llegar primero.
+
+Es la lección del 26-ago aplicada a esta misma regla: **las tres puertas
+del conjunto CUENTAN frames y ninguna comprueba QUIÉN.** El orden por
+cobertura no lo arregla del todo; lo hace mucho más difícil de explotar.
+
+### Lo que sigue siendo un riesgo conocido
+
+- **Si el portero no está detectado** en un tramo (oclusión en el barullo
+  del área), bastan 5 frames de un jugador en la línea de gol para que el
+  conjunto lo corone: no hay unión contra la que solaparse. La puerta que
+  queda es `min_presencia`, y solo si el hueco es grande.
+- **`pisa: 0.50` es una puerta dura contra el portero-líbero**: uno con el
+  45 % de sus posiciones fuera del área se pierde aunque su último hombre
+  sea 0,996. Margen real medido: el id 24 del benjamín va a 0,88 y el id
+  173 a 0,69.
+- **El 5,30 → 1,25 del piloto está medido sobre 296 de sus 2997 frames**
+  (los únicos con GT), y solo 2 de los fragmentos coronados casan con una
+  persona del GT. Barriendo el umbral en esa pata, la métrica es idéntica
+  de 0,34 a 0,79: **esa pata no discrimina el parámetro**. La única que
+  reacciona es Villaviciosa.
 
 **Resultado, centroide mediano contra el GT** (`scripts/adoptar_portero_conjunto.py`):
 

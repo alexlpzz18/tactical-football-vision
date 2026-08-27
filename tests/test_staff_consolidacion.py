@@ -873,3 +873,46 @@ def test_la_regla_NO_depende_de_lo_largo_que_sea_el_tramo():
         salida = _coronar(trozos + campo, equipos, {"A": -1})
         coronados = [k for k, v in salida.items() if str(v).startswith("portero_")]
         assert len(coronados) == n_trozos, f"con {n_trozos} trozos: {coronados}"
+
+
+def test_un_intruso_MEJOR_PUNTUADO_no_se_cuela_por_entrar_el_primero():
+    """La asimetría que cazó la verificación adversarial (27-ago-2026).
+
+    Wilson premia al fragmento CORTO y puro: un intruso de 60 frames en la
+    línea de gol saca 0,940 y el portero de 1000 frames saca 0,924. Con el
+    orden por PUNTUACIÓN el intruso entraba primero, y a la puerta de
+    duplicados no le quedaba nada que examinar —con la unión vacía, el
+    primero siempre aporta el 100 % de frames nuevos—. Anclando la unión
+    en el fragmento que MÁS cubre, el intruso se solapa con el portero y
+    cae.
+    """
+    portero = _ident_en_frames(4.0, 20.0, range(0, 1000))
+    # El intruso vive DENTRO del tramo del portero y aún más al fondo.
+    intruso = _ident_en_frames(2.0, 20.0, range(400, 460))
+    campo = _ident_en_frames(30.0, 20.0, range(0, 1000))
+    salida = _coronar([portero, intruso, campo], {1: "otro", 2: "A", 3: "A"}, {"A": -1})
+    assert salida[1] == "portero_A", "el portero de verdad tiene que salir"
+    assert salida[2] == "A", (
+        "el intruso se coló: entra antes que el portero por puntuación y la "
+        "puerta de duplicados nunca examina al primero"
+    )
+
+
+def test_un_duplicado_parcial_no_expulsa_al_trozo_que_cubre_el_tramo():
+    """El otro lado de la misma asimetría: no perder al fragmento bueno.
+
+    Un duplicado corto y bien puntuado entraba primero y dejaba al trozo
+    grande sin frames nuevos que aportar, así que la regla coronaba al
+    pequeño — o se abstenía, con la unión por debajo del mínimo, teniendo
+    delante un conjunto que cubría el tramo entero.
+    """
+    entero = _ident_en_frames(4.0, 20.0, range(0, 1000))
+    duplicado = _ident_en_frames(4.3, 20.0, range(100, 460))
+    campo = _ident_en_frames(30.0, 20.0, range(0, 1000))
+    salida = _coronar(
+        [entero, duplicado, campo], {1: "otro", 2: "otro", 3: "A"}, {"A": -1}
+    )
+    coronados = [k for k, v in salida.items() if str(v).startswith("portero_")]
+    assert coronados == [
+        1
+    ], f"tenía que coronar solo al trozo que cubre el tramo; coronó {coronados}"

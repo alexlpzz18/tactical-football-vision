@@ -295,12 +295,25 @@ class ReglaPorteroUltimoHombre:
     # que suenen bien.
     min_pisa_area: float = 0.50
     # Cota de Wilson mínima de "es el último hombre de su lado" para que
-    # un fragmento entre en el CONJUNTO del portero. Ventana medida sobre
-    # las dos patas y las dos longitudes: el portero del GT nunca baja de
-    # 0,791 y el impostor verificado más alto llega a 0,341, así que la
-    # ventana común es (0,34 · 0,79) y 0,55 es su centro. Por arriba el
-    # límite es duro: con 0,80 el piloto de 5 min pierde al portero_B de
-    # verdad, y con 0,90 se abstiene.
+    # un fragmento entre en el CONJUNTO del portero.
+    #
+    # Ventana medida sobre las dos patas y las dos longitudes: el portero
+    # del GT más bajo es el portero_B de Villaviciosa v4pre con **0,739**
+    # (el id 16, presencia 1,00) y el impostor verificado más alto llega a
+    # 0,341. Ventana común (0,341 · 0,739), centro **0,54**; 0,55 está
+    # prácticamente en él.
+    #
+    # ⚠️ Corregido el 27-ago-2026: aquí ponía 0,791, que es el mínimo del
+    # BENJAMÍN. Cruzar las dos patas lo desmiente, y el número estaba en la
+    # salida del propio banco. Con 0,75 —un valor que la ventana vieja
+    # declaraba seguro— Villaviciosa descorona a su portero real.
+    #
+    # Y qué separa de verdad este umbral, dicho sin adornos: Wilson de un
+    # fragmento que es último hombre en TODOS sus frames vale 0,207 con 1
+    # frame, 0,342 con 2, 0,510 con 4 y 0,566 con 5. Así que 0,55 dice
+    # "cualquier fragmento de 5 frames o más (0,6 s) que sea el más
+    # profundo de su área". Separa LONGITUD tanto como comportamiento, y
+    # por eso hace falta la puerta de duplicados y la de presencia.
     min_ultimo_hombre: float = 0.55
     # Fracción mínima de frames NUEVOS que un fragmento tiene que aportar
     # al conjunto para entrar. Es una restricción FÍSICA, no un umbral
@@ -476,6 +489,25 @@ def aplicar_regla_portero_ultimo_hombre(
         # que es justo el riesgo que esta regla existe para tapar.
         union: set = set()
         elegidos = []
+        # ⚠️ SE ORDENA POR COBERTURA, NO POR PUNTUACIÓN.
+        #
+        # `filas` viene ordenada por `ultimo_hombre`, y usarla así hacía la
+        # puerta de duplicados ASIMÉTRICA: solo podía descartar al peor
+        # puntuado, y al PRIMERO no lo examinaba nunca (con la unión vacía,
+        # aporta el 100 % de frames nuevos por construcción). Cazado en la
+        # verificación adversarial del 27-ago-2026: un intruso de 60 frames
+        # en la línea de gol adelanta al portero en Wilson (0,940 contra
+        # 0,924) —porque Wilson premia al fragmento CORTO y puro— entra el
+        # primero y ya no hay quien lo eche. Y al revés: un duplicado
+        # parcial bien puntuado podía expulsar al trozo que cubría el tramo
+        # entero, o incluso provocar una abstención con la unión al 36 %
+        # cuando el conjunto correcto cubría el 70 %.
+        #
+        # Anclando la unión en el fragmento que MÁS FRAMES cubre, el trozo
+        # grande del portero entra siempre primero y cualquier duplicado
+        # que se le solape cae por `min_frames_nuevos`. Los dos criterios
+        # de admisión no cambian: solo el orden en que se examinan.
+        filas = sorted(filas, key=lambda f: -f["vista"])
         for f in filas:
             if (
                 f["pisa"] < params.min_pisa_area
@@ -507,7 +539,7 @@ def aplicar_regla_portero_ultimo_hombre(
             # centroide. Es un riesgo conocido y aceptado (docs/portero.md),
             # pero si empieza a pasar en partidos reales hay que enterarse
             # por el log y no por el replay.
-            mejor = filas[0]
+            mejor = max(filas, key=lambda f: f["ultimo_hombre"])
             logger.warning(
                 "SIN PORTERO en el lado de %s: %d fragmento(s) pasan las dos "
                 "puertas y entre todos cubren el %.0f %% del tramo (mínimo "

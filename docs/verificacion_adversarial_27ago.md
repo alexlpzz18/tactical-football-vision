@@ -85,6 +85,41 @@ tramo):
 **El tramo 0-5 se desvía 16× el ruido de muestreo.** Corregido en
 `CLAUDE.md`: el fit no deriva **de los minutos 5 a 20**.
 
+### 7. La ventana del portero estaba mal por arriba, y el número estaba en mi propia salida
+
+El comentario que justifica `min_ultimo_hombre: 0.55` decía "el portero
+del GT nunca baja de 0,791". El portero_B real de Villaviciosa v4pre (id
+16, presencia 1,00) puntúa **0,739** — y aparecía en la tabla del propio
+banco, tres líneas antes. Tomé el mínimo del BENJAMÍN y no crucé patas.
+
+Con `min_ultimo_hombre: 0.75`, un valor que la ventana vieja declaraba
+seguro, **Villaviciosa descorona a su portero real**.
+
+**Corregido**: ventana real (0,341 · 0,739), centro **0,54**. El 0,55
+adoptado sigue prácticamente en el centro, así que la elección sobrevive;
+lo que era falso eran los límites, y con ellos la holgura aparente.
+
+### 8. La puerta de duplicados del portero era ASIMÉTRICA
+
+Los fragmentos se examinaban ordenados por `ultimo_hombre`, así que **al
+primero no lo examinaba nadie**: con la unión vacía aporta el 100 % de
+frames nuevos por construcción. Y Wilson premia al fragmento CORTO y
+puro, de modo que el primero no es necesariamente el bueno — un intruso
+de 60 frames en la línea de gol saca 0,940 contra los 0,924 del portero
+de 1000 frames, entra primero y ya no hay quien lo eche. Al revés
+también: un duplicado bien puntuado podía expulsar al trozo que cubría el
+tramo entero, o provocar una abstención con la unión al 36 % teniendo
+delante un conjunto del 70 %.
+
+**Arreglado**: la unión se ancla en el fragmento que MÁS FRAMES cubre.
+Los criterios de admisión no cambian, solo el orden. Medido en las tres
+patas: **ninguna métrica se mueve**, y el conjunto del piloto baja de 7
+fragmentos a 6 (la puerta descarta un duplicado que se colaba por llegar
+primero). Caso negativo: sigue 4 de 4.
+
+Es la lección del 26-ago aplicada a la regla nueva: **las tres puertas
+del conjunto CUENTAN frames y ninguna comprueba QUIÉN.**
+
 ## El hallazgo que no estaba en ningún informe
 
 **Los minutos 0-5 son otro partido.** Convergen ahí dos revisores
