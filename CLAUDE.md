@@ -1,168 +1,72 @@
 # Tactical Lens — contexto para Claude Code
 
 ## Qué es este proyecto
-SaaS de análisis táctico por computer vision para fútbol amateur (empresa ACIIES).
-Pipeline: vídeo de partido → corrección de distorsión → detección de jugadores
-(YOLOv8 + SAHI) → tracking → clasificación de equipos → proyección a metros
-(homografía) → métricas colectivas → informe HTML.
+SaaS de análisis táctico por computer vision para fútbol amateur (empresa
+ACIIES; es también el TFM de Alex). Pipeline: vídeo → corrección de
+distorsión → detección (YOLOv8 + SAHI) → tracking en METROS → clasificación
+de equipos → métricas colectivas → informe HTML.
 
-Caso objetivo (difícil a propósito): cámara fija gran angular barata, jugadores
-diminutos (15-40 px), equipaciones idénticas entre compañeros. El producto debe
-ser 100% AUTOMÁTICO (sin intervención humana por partido).
+Caso objetivo (difícil a propósito): cámara fija barata, jugadores de
+15-40 px, equipaciones idénticas entre compañeros. El producto debe ser
+100 % AUTOMÁTICO. Mercado inicial: **fútbol 7 de base** — por eso el
+benjamín es la pata que manda y Villaviciosa (F11 panorámico) es el caso
+difícil que espera.
 
-## Estado del código (actualizado 12-jul-2026)
-- Pipeline NUEVO integrado en `src/` y seleccionable por config:
-  - `src/tracking/perfiles.py`: composición única banco↔producción
-    (perfil `oficial` = goloso conservador; `candidato` = rescate + cosido
-    global + exclusión espacial con salvaguarda + cota de plantilla).
-    **`candidato` es el default de producto** (cobertura colectiva 0.456
-    vs 0.184; docs/experimentos_tracking.md registra TODAS las variantes
-    medidas y por qué se adoptaron o rechazaron).
-  - `src/evaluation/`: banco de evaluación contra GT de CVAT
-    (`scripts/evaluar_tracking.py`: métricas propias en metros + TrackEval
-    + cobertura colectiva; soporta `--perfil oficial|candidato`).
-  - `src/team_classification/color_classifier.py` + `pipeline_equipos.py`:
-    clasificador 2 fases + agregación por cercanía + regla de porteros.
-  - `src/tracking_data/processor.py`: v2 end-to-end (modos full/desde-caché,
-    `configs/processor.yaml`, CLI `scripts/procesar_partido.py`); el flujo
-    viejo (`process_video`, ByteTrack) sigue como fallback `pipeline: legacy`.
-- PENDIENTE: validar el modo `full` en Colab con `best_v3.pt` (la detección
-  requiere GPU; en local todo corre desde los cachés).
-- El usuario es PRINCIPIANTE en ingeniería de software: explicar decisiones,
-  código claro y comentado en español.
+**Alex es PRINCIPIANTE en ingeniería de software**: explicar decisiones,
+código claro y comentado en español.
 
-## Convenciones
-- Comentarios y docstrings en ESPAÑOL. Nombres de variables descriptivos.
-- Formato: Black + Flake8 (hay pre-commit hooks configurados).
-- Tests con pytest en `tests/`. Después de CADA cambio: correr pytest y no dar
-  nada por terminado si falla.
-- Configuración externalizada (parámetros físicos y umbrales en un config,
-  p. ej. `configs/tracking.yaml`), nunca números mágicos hardcodeados.
-- Logging con el módulo `logging` (no prints) en el código de src/.
+---
 
-## Hallazgo que ordena el trabajo de tracking (17-ago-2026)
-**La DETECCIÓN deja de ser la palanca** (decisión de Alex, 17-ago-2026):
-su esfuerzo de etiquetado se para aquí. El frente es ASOCIACIÓN y
-CLASIFICACIÓN. El v4 (mAP50 0,944 vs 0,900) no movió la aguja del
-producto lo que costó.
-Al cambiar de detector hay que RE-BARRER la asociación: los parámetros
-van pegados al detector. Medido — con la caja de cambios del v4pre el v4
-daba 8 quimeras; con la suya (`conf 0.45 · buffer 1.5 · empar 0.995 ·
-minf 2 · hueco 4 · color 0.9`) da 3, y bate al v4pre en todo en
-Villaviciosa. En el benjamín sigue por debajo, así que NO está adoptado.
-Dónde nacen las quimeras (`scripts/diagnostico_quimeras.py`): el solape
-de cajas es factor débil (1,8×) y minoritario; la señal limpia es la
-RE-ENTRADA tras perder el track (3,0×). Línea abierta: meter la
-apariencia en la asociación, con la puerta en la re-entrada. Diseño en
-`docs/apariencia_en_asociacion.md`.
+## Estado (27-ago-2026)
 
-Corolario práctico: **un GT indexado por id del sistema caduca al cambiar
-el detector** (medido: 27 de 30 identidades del mini-GT del benjamín son
-otra persona con el v4, mediana 38 m). Los GT deben indexarse por
-posición y tiempo.
+**Se ha procesado y validado UNA PARTE ENTERA** del benjamín (20 min,
+11.989 frames, 211.282 detecciones, un solo fit de color). El sistema
+aguanta la escala:
 
-## Suelo de ruido de Villaviciosa (25-ago-2026) — leer antes de comparar
+| | 5 min | 20 min |
+|---|---|---|
+| equipo equivocado (mismos frames del GT) | 3,8 % | **4,0 %** |
+| deriva por tramos de 5 min | — | **plana** |
 
-Quitando **5 detecciones al azar de 10.040**, Villaviciosa mueve la
-cobertura 0,047, la accuracy de equipos 0,085 y el centroide 0,83 m de
-mediana (p90: 2,45 m). **El benjamín no se mueve nada.**
+El fit no deriva: cada tramo por su cuenta aprende los mismos dos
+colores, la distancia a su prototipo BAJA (0,798 → 0,748) y el margen
+A−B SUBE. El minuto 19 se parece al minuto 1.
 
-La causa está localizada: `TeamClassifierColor._umbral_auto` elige el
-umbral de fusión por **argmax sobre una rejilla**, y en Villaviciosa dos
-puntos van casi empatados — salta de 0,90 a 0,75 en **2 de cada 10**
-perturbaciones, y con él cambia la partición A/B entera. Congelando el
-fit, el ruido desaparece (0,047 → 0,001).
+**Adoptado y en producción** (cada uno con su medición en `docs/`):
+- Tracking: perfil `bytetrack` en el benjamín; `candidato` en el F11.
+- Clasificación: fit de color con `n_init: 50`, orden de reglas
+  árbitro → porteros → un_solo_arbitro → staff, `etiquetar_por_observacion`
+  (ventana 1,5 s, solo benjamín).
+- **Portero por CONJUNTO de fragmentos** con presencia sobre la unión
+  (`docs/portero.md`). Invariante a la escala: 1,30 m a 60 s y 1,25 m a
+  5 min, donde antes daba 1,30 y 5,30.
+- Staff lento, exclusividad de árbitro, plausibilidad física, checkpoint
+  con reanudación en el modo full, atajo de distorsión nula.
 
-⚠️ **No es una barra de error.** Un A/B determinista sobre el mismo caché
-no tiene ruido. Lo que dice es que la métrica es FRÁGIL, así que una
-diferencia pequeña medida una sola vez puede no viajar. El test correcto:
-**repetir el A/B sobre entradas perturbadas y comprobar que el signo
-aguanta.** Con él sobreviven `min_obs_para_otro: 25` y el v4 sobre el
-v4pre en Villaviciosa. Lo que queda en cuarentena está listado en
-`docs/suelo_de_ruido.md`.
+**Lo siguiente**: el frente del jugador se cierra aquí. Pasa al **BALÓN**,
+que es lo que falta para el informe (`src/balon/tracking_balon.py` ya
+tiene balón activo, fases aéreas y contactos; falta pasarlo por la parte
+entera, que es GPU). Ideas de producto pendientes en `BACKLOG.md` 13 y 14.
 
-## Lo siguiente, en este orden (encargo de Alex, 25-ago-2026)
+### Dónde está cada cosa
 
-1. **ESTABILIZAR EL UMBRAL DE FUSIÓN DEL FIT.** Es una línea por sí sola:
-   quitaría ruido de TODAS las mediciones de Villaviciosa de golpe. Tres
-   candidatos a medir (promediar sobre la meseta, interpolar el máximo,
-   promediar los prototipos empatados) y un criterio doble: que la
-   dispersión baje a la del fit congelado Y que las métricas sin
-   perturbar no empeoren. Detalle en `docs/suelo_de_ruido.md`.
-2. **PARTE 2: clasificación en tres grupos** (los dos colores del partido
-   + un tercer grupo relativo para todo lo demás, separado por
-   COMPORTAMIENTO). **Empezar por el PORTERO y no construir nada del
-   tercer grupo hasta tenerlo sólidamente identificado**: lleva tres
-   intentos rompiendo cosas (destrozó el doble pase por colores, casi
-   rompe la regla de staff lento, y es el más lento del partido a 0,60
-   m/s). Los dos criterios de Alex que hay que medir PRIMERO contra el
-   GT: **último hombre** de su equipo, y **no cruza el medio campo** (sí
-   se adelanta hasta el círculo: "vive en su tercio" es FALSO).
-   El tercer grupo se define de forma RELATIVA a los dos prototipos que
-   el fit encuentre en ESE partido, con el umbral derivado de SU
-   distribución. El catálogo arbitral sí puede seguir siendo absoluto,
-   con su regla de conflicto.
+| | |
+|---|---|
+| `src/tracking/perfiles.py` | composición única banco↔producción (`bytetrack`, `oficial`, `candidato`) |
+| `src/tracking_data/processor.py` | end-to-end v2: modos `full` (GPU) y `desde_cache`; checkpoint y reanudación |
+| `src/team_classification/` | `color_classifier` (fit), `pipeline_equipos` (orden de reglas), `porteros`, `arbitro`, `staff` |
+| `src/balon/tracking_balon.py` | balón activo, fases aéreas, contactos |
+| `src/report/` | `replay_tactico` (pizarra), `informe_v2`, `analisis_ia` (el LLM SOLO redacta desde números ya calculados) |
+| `src/evaluation/` | banco contra el GT de CVAT (métricas propias + TrackEval) |
+| `docs/` | una medición por fichero, negativos incluidos; `experimentos_tracking.md` es el registro largo |
+| `BACKLOG.md` | ideas de producto con su comprobación previa pendiente |
 
-## Lección de guardas (26-ago-2026): contar no es comprobar QUIÉN
+---
 
-Se adoptó `arbitro.margen_equipo: 0.68` con una guarda que contaba las
-identidades del tercer grupo y exigía que fuera 1. Con otro caché del
-mismo partido, el margen dejaba fuera al árbitro (583 obs) y se colaba
-entero en un equipo — **y la guarda daba el visto bueno**, porque quedaba
-1 identidad, solo que no era la correcta.
+## LA PRIORIDAD UNO: la ASOCIACIÓN
 
-> **Una guarda que CUENTA no puede detectar un fallo de IDENTIDAD.**
-
-Revisión del resto de guardas del proyecto con ese criterio:
-
-- `cota_plantilla`: fusiona hasta llegar a ~23. Es el caso canónico y ya
-  estaba anotado como fracaso ("ya fracasamos con la cota de plantilla
-  por confundirlo"). **No está en el perfil por defecto.**
-- `porteros.aplicar_regla_porteros` (exclusividad de área): corona a
-  quien MÁS observaciones acumula dentro del área. Cuenta para decidir
-  quién, y es justo el riesgo del `id 55`. **Ya no es el default**
-  (`metodo: ultimo_hombre`).
-- `deducir_lados`, `min_obs_para_otro`, `arbitro.min_observaciones`:
-  cuentan, pero como proxy de FIABILIDAD (¿hay bastante muestra?), no
-  para decidir quién es quién. Eso sí es legítimo.
-
-Cuando una guarda tenga que proteger una identidad, el aviso debe
-dispararse sobre el EVENTO que la cambia — por ejemplo "el margen acaba
-de vetar a una identidad de 583 observaciones" — no sobre el recuento
-final.
-
-## Qué NO hacer
-- NO commitear datos, vídeos, modelos (.pt), caches (.pkl) ni exports de CVAT
-  (están/deben estar en .gitignore; viven en Google Drive).
-- NO tocar los notebooks de `notebooks/` (son el registro de experimentos).
-- NO sustituir el diseño del tracker en metros por un tracker en píxeles de
-  librería: el tracking en coordenadas de campo es la ventaja diferencial.
-- NO usar boxmot (rompió el entorno: su v19 cambió la API y subió numpy a 2.5).
-  Fijar numpy<2.1 y scipy<1.14 si hace falta scipy.
-- La GPU NO está disponible en este Mac: todo lo que requiera inferencia
-  (SAHI, YOLO, re-detección) se hace en Colab, NO aquí. Aquí se trabaja
-  contra el caché de detecciones ya generado.
-
-## Datos de trabajo (el usuario los copia de Drive a `data/`, gitignored)
-- `data/tracking/cache_detecciones_min5_60s.pkl`: caché de detecciones del tramo de
-  validación (min 5-6 de un partido, ~500 frames, 1 de cada 3, dt=0.12s).
-  Formato pickle: {"cache": [ {"frame_idx": int, "t": float,
-  "dets": [(mx, my, x1, y1, x2, y2, conf), ...]} ], "fps": float,
-  "sample": int, "wh": (w, h)}. (mx, my) = posición en METROS (pies
-  proyectados con homografía); (x1..y2) = caja en píxeles.
-- `data/annotations/ground_truth_tracking/annotations.xml`: ground truth de tracking etiquetado a
-  mano en CVAT, formato "CVAT for video 1.1". Tracks con identidad persistente.
-  Labels: `player` (atributo `team`: A / B / portero_A / portero_B) y `referee`.
-  Frames: gt_NNNNNN.jpg donde NNNNNN = índice de frame global del vídeo,
-  1 de cada 15 frames reales del mismo tramo min 5-6.
-  ⚠️ Alineación: el caché tiene 1 de cada 3 frames; el GT 1 de cada 15
-  → evaluar sobre los frames comunes (los múltiplos de 15).
-- `data/calibracion/homografia.npy`: matriz H 3x3 píxel→metros (ya en el repo).
-
-## Hallazgo que reordena el proyecto (20-ago-2026)
-**La ASOCIACIÓN es el 100 % del margen medible en métricas de producto;
-el anclaje es cero.** Medido con tests de oráculo contra el GT de
-identidad del benjamín (`docs/oraculos.md`):
+**Es el 100 % del margen medible.** Medido con oráculos contra el GT
+(`docs/oraculos.md`):
 
 | variante | centroide | anchura |
 |---|---|---|
@@ -170,37 +74,139 @@ identidad del benjamín (`docs/oraculos.md`):
 | + anclaje perfecto | 1,61 m | 1,03 m |
 | **+ asociación perfecta** | **0,42 m** | **0,33 m** |
 
-Arreglar la asociación divide el error de centroide por 3,7. Arreglar el
-anclaje no lo mejora — un sesgo sistemático mueve el centroide pero no
-deforma el bloque, y las métricas colectivas apenas lo notan. Por eso el
-anclaje por pose baja de prioridad a comprobación barata.
+Y no está donde creíamos: sin re-entrada la pureza sube solo de 80,1 % a
+84,4 %, así que **el 16 % restante se contamina DENTRO del seguimiento
+continuo**, en los cruces. Hay que **partir y luego unir**.
 
-Y la mezcla no está donde creíamos: sin re-entrada la pureza sube solo de
-80,1 % a 84,4 %, así que **el 16 % restante se contamina DENTRO del
-seguimiento continuo**, en los cruces. Un grafo global que solo una
-tracklets tiene ahí su techo: hay que **partir y luego unir**.
+Todo lo demás acaba desembocando aquí:
 
-## Lección de método: mirar el ÍNDICE, no lo que añades
-Antes de commitear, `git status` para ver **qué hay staged**, no solo qué
-acabas de añadir. Un `git add -A` que el hook aborta **deja los ficheros
-en el índice**, y el siguiente `git commit` se los lleva aunque el `git
-add` posterior nombrara solo dos.
+- **UNA PERSONA ES N IDENTIDADES.** El portero se parte en 5 y 21
+  trozos sobre 20 minutos; el árbitro, en 10. Las reglas que coronaban a
+  UNO se rompían al alargar el tramo. Con la restricción física de que
+  **dos trozos simultáneos son un duplicado, no una continuación** (una
+  persona no está en dos sitios a la vez).
+- **El árbitro es un problema de ASOCIACIÓN disfrazado de color**
+  (27-ago-2026). En un recorte suelto NO EXISTE: sus observaciones están
+  a 0,884 de su prototipo y las de jugador a 0,936 — solapadas. Su verde
+  flúor **solo aparece al promediar ~40 recortes**. Por eso solo es
+  alcanzable con identidades largas y puras, y por eso llegará gratis
+  cuando la asociación mejore. Línea cerrada hasta entonces
+  (`docs/arbitro.md`).
+- Las identidades con reparto 58/42 entre A y B no son fallos de color:
+  **contienen a más de una persona**.
 
-Ya ha pasado dos veces: ficheros de scratch en un commit pusheado, y la
-`landing_page/` entera (20-ago-2026), que el propio .gitignore marcaba
-como "no versionar".
+---
 
-## Dos hallazgos que orientan dónde invertir (20-ago-2026)
+## Principios (cada uno costó una medición)
 
-**1. Las reglas posicionales valen MÁS que el clasificador.** Color puro
-da 8,7 m de centroide; con las reglas de portero, staff, árbitro y
-`solo_cercanos` puestas, 1,55 m. El valor está en el **conocimiento del
-dominio** —campo, áreas, banquillo, reglas del juego— no en la visión.
-Antes de mejorar un modelo, preguntarse qué sabe uno del fútbol que el
-sistema todavía no usa.
+**Sobre el método**
 
-**2. El voto mayoritario no era robusto, era SESGADO.** Promediar toda la
-vida de la identidad mete observaciones lejanas malas en la decisión.
-Etiquetar por observación gana **+6,2 puntos incluso en identidades
-PURAS**, donde no había contaminación que arreglar. La robustez de un
-promedio depende de que lo que promedia no esté sesgado.
+- **Una herramienta de diagnóstico que RESUME puede mentir sobre el
+  sistema que diagnostica.** Ya ha pasado cuatro veces: el "✓" de un
+  caché vacío, el tick del balón, el `tail` que se comió un crash de
+  OpenCV, y la pizarra pintando la MODA de la identidad en vez de la
+  etiqueta del instante (`docs/pizarra_colapsaba.md`). Guarda viva en
+  `tests/test_renderizadores_no_colapsan.py`.
+- **Una guarda que CUENTA no puede detectar un fallo de IDENTIDAD.** Se
+  adoptó un margen con una guarda que exigía "queda 1 en el tercer
+  grupo": quedaba 1, pero no era el árbitro. El aviso debe dispararse
+  sobre el EVENTO que cambia la identidad, no sobre el recuento final.
+- **Comprobar el proxy antes de creerse el resultado.** Interpolar la
+  posición del árbitro daba un "100 % es el fit" redondo; el control de
+  color (H=62 S=248 contra H=118 S=56) dijo que no era él.
+- **Comprobar que los barridos dan puntos DISTINTOS**, y desconfiar de un
+  número imposible: es más fiable que releer un signo.
+- **Mirar el ÍNDICE antes de commitear** (`git status`), no lo que
+  acabas de añadir. Un `git add -A` que el hook aborta deja los ficheros
+  en el índice.
+- **Documentar los negativos.** Media semana se ahorra leyendo por qué
+  algo ya se descartó.
+
+**Sobre las medidas**
+
+- **El suelo de ruido no es una barra de error.** Un A/B determinista
+  sobre el mismo caché no tiene ruido; lo que dice es que la métrica es
+  FRÁGIL. El test correcto es repetir el A/B sobre entradas perturbadas y
+  comprobar que el SIGNO aguanta (`docs/suelo_de_ruido.md`).
+- **Elegir el CENTRO de la meseta, no el valor que va justo.** Si no hay
+  meseta común a las dos patas, el parámetro no existe.
+- **Los umbrales van pegados al DETECTOR.** Al cambiarlo hay que
+  re-barrer la asociación entera.
+- **Un GT indexado por id del sistema caduca**: 27 de 30 identidades del
+  mini-GT eran otra persona tras cambiar de detector. **Indexar por
+  posición y tiempo.**
+- **Medir cada cambio por separado contra LAS DOS patas** (benjamín y
+  Villaviciosa), y no adoptar nada que degrade alguna.
+
+**Sobre dónde está el valor**
+
+- **Las reglas posicionales valen MÁS que el clasificador.** Color puro:
+  8,7 m de centroide. Con las reglas de portero, staff, árbitro y
+  `solo_cercanos`: 1,55 m. El valor está en el **conocimiento del
+  dominio** —campo, áreas, banquillo, reglamento— no en la visión. Antes
+  de mejorar un modelo, preguntarse qué se sabe de fútbol que el sistema
+  todavía no usa.
+- **El voto mayoritario no era robusto, era SESGADO.** Etiquetar por
+  observación gana +6,2 puntos incluso en identidades PURAS. La robustez
+  de un promedio depende de que lo que promedia no esté sesgado.
+- **Dos señales débiles que juntas son fuertes.** Ninguna separa sola,
+  pero cada impostor falla al menos una. Es la forma del staff lento, de
+  las dos salvaguardas del portero y de `un_solo_arbitro`.
+- **Actuar solo donde hay riesgo**: no aplicar un criterio ruidoso en
+  todas partes, solo decidir mejor donde el sistema ya está adivinando.
+
+---
+
+## Vías CERRADAS, con la medición que las cerró
+
+| vía | por qué se cerró |
+|---|---|
+| **Detección como palanca** | El v4 (mAP50 0,944 vs 0,900) no movió la aguja del producto. El esfuerzo de etiquetado se paró el 17-ago. |
+| **Anclaje por pose** | El oráculo de anclaje perfecto EMPEORA el centroide (1,55 → 1,61 m). Un sesgo sistemático mueve el bloque pero no lo deforma. |
+| **Tercer grupo por COLOR** (3 intentos) | El árbitro no está lejos de los prototipos en un histograma HS de 15-40 px. |
+| **Puerta de distancia al prototipo** | Por identidad: Villaviciosa 0,718 → 0,682. Por observación (re-medida el 27-ago): 8 jugadores perdidos por cada árbitro cazado. |
+| **`arbitro.margen_equipo: 0.68`** | Adoptado y revertido el mismo día: la ventana se mueve con el detector (0,62-0,75 en v3, ≤0,50 en v4). Hoy en 0,0. |
+| **`cota_plantilla`** | Fusiona hasta llegar a ~23 y confunde identidades. Fuera del perfil por defecto. |
+| **Regla de portero por ÁREA** | Corona a quien más observaciones acumula dentro del área: cuenta para decidir QUIÉN. Sustituida por `ultimo_hombre`. |
+| **Suavizar el parpadeo** | Tres formas, tres negativos: el suavizado ya está en su óptimo (1,5 s). Y **el parpadeo es la señal de que la asociación acaba de fallar: taparlo esconde el fallo.** |
+| **Feature de color en `float32`** | Ahorraría disco pero movería la entrada del KMeans, que es la pieza frágil. |
+
+---
+
+## Convenciones
+- Comentarios y docstrings en **español**. Nombres descriptivos.
+- Formato: Black + Flake8 `--max-line-length=100` (pre-commit hooks).
+- Tests con pytest en `tests/`. **Después de CADA cambio: correr pytest**
+  y no dar nada por terminado si falla.
+- Configuración externalizada (umbrales en un YAML), nunca números
+  mágicos hardcodeados.
+- Logging con el módulo `logging` (no prints) en `src/`.
+- Rama `experimento/asociacion-global`. **Nada se mergea a `main` sin el
+  OK de Alex.** Nada se adopta como default sin su OK, **salvo** que
+  mejore TODAS las métricas a la vez sin degradar ninguna.
+- Si una vía no paga en DOS intentos, se abandona.
+
+## Qué NO hacer
+- NO commitear datos, vídeos, modelos (.pt), cachés (.pkl) ni exports de
+  CVAT. Viven en Google Drive.
+- NO tocar los notebooks de `notebooks/`: son el registro de experimentos.
+- NO sustituir el tracker en metros por uno en píxeles de librería: el
+  tracking en coordenadas de campo es la ventaja diferencial.
+- NO usar boxmot (rompió el entorno). Fijar `numpy<2.1` y `scipy<1.14`.
+- **Licencias**: nada AGPL (YOLO-pose, boxmot) y nada entrenado con
+  SoccerNet (CC BY-NC). Código permisivo con pesos NC ⇒ hay que reentrenar.
+- La **GPU no está en este Mac**: SAHI, YOLO y re-detección se hacen en
+  Colab. Aquí se trabaja contra los cachés.
+
+## Datos de trabajo (Alex los copia de Drive a `data/`, gitignored)
+- `data/tracking_benja/cache_detecciones_benja_p1.pkl` (+ `_colores_`, 418
+  MB): **la parte entera**, 11.989 frames, t=0-1200 s.
+- `data/tracking_benja/cache_*_benja.pkl`: tramo de 60 s (min 5-6), sobre
+  el que están medidas casi todas las métricas del banco.
+- `data/tracking/cache_*_v4pre.pkl`: Villaviciosa, tramo de 60 s.
+- Formato del caché: `{"cache": [{"frame_idx", "t", "dets": [(mx, my, x1,
+  y1, x2, y2, conf)]}], "fps", "sample", "wh"}`. `(mx, my)` en METROS.
+- GT: `data/annotations/gt_benja/annotations.xml` (offset 9750, paso 15;
+  **NO anota al árbitro**) y `data/annotations/ground_truth_tracking/`
+  para Villaviciosa (offset 7500).
+- Homografías en el repo: `data/calibracion_benja/homografia_benja.npy`.
