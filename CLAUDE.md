@@ -25,12 +25,32 @@ aguanta la escala:
 
 | | 5 min | 20 min |
 |---|---|---|
-| equipo equivocado (mismos frames del GT) | 3,8 % | **4,0 %** |
-| deriva por tramos de 5 min | — | **plana** |
+| equipo equivocado (casado 1-a-1, radio 2 m) | 1,2 % | **1,2 %** |
+| deriva de los minutos 5-20 | — | **plana** |
 
-El fit no deriva: cada tramo por su cuenta aprende los mismos dos
-colores, la distancia a su prototipo BAJA (0,798 → 0,748) y el margen
-A−B SUBE. El minuto 19 se parece al minuto 1.
+⚠️ **Tres avisos que costó una verificación adversarial, y sin los que
+estos números se leen mal:**
+
+1. **El casado tiene que ser 1-a-1.** Con "la fila más cercana" salía
+   4,0 %, pero el 79 % de ese error estaba sobre filas que DOS personas
+   del GT reclamaban a la vez: se le apuntaba al clasificador un fallo de
+   DETECCIÓN. Con asignación óptima, 1,2 %. Y el NIVEL depende del radio
+   (3,1 % a 1,0 m · 6,5 % a 5,0), así que un porcentaje sin radio no
+   significa nada.
+2. **El GT del benjamín cubre 29,5 s** (frames 9750-10635), el 2,5 % de
+   la pasada. Comparar "5 min contra 20 min" mide el efecto de ENTRENAR
+   EL FIT con más datos sobre la MISMA ventana del minuto 5. **No dice
+   nada de los minutos 6-20.** Ahí solo hay señales estructurales sin GT.
+3. **Los minutos 0-5 son OTRO RÉGIMEN**, y hay que excluirlos o tratarlos
+   aparte: el fit de ese tramo se desvía **35 % de la distancia A−B**
+   contra un nulo de remuestreo del 2,2 % (16× el ruido), los jugadores
+   ocupan otra franja (`y p95` 26 m contra 35 m después), las identidades
+   son más cortas (155 contra 213 obs) y solo el 15,9 % de los frames
+   tiene el recuento correcto, contra el 42 % en 5-10.
+
+Con esos avisos: **de los minutos 5 a 20 el fit NO deriva** (desvíos de
+3,7-14,1 %, la distancia a su prototipo BAJA de 0,798 a 0,748 y el margen
+A−B SUBE). El minuto 19 se parece al minuto 6 — no al minuto 1.
 
 **Adoptado y en producción** (cada uno con su medición en `docs/`):
 - Tracking: perfil `bytetrack` en el benjamín; `candidato` en el F11.

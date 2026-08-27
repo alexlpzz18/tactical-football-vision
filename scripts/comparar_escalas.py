@@ -48,27 +48,50 @@ def equipo_gt(obs):
     return t.replace("portero_", "") if t.startswith("portero_") else t
 
 
-def casar(df, gt_m):
-    """Empareja cada persona del GT con la fila más cercana del CSV."""
+def casar(df, gt_m, radio=RADIO_CASADO_M):
+    """Empareja el GT con el CSV, UNA fila por persona (asignación óptima).
+
+    ⚠️ ANTES SE COGÍA LA FILA MÁS CERCANA SIN MÁS, y dos personas del GT
+    podían reclamar la MISMA fila. Lo cazó una verificación adversarial:
+    25 filas estaban duplicadas (51 personas, el 7 % de las casadas) y
+    concentraban el **79 % de los errores** — 45,1 % de fallo sobre filas
+    duplicadas contra 0,88 % sobre las limpias.
+
+    O sea: la métrica le apuntaba al CLASIFICADOR un fallo de DETECCIÓN.
+    Cuando faltaba una detección, la segunda persona se casaba con el
+    vecino, que a veces es del otro equipo. Con asignación 1-a-1 el error
+    baja de 4,0 % a 1,24 %, y es lo que de verdad hace la clasificación.
+    """
+    from scipy.optimize import linear_sum_assignment
+
     pares = []
     por_frame = {f: g for f, g in df.groupby("frame")}
     for frame, obs_gt in sorted(gt_m.items()):
+        gente = [o for o in obs_gt if equipo_gt(o) in ("A", "B")]
+        if not gente:
+            continue
         if frame not in por_frame:
+            pares.extend((equipo_gt(o), None) for o in gente)
             continue
         sub = por_frame[frame]
         xy = sub[["x_m", "y_m"]].to_numpy()
         etiquetas = sub.etiqueta.to_numpy()
-        for o in obs_gt:
-            eq = equipo_gt(o)
-            if eq not in ("A", "B"):
-                continue  # el árbitro no entra en la exactitud de equipos
-            d = np.hypot(xy[:, 0] - o.pos[0], xy[:, 1] - o.pos[1])
-            k = int(np.argmin(d))
-            if d[k] > RADIO_CASADO_M:
-                pares.append((eq, None))
+        coste = np.hypot(
+            xy[None, :, 0] - np.array([o.pos[0] for o in gente])[:, None],
+            xy[None, :, 1] - np.array([o.pos[1] for o in gente])[:, None],
+        )
+        # Fuera del radio, coste prohibitivo: así el óptimo nunca lo usa.
+        coste = np.where(coste > radio, 1e6, coste)
+        filas_gt, filas_csv = linear_sum_assignment(coste)
+        asignado = {
+            int(i): int(j) for i, j in zip(filas_gt, filas_csv) if coste[i, j] < 1e6
+        }
+        for i, o in enumerate(gente):
+            if i not in asignado:
+                pares.append((equipo_gt(o), None))
                 continue
-            sis = str(etiquetas[k]).replace("portero_", "")
-            pares.append((eq, sis))
+            sis = str(etiquetas[asignado[i]]).replace("portero_", "")
+            pares.append((equipo_gt(o), sis))
     return pares
 
 
@@ -120,6 +143,14 @@ def main():
     )
     p.add_argument("--offset", type=int, default=9750)
     p.add_argument("--paso", type=int, default=15)
+    p.add_argument(
+        "--radio",
+        type=float,
+        default=RADIO_CASADO_M,
+        help="radio de casado en metros. El NIVEL del error depende de él "
+        "(3,1 %% a 1,0 m · 4,0 %% a 2,0 · 6,5 %% a 5,0), así que dar un "
+        "porcentaje sin decir el radio no significa nada.",
+    )
     args = p.parse_args()
     logging.basicConfig(level=logging.ERROR)
 
@@ -138,7 +169,9 @@ def main():
         comunes = sorted(set(df.frame) & set(gt_m))
         print(f"\n{nombre}: {ruta}")
         print(f"  frames en común con el GT: {len(comunes)} de {len(gt_m)}")
-        res[nombre] = informar(nombre, casar(df, {f: gt_m[f] for f in comunes}))
+        res[nombre] = informar(
+            nombre, casar(df, {f: gt_m[f] for f in comunes}, args.radio)
+        )
 
     if len(res) == 2:
         (n1, a), (n2, b) = res.items()

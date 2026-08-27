@@ -189,9 +189,14 @@ def _cfg_full(tmp_path, **cambios):
             "video": "v.mp4",
             "cache": str(tmp_path / "det.pkl"),
             "cache_colores": str(tmp_path / "col.pkl"),
+            # ⚠️ La homografía y version_color ESTABAN AUSENTES de este
+            # fixture, y por eso el hueco de la firma no podía verse desde
+            # aquí (lo cazó la verificación adversarial del 27-ago-2026).
+            "homografia": str(tmp_path / "H.npy"),
         },
         "deteccion": {
             "modelo": "m.pt",
+            "version_color": 1,
             "confianza": 0.3,
             "max_area_caja": 0.05,
             "sahi": {"filas": 2, "columnas": 4, "solape": 0.2},
@@ -234,11 +239,23 @@ def test_la_firma_cambia_con_el_modelo_y_con_el_tramo(tmp_path):
 
 
 def _guardar(tmp_path, firma, completo, frames=(0, 3, 6)):
+    """Guarda un par de cachés COHERENTES entre sí.
+
+    Los colores van con claves `(frame_idx, det_idx)` reales a propósito:
+    con un diccionario de juguete `{"c": 1}` el fallo de coherencia entre
+    los dos cachés era invisible por construcción.
+    """
+    import numpy as np
+
     from src.tracking_data.processor import _guardar_caches
 
-    cache = [{"frame_idx": f, "t": f / 30.0, "dets": []} for f in frames]
+    cache = [
+        {"frame_idx": f, "t": f / 30.0, "dets": [(1.0, 2.0, 3, 4, 5, 6, 0.9)]}
+        for f in frames
+    ]
+    colores = {(f, 0): np.zeros(256) for f in frames}
     _guardar_caches(
-        _cfg_full(tmp_path), cache, {"c": 1}, 30.0, 3, (1920, 1080), completo, firma
+        _cfg_full(tmp_path), cache, colores, 30.0, 3, (1920, 1080), completo, firma
     )
     return cache
 
@@ -250,7 +267,7 @@ def test_reanuda_un_checkpoint_compatible(tmp_path):
     _guardar(tmp_path, firma, completo=False)
     cache, colores = _reanudar(_cfg_full(tmp_path), firma)
     assert cache is not None and cache[-1]["frame_idx"] == 6
-    assert colores == {"c": 1}
+    assert set(colores) == {(0, 0), (3, 0), (6, 0)}
 
 
 def test_NO_reanuda_si_el_detector_es_otro(tmp_path):
@@ -286,3 +303,87 @@ def test_el_checkpoint_sigue_siendo_un_cache_valido(tmp_path):
     _guardar(tmp_path, firma, completo=False)
     datos = cargar_cache(str(tmp_path / "det.pkl"))
     assert len(datos["cache"]) == 3 and datos["sample"] == 3
+
+
+# ── Lo que la verificación adversarial demostró que NO se probaba ─────
+#
+# Los tests de arriba cubrían la parte declarativa (la firma cambia con
+# el modelo, no reanuda un caché completo...) y daban falsa sensación de
+# seguridad: ninguno comparaba un caché reanudado con uno de un tirón, ni
+# miraba la COHERENCIA entre los dos cachés, ni preguntaba qué cambia el
+# resultado y NO está en la firma. Ahí estaban los cuatro fallos.
+
+
+def test_los_dos_caches_quedan_COHERENTES_si_la_sesion_muere_a_mitad():
+    """El fallo 1: el ancla de reanudación se escribe LA ÚLTIMA.
+
+    Si muriera entre los dos volcados con el orden contrario, las
+    detecciones irían por delante de los colores, `_reanudar` aceptaría el
+    checkpoint y la pasada terminaría marcada `completo: True` con frames
+    que tienen detección y no tienen feature. Nadie se queja aguas abajo.
+    """
+    import inspect
+
+    from src.tracking_data import processor
+
+    codigo = inspect.getsource(processor._guardar_caches)
+    pos_colores = codigo.index('cfg["rutas"]["cache_colores"]')
+    pos_detecciones = codigo.index('cfg["rutas"]["cache"],')
+    assert pos_colores < pos_detecciones, (
+        "las detecciones (que anclan la reanudación) tienen que volcarse "
+        "DESPUÉS de los colores; ver el docstring de _guardar_caches"
+    )
+
+
+def test_la_firma_capta_TODO_lo_que_cambia_el_contenido(tmp_path):
+    """El fallo 2: homografía (por CONTENIDO) y versión de la feature."""
+    import numpy as np
+
+    from src.tracking_data.processor import _firma_de_deteccion
+
+    (tmp_path / "H.npy").write_bytes(b"")
+    np.save(tmp_path / "H.npy", np.eye(3))
+    base = _firma_de_deteccion(_cfg_full(tmp_path))
+
+    # Recalibrar NO cambia el nombre del fichero, así que la ruta no basta.
+    np.save(tmp_path / "H.npy", np.eye(3) * 1.01)
+    assert _firma_de_deteccion(_cfg_full(tmp_path)) != base, (
+        "la firma no capta un cambio de HOMOGRAFÍA: reanudar mezclaría dos "
+        "sistemas de coordenadas en el mismo caché"
+    )
+
+    np.save(tmp_path / "H.npy", np.eye(3))
+    otra = _firma_de_deteccion(_cfg_full(tmp_path, **{"deteccion.version_color": 2}))
+    assert otra != base, (
+        "la firma no capta version_color: la feature cambia de longitud "
+        "(256 vs 336) y quedarían dos tamaños bajo las mismas claves"
+    )
+
+
+def test_un_volcado_que_falla_no_deja_temporales_colgados(tmp_path):
+    """El fallo 3 (menor): el camino de error también se limpia."""
+    from src.tracking_data.processor import _volcar
+
+    destino = tmp_path / "x.pkl"
+    _volcar(str(destino), {"bueno": 1})
+    with pytest.raises(Exception):
+        _volcar(str(destino), lambda x: x)  # no serializable
+    assert list(tmp_path.glob("*.tmp")) == [], "quedó un temporal colgado"
+    import pickle
+
+    with open(destino, "rb") as f:
+        assert pickle.load(f) == {"bueno": 1}, "se perdió el fichero bueno"
+
+
+def test_dos_escritores_no_comparten_el_nombre_del_temporal(tmp_path):
+    """El fallo 3: con un `.tmp` fijo, dos procesos mezclan bytes."""
+    import inspect
+
+    from src.tracking_data import processor
+
+    codigo = inspect.getsource(processor._volcar)
+    assert "mkstemp" in codigo, (
+        "el temporal tiene un nombre determinista: dos escritores sobre la "
+        "misma config abrirían el mismo fichero y producirían un pickle "
+        "legible con contenido de los dos"
+    )

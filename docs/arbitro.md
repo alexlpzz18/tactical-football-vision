@@ -345,8 +345,23 @@ alcanza a la mitad del problema"*. El tercer grupo recoge el 54 % de los
 frames; el otro 46 % ya está en un equipo cuando la exclusividad lo mira.
 Sus tres hipótesis eran el fit, el suavizado de 1,5 s, o el arquetipo.
 
-**Es una cuarta, y explica las tres: en un recorte suelto el árbitro NO
-existe.**
+**Es una cuarta, y explica las tres: en un recorte suelto la señal del
+árbitro es demasiado débil para decidir.**
+
+⚠️ *Corregido tras la verificación adversarial: decir que "no existe"
+estaba sobrevendido.* Un clasificador recorte a recorte contra el
+prototipo del árbitro saca **AUC 0,741** (0,806 usando el margen contra
+el mejor equipo) — hay señal, y no poca. Lo que no hay es señal
+**suficiente al precio exigido**: la regla del más cercano de los tres
+prototipos da 67,5 % de recall con 12,7 % de falsos positivos, y con
+~143.000 observaciones de jugador contra ~7.000 de árbitro, ese 12,7 %
+son ocho jugadores por cada árbitro. La conclusión operativa no cambia;
+la frase sí.
+
+(La sospecha de circularidad —construir el prototipo con las mismas
+observaciones con las que luego se mide— se comprobó partiendo la
+muestra en mitades: los cuantiles salen **idénticos a tres decimales**,
+así que con ~5.900 recortes el sesgo es despreciable.)
 
 | distancia al prototipo del ÁRBITRO | p10 | mediana | p90 |
 |---|---|---|---|

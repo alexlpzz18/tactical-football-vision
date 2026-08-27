@@ -63,9 +63,15 @@ muestreo:
 # medias hecho con ESTA MISMA configuración de detección, sigue donde lo
 # dejó. Con otro modelo o otro tramo se niega a reanudar y lo rehace —
 # mezclar dos detectores en un caché es peor que perder la pasada.
-# Coste medido: ~2,8 s por volcado con el caché ya lleno, unos 0,6 min
-# en toda la parte entera. Cada volcado imprime además el progreso y una
-# estimación de lo que falta.
+# Coste medido sobre el caché REAL de esta parte (418 MB, 209.705
+# features): 3,0 s el volcado final, ~0,5 min los 23 checkpoints juntos.
+# Cada volcado imprime además el progreso y lo que falta.
+#
+# ⚠️ Escala MAL con el tamaño del caché: cada checkpoint re-serializa el
+# diccionario entero, así que el coste crece más que linealmente. Con un
+# caché de 1 GB (por ejemplo con la feature v2, de 336 valores) el
+# volcado final pasa de 3 s a decenas, y ahí sí habría que subir
+# `cada_frames` o volcar los colores de forma incremental.
 checkpoint:
   cada_frames: 500 # 0 = desactivado
   reanudar: true

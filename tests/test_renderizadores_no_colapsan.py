@@ -168,45 +168,6 @@ def test_una_identidad_PURA_no_paga_el_arreglo(tmp_path):
     assert datos[0]["et"] == "A" and "ets" not in datos[0]
 
 
-def test_no_queda_ningun_mode_sobre_la_etiqueta_en_los_renderizadores():
-    """Guarda de texto: `.mode()` sobre `etiqueta` es el patrón prohibido.
-
-    Las pruebas de arriba cubren los dos renderizadores que hay HOY; esta
-    caza el día que alguien escriba un tercero copiando el patrón viejo,
-    que es como llegó aquí el fallo.
-
-    No prohíbe el `mode()` a secas: sigue siendo legítimo para el color de
-    respaldo y la leyenda. Lo que exige es que cada uso lleve el marcador
-    `# moda-justificada:` con el motivo. Un renderizador nuevo que copie
-    el patrón no lo llevará, y aquí se entera.
-    """
-    from pathlib import Path
-
-    raiz = Path(__file__).resolve().parent.parent
-    sospechosos = []
-    for ruta in list((raiz / "src" / "report").glob("*.py")) + list(
-        (raiz / "scripts").glob("generar_*.py")
-    ):
-        texto = ruta.read_text()
-        for n, linea in enumerate(texto.split("\n"), 1):
-            if 'etiqueta"].mode()' not in linea and "etiqueta'].mode()" not in linea:
-                continue
-            # La justificación puede ir en la propia línea o en el
-            # comentario que la precede (que suele ser de varias líneas).
-            lineas = texto.split("\n")
-            desde = max(n - 8, 0)
-            contexto = "\n".join(lineas[desde:n])
-            if "moda-justificada:" in contexto:
-                continue
-            sospechosos.append(f"{ruta.name}:{n}")
-    assert not sospechosos, (
-        "un renderizador usa mode() sobre la etiqueta sin justificarlo: "
-        f"{sospechosos}. Si es legítimo, añade `# moda-justificada: <motivo>`; "
-        "si no, pinta la etiqueta de cada observación. Ver "
-        "docs/pizarra_colapsaba.md"
-    )
-
-
 # ── Y una guarda de la misma familia: el ✓ del vídeo (27-ago-2026) ────
 #
 # Al re-renderizar la parte entera, el escritor de OpenCV reventó cerca
@@ -229,3 +190,78 @@ def test_el_video_se_RELEE_antes_de_dar_el_visto_bueno():
         "fichero truncado volvería a darse por bueno"
     )
     assert "salió TRUNCADO" in codigo
+
+
+# ── LA GUARDA DE VERDAD: registro con DESCUBRIMIENTO (27-ago-2026) ────
+#
+# La primera versión de esta guarda buscaba el texto `etiqueta"].mode()`.
+# Una revisión adversarial la esquivó de CUATRO formas sin esfuerzo —
+# `.agg(lambda x: x.mode().iloc[0])`, `scipy.stats.mode(...)`,
+# `.value_counts().index[0]`, y hasta un espacio antes del punto— y
+# además el `glob` no entraba en subdirectorios: bastaba mover el fichero.
+#
+# > Comprobaba una ORTOGRAFÍA, no un COMPORTAMIENTO.
+#
+# Es el primo hermano de "una guarda que CUENTA no puede detectar un fallo
+# de IDENTIDAD". Así que se invierte: en vez de buscar el patrón
+# prohibido, se DESCUBREN los módulos que traducen una etiqueta a un
+# color —que es lo que puede mentir— y se exige que cada uno esté
+# clasificado. Un renderizador nuevo falla **por omisión**.
+
+# Módulos que pintan y tienen adaptador: se les corre la prueba de
+# comportamiento (una identidad que cambia de etiqueta tiene que salir
+# con las dos).
+RENDERIZADORES = (
+    "src/report/replay_tactico.py",
+    "scripts/generar_video_detecciones.py",
+)
+
+# Módulos que traducen etiqueta→color pero NO pintan una ficha por
+# observación. Cada uno necesita su motivo: clasificar es una decisión
+# humana, no una heurística.
+NO_PINTAN_POR_OBSERVACION = {
+    "src/report/informe_v2.py": "agrega en heatmaps y medias, no pinta una ficha por observación",
+    "scripts/generar_replay.py": "es la CLI de replay_tactico, no pinta nada por su cuenta",
+    "scripts/gt_a_replay.py": "pinta el GROUND TRUTH, que no lleva etiqueta del sistema",
+    "scripts/comparar_instante.py": "pinta UN instante: no hay vida de identidad que colapsar",
+    "scripts/deriva_parte_entera.py": "banco de medida; solo lee los colores del fit para informar",
+    "scripts/etiquetar_equipos_gt.py": "herramienta de etiquetado manual, no pinta el sistema",
+}
+
+
+def _modulos_que_traducen_etiqueta_a_color():
+    """Descubre, recursivamente, quién puede cometer este fallo."""
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    encontrados = []
+    for carpeta in ("src/report", "scripts"):
+        for ruta in sorted((raiz / carpeta).rglob("*.py")):
+            texto = ruta.read_text()
+            if "etiqueta" not in texto:
+                continue
+            if not any(
+                marca in texto
+                for marca in ("colores_equipo", "_hex_a_bgr", "COLORES[", "paleta")
+            ):
+                continue
+            encontrados.append(str(ruta.relative_to(raiz)))
+    return set(encontrados)
+
+
+def test_todo_modulo_QUE_PINTA_esta_clasificado():
+    """Un renderizador nuevo falla POR OMISIÓN, no por su ortografía."""
+    descubiertos = _modulos_que_traducen_etiqueta_a_color()
+    clasificados = set(RENDERIZADORES) | set(NO_PINTAN_POR_OBSERVACION)
+    nuevos = descubiertos - clasificados
+    assert not nuevos, (
+        f"módulos que traducen etiqueta→color y NADIE ha clasificado: {sorted(nuevos)}. "
+        "Si pintan una ficha por observación, añádelos a RENDERIZADORES y dales "
+        "un adaptador para la prueba de comportamiento; si no, a "
+        "NO_PINTAN_POR_OBSERVACION con el motivo. Ver docs/pizarra_colapsaba.md"
+    )
+    fantasmas = clasificados - descubiertos
+    assert not fantasmas, (
+        f"clasificados pero ya no existen (o dejaron de pintar): {sorted(fantasmas)}. "
+        "Quítalos de la lista para que no dé una falsa sensación de cobertura."
+    )

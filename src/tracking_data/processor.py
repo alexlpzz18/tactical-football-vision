@@ -5,10 +5,12 @@ por recortes), los trackea, clasifica equipos y proyecta posiciones a metros
 con la homografía. Produce una tabla de posiciones (CSV) + metadatos (JSON).
 """
 
+import hashlib
 import json
 import logging
 import os
 import pickle
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -369,8 +371,25 @@ def _firma_de_deteccion(cfg: dict) -> dict:
     asociación van pegados al detector (CLAUDE.md). Antes que arriesgar
     eso se rehace la pasada.
     """
+    # La homografía va por CONTENIDO, no por ruta: recalibrar no cambia el
+    # nombre del fichero, y es lo que produce (mx, my). Medido: reanudar
+    # con una H desplazada 3 px mete un salto de 12,23 m entre la parte
+    # vieja y la nueva del MISMO caché — indistinguible de un fallo de
+    # asociación.
+    huella_h = None
+    try:
+        huella_h = hashlib.sha256(
+            np.load(cfg["rutas"]["homografia"]).tobytes()
+        ).hexdigest()
+    except (OSError, ValueError, KeyError):
+        huella_h = str(cfg["rutas"].get("homografia"))
     return {
         "video": cfg["rutas"]["video"],
+        "homografia": huella_h,
+        # Cambiar la versión de la feature cambia su LONGITUD (256 vs
+        # 336): reanudar mezclaría vectores de dos tamaños bajo las
+        # mismas claves.
+        "version_color": cfg["deteccion"].get("version_color"),
         "modelo": cfg["deteccion"]["modelo"],
         "confianza": cfg["deteccion"]["confianza"],
         "max_area_caja": cfg["deteccion"]["max_area_caja"],
@@ -392,14 +411,45 @@ def _volcar(ruta: str, objeto) -> None:
     """
     ruta = Path(ruta)
     ruta.parent.mkdir(parents=True, exist_ok=True)
-    tmp = ruta.with_suffix(ruta.suffix + ".tmp")
-    with open(tmp, "wb") as f:
-        pickle.dump(objeto, f)
-    os.replace(tmp, ruta)
+    # Nombre ÚNICO por escritor: con un `.tmp` fijo, dos procesos sobre la
+    # misma config abren el mismo fichero en modo "wb" e intercalan bytes
+    # en el mismo inodo. El resultado carga sin error y mezcla contenido
+    # de los dos (medido: 1 de cada 12 intentos con 4 procesos).
+    descriptor, tmp = tempfile.mkstemp(dir=str(ruta.parent), suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "wb") as f:
+            pickle.dump(objeto, f)
+        os.replace(tmp, ruta)
+    except BaseException:
+        # Un volcado a medias no deja basura: el fichero bueno anterior
+        # sigue en su sitio y el temporal se borra.
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def _guardar_caches(cfg, cache, colores, fps, sample, wh, completo, firma) -> None:
-    """Vuelca los dos cachés. `completo` distingue final de checkpoint."""
+    """Vuelca los dos cachés. `completo` distingue final de checkpoint.
+
+    ⚠️ EL ORDEN NO ES INDIFERENTE: los colores PRIMERO y las detecciones
+    AL FINAL. El ancla de la reanudación es el caché de detecciones (es
+    el que lleva la firma y el último `frame_idx`), así que tiene que ser
+    lo último que toca el disco.
+
+    Al revés —detecciones primero— una muerte de sesión entre los dos
+    volcados deja las detecciones POR DELANTE de los colores, `_reanudar`
+    acepta el checkpoint porque firma y `completo` están bien, y la
+    pasada termina con un caché que se marca `completo: True` y tiene
+    AGUJEROS: frames con detecciones y sin feature de color. Nadie se
+    queja aguas abajo —`pipeline_equipos`, `arbitro` y `puerta_reentrada`
+    descartan en silencio la observación sin feature— así que esas
+    detecciones simplemente no reciben etiqueta de equipo.
+
+    Y la ventana no es estrecha: el caché de colores pesa más de 20× el
+    de detecciones, así que era la mayor parte de cada volcado. Con este
+    orden, una muerte a mitad deja los COLORES por delante, que es
+    inocuo: se reprocesan y se sobrescriben.
+    """
+    _volcar(cfg["rutas"]["cache_colores"], colores)
     _volcar(
         cfg["rutas"]["cache"],
         {
@@ -411,7 +461,6 @@ def _guardar_caches(cfg, cache, colores, fps, sample, wh, completo, firma) -> No
             "firma": firma,
         },
     )
-    _volcar(cfg["rutas"]["cache_colores"], colores)
 
 
 def _reanudar(cfg, firma):
@@ -622,6 +671,24 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
         if previo:
             cache, colores = previo, colores_previos
             frame_idx = cache[-1]["frame_idx"] + 1
+            # Si el checkpoint cayó justo en el último frame no queda nada
+            # que hacer. Sin esto, `posicionar_en_frame` lanza culpando al
+            # `tramo`, que no tiene nada que ver, y encima en la pasada que
+            # ya estaba terminada.
+            total_video = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            fin_previsto = frame_fin if frame_fin is not None else total_video
+            if fin_previsto and frame_idx >= fin_previsto:
+                cap.release()
+                logger.info(
+                    "El checkpoint ya llegaba al final (%d frames): se cierra "
+                    "sin reprocesar nada.",
+                    len(cache),
+                )
+                _guardar_caches(cfg, cache, colores, fps, sample, (w, h), True, firma)
+                return (
+                    {"cache": cache, "fps": fps, "sample": sample, "wh": (w, h)},
+                    colores,
+                )
             posicionar_en_frame(cap, frame_idx)
             logger.info(
                 "REANUDANDO: %d frames ya cacheados, se sigue desde el %d "

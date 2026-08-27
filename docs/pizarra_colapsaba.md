@@ -82,5 +82,31 @@ una respuesta tranquilizadora sobre algo que no había mirado. Aquí el
 resumen era un `mode()`, y borraba justo la información que el pipeline
 se había ganado.
 
-La guarda está en `tests/test_renderizadores_no_colapsan.py`: todo
-renderizador que consuma el CSV tiene que pasar por ella.
+## Y la guarda tuvo el mismo defecto que el bug (verificación adversarial)
+
+La primera versión de la guarda buscaba el texto `etiqueta"].mode()` en
+`src/report/*.py` y `scripts/generar_*.py`. Una revisión adversarial la
+esquivó **de cuatro formas** sin esfuerzo:
+
+- `df.groupby(...)["etiqueta"].agg(lambda x: x.mode().iloc[0])`
+- `scipy.stats.mode(grupo["etiqueta"])` — función suelta, no método
+- `grupo["etiqueta"].value_counts().index[0]` — la moda sin llamarse moda
+- `grupo["etiqueta"] .mode()` — **un espacio antes del punto**
+
+Y el ámbito era peor que el patrón: con el literal EXACTO prohibido,
+copiado a `src/report/pizarras/colador.py`, el test pasaba — el `glob`
+no entraba en subdirectorios, y `generar_*.py` solo miraba los scripts
+que ya existían. Un renderizador nuevo se salvaba **por llamarse
+distinto**.
+
+> **Comprobaba una ORTOGRAFÍA, no un COMPORTAMIENTO.** Primo hermano de
+> "una guarda que CUENTA no puede detectar un fallo de IDENTIDAD".
+
+La guarda de hoy (`tests/test_renderizadores_no_colapsan.py`) está
+invertida: **descubre** recursivamente los módulos que traducen una
+etiqueta a un color —que es lo único que puede mentir— y exige que cada
+uno esté clasificado, o como renderizador con adaptador (y entonces se le
+corre la prueba de comportamiento) o como "no pinta por observación" con
+su motivo. **Un renderizador nuevo falla por omisión.** Verificado
+plantando las cinco variantes y también moviendo el fichero de carpeta:
+las dos saltan.
