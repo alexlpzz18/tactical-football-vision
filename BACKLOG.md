@@ -93,3 +93,67 @@ Lo que haría falta, en orden:
 posición INVENTADA. Tiene que distinguirse de una medida (el replay ya
 tiene el desvanecido por antigüedad para eso) o el replay pasa de mostrar
 lo que el sistema ve a mostrar lo que suponemos.
+
+## 14. Analizar el SAQUE DE PUERTA como unidad táctica (idea de Alex, 27-ago-2026)
+
+Nace de mirar el minuto 18:21 de la parte entera del benjamín: el naranja
+saca jugado desde portería, el bloque sale escalonado y el sistema lo
+pinta bien entero (solo falla el árbitro). Ese frame ya contiene la
+información táctica; lo que falta es **recortarlo como evento y contarlo**.
+
+Lo que Alex quiere ver, con sus palabras: los 5-6 saques de puerta del
+rival, en vídeo y en una pizarra donde poder **mover fichas y dibujar**,
+y que el informe lo redacte — *"el rival juega con central abierto y el
+90 % de las veces busca pase con lateral cercano"*, *"un 60 % de las
+veces han conseguido sacar el balón bien"*. Igual con los saques a favor,
+y con la presión: la que hacemos y la que nos hacen.
+
+### Lo que YA existe (no se parte de cero)
+
+- **Balón**: `src/balon/tracking_balon.py` (balón activo, fases aéreas,
+  contactos por ángulo y por velocidad), `scripts/detectar_balon.py` y un
+  modelo piloto a conf 0,35 (P 0,958 / R 0,836). Falta pasarlo por la
+  parte entera, que es GPU.
+- **Redacción**: `src/report/analisis_ia.py`, ya con el principio
+  correcto — *el CÓDIGO calcula, el LLM SOLO redacta a partir de esos
+  números y tiene prohibido inventar*. Añadir una familia de métricas es
+  añadirlas al JSON y al catálogo de `configs/informe.yaml`.
+
+### Lo que NO existe
+
+- **Segmentación en eventos** (dónde empieza y acaba un saque de puerta).
+- **Pizarra EDITABLE**: la de hoy es un visor, no un editor.
+
+### El orden, y por qué
+
+⚠️ Las tres preguntas de Alex no cuestan lo mismo, y conviene no
+mezclarlas:
+
+1. **"Central abierto"** = forma del bloque en el instante del saque.
+   **Solo necesita POSICIONES, que ya tenemos.** Es lo más barato de todo
+   y no depende del balón.
+2. **"Han conseguido sacarlo bien" (60 %)** = necesita el evento y, sobre
+   todo, una DEFINICIÓN. Eso no es visión por computador, es una
+   pregunta para Alex: ¿tres pases seguidos?, ¿pasar del medio campo?,
+   ¿no perderla en 10 s?
+3. **"El 90 % busca al lateral cercano"** = necesita detección de PASES,
+   o sea posesión atribuida frame a frame. Es lo más caro y lo que más
+   depende del recall del balón (0,836 se compone a lo largo de una
+   jugada).
+
+### La comprobación barata que va PRIMERO
+
+¿Se pueden encontrar los saques de puerta **sin balón**, solo con las
+posiciones de la parte entera? Un saque de puerta tiene firma: juego
+detenido, portero hundido en su área, los dos bloques recolocándose. Si
+sale, el punto 1 se desbloquea sin GPU y sin balón.
+
+- [ ] Alex: los TIMESTAMPS de los saques de puerta de esta parte (es el
+      GT del experimento) y su definición de "sacarlo bien".
+- [ ] Buscarlos solo con posiciones y medir contra esos timestamps.
+- [ ] Si aparecen: forma del bloque en cada uno (el "central abierto").
+- [ ] Si no aparecen: la vía es el balón, y entonces toca GPU.
+
+Precedente que manda aquí: *las reglas posicionales valen MÁS que el
+clasificador* (CLAUDE.md, 20-ago-2026). Antes de meter el balón, mirar
+qué se puede sacar de lo que ya sabemos del fútbol.
