@@ -157,3 +157,35 @@ sale, el punto 1 se desbloquea sin GPU y sin balón.
 Precedente que manda aquí: *las reglas posicionales valen MÁS que el
 clasificador* (CLAUDE.md, 20-ago-2026). Antes de meter el balón, mirar
 qué se puede sacar de lo que ya sabemos del fútbol.
+
+
+## 15. RIESGO DE PRODUCTO: el clip corto que empieza en el saque inicial
+
+Medido el 27-ago-2026 (`docs/verificacion_adversarial_27ago.md`): el
+tramo 0-5 de un partido es **otro régimen** —saque inicial, jugadores
+colocándose, gente entrando al campo— y su fit se desvía un **35 % de la
+distancia A−B** contra un nulo de remuestreo del 2,2 %.
+
+Sobre una parte entera eso no importa: ese tramo es una cuarta parte de
+la muestra y los otros 15 minutos lo diluyen (quitarlo mueve el fit 1,8 %
+y no cambia ni una observación).
+
+⚠️ **Pero el día que un cliente suba un clip recortado que empiece en el
+saque inicial, ese régimen será el 100 % del fit.** Es el peor caso
+posible y llega por la vía más normal: un entrenador que recorta "los
+primeros minutos" para probar el producto.
+
+La palanca ya existe y está apagada: `entrenamiento.desde_s`. Lo que
+falta antes de activarla:
+
+- [ ] Medir el daño de verdad: fitear SOLO sobre 0-5 y evaluar contra el
+      GT. Hoy solo está medido el caso contrario (quitarlo de una pasada
+      larga), que no dice nada de este.
+- [ ] Decidir la respuesta de producto, que puede no ser técnica: avisar
+      al usuario de que un clip corto desde el inicio da peor resultado,
+      o exigir una duración mínima, o fitear con los últimos N minutos
+      del clip en vez de con todo.
+
+Precedente que aplica: **actuar solo donde hay riesgo**. No tocar el fit
+en general — solo decidir mejor cuando el clip es corto y arranca en el
+minuto 0, que es detectable sin ambigüedad.
