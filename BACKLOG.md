@@ -67,3 +67,29 @@ quimeras que resisten al detector nuevo y al barrido del fit.
       confirma la hipótesis.
 Criterio: quimeras 8 → menos SIN degradar cobertura 0,598, IDF1 0,484 ni
 concurrencia 23.
+
+## 13. La animación tiene que respetar lo que la cámara TAPA (idea de Alex, 27-ago-2026)
+
+Si sabemos que la cámara tapa una zona —por ejemplo la esquina inferior
+izquierda— y un jugador aparece de repente ahí, no ha aparecido de la
+nada: **viene de ahí**. La ficha del replay debería entrar desde la zona
+tapada en vez de materializarse en el sitio, que es lo que hoy se lee
+como un fallo del sistema.
+
+Es la misma familia de ideas que ya pagó dos veces en este proyecto: el
+valor está en el CONOCIMIENTO DEL DOMINIO —dónde está la cámara, qué
+tapa, por dónde se entra al campo— y no en el modelo.
+
+Lo que haría falta, en orden:
+- [ ] Declarar las zonas ciegas en el config del campo (son una propiedad
+      de la CÁMARA de ese partido, como `espejar`).
+- [ ] Comprobar la premisa antes de construir: ¿las apariciones súbitas
+      se concentran de verdad en esas zonas? Si aparecen por todo el
+      campo, la explicación es otra (fallo de asociación) y taparla con
+      una animación la escondería.
+- [ ] Solo entonces, la entrada/salida animada desde el borde de la zona.
+
+⚠️ El riesgo conocido: una animación que rellena lo que no se vio es una
+posición INVENTADA. Tiene que distinguirse de una medida (el replay ya
+tiene el desvanecido por antigüedad para eso) o el replay pasa de mostrar
+lo que el sistema ve a mostrar lo que suponemos.

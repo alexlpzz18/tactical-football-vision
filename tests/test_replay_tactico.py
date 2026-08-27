@@ -188,3 +188,90 @@ def test_csv_antiguo_sin_es_real_sigue_funcionando(tmp_path):
     pd.DataFrame(filas).to_csv(ruta, index=False)
     salida = generar_replay(ruta, tmp_path / "r.html")
     assert "const DATOS = " in salida.read_text()
+
+
+# ── La etiqueta va por OBSERVACIÓN, no por identidad (27-ago-2026) ────
+#
+# El replay pintaba la MODA de toda la vida de la identidad, deshaciendo
+# en el visor lo que el pipeline ya hace bien. Medido en el saque inicial
+# del benjamín: el sistema acertaba el equipo de tres jugadores en el
+# frame 0 y la pizarra los pintaba del contrario, porque esas identidades
+# se contaminan más tarde (repartos 58/42, 53/47 y 75/25).
+
+
+def _csv_identidad_que_cambia(tmp_path, etiquetas):
+    import pandas as pd
+
+    filas = [
+        {
+            "frame": i * 3,
+            "tiempo_s": round(i * 0.1, 2),
+            "id_jugador": 1,
+            "etiqueta": e,
+            "x_m": 30.0 + i * 0.01,
+            "y_m": 20.0,
+            "es_real": 1,
+        }
+        for i, e in enumerate(etiquetas)
+    ]
+    ruta = tmp_path / "pos.csv"
+    pd.DataFrame(filas).to_csv(ruta, index=False)
+    return ruta
+
+
+def _datos_del_html(html):
+    import json
+    import re
+
+    datos = json.loads(re.search(r"const DATOS = (\[.*?\]);", html, re.S).group(1))
+    catalogo = json.loads(
+        re.search(r"const CATALOGO = (\[.*?\]);", html, re.S).group(1)
+    )
+    return datos, catalogo
+
+
+def test_la_pizarra_pinta_la_etiqueta_del_INSTANTE(tmp_path):
+    """Identidad que empieza en A y acaba en B: al principio pinta A."""
+    from src.report.replay_tactico import generar_replay
+
+    # 40 muestras: 10 en A y 30 en B. La moda es B, pero al principio es A.
+    csv = _csv_identidad_que_cambia(tmp_path, ["A"] * 10 + ["B"] * 30)
+    salida = tmp_path / "r.html"
+    generar_replay(csv, salida, largo=62.0, ancho=40.0, min_vida_s=0.0)
+    datos, catalogo = _datos_del_html(salida.read_text())
+    ident = datos[0]
+    assert ident["et"] == "B", "la moda sigue siendo B"
+    assert "ets" in ident, "una identidad mixta debe llevar etiqueta por muestra"
+    assert catalogo[ident["ets"][0]] == "A"
+    assert catalogo[ident["ets"][-1]] == "B"
+
+
+def test_identidad_PURA_no_engorda_el_html(tmp_path):
+    """Si nunca cambia de etiqueta, no se emite el array por muestra."""
+    from src.report.replay_tactico import generar_replay
+
+    csv = _csv_identidad_que_cambia(tmp_path, ["A"] * 40)
+    salida = tmp_path / "r.html"
+    generar_replay(csv, salida, largo=62.0, ancho=40.0, min_vida_s=0.0)
+    datos, _ = _datos_del_html(salida.read_text())
+    assert datos[0]["et"] == "A"
+    assert "ets" not in datos[0]
+
+
+def test_se_puede_volver_al_comportamiento_viejo(tmp_path):
+    """La escotilla de salida: una etiqueta por identidad."""
+    from src.report.replay_tactico import generar_replay
+
+    csv = _csv_identidad_que_cambia(tmp_path, ["A"] * 10 + ["B"] * 30)
+    salida = tmp_path / "r.html"
+    generar_replay(
+        csv,
+        salida,
+        largo=62.0,
+        ancho=40.0,
+        min_vida_s=0.0,
+        etiqueta_por_identidad=True,
+    )
+    datos, _ = _datos_del_html(salida.read_text())
+    assert datos[0]["et"] == "B"
+    assert "ets" not in datos[0]

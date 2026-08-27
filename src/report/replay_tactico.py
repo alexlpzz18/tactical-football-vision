@@ -236,6 +236,7 @@ def generar_replay(
     min_vida_s: float = 2.0,
     espejar: str | None = None,
     colores_equipo: dict | None = None,
+    etiqueta_por_identidad: bool = False,
 ) -> Path:
     """Genera el HTML del replay desde el CSV de posiciones.
 
@@ -293,6 +294,12 @@ def generar_replay(
     df = _filtrar_fuera_del_campo(df, largo, ancho)
     df = _filtrar_creible(df, max_edad_interp_s, min_vida_s)
 
+    # Catálogo de etiquetas para no repetir la cadena en cada muestra: una
+    # identidad mixta de 1757 muestras metería 1757 veces "A"/"B" en el
+    # HTML. Con índices, el coste es un entero por muestra.
+    catalogo = sorted(str(v) for v in df["etiqueta"].unique())
+    indice_de = {e: i for i, e in enumerate(catalogo)}
+
     identidades = []
     for id_jugador, grupo in df.sort_values("tiempo_s").groupby("id_jugador"):
         etiquetas = grupo["etiqueta"].mode()
@@ -313,10 +320,31 @@ def generar_replay(
             ]
         else:
             alfas = [1.0] * len(grupo)
+        # ⚠️ LA ETIQUETA VA POR OBSERVACIÓN, no por identidad.
+        #
+        # Antes se pintaba la MODA de toda la vida de la identidad, y eso
+        # deshacía en el visor la mejora que el pipeline ya hace
+        # (`etiquetar_por_observacion`: 15,5 % → 3,2 % de observaciones con
+        # el equipo equivocado). Medido en el saque inicial de la parte
+        # entera del benjamín: el sistema acertaba el equipo de los ids 6,
+        # 10 y 3 en el frame 0 —con márgenes del 62-85 %— y la pizarra los
+        # pintaba del contrario, porque más tarde esas identidades se
+        # contaminan (58/42, 53/47 y 75/25 de reparto). Se juzgaba al
+        # clasificador por un fallo del renderizador.
+        #
+        # Solo se emite el array cuando la identidad NO es pura: la mayoría
+        # lo son y así el HTML no crece por nada.
+        etiquetas_muestra = [str(v) for v in grupo["etiqueta"]]
+        por_muestra = (
+            [indice_de[e] for e in etiquetas_muestra]
+            if len(set(etiquetas_muestra)) > 1 and not etiqueta_por_identidad
+            else None
+        )
         identidades.append(
             {
                 "id": int(id_jugador),
                 "et": str(etiquetas.iloc[0]) if len(etiquetas) else "otro",
+                **({"ets": por_muestra} if por_muestra else {}),
                 "t": [round(float(v), 2) for v in grupo["tiempo_s"]],
                 "x": [round(float(v), 2) for v in grupo["x_m"]],
                 "y": [round(float(v), 2) for v in grupo["y_m"]],
@@ -332,6 +360,7 @@ def generar_replay(
         _PLANTILLA.replace("__TITULO__", titulo)
         .replace("__DATOS__", json.dumps(identidades, separators=(",", ":")))
         .replace("__COLORES__", json.dumps(paleta, separators=(",", ":")))
+        .replace("__CATALOGO__", json.dumps(catalogo, separators=(",", ":")))
         .replace("__LEYENDA__", _leyenda(paleta, set(df["etiqueta"].unique())))
         .replace("__RADIO_M__", f"{radio_m:.2f}")
         .replace("__ESPEJO_X__", "true" if espejar and "x" in espejar else "false")
@@ -439,6 +468,7 @@ _PLANTILLA = """<!DOCTYPE html>
 <script>
 const DATOS = __DATOS__;
 const COLORES = __COLORES__;
+const CATALOGO = __CATALOGO__;
 const LARGO = __LARGO__, ANCHO = __ANCHO__;
 const CAMPO = __CAMPO__;
 const TMIN = __TMIN__, TMAX = __TMAX__;
@@ -542,14 +572,14 @@ function posicionEn(ident, i, T) {
   if (ts[p] > T) return null;                       // aún no ha aparecido
   const alfa = ident.a ? ident.a[p] : 1;
   if (p === ts.length - 1)
-    return ts[p] >= T - 0.25 ? [ident.x[p], ident.y[p], alfa] : null;
+    return ts[p] >= T - 0.25 ? [ident.x[p], ident.y[p], alfa, p] : null;
   const dt = ts[p + 1] - ts[p];
   if (dt > MAX_HUECO) return null;                  // hueco: no inventamos posición
   const a = dt > 0 ? (T - ts[p]) / dt : 0;
   const alfaSig = ident.a ? ident.a[p + 1] : 1;
   return [ident.x[p] + a * (ident.x[p+1] - ident.x[p]),
           ident.y[p] + a * (ident.y[p+1] - ident.y[p]),
-          alfa + a * (alfaSig - alfa)];
+          alfa + a * (alfaSig - alfa), p];
 }
 
 function dibujar(T) {
@@ -559,7 +589,9 @@ function dibujar(T) {
   for (let i = 0; i < DATOS.length; i++) {
     const pos = posicionEn(DATOS[i], i, T);
     if (!pos) continue;
-    const [relleno, borde] = COLORES[DATOS[i].et] || COLORES['otro'];
+    // La etiqueta del INSTANTE, no la de toda la vida de la identidad.
+    const etq = DATOS[i].ets ? CATALOGO[DATOS[i].ets[pos[3]]] : DATOS[i].et;
+    const [relleno, borde] = COLORES[etq] || COLORES['otro'];
     // Transparencia por antigüedad: cuanto más lejos está la posición de
     // una detección real, más se desvanece la ficha (aparecer/desaparecer
     // de golpe se lee como un fallo; el desvanecido se lee como "aquí el
@@ -571,7 +603,7 @@ function dibujar(T) {
     ctx.shadowColor = 'rgba(0,0,0,0.45)';
     ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
     // El balón se pinta a la mitad de radio: es un objeto, no una persona
-    const esBalon = DATOS[i].et === 'balon' || DATOS[i].et === 'balon_aereo';
+    const esBalon = etq === 'balon' || etq === 'balon_aereo';
     ctx.arc(px(pos[0]), py(pos[1]), RADIO_M * ESCALA * (esBalon ? 0.5 : 1), 0, 7);
     ctx.fillStyle = relleno; ctx.fill();
     // La sombra es solo del disco: sobre el borde y el número la

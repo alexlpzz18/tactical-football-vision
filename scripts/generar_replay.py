@@ -79,6 +79,12 @@ def main() -> None:
         help="Duración mínima (s) de detecciones reales para pintar una "
         "identidad (fuera el confeti de fragmentos)",
     )
+    parser.add_argument(
+        "--etiqueta-por-identidad",
+        action="store_true",
+        help="Vuelve al comportamiento viejo: UNA etiqueta por identidad "
+        "(la moda de toda su vida) en vez de la del instante.",
+    )
     args = parser.parse_args()
     # La orientación puede venir del config del campo (es una propiedad
     # de la CÁMARA de ese partido, no del comando que se teclee).
@@ -128,6 +134,7 @@ def main() -> None:
         ancho=args.ancho,
         max_hueco_s=args.max_hueco,
         titulo=args.titulo,
+        etiqueta_por_identidad=args.etiqueta_por_identidad,
     )
     print(f"✓ Replay en {ruta}")
 
