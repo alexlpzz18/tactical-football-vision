@@ -1,5 +1,11 @@
 # El árbitro: los cinco criterios fallan, y no compensa perseguirlo
 
+> ✅ **Verificado el 27-ago-2026**: el recuadro verde es el color que el
+> VÍDEO da a una caja sin etiqueta; no existe en la pizarra. El vídeo
+> nunca tuvo el bug del renderizador (`docs/pizarra_colapsaba.md`), así
+> que esta observación se mantiene.
+
+
 *26-ago-2026. Reproducir: `python scripts/arbitro_criterios.py`.*
 
 ⚠️ **El GT del benjamín NO anota al árbitro** (14 tracks: 12 jugadores y 2
@@ -271,3 +277,63 @@ identidad 39 del caso negativo habría que mirarla.
   justo el color que engañó al catálogo, así que pedirle a ese mismo
   color que lo reasigne es circular. Devolviéndolos, el centroide
   empeoraba de 3,55 a 3,65 m. Se quedan en 'otro'.
+
+## La puerta de distancia, RE-MEDIDA POR OBSERVACIÓN (27-ago-2026): el negativo aguanta
+
+Alex, con razón: *"el negativo anterior puede estar midiendo otra cosa"*.
+El negativo del catálogo (`agregacion_dist_max_prototipo`, apagado) se
+midió **por identidad**, y desde entonces existe `etiquetar_por_observacion`.
+Así que se rehizo por OBSERVACIÓN, sobre la parte entera del benjamín.
+
+Y de entrada aparece una separación que el negativo viejo no reportaba —
+distancia al prototipo más cercano, en unidades de la separación A-B:
+
+| | p25 | mediana | p75 |
+|---|---|---|---|
+| tercer grupo (el árbitro) | 0,69 | **1,08** | 1,16 |
+| id 12 (árbitro que sale como B) | 0,79 | **1,14** | 1,17 |
+| jugadores | 0,49 | **0,61** | 0,86 |
+
+Casi 2× en la mediana. Pero la mediana no decide una puerta: la decide el
+solape de las colas, y ahí se cae.
+
+| umbral | obs del árbitro cazadas | obs de jugador perdidas |
+|---|---|---|
+| 0,80 | 70,4 % | 29,1 % |
+| 0,95 | 53,9 % | 21,0 % |
+| **1,00** | **51,9 %** | **19,3 %** |
+| 1,10 | 48,9 % | 16,6 % |
+
+En proporción parece 2,5 a 1 a favor, pero **hay muchísimos más jugadores
+que árbitro**. En números absolutos, a 1,00: se rescatan ~3.500
+observaciones de árbitro y se tiran ~27.600 de jugador. **Ocho jugadores
+perdidos por cada árbitro cazado.**
+
+> El color NO separa al árbitro, ni por identidad ni por observación. La
+> re-medición estaba justificada y el negativo aguanta.
+
+## Dónde está el problema de verdad (medido en la parte entera)
+
+El tercer grupo recoge **el 54 % de los frames** del partido. El otro
+46 % del tiempo el árbitro ya está dentro de un equipo **antes** de que
+la exclusividad lo vea: `un_solo_arbitro` solo reparte entre quien ya
+está en 'otro'. El id 12 es uno de esos, y **no lo bloqueó
+`margen_equipo`** (está en 0,0, el catálogo podía hablar): fue el
+arquetipo absoluto el que no reconoció ese trozo.
+
+Y el tercer grupo tiene la misma forma que tenía el portero: de sus 10
+identidades, **7 no coexisten nunca** — es una persona partida en trozos.
+La exclusividad corona a uno y deja nueve sin decidir.
+
+Dos líneas abiertas, en este orden:
+
+1. **Meter al árbitro en el tercer grupo** (el 46 % que se escapa). Es
+   aguas arriba y es donde está el volumen.
+2. **Coronar al CONJUNTO**, como se hizo con el portero, con la
+   restricción física de que dos trozos simultáneos no son la misma
+   persona (el par 155/129 coexiste 520 frames: ahí hay un jugador).
+
+Para (1), la forma que ya ha pagado tres veces en este proyecto son **dos
+señales débiles que juntas son fuertes**: la distancia al prototipo no
+vale sola —está medido arriba— pero como desempate junto al
+comportamiento puede valer, porque cada impostor falla al menos una.

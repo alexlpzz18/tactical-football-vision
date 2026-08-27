@@ -57,7 +57,7 @@ Hay que medirlo a dos niveles y **no confundirlos**:
 
 | nivel | detecciones que no son de las 14 y salen como jugador |
 |---|---|
-| **SISTEMA** (voto por identidad — lo que sale en el replay) | **51 de 380 = 13,4 %** (27 en A, 24 en B) |
+| **SISTEMA** (voto por identidad — ⚠️ ya NO es lo que sale en el replay, ver `docs/pizarra_colapsaba.md`) | **51 de 380 = 13,4 %** (27 en A, 24 en B) |
 | por observación (lo que se pintó en las imágenes) | 70 de 380 = 18,4 % |
 
 **El árbitro principal SÍ está bien cogido por el sistema**: la identidad

@@ -1,5 +1,11 @@
 # El parpadeo en los cruces: tres formas de suavizarlo, tres negativos
 
+> ✅ **Verificado el 27-ago-2026**: este diagnóstico salió del VÍDEO, y
+> el vídeo nunca colapsó la etiqueta por observación (`docs/pizarra_colapsaba.md`).
+> De hecho una pizarra que pinta la moda de la identidad NO PUEDE
+> parpadear, así que el parpadeo solo pudo verse ahí. Se mantiene.
+
+
 *26-ago-2026. Reproducir: `python scripts/parpadeo.py` y
 `--ventana-base 0` para partir de la etiqueta cruda.*
 

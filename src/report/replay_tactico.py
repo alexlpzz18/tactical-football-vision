@@ -302,6 +302,10 @@ def generar_replay(
 
     identidades = []
     for id_jugador, grupo in df.sort_values("tiempo_s").groupby("id_jugador"):
+        # moda-justificada: solo para el color de RESPALDO y la leyenda.
+        # Lo que se pinta es `ets`, la etiqueta de cada observación (ver
+        # abajo y docs/pizarra_colapsaba.md). Colapsar aquí y pintar esto
+        # era el bug del 27-ago-2026.
         etiquetas = grupo["etiqueta"].mode()
         # Opacidad por antigüedad: las posiciones interpoladas se
         # desvanecen conforme se alejan de una detección real, para que la

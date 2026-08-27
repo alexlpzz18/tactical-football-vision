@@ -407,10 +407,35 @@ def main() -> None:
             "No se escribió ningún frame: revisa el tramo (muestreo.tramo) "
             "y que el vídeo tenga contenido en ese rango."
         )
+
+    # ⚠️ SE RELEE EL FICHERO ANTES DE DAR EL ✓.
+    #
+    # Contar los frames que se ENVIARON al escritor no prueba que estén en
+    # el disco. Sobre la parte entera del benjamín (11.989 frames, ~1 GB)
+    # el escritor de OpenCV revienta cerca del final con "Failed to write
+    # AVI file: chunk size is out of bounds", y como el proceso solía
+    # correr con `| tail`, el estado de salida era 0 y el fallo pasaba
+    # inadvertido. Un vídeo truncado que dice ✓ es una herramienta de
+    # diagnóstico mintiendo sobre el sistema que diagnostica — la misma
+    # familia que el "✓ engañoso" del caché vacío y que la pizarra que
+    # colapsaba la etiqueta (docs/pizarra_colapsaba.md).
+    comprobacion = cv2.VideoCapture(str(ruta_salida))
+    leibles = 0
+    if comprobacion.isOpened():
+        while comprobacion.read()[0]:
+            leibles += 1
+    comprobacion.release()
+    if leibles < escritos:
+        raise RuntimeError(
+            f"El vídeo salió TRUNCADO: se escribieron {escritos} frames pero "
+            f"solo {leibles} se pueden leer de {ruta_salida}. Suele ser el "
+            "límite de tamaño del contenedor; prueba con un tramo más corto "
+            "(muestreo.tramo) o menos resolución."
+        )
     print(f"\n✓ Vídeo en {ruta_salida}")
     print(
-        f"  {escritos} frames, {total_cajas} cajas ({total_cajas / escritos:.1f} "
-        f"por frame), codec {codec}"
+        f"  {escritos} frames ({leibles} releídos del disco), {total_cajas} "
+        f"cajas ({total_cajas / escritos:.1f} por frame), codec {codec}"
     )
     if not tracking:
         print("  (sin --csv: solo detección. Con él se ve además la identidad)")
