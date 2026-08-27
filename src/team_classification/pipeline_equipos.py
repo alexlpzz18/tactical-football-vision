@@ -107,6 +107,38 @@ def entrenar_clasificador(
     min_features = cfg_fit.get("min_features", 300)
     modelo, profundidad = _profundidad_configurada(cfg_equipos)
 
+    # ── Recortar el fit en el TIEMPO (entrenamiento.desde_s) ─────────
+    #
+    # Los primeros minutos de un partido son otro régimen: saque inicial,
+    # jugadores colocándose, gente entrando al campo. Medido en la parte
+    # entera del benjamín, el fit del tramo 0-5 se desvía un 35 % de la
+    # distancia A−B contra un nulo de remuestreo del 2,2 % — 16 veces el
+    # ruido (docs/verificacion_adversarial_27ago.md).
+    #
+    # Con `desde_s` el fit ignora esos minutos. Se deja en None (todo) por
+    # defecto: activarlo es una decisión de producto que hay que MEDIR,
+    # no un ajuste gratis, porque quitar minutos también quita muestra.
+    desde_s = cfg_fit.get("desde_s")
+    if desde_s is not None:
+        if cache is None:
+            raise ValueError(
+                "entrenar_clasificador: entrenamiento.desde_s necesita el "
+                "caché de detecciones para saber el tiempo de cada recorte."
+            )
+        t_de_frame = {e["frame_idx"]: e["t"] for e in cache}
+        antes = len(colores)
+        colores = {
+            clave: feature
+            for clave, feature in colores.items()
+            if t_de_frame.get(clave[0], 0.0) >= float(desde_s)
+        }
+        logger.info(
+            "Fit recortado a t >= %.0f s: %d recortes de %d",
+            float(desde_s),
+            len(colores),
+            antes,
+        )
+
     features = np.array(list(colores.values()))
     if solo_cercanos:
         if cache is None:

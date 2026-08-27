@@ -178,3 +178,39 @@ def test_extraccion_misma_escala_que_referencia():
         feat = extraer_color_torso(crop)
         if feat.sum() > 0:
             assert np.linalg.norm(feat) == pytest.approx(1.0)
+
+
+def test_el_fit_puede_ignorar_los_primeros_minutos():
+    """`entrenamiento.desde_s` recorta el fit en el TIEMPO.
+
+    Los primeros minutos de un partido son otro régimen (saque inicial,
+    jugadores colocándose). Sobre la parte entera del benjamín activarlo
+    no paga —mueve los prototipos un 1,8 % contra un ruido del 1,1 %—
+    pero en un clip corto que arranque en el minuto 0 ese régimen sería
+    el 100 % del fit. Ver docs/verificacion_adversarial_27ago.md.
+    """
+    import numpy as np
+
+    from src.team_classification.pipeline_equipos import entrenar_clasificador
+
+    rng = np.random.default_rng(0)
+    # Dos frames: el primero (t=0) con features de una distribución y el
+    # segundo (t=400) con otra. Si el recorte funciona, el fit solo ve
+    # las del segundo.
+    cache = [
+        {"frame_idx": 0, "t": 0.0, "dets": [(5.0, 5.0, 0, 0, 1, 1, 0.9)] * 200},
+        {"frame_idx": 3, "t": 400.0, "dets": [(5.0, 5.0, 0, 0, 1, 1, 0.9)] * 200},
+    ]
+    colores = {}
+    for i in range(200):
+        colores[(0, i)] = np.abs(rng.normal(5.0, 0.1, 256))
+        colores[(3, i)] = np.abs(rng.normal(0.1, 0.01, 256))
+
+    cfg = {"entrenamiento": {"solo_cercanos": False, "desde_s": 300.0}}
+    clf = entrenar_clasificador(colores, cfg, cache)
+    proto = clf._prototipos.a
+    # Los del frame tardío son mucho más pequeños: si el recorte falla, el
+    # prototipo se iría hacia los del frame 0.
+    assert float(np.mean(proto)) < float(
+        np.mean(list(colores.values())[0])
+    ), "el fit no ignoró los recortes anteriores a desde_s"

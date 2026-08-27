@@ -41,12 +41,18 @@ estos números se leen mal:**
    la pasada. Comparar "5 min contra 20 min" mide el efecto de ENTRENAR
    EL FIT con más datos sobre la MISMA ventana del minuto 5. **No dice
    nada de los minutos 6-20.** Ahí solo hay señales estructurales sin GT.
-3. **Los minutos 0-5 son OTRO RÉGIMEN**, y hay que excluirlos o tratarlos
-   aparte: el fit de ese tramo se desvía **35 % de la distancia A−B**
+3. **Los minutos 0-5 son OTRO RÉGIMEN**: el fit de ese tramo se desvía
+   **35 % de la distancia A−B**
    contra un nulo de remuestreo del 2,2 % (16× el ruido), los jugadores
    ocupan otra franja (`y p95` 26 m contra 35 m después), las identidades
    son más cortas (155 contra 213 obs) y solo el 15,9 % de los frames
    tiene el recuento correcto, contra el 42 % en 5-10.
+   **Pero NO hay que quitarlos del fit**: medido, hacerlo mueve los
+   prototipos 1,8 % contra un ruido propio de 1,1 % y no cambia ni una
+   observación (`entrenamiento.desde_s`, existe y está en None). En 20
+   minutos ese tramo es una cuarta parte y el resto lo diluye. ⚠️ El
+   peligro está en los tramos CORTOS que arranquen en el minuto 0: ahí
+   ese régimen sería el 100 % del fit.
 
 Con esos avisos: **de los minutos 5 a 20 el fit NO deriva** (desvíos de
 3,7-14,1 %, la distancia a su prototipo BAJA de 0,798 a 0,748 y el margen

@@ -154,3 +154,45 @@ contra el 42 % en 5-10.
 - El emparejamiento A/B se elige maximizando el acuerdo, y es **global**:
   un cambio de A/B a mitad de partido sería invisible. Con 29,5 s de GT
   no se puede comprobar.
+
+---
+
+# ¿Debe el fit ignorar los primeros minutos? (medido, 27-ago-2026)
+
+Consecuencia práctica de que el tramo 0-5 sea otro régimen. Pregunta de
+Alex: *"si los primeros minutos son sistemáticamente distintos, habrá que
+decidir qué hacemos con ellos en producción — ¿el fit se calcula
+ignorando los primeros minutos?"*
+
+Se añadió la opción (`entrenamiento.desde_s`, **None por defecto**) y se
+midió el A/B sobre la parte entera:
+
+| | equipo equivocado (GT, casado 1-a-1) |
+|---|---|
+| fit con los 20 min (hoy) | **9 / 723 = 1,2 %** |
+| fit solo de 5 a 20 min | **9 / 723 = 1,2 %** |
+
+Idéntico. Y el control obligatorio —¿tenía el experimento algo que
+medir?— dice que sí, poco:
+
+| | movimiento de los prototipos |
+|---|---|
+| quitar los 5 primeros minutos | **1,8 %** de la separación A−B |
+| nulo del propio fit (dos mitades aleatorias) | **1,1 %** |
+
+**Veredicto: NO se activa.** Quitar 50.172 recortes de 205.295 mueve el
+fit 1,8 %, apenas 1,6× su propio ruido de remuestreo, y no cambia ni una
+observación en el GT.
+
+**Por qué**, que es lo interesante: el tramo 0-5 se desvía un 35 %
+*cuando se ajusta él solo*, pero en la parte entera es solo una cuarta
+parte de la muestra y los otros 15 minutos lo diluyen. El fit global
+nunca estuvo contaminado.
+
+⚠️ **Y el corolario, que es al revés de lo que parece:** el peligro no
+está en los partidos LARGOS sino en los CORTOS. En un tramo de 5 minutos
+que arranque en el saque inicial, ese régimen raro sería el **100 %** del
+fit y su desviación del 35 % sería toda la historia. Si algún día se
+procesa un clip corto desde el minuto 0, `entrenamiento.desde_s` es la
+palanca — y entonces hay que volver a medirla, porque ahí sí tendría algo
+que hacer.
