@@ -337,3 +337,75 @@ Para (1), la forma que ya ha pagado tres veces en este proyecto son **dos
 señales débiles que juntas son fuertes**: la distancia al prototipo no
 vale sola —está medido arriba— pero como desempate junto al
 comportamiento puede valer, porque cada impostor falla al menos una.
+
+## El 46 % que no llega al tercer grupo: no es ninguna de las tres (27-ago-2026)
+
+Alex, con razón: *"llevamos dos sesiones puliendo una regla que solo
+alcanza a la mitad del problema"*. El tercer grupo recoge el 54 % de los
+frames; el otro 46 % ya está en un equipo cuando la exclusividad lo mira.
+Sus tres hipótesis eran el fit, el suavizado de 1,5 s, o el arquetipo.
+
+**Es una cuarta, y explica las tres: en un recorte suelto el árbitro NO
+existe.**
+
+| distancia al prototipo del ÁRBITRO | p10 | mediana | p90 |
+|---|---|---|---|
+| observaciones del árbitro | 0,799 | **0,884** | 0,959 |
+| observaciones de jugador | 0,891 | **0,936** | 0,971 |
+
+Se solapan casi por completo. Un torso de 15-40 px del árbitro no se
+distingue del de un jugador. Y sin embargo, promediando 400 recortes, dos
+muestras independientes suyas distan **0,0545** entre sí y **0,59-0,65**
+de los equipos: **el verde flúor solo aparece al promediar**.
+
+Cuántos recortes hacen falta para que la media lo delate (arquetipo
+disparando sobre una muestra PURA de árbitro):
+
+| N recortes | 5 | 10 | 15 | **25** | **40** | 100 |
+|---|---|---|---|---|---|---|
+| dispara | 40 % | 62 % | 75 % | **85 %** | **100 %** | 100 % |
+
+Con eso, las tres hipótesis quedan contestadas de una vez:
+
+- **(a) el fit** no se equivoca: un recorte suelto genuinamente no dice
+  "árbitro". Está haciendo lo mejor posible con lo que tiene.
+- **(b) el suavizado de 1,5 s** promedia ~15 recortes, que es el 75 %.
+  Está POR DEBAJO del umbral donde nace la señal. Subirlo no es la
+  solución: arrastraría al vecino durante más tiempo.
+- **(c) el arquetipo** es el único mecanismo que promedia bastante, y su
+  alcance está limitado por lo LARGAS Y PURAS que sean las identidades
+  del árbitro. Con `min_observaciones: 25` acierta el 85 %; por debajo de
+  25 ni siquiera juzga.
+
+> **El árbitro no es un problema de color: es un problema de ASOCIACIÓN
+> disfrazado.** Solo es alcanzable a través de identidades largas y
+> puras, así que llega gratis el día que se arregle la asociación — que
+> ya es el problema número uno (CLAUDE.md, 20-ago-2026).
+
+## Y la salida de producto tampoco sale barata
+
+Alex propuso: *"pintar como 'otro' cualquier identidad dudosa en vez de
+asignarla a un equipo"*. Medido a nivel de IDENTIDAD (≥40 recortes, que
+es donde la media sí tiene señal):
+
+| | p10 | mediana | p90 |
+|---|---|---|---|
+| identidades de árbitro (n=8) | 0,57 | **0,62** | 0,84 |
+| identidades de jugador (n=230) | 0,27 | **0,37** | 0,68 |
+
+| umbral | árbitros cazados | jugadores sacrificados |
+|---|---|---|
+| 0,50 | 100 % | 24,3 % |
+| 0,60 | 75 % | 14,8 % |
+| 0,70 | 37,5 % | 7,0 % |
+
+Separa mejor que por observación, pero no lo bastante: a 0,50 son **8
+árbitros a cambio de ~56 identidades de jugador** mandadas a 'otro'. Y
+eso es exactamente lo que Alex dice que un entrenador no perdona — equipos
+con cinco jugadores en vez de siete. **No hay punto de operación bueno.**
+
+## Veredicto
+
+Línea cerrada. No hay causa barata: el arreglo pasa por la asociación, y
+el árbitro colado cuesta 0,41-0,61 m de centroide y CERO de anchura, por
+debajo del suelo de ruido. Vuelve solo cuando la asociación mejore.
