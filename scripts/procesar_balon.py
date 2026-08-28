@@ -57,6 +57,11 @@ def main() -> None:
         "queda disponible: es prescindible (lo que ve, lo ve la "
         "velocidad) pero no se borra.",
     )
+    parser.add_argument(
+        "--campo",
+        default="configs/campo_benja.yaml",
+        help="config del campo, para el filtro de plausibilidad del balón",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -65,6 +70,18 @@ def main() -> None:
     cache = datos["cache"]
     tiempos = {e["frame_idx"]: e["t"] for e in cache}
     detecciones = {e["frame_idx"]: e["dets"] for e in cache if e["dets"]}
+
+    # ⚠️ PLAUSIBILIDAD FÍSICA ANTES DE NADA. Medido sobre los cachés de
+    # balón: entre el 12 % y el 20 % de las detecciones proyectan FUERA
+    # del campo (la x llega a 24.876 m en un campo de 62), y la confianza
+    # no las separa. Sin quitarlas la velocidad máxima del balón sale a
+    # 4151 m/s y **dos tercios de lo que se marca como FASE AÉREA es
+    # basura**, no vuelo: 21,7 % contra el 7,6 % real.
+    from src.balon.tracking_balon import filtrar_balon_plausible
+    from src.campo_modelo import cargar_modelo
+
+    modelo_campo = cargar_modelo(config=args.campo)
+    detecciones = filtrar_balon_plausible(detecciones, modelo_campo)
 
     jug = pd.read_csv(args.csv_jugadores)
     reales = jug[jug.es_real == 1]
