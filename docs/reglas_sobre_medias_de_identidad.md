@@ -23,7 +23,7 @@ y con **3.187 recortes no dispara**.
 |---|---|---|
 | `arbitro.py:176` `identificar_arbitros` | **color** medio de la identidad | **ALTO — es el fallo encontrado.** Arreglado por observación |
 | `pipeline_equipos.py:219` voto de equipo | **color** medio de la identidad | **ALTO** — es el mismo fallo, y `etiquetar_por_observacion` existe para eso (15,5 % → 3,2 %) |
-| `asociacion_apariencia.py:77` firma | **embedding** medio de la identidad | **ALTO** — misma naturaleza, sin arreglo hoy |
+| ~~`asociacion_apariencia.py:77` firma~~ | ⚠️ **CLASIFICACIÓN ERRÓNEA, corregida el 28-ago** | **NINGUNO** — ver abajo |
 | `porteros.py:427` `pisa` del área | fracción de posiciones dentro del área | medio: una identidad que mezcla portero y jugador diluye la fracción |
 | `porteros.py:78` y `:377` | **posición** mediana | bajo, ver abajo |
 | `staff.py:180` | **posición** mediana | bajo |
@@ -53,7 +53,21 @@ mientras las de color se rompían una tras otra. No era suerte.
       activa en el benjamín**: en Villaviciosa el recorte suelto es ruido
       y decidir por ventana empeora. Es una decisión por partido y sigue
       sin selector automático.
-- [ ] `asociacion_apariencia.py:77` — la firma de apariencia promedia el
-      embedding de toda la identidad. Misma vulnerabilidad, sin medir.
+- [x] ~~`asociacion_apariencia.py:77`~~ — **falsa alarma mía.** La firma
+      NO promedia la identidad entera: `embs` es una **ventana deslizante
+      de 8 observaciones** (`ventana_firma: int = 8`, con `embs.pop(0)`
+      al pasarse). Y la puerta de re-entrada calcula la firma con
+      `_VENTANA_FIRMA = 8` observaciones **a cada lado del corte**, no con
+      la identidad. O sea: **ya estaba hecho lo que yo iba a proponer**.
+
+      La clasifiqué como riesgo ALTO por ver el `np.mean(self.embs)` sin
+      leer que `embs` está acotado. Es el mismo error de método que
+      cazamos en las guardas: mirar la ORTOGRAFÍA (`np.mean`) en vez del
+      COMPORTAMIENTO.
+
+      Y de todas formas está apagada: `ParametrosPuertaReentrada.activa`
+      es `False` por defecto y **ningún config de tracking trae el
+      bloque**, así que la puerta no corre en producción y no se le pasan
+      embeddings.
 - [ ] `porteros.py:427` — el `pisa` diluido. Medirlo cuando el portero
       aparezca en una identidad mezclada.
