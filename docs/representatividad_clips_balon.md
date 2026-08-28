@@ -162,7 +162,20 @@ solo aguanta a partir de **66-34**, que es una paliza, no un partido.
 > se pone en la diferencia que el error deja pasar, no en un número
 > redondo.
 
-⚠️ Esto está calculado sobre un error de 8,1 puntos que viene de UNA de
-las tres vías de medida y sobre los clips —que son un techo—. Si el
-número final empeora, las bandas se ensanchan proporcionalmente: la
-frontera del "no usable" es siempre **la diferencia igual al error**.
+⚠️ **CORREGIDO el 28-ago-2026 con las tres vías completas.** Los 8,1
+puntos venían de UNA de ellas. El resultado final es peor y distinto:
+
+- **El error no se puede dar como un número.** Dos correcciones
+  defendibles del mismo sesgo van en signos opuestos (−4,0 y +2,5 pts),
+  y las cotas duras dejan la posesión de A **entre 26,2 % y 41,1 %**:
+  14,9 puntos de anchura.
+- El IC95 por bloques en 5 minutos es **[20,7 ; 49,3]**, 28,6 puntos.
+- Y lo que no se promedia con más minutos es el **sesgo sistemático**,
+  que existe y está medido: el balón se detecta el 86,3 % del tiempo
+  cuando lo lleva A y el 71,4 % cuando lo lleva B.
+
+Con eso, la banda de "no usable" no va de 46-54 a 54-46 sino **de 35-65 a
+65-35 como poco**. En la práctica: **la posesión no va al informe, ni
+como número ni como tendencia**, hasta que se cierre el sesgo de
+detección. Lo que sí se puede afirmar hoy es la ocupación del campo, que
+no depende del balón.
