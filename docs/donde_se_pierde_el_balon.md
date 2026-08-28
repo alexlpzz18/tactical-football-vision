@@ -144,12 +144,64 @@ debe seguir.
 Y el oráculo ya medido dice lo que se ganaría aunque se rellenaran: subir
 la tasa del 44 % al 78 % mueve la posesión **0,4 puntos**.
 
+## 4. Y LA CAUSA REAL, que no era ninguna de las anteriores
+
+Alex, mirando las imágenes: *"viendo a dónde están mirando todos los
+jugadores no tiene ninguna pinta de que el balón esté donde tú has
+interpolado"*. Tenía razón, y al rehacerlo anclado al ÚLTIMO FRAME CON
+BALÓN —en vez de al medio del hueco— apareció la respuesta en el primer
+caso: el balón estaba en el píxel **(17, 782)** de una imagen de 1920 de
+ancho. **A 17 píxeles del borde.**
+
+Medido sobre todos los huecos, distancia al borde de la imagen de la
+última detección:
+
+| última detección antes de… | mediana | p10 | n |
+|---|---|---|---|
+| no hay hueco (el balón sigue) | 385 px | 129 | 8015 |
+| **hueco que empieza CERCA (x<20 m)** | **15 px** | **10** | 18 |
+| hueco que empieza LEJOS (x>50 m) | 463 px | 441 | 48 |
+
+| a menos de… del borde | huecos de cerca | frames sin hueco |
+|---|---|---|
+| 30 px | **72,2 %** | 1,7 % |
+| 60 px | 77,8 % | 3,5 % |
+| 100 px | 83,3 % | 7,4 % |
+
+> **El balón se sale del ENCUADRE.** No es oclusión, no es el umbral, no
+> es el modelo: en el 72 % de los casos la última vez que se le ve está a
+> menos de 30 píxeles del borde de la imagen, y después sencillamente no
+> está ahí para detectarlo.
+
+La cámara está baja y detrás de la portería x=0, así que esa zona del
+campo se proyecta a los extremos del encuadre. Es geometría de la
+instalación, no del algoritmo.
+
+Y de paso explica por qué las imágenes del primer intento no tenían
+sentido: la ventana de recorte se topaba con el borde de la imagen
+—porque el balón estaba EN el borde— y el recorte salía descentrado.
+
+Los huecos del fondo lejano son otra cosa: su última detección está a
+**463 px** del borde, en medio de la imagen. Esos sí son el límite de
+detección sobre un balón de 3-5 px.
+
 ## Veredicto
 
-**Línea cerrada, con las tres puertas medidas y cerradas por separado**:
-no es oclusión (imágenes), no es el umbral (distribución de confianza), y
-rellenar no paga (oráculo). El **53 % de detección es el techo de este
-modelo** sobre este partido.
+**Línea cerrada, con las CUATRO puertas medidas y cerradas por separado**:
+no es oclusión (imágenes), no es el umbral (distribución de confianza),
+rellenar no paga (oráculo), y **el 72 % de las pérdidas cercanas son el
+balón saliéndose del encuadre** — irrecuperable por software, porque no
+está en la imagen.
+
+El **53 % de detección es el techo**, y ahora se sabe de qué: una parte es
+el límite del modelo sobre un balón de 3-5 px en el fondo, y otra es
+sencillamente **campo que la cámara no cubre**.
+
+⚠️ **Consecuencia de producto, y es la buena noticia**: esa segunda parte
+NO es un problema del sistema, es del encuadre. Refuerza la recomendación
+que ya estaba apuntada — *cámara más alta y más centrada en la banda* —
+con un número: hoy se pierde el balón en 18 ocasiones por salirse de
+plano.
 
 Lo único que lo movería es **reentrenar con estos casos concretos** — los
 balones visibles cerca de portería que el modelo no dispara. Y eso
