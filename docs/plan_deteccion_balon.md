@@ -222,7 +222,7 @@ Con el modelo v1 (mAP50 0,789) a conf 0,35, 1 de cada 2 frames.
 | frames del tramo | 4.495 |
 | con balón detectado | **2.373 (53 %)** |
 | tras seleccionar el activo | 2.373 (100 % de los detectados) |
-| en **fase aérea** | 447 (**19 %** de las observaciones de balón) |
+| en **fase aérea** | 447 (19 % de las observaciones) — ⚠️ **CIFRA CORREGIDA, ver abajo** |
 | contactos detectados | 415 |
 | con jugador atribuido | 289 (70 %) |
 
@@ -237,6 +237,25 @@ había balones de calentamiento en el tramo, o el criterio —quieto **y**
 lejos— es demasiado estricto para cazarlos. No se puede saber sin mirar
 el vídeo, así que queda como pendiente de verificación visual, no como
 "funciona".
+
+> ⚠️ **CORREGIDO el 28-ago-2026: la fase aérea es el 7,6 %, no el 19 %.**
+>
+> El 19,8 % de las detecciones de balón proyectan FUERA del campo (la x
+> llega a 1760 m en un campo de 62): es balón aéreo proyectado con una
+> homografía de suelo más falsos positivos, y la confianza no los separa.
+> `detectar_fases_aereas` los marcaba como aéreos porque producen saltos
+> imposibles — hasta **4151 m/s**, doce veces la velocidad del sonido.
+>
+> Filtrando por plausibilidad física (`filtrar_balon_plausible`):
+>
+> | | observaciones | fase aérea | vel. máx |
+> |---|---|---|---|
+> | sin filtro | 2504 | **21,7 %** | 4151 m/s |
+> | con filtro | 2007 | **7,6 %** | 623 m/s |
+>
+> **Dos tercios de lo que se marcaba como aéreo era basura fuera del
+> campo.** Todo razonamiento que use el 19 % —incluido el párrafo de
+> abajo— hay que releerlo con 7,6 %.
 
 **El 19 % de fase aérea confirma lo que se esperaba** de fútbol base: uno
 de cada cinco instantes con balón tiene la posición proyectada no fiable,

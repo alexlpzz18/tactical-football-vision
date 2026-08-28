@@ -60,7 +60,11 @@ jugador a ≤3 m 13,9 s (4,6 %) · balón fuera del campo 7,3 s (2,4 %).
 - **Por fase aérea**: el 35,2 % de los huecos arranca tras una
   observación aérea, con tasa base del 19,2 % (1,83×). **El detector
   pierde el balón justo en los balonazos, que es donde cambia la
-  posesión.**
+  posesión.** ⚠️ Ese 19,2 % es la tasa SIN el filtro de plausibilidad;
+  con él la fase aérea real es el **7,6 %**, así que el factor de
+  sobre-representación de los huecos aéreos es aún **mayor** (4,6×, no
+  1,83×): el detector pierde el balón en el aire mucho más de lo que
+  parecía.
 
 > **El margen de error numérico NO SE PUEDE DAR HOY, y ese es el
 > resultado honesto.** Dos correcciones defendibles del mismo sesgo van
