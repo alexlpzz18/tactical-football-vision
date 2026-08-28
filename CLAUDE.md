@@ -59,7 +59,9 @@ Con esos avisos: **de los minutos 5 a 20 el fit NO deriva** (desvíos de
 A−B SUBE). El minuto 19 se parece al minuto 6 — no al minuto 1.
 
 **Adoptado y en producción** (cada uno con su medición en `docs/`):
-- Tracking: perfil `bytetrack` en el benjamín; `candidato` en el F11.
+- Tracking: perfil **`bytetrack` en las dos patas** (`configs/processor.yaml`
+  y `processor_benja_parte_entera.yaml`). `candidato` y `oficial` siguen
+  en `perfiles.py` para el banco, pero NO son producción.
 - Clasificación: fit de color con `n_init: 50`, orden de reglas
   árbitro → porteros → un_solo_arbitro → staff, `etiquetar_por_observacion`
   (ventana 1,5 s, solo benjamín).
@@ -133,6 +135,16 @@ Todo lo demás acaba desembocando aquí:
   OpenCV, y la pizarra pintando la MODA de la identidad en vez de la
   etiqueta del instante (`docs/pizarra_colapsaba.md`). Guarda viva en
   `tests/test_renderizadores_no_colapsan.py`.
+- **Un interruptor de config que nadie lee es peor que no tenerlo**: da
+  una falsa sensación de control. `cota_plantilla.activa: false` estaba en
+  los cuatro configs y `perfiles.py` no leía la clave, así que la fusión
+  —el fracaso canónico del proyecto— corría en el perfil `candidato`
+  creyéndola apagada (106 identidades contra 58). Estaba dormido porque
+  producción usa `bytetrack`. Guarda de COMPORTAMIENTO en
+  `tests/test_interruptores_de_config.py`: apagar el interruptor tiene
+  que cambiar el resultado. ⚠️ Un test de "claves de config sin usar" NO
+  lo habría cazado — `activa` sí aparece en el código, solo que en otra
+  rama. Es una omisión de CAMINO.
 - **Una guarda que CUENTA no puede detectar un fallo de IDENTIDAD.** Se
   adoptó un margen con una guarda que exigía "queda 1 en el tercer
   grupo": quedaba 1, pero no era el árbitro. El aviso debe dispararse

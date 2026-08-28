@@ -79,12 +79,29 @@ def test_perfil_oficial_reproduce_89_identidades(salida_oficial):
         assert clave in meta
 
 
-def test_perfil_candidato_reproduce_58_identidades():
-    """El PERFIL de tracking sigue dando 58 identidades (pin de regresión).
+def test_perfil_candidato_reproduce_114_identidades():
+    """El PERFIL de tracking sigue dando 114 identidades (pin de regresión).
 
     Se mide correr_perfil directamente: el CSV exportado lleva además la
     fase post-clasificación (consolidación + interpolación), que fusiona
     fichas y por tanto reduce el número — eso se comprueba aparte.
+
+    ⚠️ ESTE PIN DECÍA 58, Y ERA EL RESULTADO DE UN BUG (27-ago-2026).
+    `perfiles.py` no leía `activa` de `exclusion_espacial` ni de
+    `cota_plantilla`, así que las dos fusiones corrían pese al
+    `activa: false` de los cuatro configs. Al arreglarlo, el perfil pasa
+    de 58 a 114 identidades sobre ESTE caché (el min5_60s de la era v3):
+    las dos fusiones se estaban comiendo casi la mitad, y una de ellas es
+    la cota de plantilla, el fracaso canónico del proyecto. Sobre el caché
+    v4pre el mismo arreglo da 106 — números distintos porque son entradas
+    distintas, no porque algo sea inestable.
+
+    La lección es del propio pin: **un test de regresión que fija un
+    número sin comprobar que ese número es CORRECTO convierte un bug en
+    contrato.** Este llevaba semanas defendiendo el comportamiento
+    equivocado. Ver tests/test_interruptores_de_config.py, que comprueba
+    el COMPORTAMIENTO (apagar el interruptor tiene que cambiar el
+    resultado) en vez de un número.
     """
     import pickle
 
@@ -114,7 +131,7 @@ def test_perfil_candidato_reproduce_58_identidades():
         colores=colores,
         clasificador=clasificador,
     )
-    assert len(identidades) == 58
+    assert len(identidades) == 114
 
 
 def test_postproceso_consolida_y_corta(tmp_path):

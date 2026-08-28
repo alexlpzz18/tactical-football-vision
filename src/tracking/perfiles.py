@@ -120,22 +120,38 @@ def correr_perfil(
             identidades, cfg_rescate.get("min_frames_identidad", 3)
         )
 
+        # ⚠️ SE LEE `activa`, que antes se ignoraba.
+        #
+        # Los cuatro configs de tracking traen `activa: false` en estas dos
+        # secciones y este código nunca miraba la clave: las dos fusiones
+        # corrían igual. `postprocesar` sí la lee para consolidación e
+        # interpolación, así que la asimetría era pura despiste.
+        #
+        # La cota de plantilla es además el fracaso canónico del proyecto
+        # ("ya fracasamos con la cota de plantilla por confundirlo") y
+        # CLAUDE.md la daba por apagada. Estaba dormido —los dos configs
+        # de producción usan `perfil: bytetrack`, que no pasa por aquí—
+        # pero el día que alguien probara `candidato` se habría comido una
+        # fusión que creía desactivada. Cazado por la auditoría de guardas
+        # del 27-ago-2026.
         firmas = _firmas_de_marcaje(identidades, colores, clasificador, cfg_equipos)
         cfg_excl = cfg_tracking.get("exclusion_espacial", {})
-        identidades = fusionar_identidades_duplicadas(
-            identidades,
-            cfg_excl.get("dist_max", 1.5),
-            cfg_excl.get("min_frames_comunes", 3),
-            firmas=firmas,
-            color_max_dist=_COLOR_MAX_DIST_FIRMA,
-        )
+        if cfg_excl.get("activa", True):
+            identidades = fusionar_identidades_duplicadas(
+                identidades,
+                cfg_excl.get("dist_max", 1.5),
+                cfg_excl.get("min_frames_comunes", 3),
+                firmas=firmas,
+                color_max_dist=_COLOR_MAX_DIST_FIRMA,
+            )
 
         cfg_cota = cfg_tracking.get("cota_plantilla", {})
-        identidades = fusionar_hasta_cota(
-            identidades,
-            cfg_cota.get("cota", 23),
-            cfg_cota.get("coste_max", 4.0),
-        )
+        if cfg_cota.get("activa", True):
+            identidades = fusionar_hasta_cota(
+                identidades,
+                cfg_cota.get("cota", 23),
+                cfg_cota.get("coste_max", 4.0),
+            )
 
     logger.info("Perfil %s: %d identidades", perfil, len(identidades))
     return identidades
