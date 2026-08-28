@@ -306,3 +306,52 @@ def test_un_tramo_con_el_balon_FUERA_DEL_PLANO_no_es_juego_continuo():
     assert bueno["sin_deteccion"] < 0.05
     assert malo["sin_deteccion"] > 0.45, "la ausencia de balón debe verse"
     assert malo["punt"] < bueno["punt"] - 0.5, "y debe penalizar de verdad"
+
+
+# ── Plausibilidad física del balón (28-ago-2026) ─────────────────────
+#
+# Medido sobre el caché piloto: el 19,8 % de las detecciones de balón
+# proyectan FUERA del campo (la x llega a 1760 m en un campo de 62), y la
+# confianza no las separa (0,65 dentro contra 0,60 fuera). Sin filtrarlas
+# la velocidad máxima del balón sale a 4151 m/s.
+
+
+def _modelo_f7():
+    from src.campo_modelo import cargar_modelo
+
+    return cargar_modelo("f7").con_dimensiones(62.0, 40.0)
+
+
+def test_quita_el_balon_que_proyecta_fuera_del_campo():
+    from src.balon.tracking_balon import filtrar_balon_plausible
+
+    dets = {
+        0: [(30.0, 20.0, 0, 0, 8, 8, 0.7)],  # dentro
+        3: [(1760.0, 12.0, 0, 0, 8, 8, 0.6)],  # el caso real del piloto
+        6: [(30.5, 20.5, 0, 0, 8, 8, 0.7), (-50.0, 20.0, 0, 0, 8, 8, 0.6)],
+    }
+    salida = filtrar_balon_plausible(dets, _modelo_f7())
+    assert 3 not in salida, "una detección a 1760 m no puede sobrevivir"
+    assert len(salida[6]) == 1 and salida[6][0][0] == 30.5
+    assert salida[0] == dets[0]
+
+
+def test_el_margen_deja_salir_el_balon_de_banda():
+    """Un balón sale de banda de verdad: el filtro no puede ser estricto."""
+    from src.balon.tracking_balon import filtrar_balon_plausible
+
+    dets = {0: [(-2.0, 20.0, 0, 0, 8, 8, 0.7), (63.0, 41.0, 0, 0, 8, 8, 0.7)]}
+    salida = filtrar_balon_plausible(dets, _modelo_f7(), margen_m=3.0)
+    assert len(salida[0]) == 2, "con 3 m de margen, un balón fuera de línea vale"
+
+
+def test_la_confianza_NO_sirve_para_esto():
+    """Por qué hace falta el filtro: el detector está seguro de la basura.
+
+    Medido en el piloto: confianza media 0,65 dentro del campo y 0,60
+    fuera. Filtrar por confianza no habría quitado las de fuera.
+    """
+    from src.balon.tracking_balon import filtrar_balon_plausible
+
+    dets = {0: [(1760.0, 12.0, 0, 0, 8, 8, 0.95)]}  # basura con confianza altísima
+    assert filtrar_balon_plausible(dets, _modelo_f7()) == {}

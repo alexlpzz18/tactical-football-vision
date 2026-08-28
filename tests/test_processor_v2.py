@@ -68,6 +68,10 @@ def test_csv_formato_compatible(salida_oficial):
 
 
 def test_perfil_oficial_reproduce_89_identidades(salida_oficial):
+    """⚠️ DETECTOR DE CAMBIO, no un contrato: en este tramo el GT anota 23
+    personas, así que 89 identidades son 3,9× de fragmentación. El número
+    correcto sería 23. Si falla, averigua qué cambió antes de actualizarlo.
+    Ver el aviso largo en tests/test_referencia_tracking.py."""
     df, cfg = salida_oficial
     assert df["id_jugador"].nunique() == 89
     meta = json.loads(Path(cfg["rutas"]["salida_meta"]).read_text())

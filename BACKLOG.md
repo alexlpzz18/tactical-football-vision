@@ -181,10 +181,14 @@ falta antes de activarla:
 - [ ] Medir el daño de verdad: fitear SOLO sobre 0-5 y evaluar contra el
       GT. Hoy solo está medido el caso contrario (quitarlo de una pasada
       larga), que no dice nada de este.
-- [ ] Decidir la respuesta de producto, que puede no ser técnica: avisar
-      al usuario de que un clip corto desde el inicio da peor resultado,
-      o exigir una duración mínima, o fitear con los últimos N minutos
-      del clip en vez de con todo.
+- [ ] Decidir la respuesta de producto, que puede no ser técnica.
+      **Prioridad de Alex (27-ago-2026), y el razonamiento es de venta,
+      no técnico:**
+      1. **Fitear con los últimos N minutos del clip.** La preferida:
+         **no le pide nada al cliente**. Es la que hay que medir primero.
+      2. Exigir una duración mínima → *fricción de venta*.
+      3. Avisar de que dará peor resultado → *es decirle que el producto
+         funciona a medias*.
 
 Precedente que aplica: **actuar solo donde hay riesgo**. No tocar el fit
 en general — solo decidir mejor cuando el clip es corto y arranca en el

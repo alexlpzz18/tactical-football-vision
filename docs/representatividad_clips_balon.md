@@ -116,3 +116,53 @@ con n=54, pero ±16,0 pts con n=24**.
 Sumado a que un clasificador trivial "siempre B" saca el 63 % de tasa
 base sobre los 54 eventos, **el margen real sobre el azar es bastante más
 estrecho de lo que sugiere el número bruto**.
+
+---
+
+# ¿En qué rango de partidos sería fiable la posesión? (28-ago-2026)
+
+Pregunta de producto de Alex: *"si el reparto agregado se equivoca en 8
+puntos, ¿es utilizable en un informe? Un 55-45 que salga 63-37 seguiría
+diciendo la verdad cualitativa; un 52-48 que salga 60-40 ya no."*
+
+Lo que un entrenador lee de verdad es **quién dominó**. Eso se rompe
+cuando el error cambia el SIGNO del reparto — y con un error de E puntos,
+el signo se invierte en todo partido cuya diferencia real sea menor que E.
+
+| error del reparto | el signo se invierte si el partido real está entre |
+|---|---|
+| 4 pts | 48-52 y 52-48 |
+| **8 pts** (lo medido) | **46-54 y 54-46** |
+| 16 pts (el IC con n=24) | 42-58 y 58-42 |
+
+## La respuesta, en tres bandas
+
+Con los **8,1 puntos** medidos de error del reparto agregado:
+
+- **Partido igualado (entre 46-54 y 54-46): NO va al informe.** Ni como
+  número ni como tendencia. El sistema puede decir que dominó cualquiera
+  de los dos, y decir "dominó A" cuando fue 49-51 es peor que no decir
+  nada: el entrenador lo comprobará con sus ojos y dejará de creerse el
+  resto del informe.
+- **Dominio moderado (de 54-46 a 58-42): solo TENDENCIA, sin cifra.** El
+  signo aguanta, pero dar "56-44" con ±8 es prometer una precisión que no
+  se tiene.
+- **Dominio claro (58-42 o más): tendencia sólida**, y el signo aguanta
+  aunque el error fuera del doble.
+
+## Con la reserva de la muestra puesta
+
+El intervalo de confianza real no es ±8 sino **±16 puntos**, porque la n
+efectiva son **24 rachas de posesión**, no 54 eventos. Con ±16 el signo
+solo aguanta a partir de **66-34**, que es una paliza, no un partido.
+
+> **Recomendación: la posesión va al informe como TENDENCIA con tres
+> etiquetas (equilibrado / ligero dominio de X / dominio claro de X), no
+> como porcentaje.** Y el umbral entre "equilibrado" y "ligero dominio"
+> se pone en la diferencia que el error deja pasar, no en un número
+> redondo.
+
+⚠️ Esto está calculado sobre un error de 8,1 puntos que viene de UNA de
+las tres vías de medida y sobre los clips —que son un techo—. Si el
+número final empeora, las bandas se ensanchan proporcionalmente: la
+frontera del "no usable" es siempre **la diferencia igual al error**.

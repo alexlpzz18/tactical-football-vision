@@ -517,3 +517,62 @@ def fusionar_contactos(por_angulo, por_velocidad, separacion=0.20):
             continue
         fusionados.append(c)
     return fusionados
+
+
+def filtrar_balon_plausible(detecciones: dict, modelo, margen_m: float = 3.0) -> dict:
+    """Quita las detecciones de balón que proyectan FUERA del campo.
+
+    Es para el balón lo que `src/tracking/plausibilidad_fisica.py` es para
+    los jugadores, y hacía falta: medido sobre el caché piloto, **el
+    19,8 % de las detecciones de balón caen fuera del campo**, con la x
+    llegando a 1760 m en un campo de 62. Son balón aéreo proyectado con
+    una homografía de SUELO (z=0) más falsos positivos, y **la confianza
+    no los separa**: 0,65 dentro contra 0,60 fuera.
+
+    Lo que producen si no se quitan, que es el ejemplo de manual de por
+    qué hay que desconfiar de un número implausible: la velocidad máxima
+    del balón sale a **4151 m/s**, doce veces la del sonido.
+
+    ⚠️ `seleccionar_balon_activo` NO protege de esto: agrupa por
+    continuidad espacial y conserva a propósito los candidatos de menos de
+    tres detecciones ("muy corto para juzgarlo"), así que una detección a
+    1760 m forma su propio candidato y sobrevive.
+
+    El margen por defecto (3 m) es holgado a propósito: un balón sale de
+    banda de verdad, y el error de proyección en el fondo es grande. No
+    se filtra por VELOCIDAD aquí porque de eso ya se ocupa
+    `detectar_fases_aereas`, que además distingue el vuelo del error.
+
+    Args:
+        detecciones: {frame_idx: [(mx, my, x1, y1, x2, y2, conf), ...]}.
+        modelo: modelo de campo (da largo y ancho).
+        margen_m: cuánto se tolera fuera de la línea.
+
+    Returns:
+        El mismo diccionario sin las detecciones implausibles.
+    """
+    largo, ancho = modelo.largo, modelo.ancho
+    salida, quitadas, total = {}, 0, 0
+    for frame, dets in detecciones.items():
+        buenas = []
+        for det in dets:
+            total += 1
+            mx, my = float(det[0]), float(det[1])
+            if (
+                -margen_m <= mx <= largo + margen_m
+                and -margen_m <= my <= ancho + margen_m
+            ):
+                buenas.append(det)
+            else:
+                quitadas += 1
+        if buenas:
+            salida[frame] = buenas
+    if quitadas:
+        logger.info(
+            "Plausibilidad del balón: %d de %d detecciones fuera del campo "
+            "(%.1f %%) descartadas",
+            quitadas,
+            total,
+            100 * quitadas / max(total, 1),
+        )
+    return salida
