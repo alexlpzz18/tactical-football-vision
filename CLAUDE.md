@@ -184,14 +184,20 @@ Todo lo demás acaba desembocando aquí:
   dominio** —campo, áreas, banquillo, reglamento— no en la visión. Antes
   de mejorar un modelo, preguntarse qué se sabe de fútbol que el sistema
   todavía no usa.
-- **Toda regla que decide sobre la MEDIA de una identidad es vulnerable
-  a las identidades contaminadas** (`docs/reglas_sobre_medias_de_identidad.md`).
-  Hay siete. Y con una distinción que explica por qué las posicionales
-  han aguantado todo el proyecto: **dos personas se funden porque estaban
-  CERCA**, así que la mediana de POSICIÓN de una identidad mezclada sigue
-  siendo plausible; el COLOR no tiene esa propiedad — mezclar verde flúor
-  con naranja da un tono que no es de nadie y cae justo entre los dos
-  prototipos de equipo.
+- **POR QUÉ LAS REGLAS DE POSICIÓN AGUANTAN Y LAS DE COLOR SE ROMPEN.**
+  No es suerte, y explica meses de resultados:
+
+  > **Dos personas se funden en una identidad porque estaban CERCA.** Así
+  > que la mediana de POSICIÓN de una identidad contaminada sigue cayendo
+  > donde estaban las dos y sigue siendo plausible. El COLOR no tiene esa
+  > propiedad: mezclar verde flúor con naranja da un tono que **no es de
+  > nadie**, y que además cae justo entre los dos prototipos de equipo.
+
+  De ahí que las reglas posicionales valgan más que el clasificador, que
+  el voto de color por identidad fuera sesgado, y que el catálogo
+  arbitral fallara sobre una identidad de 3.187 recortes. Hay **siete**
+  reglas que deciden sobre medias de identidad y el riesgo de cada una
+  sale de esta distinción (`docs/reglas_sobre_medias_de_identidad.md`).
 - **NO ES CANTIDAD, ES PUREZA.** El catálogo arbitral no fallaba por falta
   de muestra: el `id 292` tiene **3.187 recortes** y no dispara, porque
   mezcla al árbitro con jugadores. Aplicado POR OBSERVACIÓN, el recuento
