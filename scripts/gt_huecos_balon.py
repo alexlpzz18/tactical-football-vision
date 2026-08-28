@@ -278,11 +278,13 @@ def _hoja_de_anotacion(casos, salida):
         ok_enc, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 82])
         b64 = base64.b64encode(buf.tobytes()).decode()
         ops = "".join(
-            f'<label><input type=radio name="c{i}" value="{k}"> {t2}</label>'
+            f'<label><input type=radio name="c{i}" value="{k}">'
+            f"<span> {t2}</span></label>"
             for k, t2 in CAUSAS
         )
         bloques.append(
-            f"""<section>
+            f"""<section data-t="{int(t//60):02d}:{int(t%60):02d}"
+         data-x="{x:.0f}" data-dt="{dt:.1f}">
   <h2>Caso {i+1} &middot; t={int(t//60):02d}:{int(t%60):02d}
       <small>hueco de {dt:.1f}s &middot; balón a x={x:.0f} m</small></h2>
   <img src="data:image/jpeg;base64,{b64}">
@@ -291,21 +293,27 @@ def _hoja_de_anotacion(casos, salida):
          placeholder="¿dónde está de verdad? (celda A1..D4, o lo que quieras)">
 </section>"""
         )
-    html = f"""<title>GT de huecos de balón</title>
+    html = f"""<meta charset="utf-8">
+<title>GT de huecos de balón</title>
 <style>
- body{{font:15px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}}
+ body{{font:15px/1.5 system-ui,sans-serif;margin:0;padding:24px 24px 340px;
+       background:#111;color:#eee}}
  h1{{font-size:22px;margin:0 0 6px}} p.intro{{color:#aaa;max-width:70ch}}
  section{{margin:34px 0;padding:18px;background:#1b1b1b;border-radius:10px}}
  h2{{font-size:17px;margin:0 0 12px}} h2 small{{color:#999;font-weight:400}}
  img{{width:100%;border-radius:6px;display:block}}
  .opts{{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 10px}}
  .opts label{{background:#262626;padding:8px 12px;border-radius:6px;cursor:pointer}}
- .opts label:hover{{background:#303030}}
+ .opts label:hover{{background:#333}}
+ .opts input:checked + span{{color:#2d7;font-weight:600}}
  .nota{{width:100%;padding:9px;background:#262626;border:1px solid #333;
-        border-radius:6px;color:#eee;font:inherit}}
- button{{position:fixed;right:24px;bottom:24px;padding:14px 20px;font:600 15px system-ui;
-         background:#2d7;border:0;border-radius:8px;cursor:pointer}}
- pre{{background:#000;padding:16px;border-radius:8px;white-space:pre-wrap}}
+        border-radius:6px;color:#eee;font:inherit;box-sizing:border-box}}
+ #panel{{position:fixed;left:0;right:0;bottom:0;background:#0a0a0a;
+         border-top:2px solid #2d7;padding:12px 24px 16px}}
+ #panel b{{color:#2d7}}
+ #out{{width:100%;height:150px;background:#000;color:#9f9;border:1px solid #333;
+       border-radius:6px;font:13px/1.45 ui-monospace,monospace;padding:10px;
+       box-sizing:border-box;resize:vertical}}
 </style>
 <h1>GT de huecos de balón</h1>
 <p class=intro>Para cada caso: el primer frame es el último donde el
@@ -315,21 +323,34 @@ inventada</b>; el círculo naranja es solo el último sitio conocido. La
 <b>línea roja</b> marca el borde real de la imagen, para distinguir "se
 sale del plano" de "se sale del recorte".</p>
 {''.join(bloques)}
-<button onclick="vol()">Copiar respuestas</button>
-<pre id=out></pre>
+<div id=panel>
+  <div style="margin-bottom:6px"><b>Respuestas</b> — se actualizan solas.
+  Selecciona el texto y cópialo (no hace falta ningún botón).
+  <span id=cuenta style="color:#888"></span></div>
+  <textarea id=out readonly onclick="this.select()"></textarea>
+</div>
 <script>
-function vol(){{
-  let l=[];
-  document.querySelectorAll('section').forEach((s,i)=>{{
+// Sin navigator.clipboard a proposito: en un visor con sandbox esta
+// bloqueado y el boton no hacia nada. El resumen se actualiza en cada
+// cambio y se queda a la vista para seleccionarlo a mano.
+function actualizar(){{
+  const secs=[...document.querySelectorAll('section')];
+  let hechos=0;
+  const l=secs.map((s,i)=>{{
     const r=s.querySelector('input[type=radio]:checked');
-    const n=document.getElementById('n'+i).value.trim();
-    l.push(`caso ${{i+1}} (${{s.querySelector('h2').textContent.trim().split('·')[1].trim()}}): `
-           +(r?r.value:'SIN MARCAR')+(n?' | '+n:''));
+    const n=(document.getElementById('n'+i)||{{}}).value||'';
+    if(r) hechos++;
+    return 'caso '+(i+1)+' ('+s.dataset.t+', x='+s.dataset.x+'m, hueco '
+           +s.dataset.dt+'s): '+(r?r.value:'SIN MARCAR')
+           +(n.trim()?' | '+n.trim():'');
   }});
-  const t=l.join('\n');
-  document.getElementById('out').textContent=t;
-  navigator.clipboard&&navigator.clipboard.writeText(t);
+  document.getElementById('out').value=l.join(String.fromCharCode(10));
+  document.getElementById('cuenta').textContent=
+    '  ('+hechos+' de '+secs.length+' marcados)';
 }}
+document.addEventListener('input',actualizar);
+document.addEventListener('change',actualizar);
+actualizar();
 </script>"""
     ruta = f"{salida}/anotar.html"
     with open(ruta, "w") as f:
