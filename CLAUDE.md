@@ -184,6 +184,19 @@ Todo lo demás acaba desembocando aquí:
   dominio** —campo, áreas, banquillo, reglamento— no en la visión. Antes
   de mejorar un modelo, preguntarse qué se sabe de fútbol que el sistema
   todavía no usa.
+- **Toda regla que decide sobre la MEDIA de una identidad es vulnerable
+  a las identidades contaminadas** (`docs/reglas_sobre_medias_de_identidad.md`).
+  Hay siete. Y con una distinción que explica por qué las posicionales
+  han aguantado todo el proyecto: **dos personas se funden porque estaban
+  CERCA**, así que la mediana de POSICIÓN de una identidad mezclada sigue
+  siendo plausible; el COLOR no tiene esa propiedad — mezclar verde flúor
+  con naranja da un tono que no es de nadie y cae justo entre los dos
+  prototipos de equipo.
+- **NO ES CANTIDAD, ES PUREZA.** El catálogo arbitral no fallaba por falta
+  de muestra: el `id 292` tiene **3.187 recortes** y no dispara, porque
+  mezcla al árbitro con jugadores. Aplicado POR OBSERVACIÓN, el recuento
+  correcto del equipo B pasa de 13 % a 43 % con **un** jugador sacrificado
+  de 814 (los tres intentos anteriores morían a 8 jugadores por árbitro).
 - **El voto mayoritario no era robusto, era SESGADO.** Etiquetar por
   observación gana +6,2 puntos incluso en identidades PURAS. La robustez
   de un promedio depende de que lo que promedia no esté sesgado.

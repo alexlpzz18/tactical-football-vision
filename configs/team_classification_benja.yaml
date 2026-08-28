@@ -68,6 +68,29 @@ agregacion:
   # La ventana sale del barrido: 1,0 y 2,0 s empatan (0,36 y 0,37 m) y a
   # partir de 4 s empeora. Se pone 1,5, en medio.
   por_observacion:
+    # ── EL CATÁLOGO ARBITRAL, POR OBSERVACIÓN (28-ago-2026) ──────────
+    #
+    # ADOPTADO: mejora todas las métricas del benjamín sin degradar
+    # ninguna de Villaviciosa (allí `por_observacion` está apagado, así
+    # que ni corre). Criterio de Alex para adoptar sin preguntar.
+    #
+    # Por qué hacía falta: `identificar_arbitros` juzga la MEDIA DE LA
+    # IDENTIDAD, y el id 292 de la parte entera MEZCLA al árbitro con
+    # jugadores naranjas. Su media da H=28 S=72, un tono intermedio que no
+    # cae en ningún arquetipo — y con **3.187 recortes** no dispara.
+    # **No es cantidad, es PUREZA.**
+    #
+    # Lo que gana, medido contra el GT:
+    #   frames con el recuento correcto de B: 13 % -> 43 %
+    #   frames con LOS DOS equipos correctos: 10 % -> 25 %
+    #   centroide del benjamín:             1,07 -> 0,84 m
+    #   intrusos cazados: 187 -> 215, con UN jugador sacrificado de 814
+    #   = 0,04 jugadores por intruso (los tres intentos anteriores
+    #     morían en 8 jugadores por árbitro)
+    #
+    # Manda la media de la VENTANA, no el recorte suelto: una observación
+    # aislada no convierte a nadie en árbitro.
+    catalogo_arbitral: true
     activo: true
     ventana_s: 1.5
     forzar_ab: true

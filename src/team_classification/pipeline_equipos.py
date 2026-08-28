@@ -503,8 +503,42 @@ def etiquetar_por_observacion(
     ventana = float(cfg.get("ventana_s", 1.5))
     forzar = bool(cfg.get("forzar_ab", True))
 
+    # ── EL CATÁLOGO ARBITRAL, TAMBIÉN POR OBSERVACIÓN (28-ago-2026) ──
+    #
+    # `identificar_arbitros` juzga la MEDIA DE TODA LA IDENTIDAD, y eso lo
+    # rompe una identidad contaminada: el id 292 del benjamín mezcla al
+    # árbitro con jugadores naranjas, su media da un tono intermedio
+    # (H=28 S=72) que no cae en ningún arquetipo, y con **3.187 recortes**
+    # no dispara. **No es cantidad, es PUREZA.**
+    #
+    # Y la señal está: el 68 % de los recortes de esa identidad están MÁS
+    # LEJOS de los dos prototipos de equipo que los prototipos entre sí
+    # (mediana 1,12 contra una separación A−B de 0,98). Lo que fallaba era
+    # preguntar "¿a cuál de los dos se parece más?" —que siempre tiene
+    # respuesta— en vez de "¿se parece a alguno?".
+    #
+    # Aquí se pregunta lo segundo sobre la MISMA ventana que ya se calcula
+    # para el A/B, así que no cuesta una pasada extra. Una observación
+    # suelta no convierte a nadie en árbitro: manda la media de la ventana.
+    catalogo = bool(cfg.get("catalogo_arbitral", False))
+    activos = ()
+    if catalogo:
+        from src.team_classification.arbitro import (
+            ARQUETIPOS,
+            arquetipos_activos,
+            brillo_medio,
+            tono_dominante,
+        )
+
+        pr = getattr(clasificador, "_prototipos", None)
+        if pr is not None:
+            activos = arquetipos_activos([pr.a, pr.b], ARQUETIPOS)
+        if not activos:
+            catalogo = False
+
     salida: dict[tuple[int, int], str] = {}
     n_cambios = 0
+    n_arbitro = 0
     for id_identidad, identidad in enumerate(identidades, start=1):
         etiqueta = str(equipos.get(id_identidad, "otro"))
         if etiqueta not in ("A", "B"):
@@ -528,15 +562,32 @@ def etiquetar_por_observacion(
             media = color_medio_limpio(cerca, None)
             if media is None:
                 continue
+            # Primero: ¿esta ventana viste de árbitro? Si sí, la
+            # observación sale del cómputo de equipos (va al tercer
+            # grupo) y NO se le pregunta a qué equipo se parece más.
+            if catalogo:
+                tono = tono_dominante(media)
+                if tono is not None:
+                    brillo = brillo_medio(media)
+                    if any(a.contiene(tono[0], tono[1], brillo) for a in activos):
+                        salida[(id_identidad, par[0])] = "otro"
+                        n_arbitro += 1
+                        continue
             nueva = clasificador.predict_color(media, solo_equipos=forzar)
             salida[(id_identidad, par[0])] = nueva
             n_cambios += nueva != etiqueta
     if salida:
         logger.info(
             "Etiqueta por observación (ventana %.1f s): %d observaciones "
-            "etiquetadas, %d cambian respecto al voto de su identidad",
+            "etiquetadas, %d cambian respecto al voto de su identidad"
+            "%s",
             ventana,
             len(salida),
             n_cambios,
+            (
+                f", {n_arbitro} sacadas de los equipos por el catálogo arbitral"
+                if n_arbitro
+                else ""
+            ),
         )
     return salida

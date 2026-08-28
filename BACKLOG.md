@@ -193,3 +193,23 @@ falta antes de activarla:
 Precedente que aplica: **actuar solo donde hay riesgo**. No tocar el fit
 en general — solo decidir mejor cuando el clip es corto y arranca en el
 minuto 0, que es detectable sin ambigüedad.
+
+## 16. El detector de PERSONAS está marcando el BALÓN (28-ago-2026)
+
+Visto en los recortes de intrusos: la identidad `id 62`, etiquetada como
+jugador del equipo B, es **un balón** en t=59 s (`outputs/intrusos_equipo_B.png`).
+
+Es un falso positivo que el **filtro de plausibilidad física** debería
+cazar sin ayuda: `src/tracking/plausibilidad_fisica.py` ya deriva la
+altura real de una caja con `alto_px × σ_min(J)`, y **un balón no tiene
+proporciones de persona** — ni su altura implícita (0,2 m contra 1,5) ni
+su relación de aspecto (1:1 contra 1:3).
+
+- [ ] Comprobar cuántas detecciones de "persona" tienen relación de
+      aspecto de balón, y si el filtro actual ya las quita o se cuelan.
+- [ ] Si se cuelan: la relación de aspecto es la señal más barata, y ya
+      hay dónde ponerla. Pero medir antes cuántos jugadores agachados o
+      en el suelo se perderían — es la segunda señal débil de siempre.
+
+Coste hoy: pequeño en número, pero **suma al recuento del equipo B**, que
+es lo primero que un entrenador mira.
