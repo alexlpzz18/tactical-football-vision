@@ -521,6 +521,14 @@ def etiquetar_por_observacion(
     # para el A/B, así que no cuesta una pasada extra. Una observación
     # suelta no convierte a nadie en árbitro: manda la media de la ventana.
     catalogo = bool(cfg.get("catalogo_arbitral", False))
+    # `solo_catalogo` separa las dos preguntas que esta función hace sobre
+    # la MISMA ventana. Están acopladas en el código pero no en la
+    # naturaleza, y medido en Villaviciosa van en direcciones opuestas:
+    # la ventana A/B empeora el centroide (4,37 → 4,67) porque allí el
+    # recorte suelto es ruido, mientras el catálogo lo mejora (→ 4,10)
+    # porque saca de los equipos a quien no es jugador. Con esto se puede
+    # tener lo segundo sin lo primero.
+    solo_catalogo = bool(cfg.get("solo_catalogo", False))
     activos = ()
     if catalogo:
         from src.team_classification.arbitro import (
@@ -573,6 +581,8 @@ def etiquetar_por_observacion(
                         salida[(id_identidad, par[0])] = "otro"
                         n_arbitro += 1
                         continue
+            if solo_catalogo:
+                continue  # el A/B lo sigue decidiendo el voto de la identidad
             nueva = clasificador.predict_color(media, solo_equipos=forzar)
             salida[(id_identidad, par[0])] = nueva
             n_cambios += nueva != etiqueta
