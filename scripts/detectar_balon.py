@@ -213,21 +213,92 @@ def _centro(det):
     return (det[2] + det[4]) / 2.0, (det[3] + det[5]) / 2.0
 
 
-def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sample):
-    """SAHI contra frame entero, medido DONDE tiene que ganar.
+# ── ESQUEMAS DE DETECCIÓN QUE SE COMPARAN ────────────────────────────
+#
+# La banda de la franja sale medido: la altura en la imagen predice el
+# tamaño del balón con correlación +0,924 (es perspectiva pura, la cámara
+# está elevada). Los 47 huecos del fondo arrancan todos entre y=590 y
+# y=642, y la banda 540-720 —el 17 % del alto— contiene el 100 % de esos
+# huecos y el 100 % de los balones de menos de 12 px.
+#
+# ⚠️ La banda está calibrada para ESTA cámara. En otro partido hay que
+# recalcularla (o sacarla de la homografía, que es lo suyo y está
+# pendiente): una banda heredada de otro encuadre trocearía césped vacío
+# y dejaría el fondo sin trocear.
+BANDA_LEJOS = (540, 720)
 
-    ⚠️ POR QUÉ NO VALE LA COMPARACIÓN DE ANTES. Cogía los N primeros
+ESQUEMAS = [
+    ("frame entero", {"modo": "entero"}),
+    ("SAHI 3x5", {"modo": "sahi", "filas": 3, "columnas": 5, "solape": 0.15}),
+    ("SAHI 2x3", {"modo": "sahi", "filas": 2, "columnas": 3, "solape": 0.15}),
+    ("SAHI 4x6", {"modo": "sahi", "filas": 4, "columnas": 6, "solape": 0.15}),
+    ("MIXTO franja", {"modo": "mixto", "columnas": 5, "solape": 0.15}),
+]
+
+
+def _solapan(a, b, umbral=0.3):
+    """IoU por encima del umbral: son la misma caja."""
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    if ix2 <= ix1 or iy2 <= iy1:
+        return False
+    inter = (ix2 - ix1) * (iy2 - iy1)
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return union > 0 and inter / union > umbral
+
+
+def _detectar_con_esquema(esquema, modelo, modelo_sahi, frame, cb, w, h):
+    """Detecta con uno de los esquemas y devuelve cajas (x1,y1,x2,y2,conf).
+
+    El esquema `mixto` es idea de Alex: frame entero donde el balón es
+    grande y tiles SOLO donde es pequeño. Aquí la franja no es la mitad
+    izquierda ni la derecha —medido, un corte VERTICAL no separa nada: el
+    fondo ocupa el 60 % del ancho— sino una franja HORIZONTAL, porque con
+    la cámara elevada la distancia se traduce en altura en la imagen.
+    """
+    modo = esquema["modo"]
+    if modo == "entero":
+        return _detectar_frame_entero(modelo, frame, cb["confianza"], cb["imgsz"])
+    if modo == "sahi":
+        cfg_s = {
+            "filas": esquema["filas"],
+            "columnas": esquema["columnas"],
+            "solape": esquema["solape"],
+        }
+        return _detectar_sahi(modelo_sahi, frame, cfg_s, w, h)
+
+    # mixto: el frame entero manda, y la franja se trocea aparte
+    y0, y1 = BANDA_LEJOS
+    y0, y1 = max(0, y0), min(h, y1)
+    cajas = _detectar_frame_entero(modelo, frame, cb["confianza"], cb["imgsz"])
+    franja = frame[y0:y1]
+    cfg_s = {"filas": 1, "columnas": esquema["columnas"], "solape": esquema["solape"]}
+    for bx1, by1, bx2, by2, conf in _detectar_sahi(
+        modelo_sahi, franja, cfg_s, w, y1 - y0
+    ):
+        caja = (bx1, by1 + y0, bx2, by2 + y0, conf)
+        # Sin esta comprobación el mismo balón contaría dos veces y el
+        # recuento de candidatos por frame mentiría justo en la métrica
+        # que Alex quiere vigilar.
+        if not any(_solapan(caja[:4], c[:4]) for c in cajas):
+            cajas.append(caja)
+    return cajas
+
+
+def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sample):
+    """Compara varios esquemas de detección DONDE tienen que ganar.
+
+    ⚠️ POR QUÉ NO VALE LA COMPARACIÓN ORIGINAL. Cogía los N primeros
     frames del tramo en orden y comparaba DETECCIONES TOTALES. Dos fallos,
     los dos vistos por Alex: si en esos segundos el balón está cerca de la
     cámara, SAHI no puede demostrar nada porque ahí no falla nadie; y "más
     detecciones" no es la mejora, porque SAHI también inventa falsos
-    positivos —calcetines, marcas de cal, cabezas lejanas— que luego
-    empeoran la elección del balón activo. Sería un retroceso disfrazado
-    de mejora.
+    positivos que empeoran la elección del balón activo.
 
-    Lo que mide esta: **cuántos de los huecos del fondo se CIERRAN**, con
-    un grupo de control de frames donde el balón ya se detectaba, para
-    comprobar que SAHI no pierde los que había ni apunta a otra cosa.
+    Lo que mide esta: **cuántos de los huecos del fondo se CIERRAN**, un
+    grupo de control de frames donde el balón ya se detectaba —y CUÁLES se
+    pierden, no solo cuántos, porque un recuento no deja diagnosticar— y
+    el coste. El vídeo se decodifica UNA vez para todos los esquemas.
     """
     import random
 
@@ -242,8 +313,6 @@ def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sa
             f"  Baja --zona-min o comprueba que el caché es el que crees."
         )
 
-    # Frames a probar: los de DENTRO de cada hueco, donde el frame entero
-    # no encontró nada. Repartidos por el hueco, no los primeros.
     prueba = {}
     for a, b in huecos:
         interior = list(range(a + sample, b, sample))
@@ -253,19 +322,37 @@ def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sa
         for f_idx in interior[::paso][: args.por_hueco]:
             prueba[f_idx] = (a, b)
 
-    # Control: frames del fondo donde el balón SÍ se detectaba. Si SAHI
-    # los pierde, cerrar huecos no compensa.
     candidatos = [f for f in dets if dets[f][0][0] >= args.zona_min and f not in prueba]
     random.Random(0).shuffle(candidatos)
     control = sorted(candidatos[: args.control])
 
+    esquemas = [e for e in ESQUEMAS if not args.esquemas or e[0] in args.esquemas]
+    if not esquemas:
+        raise SystemExit(
+            f"\nERROR: ningún esquema se llama así.\n"
+            f"  Hay: {', '.join(repr(n) for n, _ in ESQUEMAS)}"
+        )
     objetivo = sorted(set(prueba) | set(control))
     logger.info(
-        "%d huecos del fondo · %d frames dentro de huecos + %d de control",
+        "%d huecos del fondo · %d frames en huecos + %d de control · %d esquemas",
         len(huecos),
         len(prueba),
         len(control),
+        len(esquemas),
     )
+
+    marcador = {
+        nombre: {
+            "cerrados": set(),
+            "conservados": 0,
+            "perdidos": [],
+            "candidatos": 0,
+            "distractores": 0,
+            "desplaz": [],
+            "t": 0.0,
+        }
+        for nombre, _ in esquemas
+    }
 
     cap = cv2.VideoCapture(cfg["rutas"]["video"])
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -275,10 +362,6 @@ def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sa
         [cfg["distorsion"]["k1"], cfg["distorsion"]["k2"], 0, 0, 0], dtype=np.float64
     )
 
-    cerrados_sahi, cerrados_entero = set(), set()
-    n_cand_e = n_cand_s = 0
-    t_e = t_s = 0.0
-    conservados, desplazamientos = 0, []
     pendientes = set(objetivo)
     idx, hechos = 0, 0
     while pendientes:
@@ -289,29 +372,35 @@ def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sa
             pendientes.discard(idx)
             if not sin_dist:
                 frame = cv2.undistort(frame, K, dist)
-            t0 = time.time()
-            de = _detectar_frame_entero(modelo, frame, cb["confianza"], cb["imgsz"])
-            t_e += time.time() - t0
-            t0 = time.time()
-            ds = _detectar_sahi(modelo_sahi, frame, cb["sahi"], w, h)
-            t_s += time.time() - t0
-            pe = _plausibles(de, cb["confianza"], homografia, modelo_campo, idx)
-            ps = _plausibles(ds, cb["confianza"], homografia, modelo_campo, idx)
-            n_cand_e += len(pe)
-            n_cand_s += len(ps)
-            if idx in prueba:
-                if ps:
-                    cerrados_sahi.add(prueba[idx])
-                if pe:
-                    cerrados_entero.add(prueba[idx])
-            elif ps:
-                conservados += 1
-                cx, cy = _centro(dets[idx][0])
-                mejor = min(
-                    ps, key=lambda d: np.hypot(_centro(d)[0] - cx, _centro(d)[1] - cy)
+            for nombre, esquema in esquemas:
+                m = marcador[nombre]
+                t0 = time.time()
+                crudas = _detectar_con_esquema(
+                    esquema, modelo, modelo_sahi, frame, cb, w, h
                 )
-                mx, my = _centro(mejor)
-                desplazamientos.append(float(np.hypot(mx - cx, my - cy)))
+                m["t"] += time.time() - t0
+                plaus = _plausibles(
+                    crudas, cb["confianza"], homografia, modelo_campo, idx
+                )
+                m["candidatos"] += len(plaus)
+                if idx in prueba:
+                    if plaus:
+                        m["cerrados"].add(prueba[idx])
+                    continue
+                # Control: el balón bueno es el que ya tenía el caché.
+                cx, cy = _centro(dets[idx][0])
+                cerca = [
+                    d
+                    for d in plaus
+                    if np.hypot(_centro(d)[0] - cx, _centro(d)[1] - cy) < args.radio_ok
+                ]
+                m["distractores"] += len(plaus) - len(cerca)
+                if cerca:
+                    m["conservados"] += 1
+                    mx, my = _centro(cerca[0])
+                    m["desplaz"].append(float(np.hypot(mx - cx, my - cy)))
+                else:
+                    m["perdidos"].append(idx)
             hechos += 1
             if hechos % 25 == 0:
                 logger.info("  %d de %d frames", hechos, len(objetivo))
@@ -321,60 +410,70 @@ def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sa
     if not hechos:
         raise SystemExit("\nERROR: no se procesó ningún frame; ¿es el vídeo correcto?")
 
-    n_c = len(control)
-    tiles = f"{cb['sahi']['filas']}x{cb['sahi']['columnas']}"
-    coste = t_s / max(t_e, 1e-9)
-    linea = "=" * 66
-    print(f"\n{linea}")
-    print(f"SAHI EN LOS HUECOS DEL FONDO (x >= {args.zona_min:.0f} m)")
-    print(linea)
-    print(f"  huecos analizados : {len(huecos)}")
-    print(f"  frames probados   : {len(prueba)} en huecos + {n_c} de control")
+    _informe_esquemas(
+        marcador, esquemas, huecos, control, dets, hechos, total, cb, args
+    )
 
-    print("\n  ── CIERRE DE HUECOS · el número que decide ──")
+
+def _informe_esquemas(
+    marcador, esquemas, huecos, control, dets, hechos, total, cb, args
+):
+    """Imprime la comparación. Dice QUÉ se pierde, no solo cuánto."""
+    n_h, n_c = len(huecos), len(control)
+    n_pasada = max(total, 1) // cb["sample_every"]
+    linea = "=" * 78
+    print(f"\n{linea}")
     print(
-        f"    frame entero (imgsz {cb['imgsz']}): {len(cerrados_entero)} "
-        f"de {len(huecos)} cerrados"
+        f"ESQUEMAS DE DETECCIÓN · {n_h} huecos del fondo (x >= {args.zona_min:.0f} m)"
     )
+    print(linea)
     print(
-        f"    SAHI {tiles}: {len(cerrados_sahi)} de {len(huecos)} cerrados "
-        f"({100 * len(cerrados_sahi) / len(huecos):.0f} %)"
+        f"{'esquema':<15} {'huecos':>10} {'control':>10} {'distr.':>8} "
+        f"{'cand/frame':>11} {'ms/frame':>9} {'pasada':>9}"
     )
-    if cerrados_entero:
+    for nombre, _e in esquemas:
+        m = marcador[nombre]
+        ms = 1000 * m["t"] / hechos
         print(
-            f"    ⚠️  el frame entero cierra {len(cerrados_entero)}: esos huecos "
-            f"eran del FILTRO, no del detector."
+            f"{nombre:<15} {len(m['cerrados']):>4}/{n_h:<5} "
+            f"{m['conservados']:>4}/{n_c:<5} {m['distractores']:>8} "
+            f"{m['candidatos'] / hechos:>11.2f} {ms:>9.0f} "
+            f"{n_pasada * ms / 1000 / 60:>7.0f} m"
         )
 
-    print(f"\n  ── CONTROL · {n_c} frames donde el balón YA se detectaba ──")
-    if n_c:
-        pct = 100 * conservados / n_c
-        print(f"    SAHI lo conserva      : {conservados} de {n_c} ({pct:.0f} %)")
-        if desplazamientos:
-            print(f"    desplazamiento mediano: {np.median(desplazamientos):.1f} px")
-        if pct < 95:
-            print("    ⚠️  SAHI PIERDE balones que ya se detectaban: no adoptar.")
-
-    print("\n  ── FALSOS POSITIVOS · candidatos plausibles por frame ──")
-    print(f"    frame entero : {n_cand_e / hechos:.2f}")
-    print(f"    SAHI         : {n_cand_s / hechos:.2f}")
-    print("    (más candidatos por frame = balón activo más difícil de elegir)")
-
-    print("\n  ── COSTE ──")
-    print(f"    frame entero : {1000 * t_e / hechos:>6.0f} ms/frame")
+    print("\n  huecos  = de los del fondo, cuántos cierra  ← el número que decide")
+    print("  control = frames donde el balón YA se detectaba y sigue saliendo")
     print(
-        f"    SAHI {tiles}     : {1000 * t_s / hechos:>6.0f} ms/frame  → {coste:.1f}x"
+        f"  distr.  = candidatos plausibles a más de {args.radio_ok:.0f} px del balón"
     )
-    n_pasada = max(total, 1) // cb["sample_every"]
+    print("            bueno, sumados sobre los frames de control: son los que")
+    print("            pueden despistar al selector de balón activo")
+
+    for nombre, _e in esquemas:
+        m = marcador[nombre]
+        if not m["perdidos"]:
+            continue
+        print(f"\n  ── {nombre}: pierde {len(m['perdidos'])} del control ──")
+        print(f"     {'frame':>7} {'conf':>6} {'lado px':>8} {'y px':>6} {'x_m':>6}")
+        for f in m["perdidos"][:12]:
+            d = dets[f][0]
+            lado = max(d[4] - d[2], d[5] - d[3])
+            print(
+                f"     {f:>7} {d[6]:>6.2f} {lado:>8.1f} "
+                f"{(d[3] + d[5]) / 2:>6.0f} {d[0]:>6.1f}"
+            )
+        if len(m["perdidos"]) > 12:
+            print(f"     ... y {len(m['perdidos']) - 12} más")
+        print(
+            "     ⚠️  compara esas conf con la mediana del control: si son las\n"
+            "        más flojas, no es la rejilla, es que estaban en el filo."
+        )
+    confs = [dets[f][0][6] for f in control]
     print(
-        f"    pasada entera ({n_pasada} frames): "
-        f"{n_pasada * t_e / hechos / 60:.0f} min  →  "
-        f"{n_pasada * t_s / hechos / 60:.0f} min"
+        f"\n  confianza del control (frame entero): mediana {np.median(confs):.2f}, "
+        f"p10 {np.percentile(confs, 10):.2f}, mínima {min(confs):.2f}"
     )
-    print(f"\n{linea}")
-    print("  ADOPTAR SAHI solo si: cierra huecos de verdad, el control se")
-    print("  mantiene al 100 % y el coste de la pasada es asumible.")
-    print(f"{linea}\n")
+    print(f"\n{linea}\n")
 
 
 def main() -> None:
@@ -403,6 +502,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--control", type=int, default=60, help="Frames del fondo CON balón, de control"
+    )
+    parser.add_argument(
+        "--esquemas",
+        nargs="*",
+        default=None,
+        help="Solo estos esquemas (por defecto, todos). Ver ESQUEMAS.",
+    )
+    parser.add_argument(
+        "--radio-ok",
+        type=float,
+        default=40.0,
+        help="Px hasta los que un candidato cuenta como EL balón, no un distractor",
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
