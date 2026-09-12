@@ -152,6 +152,231 @@ def _reanudar_balon(ruta, firma):
     return previo["cache"]
 
 
+def _modelo_campo(cfg):
+    """Modelo de campo para el filtro de plausibilidad.
+
+    Aquí solo se usan largo y ancho —el filtro comprueba que el balón
+    proyecte DENTRO del campo—, así que las marcas del reglamento dan
+    igual; la base se elige por el tamaño.
+    """
+    from src.campo_modelo import MODELO_F7, MODELO_F11
+
+    largo = float(cfg["campo_m"]["largo"])
+    ancho = float(cfg["campo_m"]["ancho"])
+    base = MODELO_F11 if largo > 80 else MODELO_F7
+    return base.con_dimensiones(largo, ancho)
+
+
+def _huecos_del_fondo(datos, modelo, zona_min, dt_min=1.0, dt_max=8.0):
+    """Huecos de balón en el FONDO del campo: donde SAHI tiene que ganar.
+
+    Un hueco es un par de muestras consecutivas CON balón separadas por
+    más de `dt_min` segundos. Se filtra por zona porque está medido que
+    los dos extremos del campo fallan por motivos DISTINTOS
+    (`docs/huecos_de_balon_gt.md`): cerca el balón se sale del plano —75 %
+    de esos huecos empiezan a menos de 30 px del borde, y eso SAHI no lo
+    arregla—, mientras que en el fondo **0 de 47 tocan el borde**: el
+    balón está en la imagen y el detector no llega. Medir SAHI sobre los
+    huecos de cerca lo condenaría por un fallo que no es suyo.
+    """
+    from src.balon.tracking_balon import filtrar_balon_plausible
+
+    dets = filtrar_balon_plausible(
+        {e["frame_idx"]: e["dets"] for e in datos["cache"] if e["dets"]}, modelo
+    )
+    tiempos = {e["frame_idx"]: e["t"] for e in datos["cache"]}
+    vistos = sorted(dets)
+    huecos = []
+    for a, b in zip(vistos, vistos[1:]):
+        if dt_min < tiempos[b] - tiempos[a] < dt_max and dets[a][0][0] >= zona_min:
+            huecos.append((a, b))
+    return huecos, dets
+
+
+def _plausibles(crudas, conf_min, homografia, modelo, idx):
+    """Detecciones que pasan la confianza Y proyectan dentro del campo."""
+    from src.balon.tracking_balon import filtrar_balon_plausible
+
+    dets = []
+    for x1, y1, x2, y2, conf in crudas:
+        if conf < conf_min:
+            continue
+        mx, my = project_point((x1 + x2) / 2.0, y2, homografia)
+        dets.append((mx, my, x1, y1, x2, y2, conf))
+    if not dets:
+        return []
+    return filtrar_balon_plausible({idx: dets}, modelo).get(idx, [])
+
+
+def _centro(det):
+    """Centro en píxeles de una detección (mx, my, x1, y1, x2, y2, conf)."""
+    return (det[2] + det[4]) / 2.0, (det[3] + det[5]) / 2.0
+
+
+def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sample):
+    """SAHI contra frame entero, medido DONDE tiene que ganar.
+
+    ⚠️ POR QUÉ NO VALE LA COMPARACIÓN DE ANTES. Cogía los N primeros
+    frames del tramo en orden y comparaba DETECCIONES TOTALES. Dos fallos,
+    los dos vistos por Alex: si en esos segundos el balón está cerca de la
+    cámara, SAHI no puede demostrar nada porque ahí no falla nadie; y "más
+    detecciones" no es la mejora, porque SAHI también inventa falsos
+    positivos —calcetines, marcas de cal, cabezas lejanas— que luego
+    empeoran la elección del balón activo. Sería un retroceso disfrazado
+    de mejora.
+
+    Lo que mide esta: **cuántos de los huecos del fondo se CIERRAN**, con
+    un grupo de control de frames donde el balón ya se detectaba, para
+    comprobar que SAHI no pierde los que había ni apunta a otra cosa.
+    """
+    import random
+
+    modelo_campo = _modelo_campo(cfg)
+    with open(cfg["rutas"]["cache_balon"], "rb") as f:
+        datos = pickle.load(f)
+    huecos, dets = _huecos_del_fondo(datos, modelo_campo, args.zona_min)
+    if not huecos:
+        raise SystemExit(
+            f"\nERROR: no hay ni un hueco de balón con x >= {args.zona_min} m en\n"
+            f"  {cfg['rutas']['cache_balon']}\n"
+            f"  Baja --zona-min o comprueba que el caché es el que crees."
+        )
+
+    # Frames a probar: los de DENTRO de cada hueco, donde el frame entero
+    # no encontró nada. Repartidos por el hueco, no los primeros.
+    prueba = {}
+    for a, b in huecos:
+        interior = list(range(a + sample, b, sample))
+        if not interior:
+            continue
+        paso = max(len(interior) // args.por_hueco, 1)
+        for f_idx in interior[::paso][: args.por_hueco]:
+            prueba[f_idx] = (a, b)
+
+    # Control: frames del fondo donde el balón SÍ se detectaba. Si SAHI
+    # los pierde, cerrar huecos no compensa.
+    candidatos = [f for f in dets if dets[f][0][0] >= args.zona_min and f not in prueba]
+    random.Random(0).shuffle(candidatos)
+    control = sorted(candidatos[: args.control])
+
+    objetivo = sorted(set(prueba) | set(control))
+    logger.info(
+        "%d huecos del fondo · %d frames dentro de huecos + %d de control",
+        len(huecos),
+        len(prueba),
+        len(control),
+    )
+
+    cap = cv2.VideoCapture(cfg["rutas"]["video"])
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    sin_dist = cfg["distorsion"]["k1"] == 0 and cfg["distorsion"]["k2"] == 0
+    K = _build_camera_matrix(w, h)
+    dist = np.array(
+        [cfg["distorsion"]["k1"], cfg["distorsion"]["k2"], 0, 0, 0], dtype=np.float64
+    )
+
+    cerrados_sahi, cerrados_entero = set(), set()
+    n_cand_e = n_cand_s = 0
+    t_e = t_s = 0.0
+    conservados, desplazamientos = 0, []
+    pendientes = set(objetivo)
+    idx, hechos = 0, 0
+    while pendientes:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if idx in pendientes:
+            pendientes.discard(idx)
+            if not sin_dist:
+                frame = cv2.undistort(frame, K, dist)
+            t0 = time.time()
+            de = _detectar_frame_entero(modelo, frame, cb["confianza"], cb["imgsz"])
+            t_e += time.time() - t0
+            t0 = time.time()
+            ds = _detectar_sahi(modelo_sahi, frame, cb["sahi"], w, h)
+            t_s += time.time() - t0
+            pe = _plausibles(de, cb["confianza"], homografia, modelo_campo, idx)
+            ps = _plausibles(ds, cb["confianza"], homografia, modelo_campo, idx)
+            n_cand_e += len(pe)
+            n_cand_s += len(ps)
+            if idx in prueba:
+                if ps:
+                    cerrados_sahi.add(prueba[idx])
+                if pe:
+                    cerrados_entero.add(prueba[idx])
+            elif ps:
+                conservados += 1
+                cx, cy = _centro(dets[idx][0])
+                mejor = min(
+                    ps, key=lambda d: np.hypot(_centro(d)[0] - cx, _centro(d)[1] - cy)
+                )
+                mx, my = _centro(mejor)
+                desplazamientos.append(float(np.hypot(mx - cx, my - cy)))
+            hechos += 1
+            if hechos % 25 == 0:
+                logger.info("  %d de %d frames", hechos, len(objetivo))
+        idx += 1
+    cap.release()
+
+    if not hechos:
+        raise SystemExit("\nERROR: no se procesó ningún frame; ¿es el vídeo correcto?")
+
+    n_c = len(control)
+    tiles = f"{cb['sahi']['filas']}x{cb['sahi']['columnas']}"
+    coste = t_s / max(t_e, 1e-9)
+    linea = "=" * 66
+    print(f"\n{linea}")
+    print(f"SAHI EN LOS HUECOS DEL FONDO (x >= {args.zona_min:.0f} m)")
+    print(linea)
+    print(f"  huecos analizados : {len(huecos)}")
+    print(f"  frames probados   : {len(prueba)} en huecos + {n_c} de control")
+
+    print("\n  ── CIERRE DE HUECOS · el número que decide ──")
+    print(
+        f"    frame entero (imgsz {cb['imgsz']}): {len(cerrados_entero)} "
+        f"de {len(huecos)} cerrados"
+    )
+    print(
+        f"    SAHI {tiles}: {len(cerrados_sahi)} de {len(huecos)} cerrados "
+        f"({100 * len(cerrados_sahi) / len(huecos):.0f} %)"
+    )
+    if cerrados_entero:
+        print(
+            f"    ⚠️  el frame entero cierra {len(cerrados_entero)}: esos huecos "
+            f"eran del FILTRO, no del detector."
+        )
+
+    print(f"\n  ── CONTROL · {n_c} frames donde el balón YA se detectaba ──")
+    if n_c:
+        pct = 100 * conservados / n_c
+        print(f"    SAHI lo conserva      : {conservados} de {n_c} ({pct:.0f} %)")
+        if desplazamientos:
+            print(f"    desplazamiento mediano: {np.median(desplazamientos):.1f} px")
+        if pct < 95:
+            print("    ⚠️  SAHI PIERDE balones que ya se detectaban: no adoptar.")
+
+    print("\n  ── FALSOS POSITIVOS · candidatos plausibles por frame ──")
+    print(f"    frame entero : {n_cand_e / hechos:.2f}")
+    print(f"    SAHI         : {n_cand_s / hechos:.2f}")
+    print("    (más candidatos por frame = balón activo más difícil de elegir)")
+
+    print("\n  ── COSTE ──")
+    print(f"    frame entero : {1000 * t_e / hechos:>6.0f} ms/frame")
+    print(
+        f"    SAHI {tiles}     : {1000 * t_s / hechos:>6.0f} ms/frame  → {coste:.1f}x"
+    )
+    n_pasada = max(total, 1) // cb["sample_every"]
+    print(
+        f"    pasada entera ({n_pasada} frames): "
+        f"{n_pasada * t_e / hechos / 60:.0f} min  →  "
+        f"{n_pasada * t_s / hechos / 60:.0f} min"
+    )
+    print(f"\n{linea}")
+    print("  ADOPTAR SAHI solo si: cierra huecos de verdad, el control se")
+    print("  mantiene al 100 % y el coste de la pasada es asumible.")
+    print(f"{linea}\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
@@ -161,6 +386,24 @@ def main() -> None:
         help="Mide SAHI vs frame entero en unos frames y sale (no cachea)",
     )
     parser.add_argument("--frames", type=int, default=60)
+    parser.add_argument(
+        "--frames-seguidos",
+        action="store_true",
+        help="Comparación VIEJA: los N primeros frames del tramo. Solo sirve "
+        "cuando todavía no hay caché de balón; mide donde nadie falla.",
+    )
+    parser.add_argument(
+        "--zona-min",
+        type=float,
+        default=45.0,
+        help="Metros desde los que un hueco cuenta como 'del fondo'",
+    )
+    parser.add_argument(
+        "--por-hueco", type=int, default=4, help="Frames a probar dentro de cada hueco"
+    )
+    parser.add_argument(
+        "--control", type=int, default=60, help="Frames del fondo CON balón, de control"
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -229,6 +472,26 @@ def main() -> None:
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     sample = cb["sample_every"]
     frame_ini, frame_fin = _rango_de_frames(cfg["muestreo"], fps)
+
+    # ── COMPARACIÓN DE SAHI ──────────────────────────────────────────
+    #
+    # Por defecto se mide EN LOS HUECOS DEL FONDO, no en los primeros N
+    # frames del tramo. El motivo está en `_comparar_en_huecos`: los
+    # primeros frames caen donde caigan, y si el balón está cerca de la
+    # cámara SAHI no puede demostrar nada porque ahí no falla nadie.
+    # La vía vieja sigue disponible con --frames-seguidos, porque cuando
+    # todavía NO hay caché de balón es la única posible.
+    if args.comparar_sahi and not args.frames_seguidos:
+        if not Path(cfg["rutas"]["cache_balon"]).exists():
+            raise SystemExit(
+                f"\nERROR: la comparación en huecos necesita un caché de balón "
+                f"previo y no existe:\n  {cfg['rutas']['cache_balon']}\n"
+                f"  Haz primero una pasada normal, o usa --frames-seguidos "
+                f"(que mide donde caiga, y es lo que ya sabemos que engaña)."
+            )
+        cap.release()
+        _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, H, w, h, sample)
+        return
 
     # ── CHECKPOINT Y REANUDACIÓN ─────────────────────────────────────
     #

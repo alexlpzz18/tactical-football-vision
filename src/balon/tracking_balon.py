@@ -21,6 +21,7 @@ tres motivos que este módulo aborda de frente:
    que la trayectoria.
 """
 
+import bisect
 import logging
 from dataclasses import dataclass
 
@@ -76,7 +77,16 @@ class ParametrosBalon:
     separacion_min_contacto: float = 0.20  # s entre dos toques del mismo pie
     # ── suavizado e interpolación ──
     ventana_suavizado_s: float = 0.2  # corta: el balón cambia rápido
-    max_hueco_interp_s: float = 0.4  # huecos cortos; el balón acelera
+    # Relleno de huecos SIN detección, manteniendo la última posición. Los
+    # dos umbrales están en el CENTRO de la meseta medida sobre los 622
+    # huecos de la parte entera (`docs/relleno_de_huecos_balon.md`): entre
+    # 0,3-0,5 s y 2-5 m/s el acierto se queda en 90-92 % y el peor 10 %
+    # del error en 1,5-2,0 m. A partir de 0,6 s se cae.
+    # ⚠️ Ninguno de los dos vale solo: por duración sola son 74 % y por
+    # velocidad sola 82 %; juntos, 91 %. Poner cualquiera a 0 apaga el
+    # relleno entero.
+    max_hueco_relleno_s: float = 0.4
+    vel_max_relleno_m_s: float = 4.0
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -334,6 +344,95 @@ def detectar_contactos(
     return contactos
 
 
+def _rellenar_huecos_parados(
+    salida: list[tuple], tiempos: dict, params: ParametrosBalon
+) -> list[tuple]:
+    """Rellena huecos SIN detección manteniendo la última posición.
+
+    Idea de Alex, y sale de una etiqueta suya del GT de huecos: en el caso
+    4 escribió *"el balón está quieto exactamente en el mismo sitio que en
+    el primer frame, parece un balón parado, falta o algo así, pero lo
+    tapan los jugadores"*. Si el balón no se movía, mantener su última
+    posición no es inventar: es lo único que sí sabemos.
+
+    Dos condiciones, y **ninguna vale sola** — medido sobre los 622 huecos
+    de la parte entera, contando acierto como "el balón reaparece a menos
+    de 2 m de donde se mantuvo":
+
+    | regla | huecos | acierto | peor 10 % |
+    |---|---|---|---|
+    | solo duración < 0,4 s | 493 | 74 % | 4,2 m |
+    | solo velocidad < 4 m/s | 213 | 82 % | 4,6 m |
+    | **las dos** | 171 | **91 %** | **1,9 m** |
+    | (control) rellenar todo | 622 | 65 % | 7,1 m |
+    | (control) la zona prohibida | 45 | 22 % | 15,4 m |
+
+    La última fila es la que importa: los huecos LARGOS con el balón
+    RÁPIDO son 2.033 frames —un tercio de todos los frames en hueco— y
+    rellenarlos acierta el 22 % con una cola de 15,4 m. Ahí está casi toda
+    la protección, y es exactamente el *"no rellenar si venía volando"*.
+
+    ⚠️ Un matiz contra la intuición, por si alguien afina esto luego: la
+    banda MÁS lenta (<1 m/s) **no** es la mejor, sino la de 1-3 m/s (74 %
+    contra 85 %). Tiene sentido futbolístico: un balón completamente
+    parado suele estarlo porque el juego está parado, y lo siguiente que
+    pasa es un saque o una falta, o sea el balón yéndose lejos.
+    """
+    if params.max_hueco_relleno_s <= 0 or params.vel_max_relleno_m_s <= 0:
+        return salida  # relleno apagado a propósito
+    if len(salida) < 2:
+        return salida
+
+    muestreados = sorted(tiempos)
+    rellenos = []
+    for k in range(len(salida) - 1):
+        frame_a, pos_a, aereo_a, _real_a = salida[k]
+        frame_b = salida[k + 1][0]
+        if frame_a not in tiempos or frame_b not in tiempos:
+            continue
+        # Frames que el caché SÍ muestreó y quedaron sin balón.
+        i = bisect.bisect_right(muestreados, frame_a)
+        j = bisect.bisect_left(muestreados, frame_b)
+        faltan = muestreados[i:j]
+        if not faltan:
+            continue
+        if tiempos[frame_b] - tiempos[frame_a] > params.max_hueco_relleno_s:
+            continue
+        # Venía volando: la posición proyectada ya no es de fiar, y es el
+        # caso que el GT dice que NO hay que rellenar.
+        if aereo_a:
+            continue
+        # Velocidad en los pasos previos. Sin pasos previos no se rellena:
+        # no hay con qué comprobar que estaba parado.
+        anterior = None
+        for atras in range(k - 1, max(k - 4, -1) - 1, -1):
+            if salida[atras][0] in tiempos and not salida[atras][2]:
+                anterior = salida[atras]
+                break
+        if anterior is None:
+            continue
+        dt = tiempos[frame_a] - tiempos[anterior[0]]
+        if dt <= 0:
+            continue
+        if float(np.linalg.norm(np.asarray(pos_a) - np.asarray(anterior[1]))) / dt > (
+            params.vel_max_relleno_m_s
+        ):
+            continue
+        # es_real=False: se mantiene una medida anterior, no se ha medido.
+        rellenos.extend((f, pos_a, False, False) for f in faltan)
+
+    if not rellenos:
+        return salida
+    logger.info(
+        "Relleno de huecos: %d frames mantenidos (hueco <= %.1f s y balón a "
+        "< %.1f m/s); el resto se deja vacío a propósito.",
+        len(rellenos),
+        params.max_hueco_relleno_s,
+        params.vel_max_relleno_m_s,
+    )
+    return sorted(salida + rellenos, key=lambda t: t[0])
+
+
 def preparar_para_replay(
     trayectoria: list[tuple],
     aereo: list[bool],
@@ -348,9 +447,18 @@ def preparar_para_replay(
        balón cambia de dirección mucho más rápido que un jugador, así que
        la ventana de 0,5 s que se usa con ellos lo aplanaría; 0,2 s quita
        el temblor sin comerse los cambios reales.
-    2. **Interpolación** de los huecos cortos entre detecciones de suelo.
-       El parpadeo de "aparece y desaparece" se lee como un fallo, y un
-       hueco de dos frames se rellena sin inventar nada apreciable.
+    2. **Relleno de los huecos SIN detección**, manteniendo la última
+       posición, y solo cuando está medido que eso acierta: hueco corto y
+       balón lento. Ver `_rellenar_huecos_parados` para los números y para
+       los dos controles.
+
+       ⚠️ Este tratamiento estaba ANUNCIADO AQUÍ Y NO EXISTÍA. El
+       docstring decía "interpolación de los huecos cortos" y el
+       parámetro `max_hueco_interp_s` estaba declarado, pero no lo leía
+       nadie: lo único que se interpolaba eran las fases AÉREAS, que es
+       otra cosa (ahí el balón SÍ está detectado y lo que falla es la
+       proyección). Un docstring que describe una función que no se
+       ejecuta miente igual que un "✓" sobre un fichero vacío.
     3. **En fase AÉREA no se pinta la posición proyectada.** Esto no es
        cosmética: la homografía supone que el objeto está en el suelo, así
        que un balón por el aire se proyecta decenas de metros más lejos y
@@ -415,7 +523,7 @@ def preparar_para_replay(
         # de en medio va marcado como no real.
         alfa = (i - previos[-1]) / (siguientes[0] - previos[-1])
         salida.append((frame, a + alfa * (b - a), True, False))
-    return salida
+    return _rellenar_huecos_parados(salida, tiempos, params)
 
 
 def detectar_contactos_por_velocidad(
