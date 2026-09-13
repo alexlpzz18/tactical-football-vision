@@ -213,3 +213,53 @@ su relación de aspecto (1:1 contra 1:3).
 
 Coste hoy: pequeño en número, pero **suma al recuento del equipo B**, que
 es lo primero que un entrenador mira.
+
+## 17. La banda del esquema mixto tiene que salir de la HOMOGRAFÍA (29-ago-2026)
+
+`BANDA_LEJOS = (540, 720)` en `scripts/detectar_balon.py` es donde el
+esquema mixto trocea. Está **medida sobre la cámara del benjamín**: la
+altura en la imagen predice el tamaño del balón con correlación +0,924
+(perspectiva pura), los 47 huecos del fondo arrancan entre y=590 y y=642,
+y esa banda —el 17 % del alto— contiene el 100 % de ellos y el 100 % de
+los balones de menos de 12 px.
+
+⚠️ **Es exactamente el tipo de número que NO viaja entre partidos.** Ya
+nos pasó dos veces: `arbitro.margen_equipo` (adoptado y revertido el mismo
+día, la ventana se movía con el detector) y las franjas de profundidad. Y
+aquí el fallo sería silencioso: una banda heredada de otro encuadre
+trocearía césped vacío y dejaría el fondo sin trocear, y el informe no se
+quejaría — diría que el esquema mixto no cierra huecos, que es un negativo
+falso sobre una idea buena.
+
+- [ ] Derivarla de la homografía: proyectar a la imagen la línea del campo
+      a x = `zona_min` metros y coger la banda con margen, en vez de dos
+      números fijos.
+- [ ] Guarda que falle si la banda calculada no contiene los huecos del
+      fondo del caché que se está usando. El test de hoy
+      (`test_la_banda_cubre_donde_arrancan_los_huecos_del_fondo`) fija los
+      590-642 del benjamín: sirve de candado, no de cálculo.
+
+**No antes de saber si el mixto gana**: si pierde contra SAHI 3×5, la
+banda no hace falta para nada.
+
+## 18. Medir el BALÓN ACTIVO, que es lo que dice si los falsos positivos importan (29-ago-2026)
+
+SAHI cierra 47 de 47 huecos del fondo pero sube los candidatos por frame a
+1,59. Ese número **no dice nada por sí solo** (Alex): lo que decide es si
+el balón ACTIVO elegido sigue siendo el correcto. Si el selector descarta
+bien los distractores, 1,59 candidatos es ruido inofensivo.
+
+Hoy no se puede medir con el comparador: `seleccionar_balon_activo` agrupa
+por **continuidad espacial entre frames consecutivos**, y los 248 frames
+de la comparación están desperdigados por 20 minutos. Correrlo ahí no
+mediría el selector, mediría el vacío. Lo que hay mientras tanto es el
+proxy `distractores`: candidatos plausibles a más de 40 px del balón bueno
+en los frames de control.
+
+- [ ] Tramo CONTIGUO de 30-60 s que contenga huecos del fondo. **Puede
+      salir del piloto de 5 min, que ya tiene caché** (`cache_balon_piloto.pkl`).
+- [ ] Pasarlo entero con cada esquema, aplicar `seleccionar_balon_activo`
+      y contar frames que acaban con el balón EQUIVOCADO — no candidatos
+      totales.
+- [ ] El control: comparar contra el mismo tramo con frame entero, donde
+      sabemos que el balón elegido es el bueno.

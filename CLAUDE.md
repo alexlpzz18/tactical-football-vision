@@ -153,10 +153,21 @@ Todo lo demás acaba desembocando aquí:
   posición del árbitro daba un "100 % es el fit" redondo; el control de
   color (H=62 S=248 contra H=118 S=56) dijo que no era él.
 - **Comprobar que los barridos dan puntos DISTINTOS**, y desconfiar de un
-  número imposible: es más fiable que releer un signo.
+  número imposible: es más fiable que releer un signo. **Y comprobarlo
+  ANTES de lanzarlo cuando se pueda**: el barrido de solape de SAHI se
+  refutó sin gastar GPU, calculando que la banda de solape mide 57 px y
+  el balón 10,5 — los tres puntos habrían salido iguales.
+- **Un test de mutación tiene que verificar que el fichero CAMBIÓ** antes
+  de interpretar el resultado. Una mutación cuyo `str.replace` no
+  coincide es un no-op, y entonces "7 passed" no dice que el código esté
+  bien: dice que no has probado nada. Es el ✓ engañoso de siempre, y la
+  misma trampa que ya nos tendió black comiéndose un `replace` en el
+  generador de la hoja de GT.
 - **Mirar el ÍNDICE antes de commitear** (`git status`), no lo que
   acabas de añadir. Un `git add -A` que el hook aborta deja los ficheros
-  en el índice.
+  en el índice. **Y mirar el REMOTO antes de decir que algo está
+  subido**: la rama llegó a acumular 27 commits sin pushear, y el
+  síntoma le llegó a Alex como "el fichero no existe".
 - **Documentar los negativos.** Media semana se ahorra leyendo por qué
   algo ya se descartó.
 

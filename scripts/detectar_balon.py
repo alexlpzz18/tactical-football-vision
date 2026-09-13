@@ -7,13 +7,21 @@ despacio y en línea recta—, pero el balón puede recibir un toque y
 cambiar de dirección entre una muestra y la siguiente, y ese contacto se
 pierde para siempre. Por eso `sample_every` es propio de este modelo.
 
-Además mide SAHI frente al frame entero: con imgsz=1280 y un balón de
-5-12 px puede que el frame completo baste, y evitarlo ahorra ~10x de
-inferencia.
+Además compara ESQUEMAS de detección (`--comparar-sahi`) donde tienen que
+ganar: en los huecos de balón del FONDO del campo, no en los primeros
+frames del tramo. Medido, el frame entero con imgsz 1280 cierra 0 de 47
+huecos del fondo y SAHI 3x5 los cierra los 47 — el balón de allí entra en
+la red a 7,0 px y el detector nunca ha encontrado uno de menos de 7,1
+(`docs/sahi_balon.md`).
+
+⚠️ El "~10x de inferencia" que decía aquí antes era una suposición, no una
+medida. El comparador da el coste real y proyecta la pasada entera.
 
 Uso (Colab):
     python scripts/detectar_balon.py --config configs/processor_benja_balon.yaml
-    python scripts/detectar_balon.py --config ... --comparar-sahi --frames 60
+    python scripts/detectar_balon.py --config ... --comparar-sahi
+    python scripts/detectar_balon.py --config ... --comparar-sahi \
+        --esquemas "frame entero" "MIXTO franja"
 """
 
 import argparse
