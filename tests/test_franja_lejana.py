@@ -135,8 +135,23 @@ def test_una_franja_que_se_come_la_imagen_da_ERROR():
     not __import__("pathlib").Path("data/tracking_benja/cache_balon_p1.pkl").exists(),
     reason="necesita el caché de balón de la parte entera",
 )
-def test_la_franja_cubre_los_47_huecos_del_fondo():
-    """El control con datos reales: los huecos que el mixto debe cerrar."""
+def test_la_franja_cubre_donde_el_balon_es_pequeno():
+    """El control con datos reales, sobre una propiedad ESTABLE.
+
+    ⚠️ La primera versión de este test contaba los 47 huecos del fondo del
+    caché de producción y exigía cubrirlos todos. Se rompió en cuanto el
+    esquema mixto hizo su trabajo: quedaron 20 huecos en vez de 47 —porque
+    los cerró— y 14 de esos 20 tenían un extremo en el balón fantasma
+    (`docs/balon_fantasma.md`). Era un test anclado a un dato mutable, que
+    es el anti-patrón de fijar un número sin comprobar que sigue
+    significando lo mismo.
+
+    Lo que sí es estable es el PROPÓSITO de la franja: contener la parte
+    de la imagen donde el balón es pequeño, que es donde el frame entero
+    no llega. Se excluye el fantasma a propósito: mide 4,9 px y vive
+    dentro de la banda, así que contarlo haría el test trivialmente
+    verdadero.
+    """
     import pickle
 
     from src.balon.tracking_balon import filtrar_balon_plausible
@@ -148,24 +163,25 @@ def test_la_franja_cubre_los_47_huecos_del_fondo():
     dets = filtrar_balon_plausible(
         {e["frame_idx"]: e["dets"] for e in datos["cache"] if e["dets"]}, modelo
     )
-    tiempos = {e["frame_idx"]: e["t"] for e in datos["cache"]}
-    vistos = sorted(dets)
-    huecos = [
-        (a, b)
-        for a, b in zip(vistos, vistos[1:])
-        if 1.0 < tiempos[b] - tiempos[a] < 8.0 and dets[a][0][0] >= 45.0
-    ]
     y0, y1 = banda_a_trocear(
         _homografia_benja(), LARGO, ANCHO, 45.0, ALTO_IMG, ANCHO_IMG
     )
 
-    def centro_y(f):
-        return (dets[f][0][3] + dets[f][0][5]) / 2
+    def es_fantasma(t):
+        px, py = (t[2] + t[4]) / 2, (t[3] + t[5]) / 2
+        return 360 <= px <= 385 and 618 <= py <= 640
 
-    dentro = sum(
-        1 for a, b in huecos if y0 <= centro_y(a) <= y1 and y0 <= centro_y(b) <= y1
-    )
-    assert dentro == len(huecos), (
-        f"la franja derivada solo cubre {dentro} de {len(huecos)} huecos del "
-        f"fondo; con la fija de 540-720 el mixto se dejaba 5 sin cerrar"
+    chicos = [
+        t
+        for ds in dets.values()
+        for t in ds
+        if max(t[4] - t[2], t[5] - t[3]) < 12 and not es_fantasma(t)
+    ]
+    assert len(chicos) > 500, "muestra insuficiente para que el test diga algo"
+    dentro = sum(1 for t in chicos if y0 <= (t[3] + t[5]) / 2 <= y1)
+    fraccion = dentro / len(chicos)
+    assert fraccion >= 0.95, (
+        f"la franja derivada solo contiene el {100 * fraccion:.1f} % de los "
+        f"balones de menos de 12 px: el esquema mixto los estaría dejando "
+        f"fuera del troceado"
     )

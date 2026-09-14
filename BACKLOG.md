@@ -344,3 +344,46 @@ clasificación de equipos y las siete reglas sobre medias de identidad.
 - [ ] ⚠️ El control: parte de las 17,6 son banquillo, árbitro y público, y
       SE TIENEN que perder. Lo que hay que separar es cuántas se pierden
       por ser correctas-pero-descartadas contra cuántas se pierden bien.
+
+## 21. El balón FANTASMA: un objeto fijo detectado como balón (29-ago-2026)
+
+`docs/balon_fantasma.md`. Un objeto estático en el píxel (372, 628) sale
+detectado como balón en **7.974 frames** de los 17.983, y en 3.144 de
+ellos es la ÚNICA detección. El 80,9 % anunciado es un **58,3 %** real.
+
+La guarda que existe para esto (`seleccionar_balon_activo`) no lo quita
+porque exige `distancia al jugador más cercano > 25 m` y el fantasma está
+a 12,4 m. Medido: solo el **0,63 %** de los instantes llegan a 25 m, así
+que **la guarda no puede dispararse**.
+
+- [ ] Añadir la señal que sí separa: un candidato **anclado al mismo píxel
+      durante minutos** no es un balón. Es independiente de la distancia a
+      los jugadores, que es la condición que aquí no sirve.
+- [ ] ⚠️ NO bajar simplemente el umbral de 25 m sin medir: la segunda
+      condición existe para no cargarse un balón parado en un saque de
+      banda, que sí está cerca de un jugador.
+- [ ] Medir contra LAS DOS patas antes de adoptar.
+- [ ] Y re-medir el % de balón después: el titular del esquema mixto hay
+      que corregirlo en los docs que lo citen.
+
+## 22. El cajón "otro": 0,89 jugadores por frame sin equipo (29-ago-2026)
+
+Del embudo (BACKLOG 20). De las 14,57 personas por frame que se trackean
+dentro del campo, **2,11 acaban con una etiqueta que no es de equipo**:
+
+| etiqueta | por frame | en la BANDA (y<3 o y>37) | y mediana | ids |
+|---|---|---|---|---|
+| `staff` | 1,09 | **98,5 %** | −1,0 | 63 |
+| `otro` | 0,89 | **3,3 %** | 20,1 | 53 |
+| A | 4,96 | 5,9 % | 20,6 | 257 |
+| B | 6,27 | 5,7 % | 20,3 | 255 |
+
+`staff` está bien: vive en la banda. **`otro` se distribuye como A y como
+B** —centro del campo, misma mediana de y— así que son jugadores sin
+asignar. Es la parte recuperable del recuento, y son 53 identidades.
+
+- [ ] Mirar esas 53: ¿son identidades cortas, contaminadas, o de color
+      ambiguo? La distinción decide el arreglo.
+- [ ] ⚠️ El control: recuperarlas NO puede empeorar el 1,2 % de equipo
+      equivocado. Meter 0,89 jugadores por frame con el equipo mal sería
+      peor que no meterlos.
