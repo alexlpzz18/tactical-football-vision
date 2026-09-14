@@ -39,6 +39,42 @@ FRANJAS = [0, 30, 35, 40, 62]
 ETIQ = ["<30", "30-35", "35-40", ">40"]
 
 
+def _identificar_cache(ruta, datos):
+    """Dice QUÉ caché se está usando, antes de dar ningún número.
+
+    ⚠️ Esta guarda nació de un susto real (29-ago-2026). Alex lanzó la
+    pasada con el esquema mixto —14.550 frames con balón, el 81 %— y este
+    script imprimió tan tranquilo "balón en 8137 (45,2 %)" y todo el
+    reparto detrás. El caché nuevo seguía en Drive y aquí estaba el
+    viejo: los números eran correctos **del fichero equivocado**.
+
+    Un porcentaje de posesión no lleva escrito de qué caché sale, así que
+    lo escribe esta función. Es el mismo principio que el ✓ sobre un
+    fichero vacío: el número no miente, miente el contexto que falta.
+    """
+    import datetime as _dt
+
+    con = sum(1 for e in datos["cache"] if e["dets"])
+    total = len(datos["cache"])
+    esquema = (datos.get("firma") or {}).get("esquema")
+    fecha = _dt.datetime.fromtimestamp(Path(ruta).stat().st_mtime)
+    # print y no logger: el script fija el nivel de log en ERROR, así que
+    # un logger.warning aquí sería una guarda silenciada — que es peor que
+    # no tenerla, porque parece que está.
+    print(
+        f"\nCACHÉ DE BALÓN: {ruta}\n"
+        f"  {fecha.strftime('%d-%b %H:%M')} · {total} frames · "
+        f"{con} con balón ({100 * con / max(total, 1):.1f} %) · "
+        f"esquema {esquema or 'DESCONOCIDO (anterior al mixto)'}"
+    )
+    if esquema is None:
+        print(
+            "  ⚠️  Este caché NO lleva esquema en su firma: es ANTERIOR al\n"
+            "      esquema mixto. Si esperabas el del 81 %, todavía no lo has\n"
+            "      copiado de Drive y TODO lo de abajo sale del fichero viejo."
+        )
+
+
 def cargar(ruta_balon, ruta_csv, campo):
     import pickle
 
@@ -47,6 +83,7 @@ def cargar(ruta_balon, ruta_csv, campo):
 
     with open(ruta_balon, "rb") as f:
         datos = pickle.load(f)
+    _identificar_cache(ruta_balon, datos)
     modelo = cargar_modelo(config=campo)
     dets = filtrar_balon_plausible(
         {e["frame_idx"]: e["dets"] for e in datos["cache"] if e["dets"]}, modelo

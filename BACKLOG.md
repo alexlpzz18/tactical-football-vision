@@ -296,3 +296,51 @@ No está medido que sea esto. Está medido que el mecanismo existe.
 
 Coste hoy: desconocido, pero toca la métrica que un entrenador mira
 primero.
+
+---
+
+### Actualización de BACKLOG 19 (29-ago-2026): la premisa del recuento corto, REFUTADA
+
+Medido en local sobre la parte entera: **el detector saca 17,6 cajas por
+frame** (mediana 18, p10 14, p90 21), y en un fútbol 7 hay 16 personas en
+campo, 17 con el árbitro.
+
+**El recuento corto (5-6 contra 7-8) no puede nacer en la detección**: hay
+cajas de sobra. Nace después — tracking, clasificación de equipos o la
+forma de contar. Eso convierte BACKLOG 19 en una mejora posible pero
+PEQUEÑA (orden 0,5 jugadores por frame), no en "la mayor que queda sobre
+la mesa".
+
+Y abre la pregunta que sí lo es: **si hay 17,6 cajas y solo se cuentan
+5-6 por equipo, ¿dónde se pierden las otras?** Esa es la siguiente
+medición, y no necesita GPU.
+
+Dos huellas locales que NO sirvieron, documentadas para no repetirlas:
+
+1. **Cajas gigantes**: para el balón el impostor es una caja absurda; para
+   un jugador es la caja de OTRO JUGADOR, plausible. La absorción es
+   invisible en el tamaño (solo el 0,16 % implican más de 2,5 m).
+2. **"No deberían quedar pares anidados"**: razonamiento equivocado.
+   **GreedyNMM es greedy, no exhaustivo**: consume la caja de mayor score,
+   fusiona lo que casa con ella y la saca del conjunto, así que pares
+   anidados entre cajas ya consumidas sobreviven. Quedan 5.851 (0,49 por
+   frame) y reaplicar el postproceso quita otro 2,9 %. Su presencia no
+   prueba nada en ninguna dirección.
+
+Celdas de Colab listas en `docs/colab_ios_jugadores.md`, con el control de
+que las cajas recuperadas tengan altura de persona.
+
+## 20. ¿Dónde se pierden las cajas entre el detector y el recuento? (29-ago-2026)
+
+Sale de refutar la premisa de BACKLOG 19. **17,6 detecciones por frame
+entran**, y el recuento por equipo sale en 5-6 cuando deberían ser 7-8.
+Entre una cosa y la otra hay: tracking (ByteTrack), plausibilidad física,
+clasificación de equipos y las siete reglas sobre medias de identidad.
+
+- [ ] Contar, frame a frame, cuántas de las 17,6 llegan a cada etapa:
+      detección → track con id → etiqueta de equipo → recuento final.
+      Es un embudo, y el escalón donde caiga es la respuesta.
+- [ ] No necesita GPU: todo está en el caché y en el CSV.
+- [ ] ⚠️ El control: parte de las 17,6 son banquillo, árbitro y público, y
+      SE TIENEN que perder. Lo que hay que separar es cuántas se pierden
+      por ser correctas-pero-descartadas contra cuántas se pierden bien.
