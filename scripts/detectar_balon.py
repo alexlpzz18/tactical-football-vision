@@ -39,6 +39,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.balon.franja_lejana import banda_a_trocear  # noqa: E402
 from src.tracking_data.processor import (  # noqa: E402
     _build_camera_matrix,
     _rango_de_frames,
@@ -216,25 +217,60 @@ def _plausibles(crudas, conf_min, homografia, modelo, idx):
     return filtrar_balon_plausible({idx: dets}, modelo).get(idx, [])
 
 
+def _esquema_de_config(cb):
+    """El esquema de detección que pide el config, validado.
+
+    ⚠️ UN SOLO INTERRUPTOR. Antes esto lo decidía `balon.sahi.activo`, y
+    dejar los dos conviviendo sería repetir el fallo canónico del
+    proyecto: `cota_plantilla.activa` llevaba semanas sin que nadie la
+    leyera, dando una falsa sensación de control. Así que `sahi.activo`
+    ya no existe y un config que todavía lo traiga PARA el script en vez
+    de ignorarlo en silencio.
+    """
+    if "activo" in cb.get("sahi", {}):
+        raise SystemExit(
+            "\nERROR: `balon.sahi.activo` ya no se usa y se estaba "
+            "ignorando.\n"
+            "  Ponlo como `balon.esquema`, que es el único interruptor:\n"
+            "    esquema: mixto    # adoptado: frame entero + tiles en la franja\n"
+            "    esquema: sahi     # trocear la imagen ENTERA (pierde detecciones\n"
+            "                      # buenas por el postproceso IOS, ver docs/)\n"
+            "    esquema: entero   # solo frame entero (cierra 0 de 47 huecos)"
+        )
+    nombre = cb.get("esquema", "entero")
+    esquemas = {
+        "entero": {"modo": "entero"},
+        "sahi": {
+            "modo": "sahi",
+            "filas": cb.get("sahi", {}).get("filas", 3),
+            "columnas": cb.get("sahi", {}).get("columnas", 5),
+            "solape": cb.get("sahi", {}).get("solape", 0.15),
+        },
+        "mixto": {
+            "modo": "mixto",
+            "columnas": cb.get("sahi", {}).get("columnas", 5),
+            "solape": cb.get("sahi", {}).get("solape", 0.15),
+        },
+    }
+    if nombre not in esquemas:
+        raise SystemExit(
+            f"\nERROR: balon.esquema = {nombre!r} no existe.\n"
+            f"  Usa uno de: {', '.join(sorted(esquemas))}"
+        )
+    return nombre, esquemas[nombre]
+
+
 def _centro(det):
     """Centro en píxeles de una detección (mx, my, x1, y1, x2, y2, conf)."""
     return (det[2] + det[4]) / 2.0, (det[3] + det[5]) / 2.0
 
 
-# ── ESQUEMAS DE DETECCIÓN QUE SE COMPARAN ────────────────────────────
+# ── ESQUEMAS DE DETECCIÓN ────────────────────────────────────────────
 #
-# La banda de la franja sale medido: la altura en la imagen predice el
-# tamaño del balón con correlación +0,924 (es perspectiva pura, la cámara
-# está elevada). Los 47 huecos del fondo arrancan todos entre y=590 y
-# y=642, y la banda 540-720 —el 17 % del alto— contiene el 100 % de esos
-# huecos y el 100 % de los balones de menos de 12 px.
-#
-# ⚠️ La banda está calibrada para ESTA cámara. En otro partido hay que
-# recalcularla (o sacarla de la homografía, que es lo suyo y está
-# pendiente): una banda heredada de otro encuadre trocearía césped vacío
-# y dejaría el fondo sin trocear.
-BANDA_LEJOS = (540, 720)
-
+# La franja del esquema mixto ya NO es un par de números fijos: la deriva
+# `src.balon.franja_lejana.banda_a_trocear` de la homografía y de las
+# medidas del campo, porque 540-720 solo valía para la cámara del
+# benjamín y ese fallo habría sido silencioso en cualquier otro partido.
 ESQUEMAS = [
     ("frame entero", {"modo": "entero"}),
     ("SAHI 3x5", {"modo": "sahi", "filas": 3, "columnas": 5, "solape": 0.15}),
@@ -255,7 +291,7 @@ def _solapan(a, b, umbral=0.3):
     return union > 0 and inter / union > umbral
 
 
-def _detectar_con_esquema(esquema, modelo, modelo_sahi, frame, cb, w, h):
+def _detectar_con_esquema(esquema, modelo, modelo_sahi, frame, cb, w, h, banda):
     """Detecta con uno de los esquemas y devuelve cajas (x1,y1,x2,y2,conf).
 
     El esquema `mixto` es idea de Alex: frame entero donde el balón es
@@ -276,8 +312,7 @@ def _detectar_con_esquema(esquema, modelo, modelo_sahi, frame, cb, w, h):
         return _detectar_sahi(modelo_sahi, frame, cfg_s, w, h)
 
     # mixto: el frame entero manda, y la franja se trocea aparte
-    y0, y1 = BANDA_LEJOS
-    y0, y1 = max(0, y0), min(h, y1)
+    y0, y1 = max(0, banda[0]), min(h, banda[1])
     cajas = _detectar_frame_entero(modelo, frame, cb["confianza"], cb["imgsz"])
     franja = frame[y0:y1]
     cfg_s = {"filas": 1, "columnas": esquema["columnas"], "solape": esquema["solape"]}
@@ -334,6 +369,16 @@ def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sa
     random.Random(0).shuffle(candidatos)
     control = sorted(candidatos[: args.control])
 
+    banda = banda_a_trocear(
+        homografia,
+        float(cfg["campo_m"]["largo"]),
+        float(cfg["campo_m"]["ancho"]),
+        args.zona_min,
+        h,
+        w,
+        cb.get("margen_campo_m", 20.0),
+        cb.get("altura_aerea_m", 3.0),
+    )
     esquemas = [e for e in ESQUEMAS if not args.esquemas or e[0] in args.esquemas]
     if not esquemas:
         raise SystemExit(
@@ -384,7 +429,7 @@ def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sa
                 m = marcador[nombre]
                 t0 = time.time()
                 crudas = _detectar_con_esquema(
-                    esquema, modelo, modelo_sahi, frame, cb, w, h
+                    esquema, modelo, modelo_sahi, frame, cb, w, h, banda
                 )
                 m["t"] += time.time() - t0
                 plaus = _plausibles(
@@ -550,8 +595,10 @@ def main() -> None:
     from ultralytics import YOLO
 
     modelo = YOLO(cb["modelo"])
+    nombre_esquema, esquema = _esquema_de_config(cb)
+    logger.info("Esquema de detección de balón: %s", nombre_esquema)
     modelo_sahi = None
-    if cb.get("sahi", {}).get("activo", False) or args.comparar_sahi:
+    if esquema["modo"] != "entero" or args.comparar_sahi:
         from sahi import AutoDetectionModel
 
         modelo_sahi = AutoDetectionModel.from_pretrained(
@@ -625,6 +672,24 @@ def main() -> None:
     # firma que impide reanudar sobre otra configuración de detección.
     cfg_ck = cfg.get("checkpoint") or {}
     cada = int(cfg_ck.get("cada_frames", 500) or 0)
+    # La franja del esquema mixto, derivada de la homografía. Se calcula
+    # aunque el esquema no la use, para que entre en la firma: así un
+    # cambio de banda invalida el checkpoint en vez de mezclar.
+    banda_produccion = (
+        banda_a_trocear(
+            H,
+            float(cfg["campo_m"]["largo"]),
+            float(cfg["campo_m"]["ancho"]),
+            float(cb.get("zona_min_m", 45.0)),
+            h,
+            w,
+            float(cb.get("margen_campo_m", 20.0)),
+            float(cb.get("altura_aerea_m", 3.0)),
+        )
+        if esquema["modo"] == "mixto"
+        else None
+    )
+
     firma_balon = {
         "video": str(cfg["rutas"]["video"]),
         "modelo": cb["modelo"],
@@ -632,6 +697,11 @@ def main() -> None:
         "imgsz": cb["imgsz"],
         "sample_every": sample,
         "sahi": dict(cb.get("sahi") or {}),
+        # Sin esto, reanudar un caché empezado con otro esquema mezclaría
+        # dos detectores distintos dentro del mismo fichero, y el caché
+        # resultante no sería el de ninguno de los dos.
+        "esquema": nombre_esquema,
+        "banda": banda_produccion,
         "k1": cfg["distorsion"]["k1"],
         "k2": cfg["distorsion"]["k2"],
         "tramo": dict(cfg["muestreo"].get("tramo") or {}),
@@ -716,10 +786,9 @@ def main() -> None:
             cache.append(1)
             continue
 
-        if modelo_sahi is not None:
-            crudas = _detectar_sahi(modelo_sahi, frame, cb["sahi"], w, h)
-        else:
-            crudas = _detectar_frame_entero(modelo, frame, cb["confianza"], cb["imgsz"])
+        crudas = _detectar_con_esquema(
+            esquema, modelo, modelo_sahi, frame, cb, w, h, banda_produccion
+        )
 
         dets = []
         for x1, y1, x2, y2, conf in crudas:

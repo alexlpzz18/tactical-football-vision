@@ -2,6 +2,11 @@
 
 29-ago-2026.
 
+> ⚠️ **La primera mitad de este documento está SUPERADA por la segunda.**
+> Se deja tal cual porque el camino importa, pero al leerla: la franja ya
+> no es `BANDA_LEJOS = (540, 720)` —se deriva de la homografía— y el
+> esquema adoptado es el MIXTO, no el 3×5. Salta a *"Segunda ronda"*.
+
 ## El resultado que cierra el fondo
 
 Medido sobre los 47 huecos del fondo (x ≥ 45 m, huecos de 1-8 s), con 4
@@ -90,13 +95,14 @@ Y los 47 huecos del fondo arrancan todos entre y=590 y y=642, así que:
 | **y 540-720** | **17 %** | **100 %** | **100 %** |
 | y 500-800 | 28 % | 100 % | 100 % |
 
-De ahí `BANDA_LEJOS = (540, 720)`: 5-6 tiles en vez de 24.
+De ahí una primera banda fija de 540-720: 5-6 tiles en vez de 24.
 
-⚠️ **La banda está calibrada para esta cámara.** En otro partido hay que
-recalcularla, y lo suyo es sacarla de la homografía —proyectar la línea de
-x=45 m y coger margen— en vez de dejarla fija. Está pendiente. Una banda
-heredada de otro encuadre trocearía césped vacío y dejaría el fondo sin
-trocear, y el informe no se quejaría.
+⚠️ **Esa banda estaba calibrada para esta cámara**, y era el tipo de
+número que no viaja entre partidos. **Ya no existe**: se deriva de la
+homografía (ver la segunda ronda). Se deja escrito porque el aviso fue
+antes que el arreglo, y porque el fallo que evitaba sigue siendo real —
+una banda heredada de otro encuadre trocearía césped vacío y dejaría el
+fondo sin trocear, sin que el informe se quejara.
 
 ## Lo que este instrumento TODAVÍA no mide
 
@@ -114,7 +120,8 @@ pueden despistar al selector.
 
 La medida de verdad necesita un TRAMO CONTIGUO (30-60 s que contenga
 huecos del fondo), pasarlo entero con cada esquema y comparar el balón
-elegido. Es el siguiente instrumento.
+elegido. Es el siguiente instrumento (BACKLOG 18), y puede salir del
+piloto de 5 min, que ya tiene caché.
 
 ## Guardas
 
@@ -135,3 +142,126 @@ era eso — **el reemplazo no coincidía** por la indentación (8/12 contra
 12/16) y la mutación fue un no-op. Un test de mutación sin comprobar que
 el fichero CAMBIA no prueba nada, exactamente igual que el `str.replace`
 que se comió black en el generador de la hoja de GT.
+
+---
+
+# Segunda ronda: por qué trocear la imagen entera PIERDE detecciones buenas
+
+29-ago-2026, tras el barrido de esquemas.
+
+## El resultado
+
+| esquema | huecos del fondo | control | coste |
+|---|---|---|---|
+| frame entero | 0/47 | 60/60 | — |
+| SAHI 3×5 | 47/47 | 56/60 | 123 min |
+| **MIXTO franja** | **42/47** | **60/60** | **29 min** |
+
+**Adoptado el mixto** (`balon.esquema: mixto`).
+
+## La causa de lo que pierde el 3×5: el postproceso, no la rejilla
+
+Las pistas de Alex: las confianzas de los perdidos (0,67 · 0,59 · 0,70 ·
+0,74) están **en la mediana del control (0,69)**, no en el filo; y 2×3 y
+4×6 pierden **los mismos frames exactos**. Causa común a trocear, no de la
+rejilla.
+
+Lo es, y se demuestra sin modelo. Dos hechos:
+
+1. `get_sliced_prediction` lleva **`perform_standard_pred=True`** por
+   defecto: SAHI **ya corre el frame entero** y lo fusiona con los tiles.
+   Su conjunto de candidatos es un SUPERCONJUNTO del frame entero, así que
+   no puede perder una detección suya... salvo en la fusión.
+2. La fusión es `GREEDYNMM` con métrica **`IOS`** (intersección sobre la
+   caja MENOR), umbral 0,5. Con IOS, **una caja grande que contiene al
+   balón da 1,00**, aunque sea otro objeto.
+
+Ejecutado sobre dos cajas sintéticas —el balón (10×10, conf 0,69) dentro
+de una caja grande y floja (150×120, conf 0,42)—:
+
+```
+IoU real : 0,0056      IOS : 1,0000   ← por encima del umbral
+GREEDYNMM/IOS  → queda 1: [950, 580, 1100, 700] con score 0,69
+NMS            → queda 1: [1000, 620, 1010, 630] con score 0,69
+GREEDYNMM/IOU  → quedan 2
+```
+
+**No lo suprime: le cambia la geometría.** Se queda con la confianza del
+balón y las coordenadas del impostor. Esa caja proyecta a decenas de
+metros, el filtro de plausibilidad la tira y la detección desaparece — con
+su confianza intacta, que es exactamente lo que Alex observó.
+
+Por qué el mixto no sufre: el frame entero se ejecuta **aparte**
+(`_detectar_frame_entero`, sin postproceso de SAHI) y sus cajas se añaden
+PRIMERO; lo de la franja solo se suma si no solapa, y con **IoU real** al
+0,3, no con IOS. Una caja grande ya no puede tragarse al balón.
+
+⚠️ **ESTO APUNTA AL DETECTOR DE JUGADORES**, que usa SAHI 2×4 con los
+mismos defaults. Un jugador dentro de una caja grande —un grupo, una
+portería, una sombra— daría IOS = 1,00 y desaparecería igual. Y hay un
+síntoma esperando explicación: el **recuento de jugadores sale corto**
+(5-6 contra 7-8). No está medido que sea esto; está medido que el
+mecanismo existe. Va al backlog.
+
+## Los 5 huecos que el mixto no cierra: el balón se sale de la franja
+
+Con la franja fija 540-720, tres de los 47 huecos se pierden a y≈600 y
+**reaparecen a y=786, 761 y 755**: el balón viene hacia la cámara durante
+el hueco y sale de la banda por abajo.
+
+| banda | % del alto | huecos con los dos extremos dentro | tiles |
+|---|---|---|---|
+| 540-720 (la fija) | 17 % | 44/47 | 5 |
+| 500-760 | 24 % | 45/47 | 5 |
+| 534-805 (**derivada**) | 25 % | **47/47** | 5 |
+
+Ensanchar sale casi gratis porque el reescalado de cada tile lo manda el
+ANCHO (1280/384 = 3,3×), no el alto: la franja puede crecer hacia abajo
+sin que el balón llegue más pequeño a la red ni sin añadir tiles.
+
+## La franja, derivada de la homografía (BACKLOG 17, hecho)
+
+`src/balon/franja_lejana.py`. Ya no hay ningún 540-720 en el código.
+
+**Negativo por el camino**: lo primero que se probó fue derivarla del
+TAMAÑO del balón, con el jacobiano de la homografía prediciendo el
+diámetro en píxeles de una esfera de 0,22 m. **No reproduce lo medido**:
+
+| banda y | predicho | medido | error |
+|---|---|---|---|
+| 560-650 | 4,8 px | 10,7 px | −55 % |
+| 700-800 | 10,1 px | 16,4 px | −38 % |
+| 900-1080 | 18,9 px | 30,6 px | −38 % |
+
+Y el sesgo ni siquiera es constante (×2,2 arriba, ×1,6 abajo). **La caja
+del detector no es el balón**: la inflan el desenfoque de movimiento y el
+tamaño mínimo práctico de caja. Un umbral en píxeles derivado así estaría
+mal calibrado de una forma distinta en cada cámara.
+
+Lo que sí es geometría pura, sin constantes empíricas, es qué parte de la
+imagen ocupa una franja del CAMPO. La regla adoptada:
+
+> franja = proyección de `x ≥ zona_min − margen_campo_m`, subida por
+> arriba lo que ocupan `altura_aerea_m` según la escala local.
+
+Los dos márgenes tienen sentido futbolístico, que es lo que los hace
+viajar: **20 m** porque durante un hueco el balón viene hacia la cámara
+(medido: tres huecos reaparecen 150 px más abajo), y **3 m** porque un
+despeje sube, y un balón en el aire aparece más arriba que su proyección
+de suelo. Para el benjamín da **534-805**, que cubre 47/47 y el 100 % de
+los balones de menos de 12 px, con el 25 % del alto y 5 tiles.
+
+Guarda nueva: si la franja derivada ocupa más del 80 % del alto, **da
+error en vez de devolverla**. Devolver la imagen entera sería trocearlo
+todo creyendo que se ahorra, y nadie se enteraría hasta ver la factura.
+
+## Un solo interruptor
+
+`balon.sahi.activo` ya no existe: lo sustituye `balon.esquema`
+(`entero` | `sahi` | `mixto`), y un config que todavía traiga `activo`
+**para el script** en vez de ignorarlo. Dos interruptores para una cosa es
+`cota_plantilla.activa` otra vez.
+
+La firma del checkpoint lleva ahora el esquema y la franja: sin eso,
+reanudar un caché empezado con otro esquema mezclaría dos detectores
+dentro del mismo fichero.

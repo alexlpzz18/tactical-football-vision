@@ -26,6 +26,10 @@ _spec.loader.exec_module(db)
 
 ANCHO, ALTO = 1920, 1080
 CB = {"confianza": 0.35, "imgsz": 1280}
+# La franja ya no es una constante del módulo: la deriva
+# `banda_a_trocear` de la homografía. Aquí se fija una para poder
+# probar el desplazamiento de coordenadas sin depender de datos.
+BANDA = (540, 720)
 
 
 class _DetectorFalso:
@@ -63,7 +67,7 @@ def _frame():
 
 def test_el_mixto_devuelve_la_franja_en_coordenadas_de_la_IMAGEN(parcheado):
     """Una caja a y=80 DENTRO de la franja está a y=620 en la imagen."""
-    y0, _y1 = db.BANDA_LEJOS
+    y0, _y1 = BANDA
     parcheado.cajas_franja = [(1000.0, 80.0, 1010.0, 90.0, 0.7)]
 
     cajas = db._detectar_con_esquema(
@@ -74,6 +78,7 @@ def test_el_mixto_devuelve_la_franja_en_coordenadas_de_la_IMAGEN(parcheado):
         CB,
         ANCHO,
         ALTO,
+        BANDA,
     )
 
     assert len(cajas) == 1
@@ -87,7 +92,7 @@ def test_el_mixto_devuelve_la_franja_en_coordenadas_de_la_IMAGEN(parcheado):
 
 def test_el_mixto_trocea_solo_la_franja_no_el_frame_entero(parcheado):
     """Si troceara la imagen completa no ahorraría nada de coste."""
-    y0, y1 = db.BANDA_LEJOS
+    y0, y1 = BANDA
     db._detectar_con_esquema(
         {"modo": "mixto", "columnas": 5, "solape": 0.15},
         None,
@@ -96,6 +101,7 @@ def test_el_mixto_trocea_solo_la_franja_no_el_frame_entero(parcheado):
         CB,
         ANCHO,
         ALTO,
+        BANDA,
     )
 
     assert y1 - y0 in parcheado.altos_vistos, "no ha troceado la franja"
@@ -104,7 +110,7 @@ def test_el_mixto_trocea_solo_la_franja_no_el_frame_entero(parcheado):
 
 def test_el_mixto_no_cuenta_el_mismo_balon_dos_veces(parcheado):
     """El recuento de candidatos por frame es justo lo que Alex vigila."""
-    y0, _ = db.BANDA_LEJOS
+    y0, _ = BANDA
     parcheado.cajas_entero = [(1000.0, y0 + 80.0, 1010.0, y0 + 90.0, 0.6)]
     parcheado.cajas_franja = [(1001.0, 81.0, 1011.0, 91.0, 0.7)]  # el mismo
 
@@ -116,6 +122,7 @@ def test_el_mixto_no_cuenta_el_mismo_balon_dos_veces(parcheado):
         CB,
         ANCHO,
         ALTO,
+        BANDA,
     )
 
     assert len(cajas) == 1, "el mismo balón contado dos veces infla los candidatos"
@@ -134,6 +141,7 @@ def test_el_mixto_si_suma_un_balon_que_el_frame_entero_no_ve(parcheado):
         CB,
         ANCHO,
         ALTO,
+        BANDA,
     )
 
     assert len(cajas) == 2
@@ -142,13 +150,16 @@ def test_el_mixto_si_suma_un_balon_que_el_frame_entero_no_ve(parcheado):
 # ───────────────────────────── la banda ───────────────────────────────────
 
 
-def test_la_banda_cubre_donde_arrancan_los_huecos_del_fondo():
-    """Medido: los 47 huecos arrancan entre y=590 y y=642."""
-    y0, y1 = db.BANDA_LEJOS
-    assert y0 <= 590 and y1 >= 642, (
-        "la banda ya no cubre los huecos del fondo que justificaron el "
-        "esquema mixto; hay que volver a medirla"
+def test_la_banda_ya_no_es_una_constante_del_script():
+    """La franja fija (540-720) era el número que no viajaba entre
+    cámaras. Si alguien la vuelve a escribir a mano, esto falla."""
+    assert not hasattr(db, "BANDA_LEJOS"), (
+        "ha vuelto una franja fija al script; tiene que derivarse con "
+        "src.balon.franja_lejana.banda_a_trocear"
     )
+    assert (
+        "banda" in db._detectar_con_esquema.__code__.co_varnames
+    ), "el esquema mixto ya no recibe la franja por parámetro"
 
 
 def test_los_esquemas_son_distintos_entre_si():

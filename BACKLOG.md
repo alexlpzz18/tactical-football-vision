@@ -263,3 +263,36 @@ en los frames de control.
       totales.
 - [ ] El control: comparar contra el mismo tramo con frame entero, donde
       sabemos que el balón elegido es el bueno.
+
+## 19. El postproceso de SAHI puede estar comiéndose JUGADORES (29-ago-2026)
+
+Demostrado sobre el balón (`docs/sahi_balon.md`): `get_sliced_prediction`
+fusiona con **`GREEDYNMM` y métrica `IOS`** (intersección sobre la caja
+MENOR), umbral 0,5. Con IOS, **una caja grande que contiene a otra
+pequeña da 1,00** aunque sean objetos distintos, y la fusión se queda con
+la CONFIANZA de la pequeña y la GEOMETRÍA de la grande.
+
+En el balón eso hacía desaparecer detecciones perfectamente buenas: la
+caja resultante proyectaba fuera del campo y el filtro de plausibilidad la
+tiraba. Confianzas de las perdidas: 0,67 · 0,59 · 0,70 · 0,74, contra una
+mediana de control de 0,69 — **no eran las del filo**.
+
+⚠️ **El detector de JUGADORES usa SAHI 2×4 con los mismos defaults**
+(`deteccion.sahi` en los configs). Un jugador dentro de una caja grande
+—un grupo apiñado, una portería, una sombra— daría IOS = 1,00 y
+desaparecería igual. Y hay un síntoma esperando explicación desde hace
+semanas: **el recuento de jugadores sale corto, 5-6 contra 7-8**.
+
+No está medido que sea esto. Está medido que el mecanismo existe.
+
+- [ ] Pasar unos frames con `postprocess_match_metric="IOU"` en vez de
+      `IOS` y comparar el número de jugadores detectados. Es un parámetro,
+      no un cambio de modelo.
+- [ ] Si sube el recuento: mirar si los recuperados son los que faltaban
+      (posición y equipo), no solo cuántos. **Más detecciones no es
+      mejor** — puede ser una caja grande partida en dos.
+- [ ] El control: los frames donde el recuento YA era correcto no pueden
+      empeorar.
+
+Coste hoy: desconocido, pero toca la métrica que un entrenador mira
+primero.

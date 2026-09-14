@@ -44,8 +44,21 @@ balon:
   confianza: 0.35  # ELEGIDO por barrido: P 0.958 / R 0.836 / F0.5 0.931 (meseta con 0.40)
   imgsz: 1280
   sample_every: 2
+  # ESQUEMA ADOPTADO (29-ago-2026, docs/sahi_balon.md): frame entero en
+  # toda la imagen + tiles SOLO en la franja del fondo. Medido sobre los
+  # 47 huecos del fondo de la parte entera:
+  #   entero  ->  0/47 huecos,  control 60/60
+  #   sahi    -> 47/47 huecos,  control 56/60,  123 min
+  #   mixto   -> 42/47 huecos,  control 60/60,   29 min
+  # El `sahi` pierde detecciones buenas por su postproceso (fusiona con
+  # IOS, no IoU, y una caja grande se traga al balón quedandose con SU
+  # geometria). El mixto no, porque el frame entero va aparte.
+  # La franja NO se escribe aquí: se deriva de la homografía.
+  esquema: mixto
+  zona_min_m: 45.0
+  margen_campo_m: 20.0
+  altura_aerea_m: 3.0
   sahi:
-    activo: false
     filas: 3
     columnas: 5
     solape: 0.15
