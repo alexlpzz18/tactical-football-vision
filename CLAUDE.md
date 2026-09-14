@@ -158,7 +158,17 @@ Todo lo demás acaba desembocando aquí:
   refutó sin gastar GPU, calculando que la banda de solape mide 57 px y
   el balón 10,5 — los tres puntos habrían salido iguales.
 - **UN CRITERIO DE ADOPCIÓN QUE SOLO MIRA LO QUE QUIERES MEJORAR NO VE
-  LO QUE ROMPES.** Todo criterio lleva dos preguntas, no una: *¿qué
+  LO QUE ROMPES.** El caso canónico, y no hay otro más claro: **los 47/47
+  huecos del fondo que celebramos se cerraron con MARCAS PINTADAS DEL
+  CAMPO** — el punto central, el de penalti, una mancha junto al muro. La
+  métrica medía exactamente lo que se le pidió, *"¿se cierra el hueco?"*,
+  y aun así engañaba, **porque las marcas están justo donde estaban los
+  huecos**. Si el criterio hubiera llevado *"y comprueba que lo detectado
+  se MUEVE como un balón"*, se habría cazado el mismo día: las marcas dan
+  0,02 m por muestra y el balón 0,20-0,30.
+  ⇒ Todo criterio lleva dos preguntas, no una: *¿qué arregla?* y **¿qué
+  podría estar INVENTANDO?** Y cuando se mide un OBJETO, la segunda
+  pregunta tiene una forma concreta: *¿se comporta como ese objeto?* Todo criterio lleva dos preguntas, no una: *¿qué
   arregla?* y **¿qué podría estar INVENTANDO?** El esquema mixto del
   balón se adoptó con 47/47 huecos del fondo cerrados y el control
   intacto — y resultó que el 77 % de lo que "recuperó" en el fondo eran

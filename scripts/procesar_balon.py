@@ -15,7 +15,6 @@ Uso:
 
 import argparse
 import logging
-import pickle
 import sys
 from pathlib import Path
 
@@ -62,26 +61,35 @@ def main() -> None:
         default="configs/campo_benja.yaml",
         help="config del campo, para el filtro de plausibilidad del balón",
     )
+    parser.add_argument(
+        "--sin-filtro-marcas",
+        action="store_true",
+        help="NO quitar las marcas fijas del campo (punto central, de "
+        "penalti, manchas). Solo para MEDIR su efecto: en producción van "
+        "quitadas, y llegaron a ser el 56 % del caché.",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    with open(args.cache_balon, "rb") as f:
-        datos = pickle.load(f)
-    cache = datos["cache"]
-    tiempos = {e["frame_idx"]: e["t"] for e in cache}
-    detecciones = {e["frame_idx"]: e["dets"] for e in cache if e["dets"]}
-
-    # ⚠️ PLAUSIBILIDAD FÍSICA ANTES DE NADA. Medido sobre los cachés de
-    # balón: entre el 12 % y el 20 % de las detecciones proyectan FUERA
-    # del campo (la x llega a 24.876 m en un campo de 62), y la confianza
-    # no las separa. Sin quitarlas la velocidad máxima del balón sale a
-    # 4151 m/s y **dos tercios de lo que se marca como FASE AÉREA es
-    # basura**, no vuelo: 21,7 % contra el 7,6 % real.
-    from src.balon.tracking_balon import filtrar_balon_plausible
+    # ⚠️ LOS DOS FILTROS DEL BALÓN VAN JUNTOS Y POR UN SOLO SITIO
+    # (`src.balon.carga`), porque tenerlos sueltos significaba cinco
+    # consumidores donde olvidar uno — y un consumidor que se olvida no
+    # falla: da un número distinto.
+    #   1. PLAUSIBILIDAD FÍSICA: entre el 12 % y el 20 % de las
+    #      detecciones proyectan FUERA del campo (la x llega a 24.876 m en
+    #      un campo de 62). Sin quitarlas la velocidad máxima del balón
+    #      sale a 4151 m/s y dos tercios de las FASES AÉREAS son basura.
+    #   2. MARCAS FIJAS del campo: el punto central, el de penalti y una
+    #      mancha del fondo llegaron a ser el 56 % del caché tras el
+    #      esquema mixto (`docs/balon_fantasma.md`).
+    from src.balon.carga import cargar_detecciones_limpias
     from src.campo_modelo import cargar_modelo
 
     modelo_campo = cargar_modelo(config=args.campo)
-    detecciones = filtrar_balon_plausible(detecciones, modelo_campo)
+    detecciones, tiempos, meta = cargar_detecciones_limpias(
+        args.cache_balon, modelo_campo, quitar_marcas=not args.sin_filtro_marcas
+    )
+    n_frames_cache = meta["n_frames"]
 
     jug = pd.read_csv(args.csv_jugadores)
     reales = jug[jug.es_real == 1]
@@ -112,7 +120,7 @@ def main() -> None:
         "Balón activo: %d frames de %d con detección (%d frames en total)",
         len(activo),
         len(detecciones),
-        len(cache),
+        n_frames_cache,
     )
 
     trayectoria = [
@@ -198,14 +206,14 @@ def main() -> None:
     print(f"\n✓ CSV conjunto en {args.salida} ({len(conjunto)} filas)")
     print(f"✓ Contactos en {ruta_c}")
     print("\n── NÚMEROS DEL PILOTO ──")
-    print(f"  frames del tramo            : {len(cache)}")
+    print(f"  frames del tramo            : {n_frames_cache}")
     print(
         f"  con balón detectado         : {len(detecciones)} "
-        f"({100 * len(detecciones) / len(cache):.0f} %)"
+        f"({100 * len(detecciones) / n_frames_cache:.0f} %)"
     )
     print(
         f"  tras seleccionar el activo  : {n_con} "
-        f"({100 * n_con / len(cache):.0f} % del tramo)"
+        f"({100 * n_con / n_frames_cache:.0f} % del tramo)"
     )
     print(
         f"  en FASE AÉREA               : {sum(aereo)} "
