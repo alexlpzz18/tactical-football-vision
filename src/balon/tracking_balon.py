@@ -38,7 +38,25 @@ class ParametrosBalon:
     # Un balón parado durante más de esto y lejos de los jugadores no es
     # el del partido (calentamiento, red de portería).
     v_min_activo: float = 0.5  # m/s de mediana para considerarlo en juego
-    dist_max_jugadores: float = 25.0  # m al jugador más cercano
+    # ⚠️ ESTE UMBRAL ESTABA EN 25 m Y NO PODÍA DISPARARSE. Medido sobre la
+    # parte entera, la distancia del balón REAL al jugador más cercano
+    # tiene mediana 1,6 m, p95 8,3, p99 17,2 y **máximo 25,7**: el umbral
+    # estaba por encima de casi todo lo observado, así que la guarda
+    # existía sin poder actuar nunca (0,07 % de los instantes). Es el
+    # mismo fracaso que `cota_plantilla.activa`, pero disfrazado de
+    # número en vez de de interruptor: parecía proteger.
+    #
+    # Ahora sale de la ANCHURA DEL CAMPO —un cuarto— porque eso sí viaja
+    # a otro partido: 10 m en fútbol 7 (40 m de ancho) y 16 en un F11 de
+    # 64. A 10 m la guarda puede actuar sobre el 4 % de los instantes, y
+    # deja intacto el 95 % del balón real, que está a menos de 8,3 m de
+    # alguien.
+    #
+    # ⚠️ El grueso del trabajo lo hace ahora `marcas_estaticas`, que quita
+    # las marcas pintadas del campo por su firma propia. Esta guarda solo
+    # cubre lo que aquélla no ve.
+    fraccion_ancho_campo: float = 0.25
+    dist_max_jugadores: float = 10.0  # m; = fraccion_ancho_campo x 40 m
     # ── fases aéreas ──
     # Velocidad proyectada por encima de la cual la suposición de "está
     # en el suelo" es insostenible. Un balón raso rápido va a 15-20 m/s;

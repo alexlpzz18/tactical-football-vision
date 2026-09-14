@@ -157,6 +157,16 @@ Todo lo demás acaba desembocando aquí:
   ANTES de lanzarlo cuando se pueda**: el barrido de solape de SAHI se
   refutó sin gastar GPU, calculando que la banda de solape mide 57 px y
   el balón 10,5 — los tres puntos habrían salido iguales.
+- **UN CRITERIO DE ADOPCIÓN QUE SOLO MIRA LO QUE QUIERES MEJORAR NO VE
+  LO QUE ROMPES.** Todo criterio lleva dos preguntas, no una: *¿qué
+  arregla?* y **¿qué podría estar INVENTANDO?** El esquema mixto del
+  balón se adoptó con 47/47 huecos del fondo cerrados y el control
+  intacto — y resultó que el 77 % de lo que "recuperó" en el fondo eran
+  **marcas pintadas del campo**: el punto central, el de penalti, una
+  mancha junto al muro. El criterio medía huecos CERRADOS y balones
+  CONSERVADOS; no tenía ninguna casilla para balones INVENTADOS, así que
+  no podía verlo. La señal estaba delante (1,59 candidatos por frame) y
+  se leyó como ruido inofensivo.
 - **Un test de mutación tiene que verificar que el fichero CAMBIÓ** antes
   de interpretar el resultado. Una mutación cuyo `str.replace` no
   coincide es un no-op, y entonces "7 passed" no dice que el código esté

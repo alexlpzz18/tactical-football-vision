@@ -2,6 +2,12 @@
 
 29-ago-2026. **Corrección de un número que ya habíamos celebrado.**
 
+> ⚠️ **Y la primera mitad se queda corta: la corrige la segunda.** Aquí se
+> habla de UN fantasma y de un 58,3 %. Al barrer la imagen entera
+> aparecieron **10 celdas de marcas del campo** y el número honesto bajó a
+> **45,0 %** — el mismo que daba el frame entero. Salta a *"Segunda
+> ronda"* si buscas la cifra buena.
+
 ## Lo que pasó
 
 La pasada con el esquema mixto dio **14.550 frames con balón de 17.983
@@ -108,3 +114,107 @@ para el titular.
 
 **Un criterio de adopción que solo mira lo que quieres mejorar no ve lo
 que rompes.**
+
+---
+
+# Segunda ronda: el filtro, y la revisión de las adopciones
+
+29-ago-2026, tarde.
+
+## No era un fantasma: eran las MARCAS DEL CAMPO
+
+Barriendo todas las celdas de 12×12 px del caché: **10 celdas concentran
+11.982 detecciones, el 56,4 % del total**, con dispersiones de 0,6 a
+3,2 px. La celda mediana del caché tiene **2** detecciones.
+
+Mirando los recortes del vídeo se ve qué son: **el punto central, el de
+penalti y una mancha oscura junto al muro del fondo**. Tienen tamaño y
+color de balón, y el troceado de la franja se los presenta a la red lo
+bastante grandes como para que dispare.
+
+### Dos señales que parecían buenas y NO valen (negativos)
+
+1. **Coexistencia** — *"el balón no está en dos sitios a la vez"*, que ya
+   es un principio del proyecto para identidades. Aquí está **contaminada**:
+   los propios fantasmas coexisten entre sí, así que el balón bueno sale
+   "fijo" por coincidir con ellos. Daba 10 de 10, incluido el balón real
+   del punto central (74,2 %).
+2. **Racha continua** — un objeto del fondo debería estar siempre. Se
+   detecta de forma intermitente: las rachas más largas son de 14-19 s,
+   indistinguibles de un balón parado en una falta.
+
+Lo que separa es lo aburrido: **acumular cientos de detecciones en la
+misma celda a lo largo del partido**.
+
+## El resultado, y es duro
+
+| | frames con balón | % |
+|---|---|---|
+| caché crudo del mixto | 14.550 | 80,9 % |
+| tras plausibilidad | 13.633 | 75,8 % |
+| **tras quitar las marcas** | **8.098** | **45,0 %** |
+| *(el caché anterior, frame entero)* | *8.137* | *45,2 %* |
+
+**El esquema mixto no añadió balón: añadió marcas.** Por zonas, lo que
+sobrevive al filtro: cerca 100 %, medio 60 %, **fondo 23 %**. En el fondo
+—que es justo lo que el mixto venía a arreglar— **el 77,2 % era marca**.
+
+Lo que compró de verdad, medido: de las 9.273 detecciones reales, solo
+**1.382 (14,9 %)** miden menos de 7,1 px, o sea que solo las ve el
+troceado. Y los frames donde SOLO hay balón pequeño —los que el frame
+entero perdería— son **658, el 3,7 % del partido**.
+
+**Y los 47/47 huecos cerrados se cerraron con marcas.** Las marcas 1-5
+están en campo x 38-47 e imagen y 624-656; los huecos del fondo
+arrancaban en y 590-642. El mismo sitio.
+
+Controles de que el filtro no se pasa de frenada:
+
+- lo quitado mide **4,9 px de mediana** (p90 5,8); el balón real mide
+  10-27 px según la zona;
+- lo que queda se mueve a **0,30 m por muestra**, como un balón (antes
+  había tramos a 0,02);
+- la posesión se mueve 2 puntos (39,0 → 41,0 %) y la cobertura baja de
+  34,3 % a 32,1 %.
+
+## La guarda de los 25 m, arreglada
+
+Distancia del balón REAL (ya sin marcas) al jugador más cercano:
+
+| | m |
+|---|---|
+| mediana | 1,6 |
+| p95 | 8,3 |
+| p99 | 17,2 |
+| **máximo** | **25,7** |
+
+El umbral estaba en **25 m: por encima de casi todo lo observado**. Ahora
+sale de la **anchura del campo** (un cuarto): 10 m en fútbol 7, 16 en un
+F11 de 64 m de ancho. Eso sí viaja a otro partido.
+
+Efecto medido: sobre el caché crudo el umbral nuevo descarta 3.468 frames
+—o sea que **ya puede dispararse**—, y sobre el caché ya limpio de marcas
+solo toca 32, o sea que **no se come balón bueno**.
+
+Con test propio que no comprueba el valor sino que **la guarda llega a
+actuar** con datos plausibles. Era lo que faltaba.
+
+## Revisión de las adopciones recientes del balón, con el ojo nuevo
+
+*¿Qué podría estar inventando esto?*
+
+| adopción | qué inventa | estado |
+|---|---|---|
+| **esquema mixto** | marcas del campo como balón | **DESTAPADO: 56 % del caché.** Su ganancia real es del 3,7 % de frames, no del 28. Decisión de Alex pendiente |
+| **relleno de huecos parados** | posiciones donde no se midió | Acotado: 377 frames, marcados `es_real=False`, y no entra en contactos (se calculan antes) ni en la posesión (que lee el caché). Riesgo bajo |
+| **franja derivada** | dónde trocear | Si se equivoca, trocea césped vacío. Tiene guarda: error si la franja pasa del 80 % del alto |
+| **catálogo arbitral por observación** | árbitros donde hay jugadores | Ya medido en su día: 1 jugador sacrificado de 814. Sigue siendo el tipo de cosa que hay que re-mirar |
+
+## Lo que hay que decidir
+
+El esquema mixto cuesta **29 min de GPU contra ~6** y aporta **3,7 puntos
+de frames con balón**. No está claro que compense, y la comparación justa
+—el mismo filtro de marcas aplicado a un caché de frame entero— no se
+puede hacer porque ese caché se sobrescribió. Es una decisión de Alex, y
+la medición que la resolvería es una pasada de `entero` sobre el mismo
+vídeo.
