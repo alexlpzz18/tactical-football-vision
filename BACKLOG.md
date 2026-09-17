@@ -456,3 +456,41 @@ es el equipo que defiende el lado visible al 15 %. **El recuento corto SÍ
 es del encuadre.**
 
 No queda nada que perseguir en la detección de jugadores.
+
+---
+
+### La contradicción del recuento, RESUELTA (17-sep-2026)
+
+`docs/la_contradiccion_del_recuento.md`. **No había nada roto.** Cada
+persona tiene fila del sistema a <2 m el 86,5 % de las veces, y exigir las
+siete a la vez da 0,865⁷ = 36,2 % por pura combinatoria — contra el 38,7 %
+observado. El 1,2 % de equipo equivocado es por OBSERVACIÓN y entre las que
+casan: miden cosas distintas.
+
+Hallazgos que sí quedan vivos:
+
+- **El error de posición cerca de la cámara es 1,29 m contra 0,41 m en el
+  centro.** No estaba medido, y explica que A salga peor en toda métrica
+  con radio. El 60 % de las personas "que faltan" son una "que sobra"
+  desplazada 2,48 m: la misma persona contada dos veces.
+- **A falla por defecto (66,3 %) y B por exceso (33,0 %).** Leer "45 %
+  correcto" como "faltan jugadores" era la mitad de la historia.
+- El exceso real sale de 8 identidades, y dos tienen nombre: **id 292**
+  (mezcla al árbitro, 1,10 m/s) e **id 62** (un balón como persona,
+  1,20 m/s). Un jugador de campo va a 1,5-2,5 m/s.
+
+⚠️ NEGATIVO: **quitar identidades no arregla el recuento.** Sin la id 292
+sube +2,1 pts, pero sin las tres que más sobran BAJA 2,4 pts, porque en los
+frames donde B estaba bien pasan a faltar.
+
+## 24. Retirar "recuento exacto = 7" de las métricas de producto (17-sep-2026)
+
+Es una métrica de igualdad exacta sobre catorce personas: castiga por
+combinatoria (36 % es el techo con un 86,5 % por persona) y no distingue
+"falta un jugador" de "sobra el árbitro".
+
+- [ ] Sustituirla en el informe por el recuento MEDIANO por equipo y el
+      error por observación, que es lo que ya está medido y validado.
+- [ ] ⚠️ Control: comprobar que la métrica nueva sigue bajando cuando se
+      introduce un fallo de verdad. Una métrica más amable que no se mueve
+      ante un fallo real es peor que la frágil.

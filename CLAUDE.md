@@ -182,6 +182,20 @@ Todo lo demás acaba desembocando aquí:
   falsa la hipótesis correcta de Alex, que el recuento corto es del
   encuadre. ⇒ Un número esperado también es una medida, y hay que
   comprobarlo igual que los demás.
+- **UNA MÉTRICA DE IGUALDAD EXACTA CASTIGA POR COMBINATORIA, NO POR
+  FALLOS.** El "solo el 38,7 % de frames tiene el recuento de B correcto"
+  parecía contradecir el 1,2 % de equipo equivocado. No se contradicen:
+  cada persona tiene fila a menos de 2 m el **86,5 %** de las veces, y
+  exigir que SIETE ocurran a la vez da 0,865⁷ = **36,2 %**, que es lo
+  observado. No había ningún fallo escondido. ⇒ Antes de buscar un bug
+  detrás de una tasa mala, calcular qué daría el sistema **sin ningún
+  fallo extra**. Y no usar igualdad exacta en el informe: la mediana o el
+  error por observación dicen lo mismo sin el castigo.
+- **EL ERROR DE POSICIÓN NO ES UNIFORME EN EL CAMPO**: 1,29 m de mediana
+  cerca de la cámara (x<20) contra 0,41 m en el centro. Como A defiende
+  ese lado, aparece peor en todo lo que lleve un radio — y el 60 % de las
+  personas "que faltan" son en realidad una "que sobra" desplazada 2,48 m.
+  Cualquier umbral en metros hereda ese sesgo.
 - **UN CRITERIO DE EMPAREJADO ES UN PARÁMETRO, NO UNA VERDAD.** Sobre los
   mismos 814 casos del GT: "pie a <20 px" da 1,62 ausencias por frame,
   IoU≥0,3 da 4,65 y "el centro cae dentro de la caja" da 0,45. El GT del
