@@ -155,3 +155,48 @@ def test_la_fraccion_del_campo_da_el_umbral_de_cada_campo(ancho, esperado):
     """Lo que hace que el número viaje a otro partido."""
     p = ParametrosBalon()
     assert p.fraccion_ancho_campo * ancho == pytest.approx(esperado)
+
+
+# ───────── el desempate cuando sobreviven varios candidatos ──────────
+
+
+def _candidato(px_m, py_m, primer_frame, n=10, conf=0.6, mueve=0.3):
+    """n detecciones de un candidato que avanza `mueve` metros por paso."""
+    out = {}
+    for i in range(n):
+        f = primer_frame + i * SAMPLE
+        out[f] = (px_m + i * mueve, py_m, 100.0, 100.0, 110.0, 110.0, conf)
+    return out
+
+
+def test_el_desempate_elige_por_CERCANIA_no_por_confianza():
+    """Medido sobre los 2.374 desempates de la parte entera: cercanía
+    acierta el 77,5 % y confianza el 71,5 %. Una marca pintada es tan
+    'balón' como un balón para el detector; lo que las separa es que el
+    balón del partido vive entre los pies de alguien."""
+    lejos = _candidato(2.0, 2.0, 0, conf=0.95)  # impostor, MUY seguro
+    cerca = _candidato(30.0, 20.0, 0, conf=0.50)  # el bueno, poco seguro
+    dets = {f: [lejos[f], cerca[f]] for f in lejos}
+    jugadores = {f: [(30.2, 20.1), (34.0, 24.0)] for f in dets}
+
+    activo = seleccionar_balon_activo(dets, jugadores, ParametrosBalon())
+
+    assert activo, "no ha elegido ningún balón"
+    for f, det in activo.items():
+        assert det[0] > 25.0, (
+            "ha elegido el candidato lejano por tener más confianza: el "
+            "desempate ha vuelto a ser de apariencia"
+        )
+
+
+def test_sin_posiciones_de_jugadores_el_desempate_cae_a_la_confianza():
+    """Degradación limpia: sin con qué medir cercanía, queda la confianza."""
+    a = _candidato(2.0, 2.0, 0, conf=0.95)
+    b = _candidato(30.0, 20.0, 0, conf=0.50)
+    dets = {f: [a[f], b[f]] for f in a}
+
+    activo = seleccionar_balon_activo(dets, {}, ParametrosBalon())
+
+    assert activo
+    for det in activo.values():
+        assert det[6] == pytest.approx(0.95)

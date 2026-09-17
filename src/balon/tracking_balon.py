@@ -176,14 +176,54 @@ def seleccionar_balon_activo(
             continue
         activos.add(i)
 
+    # ── DESEMPATE cuando sobreviven varios candidatos ────────────────
+    #
+    # Pasa en el 23,4 % de los frames con balón, así que no es un caso
+    # raro. Antes ganaba la CONFIANZA, que es un criterio de APARIENCIA —
+    # justo lo que el docstring de esta función dice que no sirve, porque
+    # una marca pintada del campo es tan "balón" como un balón.
+    #
+    # Gana la CERCANÍA A UN JUGADOR, que es de comportamiento: el balón
+    # del partido vive entre los pies de alguien (mediana 1,8 m) y una
+    # marca no (13,8 m). Medido sobre los 2.374 desempates de la parte
+    # entera, con las marcas conocidas como verdad:
+    #
+    #   | criterio | acierta |
+    #   |---|---|
+    #   | confianza (el anterior) | 71,5 % |
+    #   | **cercanía a un jugador** | **77,5 %** |
+    #   | movimiento del candidato | 68,5 % |
+    #   | cercanía + movimiento | 77,3 % |
+    #
+    # ⚠️ DOS NEGATIVOS que conviene no volver a intentar. El MOVIMIENTO
+    # desempata PEOR que la confianza, aunque sea la señal que separa las
+    # marcas en el filtro de arriba: los candidatos que llegan al
+    # desempate son justo los que ya sobrevivieron a esa señal, así que
+    # ahí no discrimina. Y sumarle movimiento a la cercanía no aporta
+    # nada (77,3 contra 77,5).
+    def _dist_a_jugador(frame, det):
+        jugadores = posiciones_jugadores.get(frame)
+        if not jugadores:
+            return float("inf")  # sin jugadores no se puede juzgar
+        d = np.linalg.norm(np.array(jugadores) - np.array(det[:2]), axis=1)
+        return float(d.min())
+
     resultado: dict[int, tuple] = {}
+    mejor_dist: dict[int, float] = {}
     for i, cand in enumerate(candidatos):
         if i not in activos:
             continue
         for frame, det in cand:
-            # Si dos activos coinciden en un frame, gana la confianza
-            if frame not in resultado or det[6] > resultado[frame][6]:
-                resultado[frame] = det
+            dist = _dist_a_jugador(frame, det)
+            if frame not in resultado:
+                resultado[frame], mejor_dist[frame] = det, dist
+                continue
+            # Con todo empatado a infinito (sin posiciones de jugadores)
+            # se cae al criterio anterior, la confianza: es lo único que
+            # queda, no un segundo criterio con voz propia.
+            previo = mejor_dist[frame]
+            if dist < previo or (dist == previo and det[6] > resultado[frame][6]):
+                resultado[frame], mejor_dist[frame] = det, dist
     return resultado
 
 

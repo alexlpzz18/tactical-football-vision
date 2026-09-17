@@ -387,3 +387,50 @@ asignar. Es la parte recuperable del recuento, y son 53 identidades.
 - [ ] ⚠️ El control: recuperarlas NO puede empeorar el 1,2 % de equipo
       equivocado. Meter 0,89 jugadores por frame con el equipo mal sería
       peor que no meterlos.
+
+---
+
+### Cierre de BACKLOG 20 y 22 (17-sep-2026)
+
+**BACKLOG 20 (el embudo) — resuelto**, `docs/recuento_no_es_el_encuadre.md`.
+Con el balón en el fondo (campo visible al 100 %) se cuentan **12,08 de 14**
+jugadores de campo, y el recuento apenas se mueve con la posición del
+balón: **el encuadre explica como mucho 1 jugador**. El reparto del
+déficit en frames limpios: **1,61 nunca se detectan**, 0,36 se pierden en
+el tracking y ~0 en el etiquetado. No es oclusión (correlación −0,26 con
+el apiñamiento); es que el bloque estirado pone a sus extremos en las
+zonas duras (−0,39 con el spread).
+
+⇒ **Tracking y etiquetado quedan exculpados.** Quien quiera subir el
+recuento tiene que ir al DETECTOR, y esa palanca ya está cerrada por otro
+sitio (el v4 con mAP50 0,944 no movió la aguja).
+
+**BACKLOG 22 (el cajón "otro") — cerrado en NEGATIVO.** No son jugadores
+recuperables: es el **árbitro**. El 84,7 % de los frames tiene 0 o 1, su
+color está lejos de los DOS prototipos (0,90 y 0,78, contra 0,03 de una
+identidad de A al suyo) y `pipeline_equipos.py` le asigna `"otro"` a
+propósito tras el catálogo arbitral. Lo recuperable es el exceso sobre 1:
+**~0,15 jugadores por frame**. No mueve el recuento.
+
+⚠️ El diagnóstico anterior ("son jugadores porque se distribuyen como A y
+B") era mío y estaba mal: no me pregunté qué OTRA cosa produce esa misma
+distribución.
+
+## 23. El detector pierde 1,6 personas por frame con el campo a la vista (17-sep-2026)
+
+Sale de cerrar el 20. En los frames donde se ve el campo entero se
+detectan **15,39 personas dentro del campo** de 17 esperadas (14 + 2
+porteros + árbitro). No es oclusión y no es encuadre.
+
+La señal que sí correlaciona: **el bloque estirado** (−0,39). Los
+extremos caen en el fondo (jugadores de ~26 px) o en el borde cercano.
+
+- [ ] Localizar QUÉ personas faltan: comparar, en los frames limpios, la
+      posición de las detecciones con la de la jugada anterior y la
+      siguiente por continuidad de identidad. Una persona que estaba y
+      vuelve a estar, pero no está ahora, es una pérdida localizable.
+- [ ] ⚠️ El control: parte de esas 1,61 pueden ser gente legítimamente
+      ausente (un cambio, alguien tumbado fuera del campo). Hay que
+      separar antes de llamarlo fallo.
+- [ ] Y antes de tocar el detector: comprobar si es el mismo techo de
+      resolución de Villaviciosa. Si lo es, la vía ya está cerrada.

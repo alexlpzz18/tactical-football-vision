@@ -218,3 +218,95 @@ de frames con balón**. No está claro que compense, y la comparación justa
 puede hacer porque ese caché se sobrescribió. Es una decisión de Alex, y
 la medición que la resolvería es una pasada de `entero` sobre el mismo
 vídeo.
+
+---
+
+# Tercera ronda: el movimiento, dentro del tracking
+
+17-sep-2026. Encargo de Alex: *"el filtro de marcas funciona pero a
+posteriori, mirando el partido entero. Muévelo al tracking... que funcione
+desde el primer minuto de un partido nuevo sin haber visto los 20"*.
+
+## Lo que ya estaba hecho sin saberlo
+
+`seleccionar_balon_activo` **ya trabaja por candidato**, no sobre el
+partido entero: agrupa detecciones por continuidad y mide el
+desplazamiento de cada grupo. Lo que lo tenía inútil era el umbral de
+25 m arreglado en la ronda anterior.
+
+Con el umbral derivado (10 m), medido sobre el caché crudo:
+
+| | marcas entre los balones activos |
+|---|---|
+| antes (25 m + desempate por confianza) | 30,6 % |
+| **ahora (10 m + desempate por cercanía)** | **22,5 %** |
+
+Y la posesión que sale del selector **solo**, sin el filtro offline:
+cobertura 32,8 % y A 40,3 %, contra 32,1 % y 41,0 % del filtro completo.
+**Casi lo mismo, sin haber visto los 20 minutos.**
+
+## El barrido del desplazamiento
+
+Con las marcas conocidas como verdad, sobre los candidatos del tracking:
+
+| regla | marcas quitadas | balón perdido |
+|---|---|---|
+| quieto < 0,03 | 73,2 % | 2,4 % |
+| **quieto < 0,05** | **87,4 %** | **2,7 %** |
+| quieto < 0,08 | 90,0 % | 4,5 % |
+| quieto < 0,05 **y a más de 10 m de un jugador** | 73,2 % | **0,5 %** |
+| quieto < 0,05 y a más de 4 m | 86,5 % | 2,0 % |
+
+Otra vez **dos señales débiles**: el desplazamiento solo quita más marcas
+(87 %) pero se come el 2,7 % del balón — que es justo el balón parado en
+un saque, lo que Alex pidió proteger. Con la distancia, el coste baja a
+**0,5 %**, cinco veces menos.
+
+Se queda el umbral **derivado del ancho del campo** (10 m), no el 4 m que
+daría más marcas: es el que viaja a otro partido y el que respeta el
+control.
+
+⚠️ Y una razón de fondo para no exigir "mucho tiempo quieto": los
+candidatos de marca duran **2,2 s de mediana**, porque se detectan de
+forma intermitente. Una regla de "lleva 30 s sin moverse" solo cazaría el
+5 %.
+
+## El desempate: de APARIENCIA a COMPORTAMIENTO
+
+Cuando sobreviven varios candidatos —el **23,4 %** de los frames con
+balón, o sea nada raro— antes ganaba la **confianza**. Es un criterio de
+apariencia, y el propio docstring del módulo dice que no sirve: *"son
+indistinguibles del bueno por apariencia"*.
+
+Medido sobre los 2.374 desempates de la parte entera:
+
+| criterio | elige el balón bueno |
+|---|---|
+| confianza (el anterior) | 71,5 % |
+| **cercanía a un jugador** | **77,5 %** |
+| movimiento del candidato | 68,5 % |
+| cercanía + movimiento | 77,3 % |
+
+Adoptada la **cercanía**: +6 puntos, y es de comportamiento. El balón del
+partido vive entre los pies de alguien (mediana 1,8 m) y una marca no
+(13,8 m). Sin posiciones de jugadores se cae a la confianza, que es lo
+único que queda.
+
+### DOS NEGATIVOS que conviene no repetir
+
+1. **El movimiento desempata PEOR que la confianza** (68,5 contra 71,5),
+   aunque sea la señal que separa las marcas en el filtro de arriba. El
+   motivo: los candidatos que llegan al desempate son justo los que ya
+   sobrevivieron a esa señal, así que ahí no discrimina. **Una señal buena
+   para filtrar no tiene por qué serlo para ordenar.**
+2. **Sumar movimiento a la cercanía no aporta nada** (77,3 contra 77,5).
+
+## Los dos filtros se quedan, y son complementarios
+
+- **En el tracking** (online, desde el minuto 1): quieto + lejos de los
+  jugadores + desempate por cercanía. Deja las marcas en el 22,5 %.
+- **Offline, sobre el partido entero**: `marcas_estaticas`, que las
+  identifica por acumulación en la misma celda y las quita casi todas.
+
+El primero es lo que se puede ofrecer sobre un partido nuevo mientras se
+procesa; el segundo, lo que se aplica al terminar.
