@@ -1,5 +1,15 @@
 # El recuento corto NO es solo el encuadre: falta detección
 
+> ⚠️ **CORREGIDO EL MISMO DÍA — ver `docs/backlog23_no_hay_deficit.md`.**
+> Este documento concluye que faltan **1,61 detecciones por frame**. Es
+> falso: salía de contar **16 personas en el campo cuando en fútbol 7 son
+> 14** (7 por equipo INCLUYENDO al portero, y el GT tiene 14 tracks). Con
+> la cifra correcta no falta nadie —sobran 0,39— y el GT dice que el
+> detector encuentra al **96,7 %**. Lo que sigue siendo válido de aquí: el
+> método del selector independiente, el reparto A/B y que el déficit de A
+> es del encuadre. Lo que NO: el "1,61 no se detectan nunca" y el
+> BACKLOG 23 que abrió.
+
 17-sep-2026. Encargo de Alex: *"las observaciones con equipo equivocado
 son el 1,2 % pero el recuento correcto de B es el 45 %. Mi hipótesis es
 que el recuento corto es del ENCUADRE, no del sistema"*.

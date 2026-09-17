@@ -434,3 +434,25 @@ extremos caen en el fondo (jugadores de ~26 px) o en el borde cercano.
       separar antes de llamarlo fallo.
 - [ ] Y antes de tocar el detector: comprobar si es el mismo techo de
       resolución de Villaviciosa. Si lo es, la vía ya está cerrada.
+
+---
+
+### BACKLOG 23 — CERRADO EN NEGATIVO el mismo día que se abrió (17-sep-2026)
+
+`docs/backlog23_no_hay_deficit.md`. **No faltan 1,6 personas por frame.**
+El déficit salía de contar 16 personas en el campo cuando en **fútbol 7
+son 14** (7 por equipo incluyendo al portero; el GT tiene 14 tracks). Con
+la cifra correcta, las 15,39 detecciones de los frames limpios son un
+EXCEDENTE de 0,39, no un déficit.
+
+Medido contra el GT: el detector encuentra al **96,7 %** de las personas
+anotadas (27 ausencias de 814, 0,45 por frame), **rotando** entre 9 tracks
+al 2-10 % cada uno, con 5 tracks sin ningún fallo y 36 de 60 frames
+limpios del todo. Y de esas 27, varias son deriva de la anotación.
+
+⚠️ Y el error hacía parecer falsa la hipótesis de Alex: con la plantilla
+correcta, **B está completo (7,38 de 7) y el que falta es A (6,17)**, que
+es el equipo que defiende el lado visible al 15 %. **El recuento corto SÍ
+es del encuadre.**
+
+No queda nada que perseguir en la detección de jugadores.

@@ -174,6 +174,23 @@ Todo lo demás acaba desembocando aquí:
   `otro` eran jugadores recuperables porque se distribuían como A y B,
   sin preguntarse qué otra cosa produce esa distribución. Era el
   árbitro.
+- **ANTES DE CULPAR AL SISTEMA, COMPROBAR LA ARITMÉTICA DEL DOMINIO.**
+  Se persiguió durante días un "faltan 1,6 personas por frame" que no
+  existía: salía de contar **16 personas en el campo cuando en fútbol 7
+  son 14** (7 por equipo INCLUYENDO al portero). El GT lo decía desde el
+  principio — tiene 14 tracks. Y encima el mismo error hacía parecer
+  falsa la hipótesis correcta de Alex, que el recuento corto es del
+  encuadre. ⇒ Un número esperado también es una medida, y hay que
+  comprobarlo igual que los demás.
+- **UN CRITERIO DE EMPAREJADO ES UN PARÁMETRO, NO UNA VERDAD.** Sobre los
+  mismos 814 casos del GT: "pie a <20 px" da 1,62 ausencias por frame,
+  IoU≥0,3 da 4,65 y "el centro cae dentro de la caja" da 0,45. El GT del
+  benjamín es una PLANTILLA FIJA de 40×18 px, así que su "pie" no es el
+  pie de un jugador cercano a la cámara (47 px de desfase en el portero,
+  que salía "sin detectar el 100 % de las veces" siendo visible), y el
+  IoU castiga que las cajas del detector sean 1,47× más altas. Antes de
+  leer una tasa de fallo, medir el SESGO del emparejado con parejas que
+  no estén seleccionadas por ese mismo criterio.
 - **Un test de mutación tiene que verificar que el fichero CAMBIÓ** antes
   de interpretar el resultado. Una mutación cuyo `str.replace` no
   coincide es un no-op, y entonces "7 passed" no dice que el código esté
