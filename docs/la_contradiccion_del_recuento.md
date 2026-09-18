@@ -1,5 +1,17 @@
 # La contradicción del recuento: no había nada roto
 
+> ⚠️ **CORREGIDO AL DÍA SIGUIENTE — ver `docs/homografia_zona_cercana.md`.**
+> El punto 3 de este documento presenta **1,29 m de error de posición cerca
+> de la cámara contra 0,41 m en el centro** como un hallazgo de zona. Es
+> falso: **son 57 observaciones del portero de A**, que es el único que
+> habita esa zona, con un sesgo propio de 1,44 m. Los tres jugadores de
+> campo que pasan por allí dan 0,23 m, y sin el portero el error crece con
+> la profundidad (0,33 · 0,33 · 0,48 · 0,77 m) como manda la óptica. Se cae
+> con ello el corolario de que "A está castigado en toda métrica con
+> radio". Lo demás del documento —la combinatoria, el reparto
+> defecto/exceso, las identidades con nombre y el negativo de quitarlas—
+> sigue en pie.
+
 17-sep-2026. La pregunta de Alex: *"1,2 % de observaciones con equipo
 equivocado y solo 45 % de frames con el recuento de B correcto. Hemos
 descartado el encuadre, el tracking y la detección. Algo falla y no
@@ -56,7 +68,8 @@ sobrante a menos de 4 m en el mismo frame**, a una mediana de **2,48 m**.
 Son la misma persona, contada como ausencia Y como exceso, solo porque su
 posición cae fuera del radio de 2 m.
 
-Y el error de posición no está repartido:
+Y el error de posición parecía no estar repartido (⚠️ **la tabla que
+sigue es la que quedó refutada**, ver la cabecera):
 
 | zona | error mediano | p90 |
 |---|---|---|
@@ -65,9 +78,10 @@ Y el error de posición no está repartido:
 | x 35-50 | 0,51 m | 1,22 m |
 | x 50-62 | 0,70 m | 1,53 m |
 
-**Tres veces más error cerca de la cámara**, que es donde la homografía
-trabaja peor y donde juega A. Por eso A aparece corto por partida doble:
-se le ve menos y encima se le sitúa peor.
+⚠️ Se leyó como *"tres veces más error cerca de la cámara, donde la
+homografía trabaja peor"*. **No es cierto**: la homografía es ahí donde
+mejor trabaja, y ese 1,29 m es el portero de A arrastrando la mediana de
+una zona que solo habita él.
 
 ⚠️ El radio manda sobre todo lo demás: las ausencias van de **1,85 por
 frame a 2 m** a **0,80 a 5 m**. El p90 del casado óptimo es 2,76 m, así
@@ -134,8 +148,7 @@ no tiene dueño.
 - Lo único accionable de verdad son **dos identidades con nombre**: el
   292 (árbitro mezclado) y el 62 (el balón como persona), y ninguna de las
   dos se arregla borrándola.
-- **El error de posición cerca de la cámara (1,29 m) es el hallazgo nuevo**
-  y no estaba medido. Explica que A salga peor en todo, y afecta a
-  cualquier métrica con radio.
+- ~~El error de posición cerca de la cámara (1,29 m) es el hallazgo nuevo.~~
+  **RETIRADO**: era un solo track. Ver la cabecera.
 - La métrica de recuento exacto debería retirarse del informe en favor de
   la mediana o del error por observación.

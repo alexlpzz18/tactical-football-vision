@@ -191,11 +191,23 @@ Todo lo demás acaba desembocando aquí:
   detrás de una tasa mala, calcular qué daría el sistema **sin ningún
   fallo extra**. Y no usar igualdad exacta en el informe: la mediana o el
   error por observación dicen lo mismo sin el castigo.
-- **EL ERROR DE POSICIÓN NO ES UNIFORME EN EL CAMPO**: 1,29 m de mediana
-  cerca de la cámara (x<20) contra 0,41 m en el centro. Como A defiende
-  ese lado, aparece peor en todo lo que lleve un radio — y el 60 % de las
-  personas "que faltan" son en realidad una "que sobra" desplazada 2,48 m.
-  Cualquier umbral en metros hereda ese sesgo.
+- **UNA MEDIANA POR ZONA NO ES DE LA ZONA SI UNA PERSONA VIVE ALLÍ.** Duró
+  un día el "1,29 m de error cerca de la cámara contra 0,41 en el centro".
+  **Era el portero de A**: aporta 57 de las 81 observaciones de esa zona
+  —porque es el único que la habita— con un sesgo de 1,44 m, y los tres
+  jugadores de campo que pasan por allí dan 0,23. Sin él, el error crece
+  con la profundidad (0,33 · 0,33 · 0,48 · 0,77 m), que es lo que manda la
+  óptica. ⇒ Antes de atribuir un número a una ZONA, contar **cuántas
+  personas distintas** lo sostienen. Y el aviso estaba puesto: el error
+  cercano era un **SESGO** con todo el intercuartil del mismo lado, y **un
+  sesgo tiene dueño; el ruido no**.
+- **CONTRASTAR CADA NÚMERO CONTRA LA FÍSICA DEL PROBLEMA, NO SOLO CONTRA
+  OTROS NÚMEROS.** Lo anterior lo cazó Alex sin medir nada: cerca de la
+  cámara 1 px vale 3 cm, así que 1,29 m son **38 px** y eso no puede ser.
+  La homografía quedó exculpada por tres vías (Monte Carlo de ruido de
+  clic: la zona cercana es la MÁS estable, 0,09 m contra 0,29 del fondo;
+  la envolvente de los 19 puntos; y reajustar sin los clics del borde)
+  (`docs/homografia_zona_cercana.md`).
 - **UN CRITERIO DE EMPAREJADO ES UN PARÁMETRO, NO UNA VERDAD.** Sobre los
   mismos 814 casos del GT: "pie a <20 px" da 1,62 ausencias por frame,
   IoU≥0,3 da 4,65 y "el centro cae dentro de la caja" da 0,45. El GT del
