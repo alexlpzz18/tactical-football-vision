@@ -185,12 +185,24 @@ def _filtrar_creible(
 
     Requiere la columna `es_real`; sin ella devuelve el CSV tal cual (los
     CSV antiguos no la tienen y siguen funcionando).
+
+    ⚠️ EL BALÓN NO PASA POR ESTE FILTRO. Sus reglas de credibilidad ya se
+    aplicaron en su propio pipeline (`preparar_para_replay`: recta
+    atenuada en vuelo, relleno solo de huecos cortos y lentos), y estas,
+    pensadas para jugadores, lo rompían: la ficha de "balón por el aire"
+    (id −2) va entera con `es_real=0` a propósito, así que la regla 1 la
+    borraba SIEMPRE. La leyenda ofrecía "Balón por el aire" y no aparecía
+    nunca — el 30 % de las observaciones de balón de la parte entera
+    (`docs/pizarra_parte_entera.md`).
     """
     if "es_real" not in df.columns:
         logger.info("CSV sin columna 'es_real': el replay pinta todo el CSV.")
         return df
 
-    conservar = []
+    es_balon = df["etiqueta"].astype(str).str.startswith("balon")
+    balon, df = df[es_balon], df[~es_balon]
+
+    conservar = [balon] if len(balon) else []
     for _id_jugador, grupo in df.groupby("id_jugador"):
         grupo = grupo.sort_values("tiempo_s")
         tiempos_reales = grupo.loc[grupo["es_real"] == 1, "tiempo_s"].to_numpy()
@@ -210,15 +222,18 @@ def _filtrar_creible(
             "max_edad_interp_s / min_vida_s."
         )
     filtrado = pd.concat(conservar)
+    jugadores = filtrado[~filtrado["etiqueta"].astype(str).str.startswith("balon")]
     logger.info(
-        "Filtro de credibilidad: %d → %d posiciones, %d → %d identidades "
-        "(interpolado ≤ %.1f s de un real, vida ≥ %.1f s)",
+        "Filtro de credibilidad (jugadores): %d → %d posiciones, %d → %d "
+        "identidades (interpolado ≤ %.1f s de un real, vida ≥ %.1f s). "
+        "Balón intacto: %d filas.",
         len(df),
-        len(filtrado),
+        len(jugadores),
         df["id_jugador"].nunique(),
-        filtrado["id_jugador"].nunique(),
+        jugadores["id_jugador"].nunique(),
         max_edad_interp_s,
         min_vida_s,
+        len(balon),
     )
     return filtrado
 
@@ -310,7 +325,13 @@ def generar_replay(
         # Opacidad por antigüedad: las posiciones interpoladas se
         # desvanecen conforme se alejan de una detección real, para que la
         # ficha no aparezca y desaparezca de golpe.
-        if "es_real" in grupo.columns:
+        tiene_reales = "es_real" in grupo.columns and (grupo["es_real"] == 1).any()
+        if "es_real" in grupo.columns and not tiene_reales:
+            # Solo la ficha de "balón por el aire" llega aquí sin ninguna
+            # fila real (el filtro de credibilidad la deja pasar a
+            # propósito): va entera a la opacidad mínima, atenuada.
+            alfas = [0.35] * len(grupo)
+        elif tiene_reales:
             tiempos_reales = grupo.loc[grupo["es_real"] == 1, "tiempo_s"].to_numpy()
             edades = np.min(
                 np.abs(grupo["tiempo_s"].to_numpy()[:, None] - tiempos_reales[None, :]),

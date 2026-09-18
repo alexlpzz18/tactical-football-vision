@@ -82,3 +82,43 @@ def cargar_detecciones_limpias(
     meta["n_frames"] = n_frames
     meta["celdas_marcas"] = marcas
     return dets, tiempos, meta
+
+
+def jugadores_por_frame_de_balon(ruta_csv_jugadores, tiempos: dict, frames) -> dict:
+    """{frame_de_balón: [(x_m, y_m, id)]} con los jugadores REALES de ese instante.
+
+    El balón y los jugadores van a frecuencias distintas (1 de cada 2
+    frames contra 1 de cada 3), así que se casan por TIEMPO: el instante
+    de jugadores más cercano dentro de 0,08 s, o ninguno.
+
+    Estaba escrito dentro de `procesar_balon.py`. Se saca aquí para que el
+    vídeo de diagnóstico elija el balón activo con los MISMOS jugadores que
+    la pizarra: dos renderizadores con dos balones distintos serían otra
+    herramienta de diagnóstico mintiendo sobre el sistema.
+    """
+    import pandas as pd
+
+    jug = pd.read_csv(ruta_csv_jugadores)
+    reales = jug[jug.es_real == 1]
+    por_tiempo = {
+        round(float(t), 2): [
+            (float(r.x_m), float(r.y_m), int(r.id_jugador)) for r in g.itertuples()
+        ]
+        for t, g in reales.groupby("tiempo_s")
+    }
+    claves = sorted(por_tiempo)
+
+    def en(frame):
+        t = round(tiempos.get(frame, 0.0), 2)
+        if t in por_tiempo:
+            return por_tiempo[t]
+        if not claves:
+            return []
+        import bisect
+
+        i = bisect.bisect_left(claves, t)
+        vecinos = [claves[k] for k in (i - 1, i) if 0 <= k < len(claves)]
+        cercano = min(vecinos, key=lambda x: abs(x - t))
+        return por_tiempo[cercano] if abs(cercano - t) <= 0.08 else []
+
+    return {f: en(f) for f in frames}

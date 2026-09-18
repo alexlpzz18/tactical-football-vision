@@ -91,27 +91,19 @@ def main() -> None:
     )
     n_frames_cache = meta["n_frames"]
 
+    from src.balon.carga import jugadores_por_frame_de_balon
+
     jug = pd.read_csv(args.csv_jugadores)
-    reales = jug[jug.es_real == 1]
-    # Los jugadores van a otra frecuencia: se indexan por tiempo para
-    # poder emparejar con el balón, que se muestrea más denso.
-    por_tiempo, equipo_de = {}, {}
-    for t, g in reales.groupby("tiempo_s"):
-        por_tiempo[round(float(t), 2)] = [
-            (float(r.x_m), float(r.y_m), int(r.id_jugador)) for r in g.itertuples()
-        ]
-        for r in g.itertuples():
-            equipo_de[int(r.id_jugador)] = str(r.etiqueta)
+    equipo_de = {
+        int(r.id_jugador): str(r.etiqueta) for r in jug[jug.es_real == 1].itertuples()
+    }
+    # Mismo emparejado por tiempo que usa el vídeo de diagnóstico.
+    jug_de_frame = jugadores_por_frame_de_balon(
+        args.csv_jugadores, tiempos, detecciones
+    )
 
     def jugadores_en(frame):
-        t = round(tiempos.get(frame, 0.0), 2)
-        if t in por_tiempo:
-            return por_tiempo[t]
-        # El instante más cercano dentro de medio paso de jugadores
-        cercano = min(por_tiempo, key=lambda x: abs(x - t), default=None)
-        if cercano is None or abs(cercano - t) > 0.08:
-            return []
-        return por_tiempo[cercano]
+        return jug_de_frame.get(frame, [])
 
     params = ParametrosBalon()
     pos_jug = {f: [(j[0], j[1]) for j in jugadores_en(f)] for f in detecciones}

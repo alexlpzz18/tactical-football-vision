@@ -184,6 +184,82 @@ def dibujar_frame(frame, dets, tracking_frame, colores_equipo, mostrar_conf):
     return frame
 
 
+AMARILLO = (0, 230, 255)
+
+
+def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
+    """{frame: (detección, es_aereo)} con el balón ACTIVO, como la pizarra.
+
+    ⚠️ Antes se pintaba el caché CRUDO, sin plausibilidad ni filtro de
+    marcas: el punto de penalti y el central salían como balón en el 56 %
+    de las detecciones (`docs/balon_fantasma.md`), y en frames con varios
+    candidatos se pintaban todos. El vídeo existe para juzgar al sistema,
+    así que tiene que enseñar el balón que el sistema USA, no el que el
+    detector propone.
+
+    Se pintan las CAJAS del detector (píxeles crudos, regla de esta
+    herramienta). Los huecos que la pizarra rellena no tienen caja y aquí
+    no se inventan: se ven como ausencia, que es lo que son.
+    """
+    if ruta_csv is None:
+        raise ValueError(
+            "--cache-balon necesita --csv: el balón activo se elige mirando "
+            "dónde están los jugadores, como en la pizarra."
+        )
+    import numpy as np
+
+    from src.balon.carga import cargar_detecciones_limpias, jugadores_por_frame_de_balon
+    from src.balon.tracking_balon import (
+        ParametrosBalon,
+        detectar_fases_aereas,
+        seleccionar_balon_activo,
+    )
+    from src.campo_modelo import cargar_modelo
+
+    dets, tiempos, _meta = cargar_detecciones_limpias(
+        ruta_cache_balon, cargar_modelo(config=ruta_campo)
+    )
+    jug = jugadores_por_frame_de_balon(ruta_csv, tiempos, dets)
+    params = ParametrosBalon()
+    activo = seleccionar_balon_activo(
+        dets, {f: [(j[0], j[1]) for j in v] for f, v in jug.items()}, params
+    )
+    orden = sorted(activo)
+    trayectoria = [
+        (f, np.array(activo[f][:2]), activo[f][5] - activo[f][3], activo[f][6])
+        for f in orden
+    ]
+    aereo = detectar_fases_aereas(trayectoria, tiempos, params)
+    logger.info(
+        "Balón activo para el vídeo: %d frames (%d en el aire)", len(orden), sum(aereo)
+    )
+    return {f: (activo[f], bool(a)) for f, a in zip(orden, aereo)}
+
+
+def dibujar_balon(frame, det, es_aereo: bool):
+    """Círculo blanco en el suelo; amarillo y con "aire" cuando vuela.
+
+    En vuelo la CAJA sigue siendo buena (el detector ve el balón); lo que
+    no vale es su proyección al suelo. Por eso se pinta igual, pero
+    distinto, para que se entienda por qué la pizarra lo atenúa.
+    """
+    x1, y1, x2, y2 = int(det[2]), int(det[3]), int(det[4]), int(det[5])
+    centro = ((x1 + x2) // 2, (y1 + y2) // 2)
+    color = AMARILLO if es_aereo else (255, 255, 255)
+    cv2.circle(frame, centro, max(8, (x2 - x1) // 2 + 5), color, 2)
+    if es_aereo:
+        cv2.putText(
+            frame,
+            "aire",
+            (centro[0] + 10, centro[1] - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            1,
+            cv2.LINE_AA,
+        )
+
+
 def dets_del_cache(cfg):
     """{frame_idx: dets} del caché, si existe (sin GPU ni modelo)."""
     ruta = Path(cfg["rutas"]["cache"])
@@ -243,8 +319,13 @@ def main() -> None:
     parser.add_argument(
         "--cache-balon",
         default=None,
-        help="Caché de balón: lo pinta encima, en su propio color y con "
-        "su propia frecuencia de muestreo",
+        help="Caché de balón: pinta el balón ACTIVO, el mismo que la pizarra "
+        "(limpio de marcas y elegido con los jugadores de --csv)",
+    )
+    parser.add_argument(
+        "--campo",
+        default="configs/campo_benja.yaml",
+        help="Config del campo, para la plausibilidad del balón",
     )
     parser.add_argument("--conf", action="store_true", help="Escribir la confianza")
     parser.add_argument(
@@ -286,14 +367,9 @@ def main() -> None:
 
     # El balón va en su propio caché y a otra frecuencia, así que se
     # indexa por frame y se pinta el que toque (o ninguno).
-    balon_por_frame = {}
-    if args.cache_balon:
-        import pickle as _pickle
-
-        with open(args.cache_balon, "rb") as f:
-            _d = _pickle.load(f)
-        balon_por_frame = {e["frame_idx"]: e["dets"] for e in _d["cache"] if e["dets"]}
-        logger.info("Balón: %d frames con detección", len(balon_por_frame))
+    balon_por_frame = (
+        balon_activo(args.cache_balon, args.csv, args.campo) if args.cache_balon else {}
+    )
 
     cache_dets = None if args.sin_cache else dets_del_cache(cfg)
     if cache_dets is None:
@@ -373,15 +449,8 @@ def main() -> None:
                 if frame_idx + delta in balon_por_frame:
                     cercano = balon_por_frame[frame_idx + delta]
                     break
-            for b in cercano or []:
-                x1, y1, x2, y2 = int(b[2]), int(b[3]), int(b[4]), int(b[5])
-                cv2.circle(
-                    frame,
-                    ((x1 + x2) // 2, (y1 + y2) // 2),
-                    max(6, (x2 - x1) // 2 + 4),
-                    (255, 255, 255),
-                    2,
-                )
+            if cercano is not None:
+                dibujar_balon(frame, *cercano)
             # Reloj y contador, para poder citar un instante concreto
             cv2.putText(
                 frame,

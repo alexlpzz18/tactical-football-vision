@@ -275,3 +275,66 @@ def test_se_puede_volver_al_comportamiento_viejo(tmp_path):
     datos, _ = _datos_del_html(salida.read_text())
     assert datos[0]["et"] == "B"
     assert "ets" not in datos[0]
+
+
+def _con_balon_aereo(tmp_path):
+    """Un jugador de verdad + el balón tal como lo emite procesar_balon.py.
+
+    El balón continuo (-1) tiene filas reales en tierra y la recta del vuelo
+    con es_real=0; la ficha de "en el aire" (-2) va ENTERA con es_real=0.
+    """
+    filas = []
+    for k in range(40):
+        t = k * 0.1
+        filas.append((k, t, 7, "A", 20.0 + k * 0.1, 15.0, 1))
+        en_vuelo = 10 <= k < 30  # 2 s en el aire: más que max_edad_interp_s
+        filas.append((k, t, -1, "balon", 30.0 + k * 0.3, 20.0, 0 if en_vuelo else 1))
+        if en_vuelo:
+            filas.append((k, t, -2, "balon_aereo", 30.0 + k * 0.3, 20.0, 0))
+    df = pd.DataFrame(
+        filas,
+        columns=[
+            "frame",
+            "tiempo_s",
+            "id_jugador",
+            "etiqueta",
+            "x_m",
+            "y_m",
+            "es_real",
+        ],
+    )
+    ruta = tmp_path / "conjunto.csv"
+    df.to_csv(ruta, index=False)
+    return ruta
+
+
+def _datos(html: str) -> list:
+    return json.loads(re.search(r"const DATOS = (\[.*?\]);\n", html, re.S).group(1))
+
+
+def test_la_ficha_de_BALON_AEREO_llega_a_la_pizarra(tmp_path):
+    """Antes el filtro de credibilidad la borraba SIEMPRE: no tiene filas reales.
+
+    En la parte entera era el 30 % del balón, y la leyenda lo anunciaba.
+    """
+    salida = generar_replay(_con_balon_aereo(tmp_path), tmp_path / "r.html")
+    ids = {d["id"] for d in _datos(salida.read_text(encoding="utf-8"))}
+    assert -2 in ids
+
+
+def test_la_recta_del_vuelo_no_se_recorta_a_0_6_s(tmp_path):
+    """El vuelo dura 2 s: con la regla de los jugadores se quedaba en 0,6 + 0,6."""
+    salida = generar_replay(_con_balon_aereo(tmp_path), tmp_path / "r.html")
+    balon = next(d for d in _datos(salida.read_text(encoding="utf-8")) if d["id"] == -1)
+    assert len(balon["t"]) == 40
+
+
+def test_a_los_JUGADORES_se_les_sigue_aplicando_el_filtro(tmp_path):
+    """Control: la excepción es del balón, no un filtro apagado."""
+    ruta = _con_balon_aereo(tmp_path)
+    df = pd.read_csv(ruta)
+    fantasma = df[df.id_jugador == 7].assign(id_jugador=99, es_real=0)
+    pd.concat([df, fantasma]).to_csv(ruta, index=False)
+    salida = generar_replay(ruta, tmp_path / "r.html")
+    ids = {d["id"] for d in _datos(salida.read_text(encoding="utf-8"))}
+    assert 99 not in ids and 7 in ids
