@@ -208,6 +208,16 @@ Todo lo demás acaba desembocando aquí:
   clic: la zona cercana es la MÁS estable, 0,09 m contra 0,29 del fondo;
   la envolvente de los 19 puntos; y reajustar sin los clics del borde)
   (`docs/homografia_zona_cercana.md`).
+- **UN RECORTE SE SACA CON `posicionar_en_frame()`, NUNCA CON `cap.set`.**
+  En este mp4 pedir el frame 9750 aterriza en el 10077 (11 s), y las cajas
+  salen correctas sobre el fotograma equivocado. Ya estaba documentado en
+  `processor.py` y aun así se volvió a caer en ello en un script de
+  trabajo. El síntoma que lo delata: cajas sobre césped vacío.
+- **El sesgo del portero cercano era de la REGLA**: el GT del track 6 está
+  en el PECHO (el dorsal), no en los pies, en las 20 muestras. Lo real es
+  otra cosa: **está cortado por el borde inferior en 47 de 57** y el
+  sistema lo pone ~1,4 m lejos de su portería (`docs/portero_cortado.md`,
+  BACKLOG 25). No se agacha nunca.
 - **UN CRITERIO DE EMPAREJADO ES UN PARÁMETRO, NO UNA VERDAD.** Sobre los
   mismos 814 casos del GT: "pie a <20 px" da 1,62 ausencias por frame,
   IoU≥0,3 da 4,65 y "el centro cae dentro de la caja" da 0,45. El GT del

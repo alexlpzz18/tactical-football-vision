@@ -494,3 +494,22 @@ combinatoria (36 % es el techo con un 86,5 % por persona) y no distingue
 - [ ] ⚠️ Control: comprobar que la métrica nueva sigue bajando cuando se
       introduce un fallo de verdad. Una métrica más amable que no se mueve
       ante un fallo real es peor que la frágil.
+
+## 25. Estimar el pie de las cajas cortadas por el borde inferior (18-sep-2026)
+
+**Qué**: cuando una caja toca el borde inferior de la imagen, su "pie" es el
+filo, no el pie. Estimarlo desde el borde superior: `pie = y1 +
+alto_esperado(fila)`, con el alto aprendido de las cajas NO cortadas a esa
+altura de la imagen.
+
+**Por qué**: el portero de A está cortado en 47 de 57 observaciones del GT,
+y en el partido entero hay alguien cortado a x<12 el **39,4 %** de los
+frames. El sistema lo sitúa ~1,44 m (cota inferior) más lejos de su
+portería, y el portero entra en la regla del último hombre
+(`docs/portero_cortado.md`).
+
+**Comprobación previa**: el estimador acierta el pie de las 10 observaciones
+NO cortadas con 0,05 m. **¿Qué podría inventar?** Un pie detrás de la línea
+de fondo si el portero se agacha de verdad o es más bajo: ninguna posición
+corregida puede caer en x < 0 más allá del ruido. ⚠️ No se puede validar
+contra el GT de track 6: su caja está en el pecho, no en los pies.
