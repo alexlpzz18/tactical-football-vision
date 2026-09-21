@@ -208,6 +208,25 @@ Todo lo demás acaba desembocando aquí:
   clic: la zona cercana es la MÁS estable, 0,09 m contra 0,29 del fondo;
   la envolvente de los 19 puntos; y reajustar sin los clics del borde)
   (`docs/homografia_zona_cercana.md`).
+- **UNA MÉTRICA DE "EQUIPO EQUIVOCADO" NO VE LO QUE SE MANDA AL CAJÓN.**
+  Solo cuenta filas etiquetadas A o B, así que un jugador mandado por error
+  a `otro` (árbitro) o `staff` es INVISIBLE. El catálogo arbitral por
+  observación tenía un 78,5 % de aciertos al mover 3.555 filas a `otro`, y el
+  21,5 % restante incluía **al portero de A** (camiseta negra, ~500 filas,
+  ids 420, 468…). Todo criterio que mueva filas hacia un cajón lleva una
+  segunda medida: *¿cuántas de las movidas NO son lo que el cajón dice?*
+  (`docs/arbitro_y_baile_de_colores.md`).
+- **UN UMBRAL DE SATURACIÓN QUE FALLA NO SE ARREGLA BAJÁNDOLO.** El chaleco
+  del árbitro alterna entre S≈248 y S≈72-104 según el minuto (el catálogo
+  pide S≥170: acierta el 3 % o el 98 % de los minutos). Bajar el umbral con
+  la regla del bin dominante recupera el 93 % del árbitro y captura además
+  el 6,4 % de todas las ventanas A/B. Lo que separa es otra medida (la MASA
+  en la región), no otro número.
+- **UN CAMBIO DE ETIQUETA NO ES SIEMPRE UN FALLO.** En la ventana del GT, 8 de
+  los 18 cambios A↔B corrigen una etiqueta y 10 la rompen: casi la mitad es
+  la etiqueta ACERTANDO al pasar a otra persona (la identidad mezcla). Un
+  suavizado del baile de colores destruiría esos aciertos: es la misma
+  lección que el parpadeo de posición.
 - **UN RECORTE SE SACA CON `posicionar_en_frame()`, NUNCA CON `cap.set`.**
   En este mp4 pedir el frame 9750 aterriza en el 10077 (11 s), y las cajas
   salen correctas sobre el fotograma equivocado. Ya estaba documentado en

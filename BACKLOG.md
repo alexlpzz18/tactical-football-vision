@@ -513,3 +513,33 @@ NO cortadas con 0,05 m. **¿Qué podría inventar?** Un pie detrás de la línea
 de fondo si el portero se agacha de verdad o es más bajo: ninguna posición
 corregida puede caer en x < 0 más allá del ruido. ⚠️ No se puede validar
 contra el GT de track 6: su caja está en el pecho, no en los pies.
+
+## 26. El catálogo arbitral: saturación y falsos capturados (21-sep-2026)
+
+**Qué**: (a) el arquetipo `verde_fluor` exige S≥170 y el chaleco de esta
+cámara alterna entre S≈248 y S≈72-104: el catálogo solo acierta el 58 % de las
+filas de árbitro (el 47,5 % en la ventana del GT); (b) captura al **portero de
+A** (~500 filas, ids 420, 468, 586, 612, 695…), probablemente por el
+arquetipo `negro`.
+
+**Comprobación previa**: NO bajar S con la regla del bin dominante (captura
+15 de 663 jugadores en la ventana y el 6,4 % de las ventanas A/B del partido).
+Candidato: regla por MASA en la región (H 20-90, S≥80 ≥ 0,27), 58/663 sin
+falsos en 30 s de GT. Falta: validar más allá de esa ventana, identificar la
+segunda fila verde (417 frames) y excluir al portero por posición o por color.
+Medir en las DOS patas (Villaviciosa tiene GT del árbitro, track 22).
+**¿Qué podría inventar?** Jugadores capturados como árbitro: medir con la
+métrica "cuántas de las filas movidas a `otro` NO son árbitro".
+
+## 27. El baile de colores: dos personas en una caja (21-sep-2026)
+
+**Qué**: 741 cambios A↔B (37/min) en 192 de 320 identidades; el 73 % cae en
+una caja solapada o anómalamente ancha (contra el 30,6 % de la base) y el 73 %
+en identidades mezcladas. Casi la mitad de los cambios son la etiqueta
+ACERTANDO (8 de 18 en la ventana del GT).
+
+**Comprobación previa**: NO suavizar. Candidato: no etiquetar por color una
+observación cuya caja se solapa con la de un rival (IoU>0,10) y heredar la
+etiqueta del entorno. Medir qué corrige y qué inventa; el 21 % de los cambios
+(157) no tiene explicación en solape ni vecinos y queda sin resolver
+(`docs/arbitro_y_baile_de_colores.md`, `outputs/baile_casos.csv`).
