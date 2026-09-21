@@ -106,6 +106,12 @@ Y no está donde creíamos: sin re-entrada la pureza sube solo de 80,1 % a
 84,4 %, así que **el 16 % restante se contamina DENTRO del seguimiento
 continuo**, en los cruces. Hay que **partir y luego unir**.
 
+⚠️ **Matiz medido el 21-sep** (`docs/desglose_del_error.md`): «asociación» = *quién cuenta
+como presente en el bloque*, y de ese margen **solo el 6 % es la etiqueta de equipo**
+(equipo equivocado). Del 1,45 m de centroide: faltan 41 % · sobran 25 % (el árbitro es la
+mitad) · filas mal puestas 2-5 m 17 % · localización 11 % · etiqueta 6 %. Con la lista de
+presentes perfecta y las posiciones del sistema baja a 0,25 m.
+
 Todo lo demás acaba desembocando aquí:
 
 - **UNA PERSONA ES N IDENTIDADES.** El portero se parte en 5 y 21
@@ -191,6 +197,18 @@ Todo lo demás acaba desembocando aquí:
   detrás de una tasa mala, calcular qué daría el sistema **sin ningún
   fallo extra**. Y no usar igualdad exacta en el informe: la mediana o el
   error por observación dicen lo mismo sin el castigo.
+- **UN ERROR NETO PUEDE ESCONDER DOS FLUJOS BRUTOS QUE SE COMPENSAN.** El
+  recuento neto sale a +0,13 por equipo y frame, casi perfecto, y el centroide a
+  1,45 m: faltan 0,76 jugadores y sobran 0,84 (el árbitro, filas mal puestas). En el
+  recuento se anulan; en el centroide, no. Y una escalera de oráculos que arregla UNA
+  cosa engaña: quitar los sobrantes solos empeoraba el centroide (1,45 → 1,58).
+  ⇒ Descomponer con valores de **Shapley** y desglosar en flujos BRUTOS, no netos.
+  Y separar «falta + sobra» cuando son la misma fila mal puesta a ≤ 5 m: contarlas dos
+  veces inflaba los dos trozos (`docs/desglose_del_error.md`).
+- **EL GT DE UNA VENTANA NO REPRESENTA EL PARTIDO.** El de 30 s cae en un minuto bueno
+  (recuento 6,69) y el error triplica entre sus propios tercios (0,75 → 2,46 m); por
+  minuto, el recuento va de 4,83 a 7,25 y correlaciona +0,93 con las detecciones
+  crudas en campo: el recuento corto se decide ANTES del tracking.
 - **UNA MEDIANA POR ZONA NO ES DE LA ZONA SI UNA PERSONA VIVE ALLÍ.** Duró
   un día el "1,29 m de error cerca de la cámara contra 0,41 en el centro".
   **Era el portero de A**: aporta 57 de las 81 observaciones de esa zona

@@ -597,3 +597,28 @@ ventana, con dos variantes, **empeora** los cambios (741 → 789/758) y el error
 limpios el 93,6 % (±6). La vía de cortar identidades por color ya era negativa (agosto).
 El baile es el síntoma de que la identidad cambia de persona: se arregla en la asociación,
 no en el etiquetado. Opción `excluir_ocluidas` escrita y apagada.
+
+## 31. GT de RECUENTO en minutos malos + la pista de las filas lejos de toda detección (21-sep-2026) — 🔎 DIAGNÓSTICO HECHO (`docs/desglose_del_error.md`)
+
+**Qué**: el desglose del error (`scripts/desglose_del_error.py`) dice que el 83 % del
+centroide es *quién está en el bloque* (faltan 0,60 m · sobran 0,36 · filas mal puestas
+0,24) y solo el 6 % la etiqueta de equipo. Pero el GT (30 s) cae en un minuto BUENO y
+el error triplica de un tercio a otro; en los minutos 3, 4, 8, 13 y 14 el recuento
+medio es < 6 y el detector ya ve 11-13 personas en campo (contra 14,4).
+
+**Pendiente 1 — GT solo de recuento (lo más valioso)**: 2-3 ventanas de 30 s en
+minutos MALOS (3, 8, 13 o 14), marcando solo *cuántos jugadores hay en imagen y quién
+falta* (sin tracks ni identidades: mucho más barato que el GT actual). Con eso se
+separa ENCUADRE de DETECTOR, que hoy solo se puede apuntar (las detecciones en campo
+correlacionan −0,78 con la altura de las cajas: el juego junto a la cámara estrecha el
+campo visible).
+
+**Pendiente 2 — filas `es_real=1` a >1 m de toda detección cruda**: el 25 % de las
+filas libres (0,47 por equipo y frame en el partido) y solo unos pocos % de las
+casadas. Recuerda a las «alas» del balón: **medir antes de tocar nada** si el
+suavizado de 0,5 s o la resolución de solapes generan posiciones que no son de nadie.
+El retardo del suavizado como causa de las filas desplazadas ya está **refutado**
+(signo 43 %, pendiente 0,00 s).
+
+**Comprobación previa**: repetir el desglose sobre las ventanas nuevas con el mismo script
+(`--gt`, `--offset`, `--paso`) y comprobar que el reparto por tercios aguanta.
