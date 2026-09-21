@@ -205,6 +205,17 @@ Todo lo demás acaba desembocando aquí:
   ⇒ Descomponer con valores de **Shapley** y desglosar en flujos BRUTOS, no netos.
   Y separar «falta + sobra» cuando son la misma fila mal puesta a ≤ 5 m: contarlas dos
   veces inflaba los dos trozos (`docs/desglose_del_error.md`).
+- **EL ENCUADRE ES GEOMETRÍA, Y SE PUEDE CALCULAR.** El campo visible es un trapecio: a
+  x = 8 m la cámara ve 16 m de los 40 de ancho; solo desde x ≈ 28 se ve todo. El déficit de
+  recuento es EPISÓDICO (13 de 81 bins de 15 s, 16 % del tiempo: 10,3 detecciones en campo
+  contra 14,3) y coincide con el juego a x < 20 m; en esos episodios ningún proxy de
+  sobrantes, desplazadas o etiqueta empeora. Pero hay un SEGUNDO tipo de episodio, con
+  detecciones normales, que los proxies de recuento no ven (`docs/desglose_por_episodios.md`).
+- **Una fila `es_real=1` que no está en una detección puede venir del SUAVIZADO.** Sin el
+  suavizado de 0,5 s, el 100 % coincide (mediana 0,004 m); con él, el 6,9 % queda a > 1 m
+  (11,5 % en el fondo). Cuesta +0,066 m de centroide (IC 95 % [+0,033, +0,103]) y **no**
+  causa las filas desplazadas 2-5 m: siguen ahí sin suavizar. Antes de culpar a una etapa,
+  apagarla y repetir.
 - **EL GT DE UNA VENTANA NO REPRESENTA EL PARTIDO.** El de 30 s cae en un minuto bueno
   (recuento 6,69) y el error triplica entre sus propios tercios (0,75 → 2,46 m); por
   minuto, el recuento va de 4,83 a 7,25 y correlaciona +0,93 con las detecciones

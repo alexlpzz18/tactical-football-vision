@@ -598,27 +598,28 @@ limpios el 93,6 % (±6). La vía de cortar identidades por color ya era negativa
 El baile es el síntoma de que la identidad cambia de persona: se arregla en la asociación,
 no en el etiquetado. Opción `excluir_ocluidas` escrita y apagada.
 
-## 31. GT de RECUENTO en minutos malos + la pista de las filas lejos de toda detección (21-sep-2026) — 🔎 DIAGNÓSTICO HECHO (`docs/desglose_del_error.md`)
+## 31. GT de RECUENTO en minutos malos + la pista de las filas lejos de toda detección (21-sep-2026) — 🔎 DIAGNÓSTICO HECHO (`docs/desglose_del_error.md`, `docs/desglose_por_episodios.md`)
 
-**Qué**: el desglose del error (`scripts/desglose_del_error.py`) dice que el 83 % del
-centroide es *quién está en el bloque* (faltan 0,60 m · sobran 0,36 · filas mal puestas
-0,24) y solo el 6 % la etiqueta de equipo. Pero el GT (30 s) cae en un minuto BUENO y
-el error triplica de un tercio a otro; en los minutos 3, 4, 8, 13 y 14 el recuento
-medio es < 6 y el detector ya ve 11-13 personas en campo (contra 14,4).
+**Estado tras la segunda tanda (21-sep)**:
+- **Pista de las filas a >1 m de toda detección: MEDIDA.** Es el suavizado de 0,5 s (6,9 % de
+  las filas, 11,5 % en el fondo). Sin él, el 100 % de las filas reales coincide con una
+  detección. Cuesta **+0,066 m** de centroide contra el GT (IC 95 % [+0,033, +0,103]).
+  **No causa** las filas desplazadas (siguen sin suavizar). Nada cambiado. Salida posible:
+  métricas sobre la posición medida y replay sobre la suavizada; **antes medir** distancia
+  y velocidades sin suavizar.
+- **El 83 % de «presencia» se sostiene en los minutos malos** (proxies): todo el déficit es
+  aguas arriba (detecciones −4,0, filas A/B −4,6) y ningún proxy de EXT/DES/LAB sube. Error
+  esperado ≥ 2,1 m en el 15 % del tiempo (extrapolación, suelo). **Pero** hay un segundo
+  tipo de episodio (tercio 3 del GT: detecciones normales, 21 % de personas sin fila) que
+  los proxies no ven.
+- El campo visible es un trapecio (a x=8 m solo 16 de 40 m): encuadre geométrico. Coherente
+  con la hipótesis, **no probado**.
 
-**Pendiente 1 — GT solo de recuento (lo más valioso)**: 2-3 ventanas de 30 s en
-minutos MALOS (3, 8, 13 o 14), marcando solo *cuántos jugadores hay en imagen y quién
-falta* (sin tracks ni identidades: mucho más barato que el GT actual). Con eso se
-separa ENCUADRE de DETECTOR, que hoy solo se puede apuntar (las detecciones en campo
-correlacionan −0,78 con la altura de las cajas: el juego junto a la cámara estrecha el
-campo visible).
+**Pendiente — GT solo de recuento** (Alex lo hace; 3-4 ventanas de 30 s): 3:10-3:40 (frame
+5.694), 4:30-5:00 (8.092), 14:00-14:30 (25.175) y **13:25-13:55 (24.126) como control**
+(pocas detecciones sin juego cerca de la cámara). Frames con `posicionar_en_frame()`, nunca
+`cap.set`. Con él: separar ENCUADRE de DETECTOR y medir la frecuencia del episodio del
+tercio 3.
 
-**Pendiente 2 — filas `es_real=1` a >1 m de toda detección cruda**: el 25 % de las
-filas libres (0,47 por equipo y frame en el partido) y solo unos pocos % de las
-casadas. Recuerda a las «alas» del balón: **medir antes de tocar nada** si el
-suavizado de 0,5 s o la resolución de solapes generan posiciones que no son de nadie.
-El retardo del suavizado como causa de las filas desplazadas ya está **refutado**
-(signo 43 %, pendiente 0,00 s).
-
-**Comprobación previa**: repetir el desglose sobre las ventanas nuevas con el mismo script
-(`--gt`, `--offset`, `--paso`) y comprobar que el reparto por tercios aguanta.
+**Comprobación previa**: repetir el desglose sobre las ventanas nuevas (`--gt`, `--offset`,
+`--paso`) y comprobar que el reparto por tercios aguanta.
