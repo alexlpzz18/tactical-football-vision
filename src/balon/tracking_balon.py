@@ -110,6 +110,18 @@ class ParametrosBalon:
     # dan el mismo resultado; a 0,3 s ya se cuelan filas (0,4 % a más de 1 m
     # de toda detección). Sin este corte, el 12,1 % de las filas "reales" del
     # partido entero no era ninguna detección (docs/balon_sin_alas.md).
+    # ── relleno de huecos MIRANDO AL FUTURO (docs/balon_con_futuro.md, BACKLOG 30) ──
+    # Se procesa en diferido: en un hueco ya se sabe dónde REAPARECE el balón.
+    # Una recta por tiempo entre el punto de antes y el de después acierta el
+    # 83 % a menos de 2 m contra el 51 % de mantener la posición (huecos reales,
+    # reponderados; 97 % en los de 0,7-1,2 s). Con estas guardas cubre ~1.200
+    # frames contra los ~395 de mantener, con un 99 % esperado a menos de 2 m.
+    # Los rellenos NO son medidas: es_real=False y fuera de contactos y posesión.
+    interp_futuro_max_hueco_s: float = 1.2  # 0 = apagado
+    interp_futuro_vel_max_m_s: float = 12.0  # entre los extremos: más es otro balón
+    # Zona cercana a la cámara: allí muchos huecos son balón FUERA de encuadre y
+    # la recta inventaría un trayecto por césped vacío. Es de ESTE campo (62 m).
+    interp_futuro_x_min_m: float = 20.0
     max_hueco_suavizado_s: float = 0.2
     # ── puerta de continuidad EN PÍXELES (docs/balon_sin_alas.md, BACKLOG 28) ──
     # Un salto imposible en metros puede ser un vuelo o un CAMBIO DE CANDIDATO
@@ -421,6 +433,45 @@ def detectar_contactos(
     return contactos
 
 
+def _interpolacion_con_futuro(
+    fila_a: tuple,
+    fila_b: tuple,
+    faltan: list[int],
+    tiempos: dict,
+    params: ParametrosBalon,
+) -> list[tuple] | None:
+    """Filas de relleno por una recta entre dos anclas, o None si no procede.
+
+    Las guardas (todas deben cumplirse) son las medidas en
+    `docs/balon_con_futuro.md`: hueco corto, extremos compatibles con UN solo
+    balón, fuera de la zona cercana, y anclas de suelo REAL — un relleno no puede
+    ser ancla de otro, ni una posición aérea proyectada.
+    """
+    frame_a, pos_a, aereo_a, real_a = fila_a
+    frame_b, pos_b, aereo_b, real_b = fila_b
+    if params.interp_futuro_max_hueco_s <= 0:
+        return None
+    if aereo_a or aereo_b or not (real_a and real_b):
+        return None
+    dt = tiempos[frame_b] - tiempos[frame_a]
+    if dt <= 0 or dt > params.interp_futuro_max_hueco_s:
+        return None
+    pos_a, pos_b = np.asarray(pos_a, dtype=float), np.asarray(pos_b, dtype=float)
+    if float(np.linalg.norm(pos_b - pos_a)) / dt > params.interp_futuro_vel_max_m_s:
+        return None
+    if (pos_a[0] + pos_b[0]) / 2.0 < params.interp_futuro_x_min_m:
+        return None
+    return [
+        (
+            f,
+            pos_a + (pos_b - pos_a) * (tiempos[f] - tiempos[frame_a]) / dt,
+            False,
+            False,
+        )
+        for f in faltan
+    ]
+
+
 def _rellenar_huecos_parados(
     salida: list[tuple],
     tiempos: dict,
@@ -458,13 +509,15 @@ def _rellenar_huecos_parados(
     parado suele estarlo porque el juego está parado, y lo siguiente que
     pasa es un saque o una falta, o sea el balón yéndose lejos.
     """
-    if params.max_hueco_relleno_s <= 0 or params.vel_max_relleno_m_s <= 0:
+    mantener_activo = params.max_hueco_relleno_s > 0 and params.vel_max_relleno_m_s > 0
+    if not mantener_activo and params.interp_futuro_max_hueco_s <= 0:
         return salida  # relleno apagado a propósito
     if len(salida) < 2:
         return salida
 
     muestreados = sorted(tiempos)
     rellenos = []
+    n_futuro = 0
     for k in range(len(salida) - 1):
         frame_a, pos_a, aereo_a, _real_a = salida[k]
         frame_b = salida[k + 1][0]
@@ -475,6 +528,19 @@ def _rellenar_huecos_parados(
         j = bisect.bisect_left(muestreados, frame_b)
         faltan = muestreados[i:j]
         if not faltan:
+            continue
+        # Con futuro primero: la recta entre las dos anclas es mejor que mantener
+        # (y contiene a mantener como caso particular: extremos iguales). Si las
+        # guardas no lo permiten, se cae a la regla de mantener de siempre.
+        if frame_b not in cortes:
+            recta = _interpolacion_con_futuro(
+                salida[k], salida[k + 1], faltan, tiempos, params
+            )
+            if recta is not None:
+                rellenos.extend(recta)
+                n_futuro += len(recta)
+                continue
+        if not mantener_activo:
             continue
         if tiempos[frame_b] - tiempos[frame_a] > params.max_hueco_relleno_s:
             continue
@@ -508,9 +574,14 @@ def _rellenar_huecos_parados(
     if not rellenos:
         return salida
     logger.info(
-        "Relleno de huecos: %d frames mantenidos (hueco <= %.1f s y balón a "
+        "Relleno de huecos: %d frames por recta entre anclas (hueco <= %.1f s, "
+        "v <= %.0f m/s, x >= %.0f m) y %d mantenidos (hueco <= %.1f s y balón a "
         "< %.1f m/s); el resto se deja vacío a propósito.",
-        len(rellenos),
+        n_futuro,
+        params.interp_futuro_max_hueco_s,
+        params.interp_futuro_vel_max_m_s,
+        params.interp_futuro_x_min_m,
+        len(rellenos) - n_futuro,
         params.max_hueco_relleno_s,
         params.vel_max_relleno_m_s,
     )

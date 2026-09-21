@@ -576,7 +576,7 @@ y no es la prioridad. ⚠️ La investigación no está en el repo: la guarda Al
 falta añadir aquí su ubicación o su referencia. Licencias: mirar código y
 PESOS por separado (regla del proyecto: nada AGPL, nada de SoccerNet).
 
-## 30. Rellenar los huecos con el FUTURO (recta entre anclas) (21-sep-2026)
+## 30. Rellenar los huecos con el FUTURO (recta entre anclas) (21-sep-2026) — ✅ CONSTRUIDO (`docs/balon_con_futuro.md`)
 
 **Qué**: en un hueco corto, interpolar por tiempo entre el punto de antes y el
 de después en vez de mantener la última posición. Medido (`docs/balon_con_futuro.md`,

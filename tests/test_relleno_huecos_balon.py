@@ -90,10 +90,16 @@ def test_no_rellena_partiendo_de_una_posicion_aerea():
 
 
 def test_no_rellena_sin_pasos_previos_con_los_que_juzgar():
-    """Sin un paso anterior no se puede comprobar que estaba parado."""
+    """Sin un paso anterior no se puede comprobar que estaba parado.
+
+    Aísla la regla de MANTENER: con el futuro conocido (docs/balon_con_futuro.md)
+    la recta entre anclas sí puede rellenar aquí, así que se apaga.
+    """
     salida = _serie([(30.0, 20.0)]) + _serie([(30.0, 20.0)], primer_frame=6)
     resultado = _rellenar_huecos_parados(
-        salida, _tiempos(range(0, 8, 2)), ParametrosBalon()
+        salida,
+        _tiempos(range(0, 8, 2)),
+        ParametrosBalon(interp_futuro_max_hueco_s=0.0),
     )
 
     assert [f for f, *_ in resultado] == [0, 6]
@@ -118,12 +124,16 @@ def test_no_toca_ninguna_posicion_medida():
 @pytest.mark.parametrize(
     "apagado",
     [
-        ParametrosBalon(max_hueco_relleno_s=0.0),
-        ParametrosBalon(vel_max_relleno_m_s=0.0),
+        ParametrosBalon(max_hueco_relleno_s=0.0, interp_futuro_max_hueco_s=0.0),
+        ParametrosBalon(vel_max_relleno_m_s=0.0, interp_futuro_max_hueco_s=0.0),
     ],
 )
 def test_apagar_cualquiera_de_los_dos_umbrales_apaga_el_relleno(apagado):
-    """Un interruptor que nadie lee da una falsa sensación de control."""
+    """Un interruptor que nadie lee da una falsa sensación de control.
+
+    Con la interpolación al futuro también apagada: aquí se prueba la regla de
+    MANTENER, y esta es la que se apaga con cualquiera de sus dos umbrales.
+    """
     salida = _serie([(30.0, 20.0)] * 4) + _serie([(30.0, 20.0)], primer_frame=14)
     tiempos = _tiempos(range(0, 16, 2))
 

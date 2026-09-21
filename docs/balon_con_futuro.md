@@ -7,7 +7,7 @@ antes de descartarlo; si el acierto sube claramente, hay margen."*
 
 Reproducir: `python scripts/balon_huecos_con_futuro.py`.
 
-## Veredicto: hay margen, y es grande. No está construido.
+## Veredicto: hay margen, y es grande. ✅ CONSTRUIDO (ver el final).
 
 ## Cómo se mide (y por qué hay que desconfiar)
 
@@ -92,3 +92,71 @@ Recta por tiempo entre el punto de antes y el de después, solo si: hueco
 ≤ 1,2 s, velocidad entre extremos ≤ 12 m/s, fuera de la zona cercana, y sin
 un corte de la puerta de píxeles de por medio. Sustituye a la regla de
 «mantener» (que queda como caso particular: extremos cercanos). Ver BACKLOG 30.
+
+
+---
+
+# Construido (21-sep-2026)
+
+Alex: *«Constrúyelo. 83 % contra 51 %, con guardas (hueco ≤ 1,2 s, velocidad
+≤ 12 m/s, fuera de zona ciega). Márcalo es_real=0 y fuera de contactos y
+posesión, como el resto de rellenos.»*
+
+## Qué hace
+
+`_rellenar_huecos_parados` prueba primero la recta entre las dos anclas
+(`_interpolacion_con_futuro`); si las guardas no lo permiten, cae a la regla de
+mantener de siempre. Guardas, todas en `ParametrosBalon`:
+
+| parámetro | valor | qué protege |
+|---|---|---|
+| `interp_futuro_max_hueco_s` | 1,2 s (0 = apagado) | más allá, el acierto cae (86 % a 1,2-2,2 s, 63 % >2,2 s) |
+| `interp_futuro_vel_max_m_s` | 12 m/s | extremos que no pueden ser el MISMO balón |
+| `interp_futuro_x_min_m` | 20 m | zona cercana: allí los huecos son a menudo balón FUERA de encuadre. **Es de ESTE campo (62 m)** |
+| anclas | suelo REAL, no aéreas | un relleno no puede ser ancla de otro |
+| cortes | sin corte de la puerta de píxeles de por medio | el balón de después no es el de antes |
+
+Los rellenos van con `es_real=0` y `es_aereo=0`. **No entran en contactos ni en
+posesión**: esos se calculan sobre detecciones (contactos idénticos byte a byte,
+y `posesion_parte_entera.py` lee el caché, no este CSV).
+
+## Comprobado sobre el CÓDIGO construido, no sobre mi script de análisis
+
+Se esconden 900 bloques reales de detecciones (3-12 muestras), se ejecuta
+`preparar_balon` y se compara cada frame rellenado con la detección escondida:
+
+| | frames rellenados | mediana | <1 m | <2 m | p90 |
+|---|---|---|---|---|---|
+| **con futuro** | **4.476** | 0,18 m | 94 % | **99 %** | 0,78 m |
+| mantener (lo que había) | 729 | 0,42 m | 88 % | 98 % | 1,03 m |
+
+(Banco sintético optimista: la comparación buena es la reponderada de arriba,
+83 % contra 51 %. Esto solo confirma que el código hace lo que el análisis midió.)
+
+## Parte entera
+
+| | antes | con futuro |
+|---|---|---|
+| frames rellenados | 391 (todos por «mantener») | **1.212 por recta** + 103 mantenidos |
+| filas de balón no reales | 2.715 | 3.639 |
+| filas reales | 5.676 | 5.676 |
+| pasos >40 m/s pintados | 35 | 34 |
+
+1.212 es lo que predecía la medida (1.200). Contactos idénticos.
+
+## Tests
+
+`tests/test_relleno_con_futuro.py` (12): interpolación por tiempo, no medidas,
+donde mantener fallaba, cada guarda por separado, corte, anclas aéreas o no
+reales, parámetros, y reparto por TIEMPO con frames no equiespaciados. **Siete
+mutaciones, todas cazadas**; una se escapó al principio (índice contra tiempo,
+porque mis frames eran equiespaciados y ahí coinciden) y hizo falta un test con
+fps variable.
+
+Tres tests de la regla de mantener se ajustaron para aislarla (apagan la
+interpolación): ahora, con el futuro conocido, el relleno actúa donde antes
+«no se podía juzgar».
+
+⚠️ **Lo que sigue sin saberse**: cuántos de los huecos que rellena son balón
+FUERA de encuadre. La guarda de zona lo acota, pero el banco no puede medirlo.
+Mirar a ojo una muestra de los rellenos de 0,7-1,2 s antes de fiarse del todo.
