@@ -338,3 +338,14 @@ def test_a_los_JUGADORES_se_les_sigue_aplicando_el_filtro(tmp_path):
     salida = generar_replay(ruta, tmp_path / "r.html")
     ids = {d["id"] for d in _datos(salida.read_text(encoding="utf-8"))}
     assert 99 not in ids and 7 in ids
+
+
+def test_las_identidades_de_balon_no_cuentan_como_jugadores_en_el_encabezado(tmp_path):
+    """Un corte de la puerta de píxeles reparte el balón en decenas de identidades."""
+    ruta = _con_balon_aereo(tmp_path)
+    df = pd.read_csv(ruta)
+    extra = df[df.id_jugador == -1].assign(id_jugador=-102)
+    pd.concat([df, extra]).to_csv(ruta, index=False)
+    salida = generar_replay(ruta, tmp_path / "r.html")
+    html = salida.read_text(encoding="utf-8")
+    assert "!String(d.et).startsWith('balon')" in html

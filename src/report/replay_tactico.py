@@ -407,7 +407,7 @@ def generar_replay(
     logger.info(
         "Replay generado: %s (%d identidades, t=%.1f–%.1f s)",
         salida_html,
-        len(identidades),
+        sum(1 for i in identidades if not str(i["et"]).startswith("balon")),
         t_min,
         t_max,
     )
@@ -691,7 +691,8 @@ barra.addEventListener('input', () => {
 
 document.getElementById('fin').textContent = mmss(TMAX);
 document.getElementById('meta').textContent =
-  DATOS.length + ' identidades · tramo ' + mmss(TMIN) + '–' + mmss(TMAX) +
+  DATOS.filter(d => !String(d.et).startsWith('balon')).length +
+  ' identidades · tramo ' + mmss(TMIN) + '–' + mmss(TMAX) +
   ' (reloj del vídeo) · generado por Tactical Lens';
 dibujar(T); refrescarUI();
 </script>

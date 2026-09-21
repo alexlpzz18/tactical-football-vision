@@ -544,7 +544,7 @@ etiqueta del entorno. Medir qué corrige y qué inventa; el 21 % de los cambios
 (157) no tiene explicación en solape ni vecinos y queda sin resolver
 (`docs/arbitro_y_baile_de_colores.md`, `outputs/baile_casos.csv`).
 
-## 28. Puerta de continuidad EN PÍXELES para el balón (21-sep-2026)
+## 28. Puerta de continuidad EN PÍXELES para el balón (21-sep-2026) — ✅ CONSTRUIDA (`docs/balon_sin_alas.md`, addendum)
 
 **Qué**: las 46 rutas de vuelo con pasos imposibles que quedan tras los dos
 arreglos de `docs/balon_sin_alas.md` son, casi todas, dos detecciones que NO
@@ -571,3 +571,16 @@ campo, donde el balón mide pocos píxeles (el muro de 7,1 px,
 y no es la prioridad. ⚠️ La investigación no está en el repo: la guarda Alex;
 falta añadir aquí su ubicación o su referencia. Licencias: mirar código y
 PESOS por separado (regla del proyecto: nada AGPL, nada de SoccerNet).
+
+## 30. Rellenar los huecos con el FUTURO (recta entre anclas) (21-sep-2026)
+
+**Qué**: en un hueco corto, interpolar por tiempo entre el punto de antes y el
+de después en vez de mantener la última posición. Medido (`docs/balon_con_futuro.md`,
+`scripts/balon_huecos_con_futuro.py`): reponderado a los huecos reales, el acierto
+a menos de 2 m pasa del 51 % al 83 % (97 % en huecos de 0,7-1,2 s), y una regla
+con guardas cubriría 1.200 frames contra los 395 de hoy, al 99 %.
+
+**Comprobación previa pendiente**: qué parte de los huecos son balón FUERA de
+encuadre (la recta inventaría un trayecto). Mirar a ojo una muestra de los
+huecos de 0,7-1,2 s que la regla rellenaría. Los rellenos van con `es_real=0` y
+fuera de posesión y contactos. No necesita RTS (Hermite es peor).

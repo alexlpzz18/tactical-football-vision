@@ -220,3 +220,63 @@ Y un segundo aviso: arreglar el primer bug **movió** el problema en vez de
 quitarlo (69 → 272 pasos por las filas no reales; total 317 → 272). Mirar solo
 las filas reales lo habría dado por cerrado con 248 → 0; el desglose por tipo
 de fila mostró que faltaba el segundo bug.
+
+
+---
+
+# Addendum: la puerta de continuidad en píxeles, construida (21-sep-2026)
+
+Alex dio por buenos los dos arreglos y pidió construir el BACKLOG 28.
+
+## Dónde se aplica, y una medida que casi me engaña
+
+Mi primer intento de medir el umbral sobre TODOS los pasos consecutivos del
+balón activo dio que **el 13,6 % supera 1.000 px/s** (p99: 11.730 px/s),
+muy por encima del 9 % de los extremos de vuelo. No se contradicen: esos saltos
+casi siempre ya quedan absorbidos por las **fases marcadas como aéreas**, que
+hacían de filtro de picos sin que lo supiéramos (538 picos de 1-2 muestras y
+340 reubicaciones). Por eso la puerta se aplica en los dos sitios donde
+importa, medidos aparte:
+
+| dónde | pasos | sobre 1.000 px/s |
+|---|---|---|
+| dos filas de suelo contiguas | 4.919 | **17 (0,35 %)** |
+| extremos de una racha aérea | 536 | **48 (9,0 %)** · 83 filas aéreas dentro |
+
+## Qué hace
+
+`preparar_balon(..., centros_px)` (nueva; `preparar_para_replay` queda de
+envoltorio sin puerta). Si los extremos saltan más de `vel_max_px_s`
+(1.000 px/s):
+
+- **no se dibuja** la recta ni el marcador aéreo (no es un vuelo);
+- el aterrizaje abre un **tramo nuevo** (un corte): el suavizado y el
+  relleno de huecos no lo cruzan, y el CSV le da otra identidad
+  (`id_de_tramo`: -1, -102, -104...; el marcador aéreo -2, -103, -105...);
+- **no se elimina ninguna fila de suelo.**
+
+## Resultado en la parte entera
+
+| | antes (2 bugs) | + 2 arreglos | + puerta |
+|---|---|---|---|
+| cortes | — | — | **65** (48 vuelos + 17 pares) |
+| pasos >40 m/s pintados (dentro de cada tramo) | 317 | 128 | **35** |
+| real→real | 248 | 0 | 0 |
+| filas de balón reales | 5.676 | 5.676 | **5.676** |
+| marcador aéreo | 2.407 | 2.407 | 2.324 (−83) |
+| relleno de huecos | 226 | 395 | 391 |
+
+Contactos idénticos byte a byte. El relleno pierde 4 frames que cruzaban un
+corte. Encabezado de la pizarra: ya no cuenta las identidades de balón como
+jugadores (con 66 tramos habría dicho 353).
+
+Tests: `tests/test_puerta_pixeles_balon.py` (9) + 1 en el replay. **5
+mutaciones, una se escapó** (usar un solo límite de tiempo para vuelos y
+pares, porque mi vuelo de prueba duraba 0,27 s y caía bajo los dos) y hizo
+falta un vuelo de 0,8 s.
+
+## Lo que sigue sin saberse
+
+Los 9 vuelos «físicos» que la puerta pilla (1,4 %) pueden ser también cambios
+de candidato: sin GT del balón no se puede saber. Y quedan 35 pasos
+imposibles dentro de un tramo, sin investigar.

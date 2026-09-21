@@ -272,7 +272,10 @@ Todo lo demás acaba desembocando aquí:
   misma trampa que ya nos tendió black comiéndose un `replace` en el
   generador de la hoja de GT.
 - **Mirar el ÍNDICE antes de commitear** (`git status`), no lo que
-  acabas de añadir. Un `git add -A` que el hook aborta deja los ficheros
+  acabas de añadir. **Y no pasar `black` por todo el árbol**
+  (`black src tests scripts`): reformatea código ajeno y un `git add -A`
+  lo mete en tu commit (pasó el 21-sep con cinco ficheros que no eran
+  tuyos). Formatear solo lo que se toca. Un `git add -A` que el hook aborta deja los ficheros
   en el índice. **Y mirar el REMOTO antes de decir que algo está
   subido**: la rama llegó a acumular 27 commits sin pushear, y el
   síntoma le llegó a Alex como "el fichero no existe".

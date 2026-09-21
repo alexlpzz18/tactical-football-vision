@@ -111,6 +111,19 @@ class ParametrosBalon:
     # de toda detección). Sin este corte, el 12,1 % de las filas "reales" del
     # partido entero no era ninguna detección (docs/balon_sin_alas.md).
     max_hueco_suavizado_s: float = 0.2
+    # ── puerta de continuidad EN PÍXELES (docs/balon_sin_alas.md, BACKLOG 28) ──
+    # Un salto imposible en metros puede ser un vuelo o un CAMBIO DE CANDIDATO
+    # (dos detecciones que no son el mismo balón), y en metros no se distinguen:
+    # `detectar_fases_aereas` marca como aéreo cualquier salto por velocidad.
+    # En píxeles sí: 44 "vuelos" de extremos imposibles saltaban una mediana de
+    # 539 px (2.105 px/s) contra 33 px (86 px/s) de 651 vuelos físicos. A
+    # 1.000 px/s se cazan 38 de 44 tocando al 1,4 % de los físicos; entre pares
+    # de suelo contiguos solo 17 de 4.919 (0,35 %) la superan.
+    # ⚠️ Los 9 físicos afectados pueden ser también cambios de candidato: no hay
+    # GT del balón para saberlo.
+    vel_max_px_s: float = 1000.0
+    dt_max_puerta_par_s: float = 0.3  # entre dos filas de suelo contiguas
+    dt_max_puerta_vuelo_s: float = 6.0  # entre los extremos de un vuelo
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -409,7 +422,10 @@ def detectar_contactos(
 
 
 def _rellenar_huecos_parados(
-    salida: list[tuple], tiempos: dict, params: ParametrosBalon
+    salida: list[tuple],
+    tiempos: dict,
+    params: ParametrosBalon,
+    cortes: set[int] | frozenset = frozenset(),
 ) -> list[tuple]:
     """Rellena huecos SIN detección manteniendo la última posición.
 
@@ -462,6 +478,10 @@ def _rellenar_huecos_parados(
             continue
         if tiempos[frame_b] - tiempos[frame_a] > params.max_hueco_relleno_s:
             continue
+        # Un corte de la puerta de píxeles: el balón de después NO es el de
+        # antes, y mantener la posición sería inventar que sigue ahí.
+        if frame_b in cortes:
+            continue
         # Venía volando: la posición proyectada ya no es de fiar, y es el
         # caso que el GT dice que NO hay que rellenar.
         if aereo_a:
@@ -497,11 +517,29 @@ def _rellenar_huecos_parados(
     return sorted(salida + rellenos, key=lambda t: t[0])
 
 
+ID_BALON = -1
+ID_BALON_AEREO = -2
+
+
+def id_de_tramo(k: int, aereo: bool = False) -> int:
+    """Identidad del balón en el tramo `k` (0 = el primero).
+
+    Un CORTE de la puerta de píxeles abre un tramo nuevo con otra identidad,
+    para que el replay no una con una recta dos detecciones que no son el
+    mismo balón. El primer tramo conserva -1 (balón) y -2 (marcador aéreo);
+    el resto usa -102, -104... y -103, -105..., que no pisan a nadie.
+    """
+    if k == 0:
+        return ID_BALON_AEREO if aereo else ID_BALON
+    return -(101 + 2 * k) if aereo else -(100 + 2 * k)
+
+
 def _tramos_continuos_de_suelo(
     trayectoria: list[tuple],
     indices_suelo: list[int],
     tiempos: dict,
     max_hueco_s: float,
+    cortes: set[int] | frozenset = frozenset(),
 ) -> list[list[int]]:
     """Agrupa los índices de suelo en tramos SIN vuelo ni hueco de por medio.
 
@@ -517,7 +555,7 @@ def _tramos_continuos_de_suelo(
             dt = tiempos.get(trayectoria[i][0], 0.0) - tiempos.get(
                 trayectoria[previo][0], 0.0
             )
-            if i != previo + 1 or dt > max_hueco_s:
+            if i != previo + 1 or dt > max_hueco_s or i in cortes:
                 tramos.append(actual)
                 actual = []
         actual.append(i)
@@ -532,6 +570,20 @@ def preparar_para_replay(
     tiempos: dict,
     params: ParametrosBalon,
 ) -> list[tuple]:
+    """Igual que `preparar_balon` sin la puerta de píxeles (no hay `centros_px`).
+
+    Se conserva porque es la interfaz que ya usaban los tests y los scripts.
+    """
+    return preparar_balon(trayectoria, aereo, tiempos, params)[0]
+
+
+def preparar_balon(
+    trayectoria: list[tuple],
+    aereo: list[bool],
+    tiempos: dict,
+    params: ParametrosBalon,
+    centros_px: dict | None = None,
+) -> tuple[list[tuple], set[int]]:
     """Deja el balón listo para pintarse sin inventar coordenadas.
 
     Tres tratamientos, y el tercero es el importante:
@@ -571,15 +623,47 @@ def preparar_para_replay(
          la que pasó— es justo lo que no se dibuja como cierto, porque va
          atenuado y con es_real=0.
 
+    4. **Puerta de continuidad EN PÍXELES** (si se dan `centros_px`). Una racha
+       aérea cuyos extremos de suelo saltan más de `vel_max_px_s` no es un
+       vuelo: son dos detecciones que no son el mismo balón. No se dibuja la
+       recta ni el marcador aéreo, y el aterrizaje abre un TRAMO nuevo (un
+       CORTE): el suavizado y el relleno no lo cruzan, y el CSV le da otra
+       identidad (`id_de_tramo`). Lo mismo entre dos filas de suelo contiguas.
+
+    Args:
+        centros_px: {frame: (cx, cy)} del centro de la caja en píxeles. Sin
+            él la puerta no actúa.
+
     Returns:
-        [(frame_idx, pos, es_aereo, es_real)] lista para el CSV.
+        ([(frame_idx, pos, es_aereo, es_real)], cortes) — las filas para el
+        CSV y el conjunto de frames donde empieza un tramo nuevo.
     """
     if not trayectoria:
-        return []
+        return [], set()
 
     suelo = [(i, t) for i, (t, a) in enumerate(zip(trayectoria, aereo)) if not a]
     if not suelo:
-        return [(t[0], t[1], True, True) for t in trayectoria]
+        return [(t[0], t[1], True, True) for t in trayectoria], set()
+
+    # ── puerta de píxeles: qué filas de suelo abren un tramo nuevo ──
+    cortes_idx: set[int] = set()
+    if centros_px:
+        for (i1, _t1), (i2, _t2) in zip(suelo, suelo[1:]):
+            f1, f2 = trayectoria[i1][0], trayectoria[i2][0]
+            if f1 not in centros_px or f2 not in centros_px:
+                continue
+            dt = tiempos.get(f2, 0.0) - tiempos.get(f1, 0.0)
+            limite = (
+                params.dt_max_puerta_par_s
+                if i2 == i1 + 1
+                else params.dt_max_puerta_vuelo_s
+            )
+            if dt <= 0 or dt > limite:
+                continue
+            dx = centros_px[f2][0] - centros_px[f1][0]
+            dy = centros_px[f2][1] - centros_px[f1][1]
+            if float(np.hypot(dx, dy)) / dt > params.vel_max_px_s:
+                cortes_idx.add(i2)
 
     # 1. suavizado de las posiciones de suelo, POR TRAMOS CONTINUOS.
     #
@@ -594,7 +678,11 @@ def preparar_para_replay(
         ventana += 1
     posicion_suelo = {}
     for tramo in _tramos_continuos_de_suelo(
-        trayectoria, [i for i, _t in suelo], tiempos, params.max_hueco_suavizado_s
+        trayectoria,
+        [i for i, _t in suelo],
+        tiempos,
+        params.max_hueco_suavizado_s,
+        cortes_idx,
     ):
         puntos = np.array([trayectoria[i][1] for i in tramo], dtype=float)
         if len(puntos) >= ventana:
@@ -622,6 +710,8 @@ def preparar_para_replay(
         if not siguientes:
             salida.append((frame, a, True, False))  # no volvió al suelo
             continue
+        if siguientes[0] in cortes_idx:
+            continue  # los extremos no son el mismo balón: no hay vuelo que dibujar
         b = posicion_suelo[siguientes[0]]
         # Recta entre despegue y bote: los dos extremos son medidas, y lo
         # de en medio va marcado como no real.
@@ -637,7 +727,8 @@ def preparar_para_replay(
             else (i - previos[-1]) / (siguientes[0] - previos[-1])
         )
         salida.append((frame, a + alfa * (b - a), True, False))
-    return _rellenar_huecos_parados(salida, tiempos, params)
+    cortes = {trayectoria[i][0] for i in cortes_idx}
+    return _rellenar_huecos_parados(salida, tiempos, params, cortes), cortes
 
 
 def detectar_contactos_por_velocidad(

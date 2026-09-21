@@ -14,6 +14,7 @@ Uso:
 """
 
 import argparse
+import bisect
 import logging
 import sys
 from pathlib import Path
@@ -25,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.balon.tracking_balon import (  # noqa: E402
     ParametrosBalon,
-    preparar_para_replay,
+    id_de_tramo,
+    preparar_balon,
     detectar_contactos,
     detectar_contactos_por_velocidad,
     fusionar_contactos,
@@ -144,14 +146,30 @@ def main() -> None:
         )
 
     # Suavizado + fase aérea sin coordenadas inventadas
-    preparadas = preparar_para_replay(trayectoria, aereo, tiempos, params)
+    # Centros de las cajas en PÍXELES: con ellos, la puerta de continuidad
+    # distingue un vuelo de un cambio de balón (docs/balon_sin_alas.md).
+    centros_px = {
+        f: ((d[2] + d[4]) / 2.0, (d[3] + d[5]) / 2.0) for f, d in activo.items()
+    }
+    preparadas, cortes = preparar_balon(trayectoria, aereo, tiempos, params, centros_px)
+    cortes_ordenados = sorted(cortes)
+    logger.info(
+        "Puerta de píxeles (> %.0f px/s): %d cortes; el balón se reparte en %d tramos",
+        params.vel_max_px_s,
+        len(cortes),
+        len(cortes) + 1,
+    )
+
+    def tramo_de(frame: int) -> int:
+        return bisect.bisect_right(cortes_ordenados, frame)
 
     filas = []
     for f, pos, es_aereo, es_real in preparadas:
-        # El balón es UNA identidad continua (-1). Durante el vuelo su
-        # posición queda congelada en la última fiable, así que la serie
-        # no da saltos; el aéreo se marca además con una ficha propia
-        # (-2) en el mismo sitio, que es la que el replay atenúa.
+        # El balón es UNA identidad continua (-1) POR TRAMO: un corte de la
+        # puerta de píxeles abre otra (`id_de_tramo`), para que el replay no
+        # una con una recta dos detecciones que no son el mismo balón. El
+        # aéreo se marca además con una ficha propia (-2 en el primer tramo)
+        # en el mismo sitio, que es la que el replay atenúa.
         filas.append(
             {
                 "frame": f,
@@ -159,7 +177,7 @@ def main() -> None:
                 # Convenio: el balón no es un jugador, y el aéreo va con
                 # id propio porque el replay asigna UNA etiqueta por
                 # identidad — mezclarlos perdía la marca de "no fiable".
-                "id_jugador": -1,
+                "id_jugador": id_de_tramo(tramo_de(f)),
                 "equipo": 3,
                 "etiqueta": "balon",
                 "x_m": round(float(pos[0]), 2),
@@ -174,7 +192,7 @@ def main() -> None:
                 {
                     "frame": f,
                     "tiempo_s": round(tiempos[f], 2),
-                    "id_jugador": -2,
+                    "id_jugador": id_de_tramo(tramo_de(f), aereo=True),
                     "equipo": 3,
                     "etiqueta": "balon_aereo",
                     "x_m": round(float(pos[0]), 2),
