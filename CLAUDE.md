@@ -208,14 +208,16 @@ Todo lo demás acaba desembocando aquí:
   clic: la zona cercana es la MÁS estable, 0,09 m contra 0,29 del fondo;
   la envolvente de los 19 puntos; y reajustar sin los clics del borde)
   (`docs/homografia_zona_cercana.md`).
-- **UNA MÉTRICA DE "EQUIPO EQUIVOCADO" NO VE LO QUE SE MANDA AL CAJÓN.**
-  Solo cuenta filas etiquetadas A o B, así que un jugador mandado por error
-  a `otro` (árbitro) o `staff` es INVISIBLE. El catálogo arbitral por
-  observación tenía un 78,5 % de aciertos al mover 3.555 filas a `otro`, y el
-  21,5 % restante incluía **al portero de A** (camiseta negra, ~500 filas,
-  ids 420, 468…). Todo criterio que mueva filas hacia un cajón lleva una
-  segunda medida: *¿cuántas de las movidas NO son lo que el cajón dice?*
-  (`docs/arbitro_y_baile_de_colores.md`).
+- **TODO CRITERIO QUE MUEVE FILAS HACIA UN CAJÓN LLEVA UNA SEGUNDA MEDIDA:**
+  *¿cuántas de las movidas NO son lo que el cajón dice?* El catálogo arbitral
+  por observación movió 3.555 filas a `otro`; el 78,5 % parecen árbitro y el
+  21,5 % no, entre ellas **el portero de A** (camiseta negra, ~500 filas, ids
+  420, 468…, por el arquetipo `azul_electrico`: H=118, S=248). El banco
+  (`comparar_escalas.py`) sí cuenta las «mandadas a staff/otro» (0 en la
+  ventana del GT), pero esa ventana no contiene ninguno de esos instantes.
+  Pesa poco en el partido entero (0,16 m de centroide de A) y mucho donde
+  ocurre (3,9 m y 15 m de profundidad en el 4 % de los frames)
+  (`docs/peso_arbitro_y_portero.md`).
 - **UN UMBRAL DE SATURACIÓN QUE FALLA NO SE ARREGLA BAJÁNDOLO.** El chaleco
   del árbitro alterna entre S≈248 y S≈72-104 según el minuto (el catálogo
   pide S≥170: acierta el 3 % o el 98 % de los minutos). Bajar el umbral con

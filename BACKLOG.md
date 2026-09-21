@@ -522,6 +522,8 @@ filas de árbitro (el 47,5 % en la ventana del GT); (b) captura al **portero de
 A** (~500 filas, ids 420, 468, 586, 612, 695…), probablemente por el
 arquetipo `negro`.
 
+**Actualizado (`docs/peso_arbitro_y_portero.md`)**: el peso del árbitro contado como jugador es 0,23 m de centroide de B y +8,9 puntos de recuento exacto; el del portero de A contado como árbitro, 0,16 m (pero 3,9 m y 15 m de profundidad en el 4 % de los frames). El portero se lo lleva `azul_electrico` (H 100-128, S≥180): arreglo barato y sin riesgo, extender la regla de conflicto a la equipación de los porteros. El umbral de saturación queda por detrás.
+
 **Comprobación previa**: NO bajar S con la regla del bin dominante (captura
 15 de 663 jugadores en la ventana y el 6,4 % de las ventanas A/B del partido).
 Candidato: regla por MASA en la región (H 20-90, S≥80 ≥ 0,27), 58/663 sin

@@ -132,9 +132,10 @@ espectadores o staff, `otro` es razonable).
 ## Lo que NO sé
 
 - Que la verdad del partido entero es un **proxy**, calibrado en 30 s.
-- La **segunda fila verde** (417 frames, a >8 m): no la he identificado.
-- Que el **1,2 % de equipo equivocado** de CLAUDE.md y lo que mido hoy no
-  cuadran: con el mismo procedimiento sale **1,7 %** a 2 m (1,1 % a 1 m,
+- ✅ **RESUELTO**: la **segunda fila verde** (417 frames) son sobre todo conos de la banda (219), el portero de B fuera de mi zona (77) y las botas lima del portero de A (28).
+- ✅ **RESUELTO (`docs/peso_arbitro_y_portero.md`)**: con `comparar_escalas.py`
+  sale 9 de 723 = 1,2 %. Lo que sigue se refiere a mi casado, que no se usa más.
+  El **1,2 % de equipo equivocado** de CLAUDE.md y lo que medí no cuadraban: con el mismo procedimiento sale **1,7 %** a 2 m (1,1 % a 1 m,
   2,5 % a 3 m) sobre los tres CSV, que dan idénticos porque solo difieren en
   filas de árbitro. El número depende del protocolo de casado (aquí, 1-a-1
   entre TODAS las filas del frame); no he reproducido el protocolo original.
