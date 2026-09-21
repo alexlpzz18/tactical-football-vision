@@ -227,6 +227,25 @@ Todo lo demás acaba desembocando aquí:
   la etiqueta ACERTANDO al pasar a otra persona (la identidad mezcla). Un
   suavizado del baile de colores destruiría esos aciertos: es la misma
   lección que el parpadeo de posición.
+- **UNA FILA MARCADA `es_real=1` TIENE QUE COINCIDIR CON UNA DETECCIÓN, Y
+  HAY QUE COMPROBARLO.** El 12,1 % de las filas «reales» del balón no estaba
+  a menos de 1 m de ninguna: el suavizado promediaba a través de los vuelos y
+  fabricaba posiciones etiquetadas como medidas. Eran las «alas»; una
+  investigación externa las atribuyó a la falta de un modelo de movimiento y
+  el plan (Kalman, puerta de estático, RTS) era, casi entero, innecesario:
+  el Kalman no supera a «mantener la última posición» (64 % contra 69 %) y la
+  puerta de estático se lleva el 78 % de balón real. ⇒ **Antes de construir
+  la solución que recomienda una fuente externa, medir si el síntoma viene de
+  lo que ella supone** (`docs/balon_sin_alas.md`).
+- **UN SALTO IMPOSIBLE EN METROS PUEDE SER UN VUELO O UN CAMBIO DE
+  CANDIDATO, Y EN PÍXELES SE SEPARAN.** Los 44 «vuelos» de extremos a >40 m/s
+  saltan una mediana de 539 px; los 651 físicos, 33 px. La señal de velocidad
+  proyectada de `detectar_fases_aereas` marca como aéreo cualquier salto
+  imposible, así que un cambio de candidato se disfraza de vuelo. Y al
+  corregir un bug **el problema puede moverse en vez de desaparecer**: tras el
+  primer arreglo los pasos imposibles entre filas reales pasaron de 248 a 0 y
+  los de las filas no reales de 69 a 272; solo el desglose por tipo de fila lo
+  mostró.
 - **UN RECORTE SE SACA CON `posicionar_en_frame()`, NUNCA CON `cap.set`.**
   En este mp4 pedir el frame 9750 aterriza en el 10077 (11 s), y las cajas
   salen correctas sobre el fotograma equivocado. Ya estaba documentado en

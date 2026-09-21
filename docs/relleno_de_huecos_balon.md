@@ -129,3 +129,11 @@ quitar la condición de velocidad y quitar la de duración hacen fallar cada
 una a su test y solo a él. Incluye un test de que el relleno se ve **desde
 la función pública**, porque el bug que esto arregla era precisamente un
 tratamiento que nunca se llamaba.
+
+## Addendum (21-sep-2026): producción rellenaba de menos
+
+`docs/balon_sin_alas.md`. La parte entera daba **226** frames rellenados y
+este documento midió 377. La diferencia era un bug del suavizado, que cruzaba
+vuelos y huecos y corrompía las posiciones sobre las que la guarda calcula la
+velocidad previa. Con el suavizado por tramos salen **395**, y las reglas
+(0,4 s y 4 m/s) no cambian.

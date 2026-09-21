@@ -105,6 +105,12 @@ class ParametrosBalon:
     # relleno entero.
     max_hueco_relleno_s: float = 0.4
     vel_max_relleno_m_s: float = 4.0
+    # El suavizado solo promedia dentro de un TRAMO continuo de suelo: un
+    # vuelo o un hueco de detecciones mayor que esto lo corta. 0,15 y 0,2 s
+    # dan el mismo resultado; a 0,3 s ya se cuelan filas (0,4 % a más de 1 m
+    # de toda detección). Sin este corte, el 12,1 % de las filas "reales" del
+    # partido entero no era ninguna detección (docs/balon_sin_alas.md).
+    max_hueco_suavizado_s: float = 0.2
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -491,6 +497,35 @@ def _rellenar_huecos_parados(
     return sorted(salida + rellenos, key=lambda t: t[0])
 
 
+def _tramos_continuos_de_suelo(
+    trayectoria: list[tuple],
+    indices_suelo: list[int],
+    tiempos: dict,
+    max_hueco_s: float,
+) -> list[list[int]]:
+    """Agrupa los índices de suelo en tramos SIN vuelo ni hueco de por medio.
+
+    Dos observaciones de suelo son del mismo tramo si son contiguas en la
+    trayectoria (no hay una aérea entre medias) y el tiempo que las separa
+    no supera `max_hueco_s` (no se perdieron detecciones entre ellas).
+    """
+    tramos: list[list[int]] = []
+    actual: list[int] = []
+    for i in indices_suelo:
+        if actual:
+            previo = actual[-1]
+            dt = tiempos.get(trayectoria[i][0], 0.0) - tiempos.get(
+                trayectoria[previo][0], 0.0
+            )
+            if i != previo + 1 or dt > max_hueco_s:
+                tramos.append(actual)
+                actual = []
+        actual.append(i)
+    if actual:
+        tramos.append(actual)
+    return tramos
+
+
 def preparar_para_replay(
     trayectoria: list[tuple],
     aereo: list[bool],
@@ -546,20 +581,31 @@ def preparar_para_replay(
     if not suelo:
         return [(t[0], t[1], True, True) for t in trayectoria]
 
-    # 1. suavizado de las posiciones de suelo
+    # 1. suavizado de las posiciones de suelo, POR TRAMOS CONTINUOS.
+    #
+    # ⚠️ Antes se promediaba la lista de suelo entera como si fuera una serie
+    # continua, y esa lista SE SALTA los vuelos y los huecos: en el borde de
+    # un vuelo mezclaba el punto de despegue con el de aterrizaje y la fila
+    # resultante, marcada es_real=1, no era ninguna detección. Eran las
+    # "alas" del balón: 270 pasos por encima de 40 m/s y el 12,1 % de las
+    # filas reales a más de 1 m de toda detección (docs/balon_sin_alas.md).
     ventana = max(3, int(round(params.ventana_suavizado_s / 0.067)))
     if ventana % 2 == 0:
         ventana += 1
-    puntos = np.array([t[1] for _i, t in suelo], dtype=float)
-    if len(puntos) >= ventana:
-        nucleo = np.ones(ventana) / ventana
-        suave = puntos.copy()
-        for eje in (0, 1):
-            relleno = np.pad(puntos[:, eje], ventana // 2, mode="edge")
-            suave[:, eje] = np.convolve(relleno, nucleo, mode="valid")
-        puntos = suave
-
-    posicion_suelo = {idx: puntos[k] for k, (idx, _t) in enumerate(suelo)}
+    posicion_suelo = {}
+    for tramo in _tramos_continuos_de_suelo(
+        trayectoria, [i for i, _t in suelo], tiempos, params.max_hueco_suavizado_s
+    ):
+        puntos = np.array([trayectoria[i][1] for i in tramo], dtype=float)
+        if len(puntos) >= ventana:
+            nucleo = np.ones(ventana) / ventana
+            suave = puntos.copy()
+            for eje in (0, 1):
+                relleno = np.pad(puntos[:, eje], ventana // 2, mode="edge")
+                suave[:, eje] = np.convolve(relleno, nucleo, mode="valid")
+            puntos = suave
+        for i, punto in zip(tramo, puntos):
+            posicion_suelo[i] = punto
 
     # Para cada hueco aéreo, los dos extremos de suelo que lo encierran
     indices_suelo = sorted(posicion_suelo)
@@ -579,7 +625,17 @@ def preparar_para_replay(
         b = posicion_suelo[siguientes[0]]
         # Recta entre despegue y bote: los dos extremos son medidas, y lo
         # de en medio va marcado como no real.
-        alfa = (i - previos[-1]) / (siguientes[0] - previos[-1])
+        # ⚠️ Por TIEMPO, no por índice de muestra: con detecciones perdidas
+        # dentro del vuelo, el reparto por índice hacía unos pasos enormes y
+        # otros diminutos (88 de 98 vuelos con pasos imposibles tenían una
+        # velocidad media física entre sus extremos).
+        t_ini = tiempos[trayectoria[previos[-1]][0]]
+        t_fin = tiempos[trayectoria[siguientes[0]][0]]
+        alfa = (
+            (tiempos[trayectoria[i][0]] - t_ini) / (t_fin - t_ini)
+            if t_fin > t_ini
+            else (i - previos[-1]) / (siguientes[0] - previos[-1])
+        )
         salida.append((frame, a + alfa * (b - a), True, False))
     return _rellenar_huecos_parados(salida, tiempos, params)
 

@@ -543,3 +543,31 @@ observación cuya caja se solapa con la de un rival (IoU>0,10) y heredar la
 etiqueta del entorno. Medir qué corrige y qué inventa; el 21 % de los cambios
 (157) no tiene explicación en solape ni vecinos y queda sin resolver
 (`docs/arbitro_y_baile_de_colores.md`, `outputs/baile_casos.csv`).
+
+## 28. Puerta de continuidad EN PÍXELES para el balón (21-sep-2026)
+
+**Qué**: las 46 rutas de vuelo con pasos imposibles que quedan tras los dos
+arreglos de `docs/balon_sin_alas.md` son, casi todas, dos detecciones que NO
+son el mismo balón (una fila «aérea» entre dos de suelo a 8-41 m en 0,13 s):
+`detectar_fases_aereas` marca como aéreo cualquier salto por velocidad
+proyectada. **En píxeles se separan**: 44 «imposibles» saltan una mediana de
+539 px (2.105 px/s) contra 33 px (86 px/s) de 651 vuelos físicos.
+
+**Comprobación previa (medida)**: umbral de ~1.000 px/s ⇒ caza 38 de los 44
+y afecta a 9 de 651 físicos (1,4 %; esos 9 pueden ser también cambios de
+candidato: no hay GT del balón para saberlo). No necesita Kalman.
+**¿Qué podría inventar?** Cortar un vuelo real y dejar un hueco donde había
+balón: comprobar los 9 a ojo antes de adoptar. Efecto esperado: quitar la
+recta imposible y, si hay otro candidato compatible, elegirlo (solo 10 de los
+32 pasos imposibles de suelo lo tenían).
+
+## 29. Arquitecturas multi-frame para objetos pequeños y rápidos (21-sep-2026)
+
+**Aparcado, no descartado.** La investigación de Alex sobre detección de
+objetos pequeños y rápidos (deportes y fuera de ellos) cubre arquitecturas de
+heatmap multi-frame (las de tenis y bádminton) para la franja lejana del
+campo, donde el balón mide pocos píxeles (el muro de 7,1 px,
+`docs/sahi_balon.md`). **Exige reentrenar con miles de frames etiquetados**
+y no es la prioridad. ⚠️ La investigación no está en el repo: la guarda Alex;
+falta añadir aquí su ubicación o su referencia. Licencias: mirar código y
+PESOS por separado (regla del proyecto: nada AGPL, nada de SoccerNet).
