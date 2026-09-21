@@ -457,12 +457,45 @@ def avisar_tercer_grupo(equipos: dict[int, str], identidades, modelo) -> int:
     return len(quedan)
 
 
+def _recortes_para_votar(
+    cerca: list,
+    obs: list,
+    t_actual: float,
+    colores: dict,
+    ocluidas: set[tuple[int, int]],
+    ampliar_s: float,
+) -> list:
+    """Los recortes de la ventana que pueden votar color, sin los ocluidos.
+
+    1. Si hay recortes limpios en la ventana, solo votan ellos.
+    2. Si TODOS están ocluidos y `ampliar_s` > 0, se buscan limpios de la misma
+       identidad hasta `ampliar_s / 2` a cada lado.
+    3. Si no hay ninguno, votan todos (como antes: mejor un voto contaminado que
+       ninguno, o la observación se queda sin etiqueta).
+    """
+    limpios = [(p, c) for p, c in cerca if p not in ocluidas]
+    if limpios:
+        return limpios
+    if ampliar_s > 0:
+        ampliados = [
+            (p, colores[p])
+            for t2, p in obs
+            if abs(t2 - t_actual) <= ampliar_s / 2
+            and p in colores
+            and p not in ocluidas
+        ]
+        if ampliados:
+            return ampliados
+    return cerca
+
+
 def etiquetar_por_observacion(
     identidades,
     equipos: dict[int, str],
     colores: dict,
     clasificador,
     cfg_equipos: dict | None = None,
+    ocluidas: set[tuple[int, int]] | None = None,
 ) -> dict[tuple[int, int], str]:
     """{(id_identidad, frame_idx): etiqueta} decidida por VENTANA de color.
 
@@ -495,6 +528,18 @@ def etiquetar_por_observacion(
     Las reglas posicionales mandan: un portero es portero en todas sus
     observaciones y el staff no juega en ninguna. Lo que pasa a decidirse
     por ventana es solo el A/B del color.
+
+    `ocluidas` ({(frame, det_idx)} de los recortes que se pisan con otra caja,
+    ver `oclusion.py`) solo se usa si `por_observacion.excluir_ocluidas` está
+    activo: entonces los recortes ocluidos NO votan en la media de la ventana.
+    Con `ampliar_ventana_s` > 0, una ventana en la que TODOS los recortes están
+    ocluidos busca recortes limpios de la misma identidad hasta esa distancia
+    (y si no hay ninguno, se cae a todos, como antes). Es lo que se ataca del
+    baile de colores: el 73 % de los cambios A↔B cae en una caja solapada
+    (`docs/arbitro_y_baile_de_colores.md`). ⚠️ El negativo de agosto sobre
+    excluir ocluidos (`docs/experimentos_tracking.md`, 3a) era POR IDENTIDAD,
+    donde una minoría contaminada se promedia sola; aquí la ventana es de
+    ~15 recortes y un solape de un segundo la contamina entera.
     """
     cfg_equipos = cfg_equipos or {}
     cfg = cfg_equipos.get("agregacion", {}).get("por_observacion", {})
@@ -502,6 +547,8 @@ def etiquetar_por_observacion(
         return {}
     ventana = float(cfg.get("ventana_s", 1.5))
     forzar = bool(cfg.get("forzar_ab", True))
+    excluir_ocluidas = bool(cfg.get("excluir_ocluidas", False)) and bool(ocluidas)
+    ampliar_s = float(cfg.get("ampliar_ventana_s", 0.0)) if excluir_ocluidas else 0.0
 
     # ── EL CATÁLOGO ARBITRAL, TAMBIÉN POR OBSERVACIÓN (28-ago-2026) ──
     #
@@ -567,6 +614,10 @@ def etiquetar_por_observacion(
             ]
             if not cerca:
                 continue
+            if excluir_ocluidas:
+                cerca = _recortes_para_votar(
+                    cerca, obs, t_actual, colores, ocluidas, ampliar_s
+                )
             media = color_medio_limpio(cerca, None)
             if media is None:
                 continue

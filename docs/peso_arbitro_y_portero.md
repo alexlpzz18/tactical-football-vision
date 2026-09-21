@@ -133,6 +133,7 @@ de los instantes del portero.
 
 Alex indicó que la tengo «en el artifact/documento que generé» y que la pegue
 en `docs/investigacion_objetos_pequenos.md`. **No tengo acceso a ese documento**:
-no está en el repo ni en esta sesión, y no voy a reconstruirlo de memoria (sería
+no está en el repo ni en esta sesión, ni entre tus 11 artifacts (lo comprobé; el
+más reciente es del 14-sep), y no voy a reconstruirlo de memoria (sería
 inventar una investigación y citarla como si fuera la suya). Falta que Alex la
 pegue. BACKLOG 29 ya la referencia.

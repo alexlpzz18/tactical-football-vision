@@ -516,6 +516,8 @@ contra el GT de track 6: su caja está en el pecho, no en los pies.
 
 ## 26. El catálogo arbitral: saturación y falsos capturados (21-sep-2026)
 
+**Ojo (`docs/baile_y_oclusion.md`)**: agosto ya delegó el portero en la regla de porteros («sobre un portero manda su posición») y esa regla NO reclama 13 fragmentos del portero de A; en el 38 % de esos frames un jugador de campo va etiquetado `portero_A` (mediana 11,9 m). El arreglo natural es que la regla de porteros reclame esos fragmentos, no tocar el catálogo.
+
 **Qué**: (a) el arquetipo `verde_fluor` exige S≥170 y el chaleco de esta
 cámara alterna entre S≈248 y S≈72-104: el catálogo solo acierta el 58 % de las
 filas de árbitro (el 47,5 % en la ventana del GT); (b) captura al **portero de
@@ -533,7 +535,7 @@ Medir en las DOS patas (Villaviciosa tiene GT del árbitro, track 22).
 **¿Qué podría inventar?** Jugadores capturados como árbitro: medir con la
 métrica "cuántas de las filas movidas a `otro` NO son árbitro".
 
-## 27. El baile de colores: dos personas en una caja (21-sep-2026)
+## 27. El baile de colores: dos personas en una caja (21-sep-2026) — ❌ ATACADO POR EL LADO DEL COLOR, NEGATIVO (`docs/baile_y_oclusion.md`)
 
 **Qué**: 741 cambios A↔B (37/min) en 192 de 320 identidades; el 73 % cae en
 una caja solapada o anómalamente ancha (contra el 30,6 % de la base) y el 73 %
@@ -586,3 +588,10 @@ con guardas cubriría 1.200 frames contra los 395 de hoy, al 99 %.
 encuadre (la recta inventaría un trayecto). Mirar a ojo una muestra de los
 huecos de 0,7-1,2 s que la regla rellenaría. Los rellenos van con `es_real=0` y
 fuera de posesión y contactos. No necesita RTS (Hermite es peor).
+
+**Resultado del ataque (21-sep-2026)**: excluir los recortes ocluidos del voto de la
+ventana, con dos variantes, **empeora** los cambios (741 → 789/758) y el error contra el GT
+(1,2 % → 1,8 %). Premisa falsa: por recorte suelto los ocluidos aciertan el 91,4 % y los
+limpios el 93,6 % (±6). La vía de cortar identidades por color ya era negativa (agosto).
+El baile es el síntoma de que la identidad cambia de persona: se arregla en la asociación,
+no en el etiquetado. Opción `excluir_ocluidas` escrita y apagada.

@@ -224,6 +224,7 @@ Todo lo demás acaba desembocando aquí:
   la regla del bin dominante recupera el 93 % del árbitro y captura además
   el 6,4 % de todas las ventanas A/B. Lo que separa es otra medida (la MASA
   en la región), no otro número.
+- **COMPROBAR LA PREMISA ANTES DE CONSTRUIR** (tercera vez: el Kalman, excluir ocluidos en 3a y otra vez el 21-sep). Antes de excluir ocluidos bastaba una tabla de 2 filas: acierto por recorte de limpios (93,6 %) contra ocluidos (91,4 %). Si la diferencia no existe, no hay nada que arreglar por ahí.
 - **UN CAMBIO DE ETIQUETA NO ES SIEMPRE UN FALLO.** En la ventana del GT, 8 de
   los 18 cambios A↔B corrigen una etiqueta y 10 la rompen: casi la mitad es
   la etiqueta ACERTANDO al pasar a otra persona (la identidad mezcla). Un
@@ -350,6 +351,7 @@ Todo lo demás acaba desembocando aquí:
 | **`cota_plantilla`** | Fusiona hasta llegar a ~23 y confunde identidades. Fuera del perfil por defecto. |
 | **Regla de portero por ÁREA** | Corona a quien más observaciones acumula dentro del área: cuenta para decidir QUIÉN. Sustituida por `ultimo_hombre`. |
 | **Suavizar el parpadeo** | Tres formas, tres negativos: el suavizado ya está en su óptimo (1,5 s). Y **el parpadeo es la señal de que la asociación acaba de fallar: taparlo esconde el fallo.** |
+| **Excluir ocluidos del voto por ventana** (21-sep, 2 variantes) | Empeora: cambios de etiqueta 741 → 789/758 y error contra el GT 1,2 % → 1,8 %. Los ocluidos aciertan el 91,4 % por recorte contra 93,6 % de los limpios (±6): votan casi igual. El baile es la identidad cambiando de persona, no color sucio (`docs/baile_y_oclusion.md`). |
 | **Feature de color en `float32`** | Ahorraría disco pero movería la entrada del KMeans, que es la pieza frágil. |
 
 ---

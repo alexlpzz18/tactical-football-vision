@@ -911,9 +911,17 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     # Etiqueta por OBSERVACIÓN, si el config de este partido la pide. Se
     # calcula ANTES del post-proceso porque necesita los recortes, y el
     # post-proceso ya trabaja con trayectorias interpoladas.
+    ocluidas_obs = None
+    cfg_por_obs = (cfg_equipos or {}).get("agregacion", {}).get("por_observacion", {})
+    if cfg_por_obs.get("excluir_ocluidas", False):
+        from src.team_classification.oclusion import detecciones_ocluidas
+
+        ocluidas_obs = detecciones_ocluidas(
+            datos["cache"], iou_max=float(cfg_por_obs.get("ocluidas_iou", 0.10))
+        )
     etiquetas_por_obs = (
         etiquetar_por_observacion(
-            identidades, equipos, colores, clasificador, cfg_equipos
+            identidades, equipos, colores, clasificador, cfg_equipos, ocluidas_obs
         )
         if clasificador is not None
         else {}
