@@ -137,3 +137,88 @@ no está en el repo ni en esta sesión, ni entre tus 11 artifacts (lo comprobé;
 más reciente es del 14-sep), y no voy a reconstruirlo de memoria (sería
 inventar una investigación y citarla como si fuera la suya). Falta que Alex la
 pegue. BACKLOG 29 ya la referencia.
+
+
+---
+
+# Arreglado: la regla de porteros reclama sus fragmentos (21-sep-2026)
+
+Alex: *«Arréglalo por la vía barata: que la regla de porteros reclame sus
+propios fragmentos que el catálogo se lleva. No toques el umbral de saturación
+(BACKLOG 26) todavía.»*
+
+## Qué pasaba de verdad (más fino que lo que yo había dicho)
+
+Instrumentando cada etapa en una pasada real:
+
+- La **id 420** (el portero de A, 205 filas) la marca el **catálogo por
+  identidad** como `otro`. La regla de porteros debería sobrescribirla y no lo
+  hace: **pasa las dos puertas con nota máxima** (último hombre 0,97, pisa el
+  área el 100 %) y solo cae en la **puerta de duplicados**, que exige ≥ 50 % de
+  frames nuevos y ella aporta el 31 %.
+- Esa puerta asume que dos fragmentos presentes en el mismo frame son *el mismo
+  portero detectado dos veces*. Pero en esos frames el otro fragmento (la id
+  431, dudosa: pisa 0,7, último hombre 0,6) estaba a **más de 1,5 m**: no eran
+  el mismo cuerpo. Un fragmento dudoso ya coronado bloqueaba al portero de
+  verdad.
+- El conjunto coronado hoy (20 fragmentos para A) tiene la mediana de todos
+  dentro del área: no contiene jugadores de campo enteros.
+
+## El arreglo
+
+La puerta de duplicados mira **posición**, no solo frame
+(`ReglaPorteroUltimoHombre.dup_dist_m`, 2,0 m; 0 = comportamiento anterior).
+Un frame es NUEVO si el conjunto no tiene a nadie en él, o solo gente a más de
+2 m. Las variantes de 1, 1,5, 2 y 3 m dan exactamente lo mismo (meseta); se
+coge el centro. La puerta de último hombre sigue protegiendo de los impostores:
+un defensa presente a la vez está menos al fondo que el portero.
+
+Añade **un fragmento por equipo**: la 420 al portero de A, y la **883** al de B
+(490 observaciones en x≈58).
+
+## Resultado
+
+| | v2 | con el arreglo |
+|---|---|---|
+| filas que cambian de etiqueta | — | **723** (420: 206 `otro`→`portero_A` · 883: 517 →`portero_B`) |
+| **`portero_A` / `portero_B`** | 8.473 / 7.991 | **8.679 / 8.508** |
+| equipo equivocado contra el GT (`comparar_escalas.py`) | 9 de 723 = 1,2 % | **9 = 1,2 %** (sin cambio) |
+| portero de A mandado a `otro`, filas | 497 | **292** |
+| … frames afectados | 4,1 % | 2,4 % |
+| … peso en el partido: centroide de A / profundidad | 0,159 / 0,541 m | **0,082 / 0,302 m** |
+
+De las 517 filas de la 883, **47 estaban etiquetadas `A`**: el portero de B
+contado en el equipo contrario. Ahora van a B.
+
+## Lo que NO arregla, y por qué
+
+Quedan **292 filas (59 %)**: recortes del portero **dentro de identidades
+mezcladas** (468: 233, 586, 695…) que el catálogo por OBSERVACIÓN saca a `otro`.
+No son «fragmentos del portero» que la regla pueda reclamar: son identidades
+que contienen al portero y a jugadores, o sea el problema de asociación. No se
+ataca aquí.
+
+⚠️ **La 883 es una identidad mezclada** (`outputs/portero_b_883.png`): el primer
+recorte es un jugador naranja de campo en una melé (x=29) y los tres siguientes
+el portero lima (x≈57). Coronarla entera es correcto para el EQUIPO pero le da
+el rol de portero a un jugador de campo durante unos segundos.
+
+## Las dos patas
+
+- **Benjamín**: lo de arriba.
+- **Villaviciosa**: cambian **19 filas** de la id 93 (`otro` → `portero_B`, 2 s,
+  t=344-346 s). **El GT solo cubre los frames 7500-7797 (t≈300-312 s)**, así que
+  no hay verdad para ellas y el banco queda idéntico: no puedo confirmar ni
+  desmentir ese cambio. Es 0,16 % del tramo.
+
+Tests: `tests/test_portero_duplicados_por_posicion.py` (6) + los 55 antiguos
+de porteros, todos en verde. **Cuatro mutaciones cazadas; una se escapó**
+(`any` en vez de `all`) porque los duplicados exactos nunca llegan a esta puerta
+(los frena antes la de último hombre: solo uno puede ser el más profundo), y hizo
+falta extraer el conteo a una función pura para probarlo.
+
+# La segunda fila verde: CERRADA
+
+Conos de la banda (219), portero de B tras la línea (77) y botas del portero de
+A (28), más ~93 sin mirar: **ruido de fondo variado, no un patrón nuevo.** Sin
+más acción.

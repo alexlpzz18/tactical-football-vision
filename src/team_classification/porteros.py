@@ -333,6 +333,16 @@ class ReglaPorteroUltimoHombre:
     # a los 5 minutos (docs/portero.md).
     min_presencia: float = 0.50
     margen_area_m: float = 2.0
+    # La puerta de duplicados mira POSICIÓN, no solo frame (21-sep-2026,
+    # docs/baile_y_oclusion.md): dos fragmentos presentes en el mismo frame
+    # son el mismo portero detectado dos veces SOLO SI están en el mismo
+    # sitio. Si están a más de esto, son personas distintas y el frame cuenta
+    # como NUEVO. Sin esto, un fragmento dudoso ya coronado (pisa 0,7, último
+    # hombre 0,6) bloqueaba al portero de verdad en los frames que compartían:
+    # la id 420 del benjamín (último hombre 0,97, pisa 1,00) se quedaba en
+    # 'otro'. Las variantes 1, 1,5, 2 y 3 m dan lo mismo (meseta); se coge el
+    # centro. 0 = comportamiento anterior (solo frame).
+    dup_dist_m: float = 2.0
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ReglaPorteroUltimoHombre":
@@ -435,6 +445,34 @@ def puntuar_candidatas(identidades, censo, areas, lado):
     return filas
 
 
+def _posiciones_por_frame(identidad: list[Tracklet]) -> dict[int, tuple[float, float]]:
+    """{frame: (x, y)} de una identidad (una posición por frame)."""
+    return {
+        par[0]: (float(pos[0]), float(pos[1]))
+        for tracklet in identidad
+        for pos, par in zip(tracklet.pos, tracklet.det_idxs)
+    }
+
+
+def _frames_nuevos(
+    posiciones: dict[int, tuple[float, float]],
+    conjunto: dict[int, list[tuple[float, float]]],
+    dist_m: float,
+) -> int:
+    """Cuántos frames de un fragmento NO están ya cubiertos por el conjunto.
+
+    Un frame es NUEVO si el conjunto no tiene a nadie en él, o SOLO tiene a
+    gente a más de `dist_m`: eso es otra persona, no un duplicado del mismo
+    cuerpo. Basta UNA persona del conjunto cerca para que sea duplicado.
+    """
+    return sum(
+        1
+        for frame, (x, y) in posiciones.items()
+        if frame not in conjunto
+        or all(float(np.hypot(x - qx, y - qy)) > dist_m for qx, qy in conjunto[frame])
+    )
+
+
 def aplicar_regla_portero_ultimo_hombre(
     equipos: dict[int, str],
     identidades: list[list[Tracklet]],
@@ -488,6 +526,7 @@ def aplicar_regla_portero_ultimo_hombre(
         # coronar solo al mayor deja a los demás con su etiqueta de color,
         # que es justo el riesgo que esta regla existe para tapar.
         union: set = set()
+        union_pos: dict[int, list[tuple[float, float]]] = {}
         elegidos = []
         # ⚠️ SE ORDENA POR COBERTURA, NO POR PUNTUACIÓN.
         #
@@ -515,7 +554,11 @@ def aplicar_regla_portero_ultimo_hombre(
             ):
                 continue
             propios = frames_de[f["id"]]
-            nuevos = len(propios - union)
+            pos_f = _posiciones_por_frame(identidades[f["id"] - 1])
+            if params.dup_dist_m > 0:
+                nuevos = _frames_nuevos(pos_f, union_pos, params.dup_dist_m)
+            else:
+                nuevos = len(propios - union)
             if nuevos < params.min_frames_nuevos * len(propios):
                 # Está a la vez que otro trozo ya coronado: es el mismo
                 # portero detectado dos veces, no su continuación.
@@ -530,6 +573,8 @@ def aplicar_regla_portero_ultimo_hombre(
                 continue
             elegidos.append(f)
             union |= propios
+            for fr, xy in pos_f.items():
+                union_pos.setdefault(fr, []).append(xy)
         presencia = len(union) / n_frames
         if not elegidos or presencia < params.min_presencia:
             # WARNING y no INFO a propósito: abstenerse NO es gratis. El

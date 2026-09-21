@@ -267,6 +267,7 @@ def clasificar_identidades(
                 "min_ultimo_hombre",
                 "min_frames_nuevos",
                 "margen_area_m",
+                "dup_dist_m",
             )
         }
         # Qué equipo defiende cada portería NO se configura a mano: se
@@ -340,6 +341,7 @@ def clasificar_identidades(
                                 "min_ultimo_hombre",
                                 "min_frames_nuevos",
                                 "margen_area_m",
+                                "dup_dist_m",
                             )
                         },
                         "activo": True,
