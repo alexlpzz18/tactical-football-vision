@@ -247,6 +247,13 @@ Todo lo demás acaba desembocando aquí:
   Pesa poco en el partido entero (0,16 m de centroide de A) y mucho donde
   ocurre (3,9 m y 15 m de profundidad en el 4 % de los frames)
   (`docs/peso_arbitro_y_portero.md`).
+- **UN PROXY PUEDE SER UN ECO DÉBIL Y AUN ASÍ VALER LA PENA PROBARLO** — con la
+  condición de decir cuánto pesa. Al buscar más episodios como el tercio 3 (filas
+  desplazadas, invisibles en agregados) con proxies sin GT, el CONTROL fue puntuar el
+  propio tercio 3 conocido: percentil 73-86 de 81 bins, no el máximo. Ni confirma ni
+  descarta un patrón — solo señala dónde mirar (`docs/mas_episodios_como_tercio3.md`).
+  ⇒ Cuando no hay GT para validar un proxy nuevo, comprobarlo contra el ÚNICO caso
+  conocido antes de usarlo para buscar más casos.
 - **UN UMBRAL DE SATURACIÓN QUE FALLA NO SE ARREGLA BAJÁNDOLO.** El chaleco
   del árbitro alterna entre S≈248 y S≈72-104 según el minuto (el catálogo
   pide S≥170: acierta el 3 % o el 98 % de los minutos). Bajar el umbral con

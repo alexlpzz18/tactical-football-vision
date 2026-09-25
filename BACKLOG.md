@@ -615,6 +615,13 @@ no en el etiquetado. Opción `excluir_ocluidas` escrita y apagada.
 - El campo visible es un trapecio (a x=8 m solo 16 de 40 m): encuadre geométrico. Coherente
   con la hipótesis, **no probado**.
 
+**Búsqueda de más episodios como el tercio 3 (25-sep, `docs/mas_episodios_como_tercio3.md`)**:
+sin GT no hay manera fiable de repetir esa medida (el tercio 3 es de filas DESPLAZADAS,
+invisible en agregados). Dos proxies (déficit detección↔fila, tasa de saltos 3-8,5 m/s)
+NO detectan el propio tercio 3 con fuerza (percentil 73-86 de 81 bins): son un eco débil.
+Con esa salvedad, el tramo **10:00-10:45** (4 bins seguidos, detecciones normales) es el
+que más destaca — mirar el vídeo ahí para distinguir incidente puntual de patrón.
+
 **Pendiente — GT solo de recuento** (Alex lo hace; 3-4 ventanas de 30 s): 3:10-3:40 (frame
 5.694), 4:30-5:00 (8.092), 14:00-14:30 (25.175) y **13:25-13:55 (24.126) como control**
 (pocas detecciones sin juego cerca de la cámara). Frames con `posicionar_en_frame()`, nunca
