@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import sahi.predict
 
 _ruta = Path(__file__).resolve().parent.parent / "scripts" / "detectar_balon.py"
 _spec = importlib.util.spec_from_file_location("detectar_balon", _ruta)
@@ -39,6 +40,7 @@ class _DetectorFalso:
         self.cajas_entero = list(cajas_entero)
         self.cajas_franja = list(cajas_franja)
         self.altos_vistos = []
+        self.cfgs_vistos = []
 
 
 @pytest.fixture
@@ -49,8 +51,9 @@ def parcheado(monkeypatch):
         falso.altos_vistos.append(frame.shape[0])
         return list(falso.cajas_entero)
 
-    def sahi(_modelo_sahi, frame, _cfg, _w, _h):
+    def sahi(_modelo_sahi, frame, cfg, _w, _h):
         falso.altos_vistos.append(frame.shape[0])
+        falso.cfgs_vistos.append(cfg)
         return list(falso.cajas_franja)
 
     monkeypatch.setattr(db, "_detectar_frame_entero", entero)
@@ -176,3 +179,130 @@ def test_solapan_distingue_la_misma_caja_de_dos_distintas():
     assert db._solapan(a, (101.0, 101.0, 111.0, 111.0))
     assert not db._solapan(a, (400.0, 400.0, 410.0, 410.0))
     assert not db._solapan(a, (108.0, 108.0, 118.0, 118.0)), "roce no es la misma caja"
+
+
+# ────────────── el parámetro de postproceso (BACKLOG 19, preparado sin usar) ──────────────
+#
+# 25-sep-2026: el mismo mecanismo de GREEDYNMM+IOS que se demostró culpable de comerse
+# balones (docs/sahi_balon.md) es candidato a explicar por qué el detector funde a dos
+# PERSONAS próximas en la imagen (docs/proximidad_deteccion.md). Preparado para el
+# experimento pendiente (probar IOU), sin cambiar el comportamiento de producción
+# mientras nadie pida la métrica explícitamente.
+
+
+def test_sin_metrica_no_se_le_pasa_nada_a_get_sliced_prediction(monkeypatch):
+    """El control que más importa: si nadie pide postproceso, SAHI usa SUS propios
+    defaults (GREEDYNMM/IOS/0,5) — el comportamiento de siempre no cambia por tener
+    el parámetro disponible."""
+    vistos = {}
+
+    def falso_gsp(*_a, **kwargs):
+        vistos.update(kwargs)
+
+        class _R:
+            object_prediction_list = []
+
+        return _R()
+
+    monkeypatch.setattr(sahi.predict, "get_sliced_prediction", falso_gsp)
+    db._detectar_sahi(
+        None, _frame(), {"filas": 3, "columnas": 5, "solape": 0.15}, ANCHO, ALTO
+    )
+    assert "postprocess_match_metric" not in vistos
+    assert "postprocess_match_threshold" not in vistos
+
+
+def test_con_metrica_SI_llega_a_get_sliced_prediction(monkeypatch):
+    vistos = {}
+
+    def falso_gsp(*_a, **kwargs):
+        vistos.update(kwargs)
+
+        class _R:
+            object_prediction_list = []
+
+        return _R()
+
+    monkeypatch.setattr(sahi.predict, "get_sliced_prediction", falso_gsp)
+    db._detectar_sahi(
+        None,
+        _frame(),
+        {
+            "filas": 3,
+            "columnas": 5,
+            "solape": 0.15,
+            "postprocess_match_metric": "IOU",
+            "postprocess_match_threshold": 0.7,
+        },
+        ANCHO,
+        ALTO,
+    )
+    assert vistos["postprocess_match_metric"] == "IOU"
+    assert vistos["postprocess_match_threshold"] == 0.7
+
+
+def test_detectar_con_esquema_propaga_la_metrica_al_modo_sahi(parcheado):
+    db._detectar_con_esquema(
+        {
+            "modo": "sahi",
+            "filas": 3,
+            "columnas": 5,
+            "solape": 0.15,
+            "postprocess_match_metric": "IOU",
+        },
+        None,
+        None,
+        _frame(),
+        CB,
+        ANCHO,
+        ALTO,
+        BANDA,
+    )
+    assert parcheado.cfgs_vistos[-1]["postprocess_match_metric"] == "IOU"
+
+
+def test_detectar_con_esquema_propaga_la_metrica_al_modo_mixto(parcheado):
+    db._detectar_con_esquema(
+        {
+            "modo": "mixto",
+            "columnas": 5,
+            "solape": 0.15,
+            "postprocess_match_metric": "IOU",
+        },
+        None,
+        None,
+        _frame(),
+        CB,
+        ANCHO,
+        ALTO,
+        BANDA,
+    )
+    assert parcheado.cfgs_vistos[-1]["postprocess_match_metric"] == "IOU"
+
+
+def test_esquema_sin_metrica_la_propaga_como_none_no_la_omite(parcheado):
+    """Que `_detectar_con_esquema` siempre construya la clave (aunque sea None) es lo
+    que garantiza que `_detectar_sahi` decide con `.get()`, no con un KeyError."""
+    db._detectar_con_esquema(
+        {"modo": "sahi", "filas": 3, "columnas": 5, "solape": 0.15},
+        None,
+        None,
+        _frame(),
+        CB,
+        ANCHO,
+        ALTO,
+        BANDA,
+    )
+    assert parcheado.cfgs_vistos[-1]["postprocess_match_metric"] is None
+
+
+def test_esquema_de_config_no_activa_postproceso_si_el_yaml_no_lo_pide():
+    _nombre, esquema = db._esquema_de_config({"esquema": "mixto"})
+    assert esquema["postprocess_match_metric"] is None
+
+
+def test_esquema_de_config_lee_la_metrica_si_esta_en_el_yaml():
+    _nombre, esquema = db._esquema_de_config(
+        {"esquema": "sahi", "sahi": {"postprocess_match_metric": "IOU"}}
+    )
+    assert esquema["postprocess_match_metric"] == "IOU"

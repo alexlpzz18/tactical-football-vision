@@ -103,8 +103,25 @@ def _detectar_frame_entero(modelo, frame, conf, imgsz):
 
 
 def _detectar_sahi(modelo_sahi, frame, cfg_sahi, w, h):
+    """Trocea con SAHI. El postproceso (fusión de cajas entre tiles) es el mismo
+
+    mecanismo que se sospecha culpable de comerse jugadores (BACKLOG 19) y que ya
+    demostró comerse balones (`docs/sahi_balon.md`): por defecto SAHI fusiona con
+    `GREEDYNMM` y métrica `IOS`, donde una caja grande que contiene una pequeña da
+    1,00 aunque sean objetos distintos. `postprocess_match_metric` (y su umbral) se
+    leen de `cfg_sahi` si están, y si NO están se omiten — así la llamada usa
+    exactamente los defaults de SAHI y el comportamiento de producción no cambia
+    con este parámetro sin usar. Repetir `--comparar-sahi` con `IOU` es el
+    experimento pendiente (BACKLOG 19: primero jugadores, luego el balón con el
+    mismo swap, sobre el banco de 47 huecos + 60 de control ya validado).
+    """
     from sahi.predict import get_sliced_prediction
 
+    extra = {}
+    if cfg_sahi.get("postprocess_match_metric") is not None:
+        extra["postprocess_match_metric"] = cfg_sahi["postprocess_match_metric"]
+    if cfg_sahi.get("postprocess_match_threshold") is not None:
+        extra["postprocess_match_threshold"] = cfg_sahi["postprocess_match_threshold"]
     r = get_sliced_prediction(
         frame,
         modelo_sahi,
@@ -113,6 +130,7 @@ def _detectar_sahi(modelo_sahi, frame, cfg_sahi, w, h):
         overlap_height_ratio=cfg_sahi["solape"],
         overlap_width_ratio=cfg_sahi["solape"],
         verbose=0,
+        **extra,
     )
     return [
         (p.bbox.minx, p.bbox.miny, p.bbox.maxx, p.bbox.maxy, p.score.value)
@@ -238,6 +256,11 @@ def _esquema_de_config(cb):
             "    esquema: entero   # solo frame entero (cierra 0 de 47 huecos)"
         )
     nombre = cb.get("esquema", "entero")
+    # postprocess_match_metric/_threshold: ausentes por defecto → SAHI usa los
+    # suyos (GREEDYNMM/IOS/0,5), el comportamiento de siempre. Solo se activan si
+    # el config los pide explícitamente (BACKLOG 19: pendiente de probar IOU).
+    pp_metrica = cb.get("sahi", {}).get("postprocess_match_metric")
+    pp_umbral = cb.get("sahi", {}).get("postprocess_match_threshold")
     esquemas = {
         "entero": {"modo": "entero"},
         "sahi": {
@@ -245,11 +268,15 @@ def _esquema_de_config(cb):
             "filas": cb.get("sahi", {}).get("filas", 3),
             "columnas": cb.get("sahi", {}).get("columnas", 5),
             "solape": cb.get("sahi", {}).get("solape", 0.15),
+            "postprocess_match_metric": pp_metrica,
+            "postprocess_match_threshold": pp_umbral,
         },
         "mixto": {
             "modo": "mixto",
             "columnas": cb.get("sahi", {}).get("columnas", 5),
             "solape": cb.get("sahi", {}).get("solape", 0.15),
+            "postprocess_match_metric": pp_metrica,
+            "postprocess_match_threshold": pp_umbral,
         },
     }
     if nombre not in esquemas:
@@ -301,6 +328,10 @@ def _detectar_con_esquema(esquema, modelo, modelo_sahi, frame, cb, w, h, banda):
     la cámara elevada la distancia se traduce en altura en la imagen.
     """
     modo = esquema["modo"]
+    # None si el esquema no trae postproceso propio: _detectar_sahi entonces usa
+    # los defaults de SAHI (IOS), igual que hasta ahora.
+    metrica = esquema.get("postprocess_match_metric")
+    umbral_pp = esquema.get("postprocess_match_threshold")
     if modo == "entero":
         return _detectar_frame_entero(modelo, frame, cb["confianza"], cb["imgsz"])
     if modo == "sahi":
@@ -308,6 +339,8 @@ def _detectar_con_esquema(esquema, modelo, modelo_sahi, frame, cb, w, h, banda):
             "filas": esquema["filas"],
             "columnas": esquema["columnas"],
             "solape": esquema["solape"],
+            "postprocess_match_metric": metrica,
+            "postprocess_match_threshold": umbral_pp,
         }
         return _detectar_sahi(modelo_sahi, frame, cfg_s, w, h)
 
@@ -315,7 +348,13 @@ def _detectar_con_esquema(esquema, modelo, modelo_sahi, frame, cb, w, h, banda):
     y0, y1 = max(0, banda[0]), min(h, banda[1])
     cajas = _detectar_frame_entero(modelo, frame, cb["confianza"], cb["imgsz"])
     franja = frame[y0:y1]
-    cfg_s = {"filas": 1, "columnas": esquema["columnas"], "solape": esquema["solape"]}
+    cfg_s = {
+        "filas": 1,
+        "columnas": esquema["columnas"],
+        "solape": esquema["solape"],
+        "postprocess_match_metric": metrica,
+        "postprocess_match_threshold": umbral_pp,
+    }
     for bx1, by1, bx2, by2, conf in _detectar_sahi(
         modelo_sahi, franja, cfg_s, w, y1 - y0
     ):
@@ -384,6 +423,26 @@ def _comparar_en_huecos(args, cfg, cb, modelo, modelo_sahi, homografia, w, h, sa
         raise SystemExit(
             f"\nERROR: ningún esquema se llama así.\n"
             f"  Hay: {', '.join(repr(n) for n, _ in ESQUEMAS)}"
+        )
+    if args.postprocess_metric:
+        # Aplica el mismo swap a TODOS los esquemas que trocean (a "frame entero"
+        # no le afecta: no llama a SAHI). Pendiente BACKLOG 19: repetir esto con
+        # IOU una vez decidido en jugadores, sobre el mismo banco validado.
+        esquemas = [
+            (
+                nombre,
+                {
+                    **e,
+                    "postprocess_match_metric": args.postprocess_metric,
+                    "postprocess_match_threshold": args.postprocess_threshold,
+                },
+            )
+            for nombre, e in esquemas
+        ]
+        logger.info(
+            "postproceso SAHI forzado a %s (umbral %s) en los esquemas troceados",
+            args.postprocess_metric,
+            args.postprocess_threshold,
         )
     objetivo = sorted(set(prueba) | set(control))
     logger.info(
@@ -567,6 +626,20 @@ def main() -> None:
         type=float,
         default=40.0,
         help="Px hasta los que un candidato cuenta como EL balón, no un distractor",
+    )
+    parser.add_argument(
+        "--postprocess-metric",
+        choices=["IOS", "IOU"],
+        default=None,
+        help="Solo con --comparar-sahi: fuerza la métrica de fusión de SAHI en los "
+        "esquemas troceados (sahi/mixto), en vez del default 'IOS'. BACKLOG 19: "
+        "el mismo mecanismo que se sospecha culpable de comerse jugadores.",
+    )
+    parser.add_argument(
+        "--postprocess-threshold",
+        type=float,
+        default=0.5,
+        help="Umbral de fusión con --postprocess-metric (default de SAHI: 0.5)",
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

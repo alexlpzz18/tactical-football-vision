@@ -363,6 +363,36 @@ hace falta contar.
 repetir `scripts/proximidad_deteccion.py` sobre las detecciones nuevas — la tasa de
 fallo a < 20-40 px tiene que bajar sin que el banco empeore en ninguna pata.
 
+### Preparado (25-sep-2026): el mismo swap para el BALÓN, sin ejecutar
+
+Alex: *"si GREEDYNMM→IOU también afecta al detector del balón (mismo postproceso),
+¿hay que repetir la comparación de esquemas?"* Sí: `_detectar_sahi()` en
+`scripts/detectar_balon.py` llama a `get_sliced_prediction()` con los mismos
+defaults, sin overrides. Es el mismo mecanismo que ya decidió el esquema (`mixto`
+ganó por coste — 29 min contra 123 de `sahi` — pese a que `sahi` cerraba MÁS huecos;
+la pérdida de `sahi` en el control, 56/60, está atribuida a este mismo postproceso).
+
+**Análisis**: si `IOU` arregla esa pérdida, `sahi` podría igualar a `mixto` en
+precisión, pero seguiría perdiendo en coste — así que NO cambiaría lo adoptado, solo
+la justificación. Por la regla de "mejora TODO sin degradar nada" no habría adopción
+automática de todas formas.
+
+**El parámetro ya está en el código, sin ejecutar** (`postprocess_match_metric` /
+`_threshold`, ausentes = comportamiento de SAHI de siempre): `_detectar_sahi()`,
+`_detectar_con_esquema()` y `_esquema_de_config()` lo propagan; `--comparar-sahi`
+tiene los flags `--postprocess-metric` / `--postprocess-threshold` para forzarlo en
+TODOS los esquemas troceados de una tirada, reutilizando el banco de 47 huecos + 60
+de control ya validado. 7 tests nuevos en `tests/test_comparador_esquemas.py`
+(control de que SIN pedirlo no se le pasa nada a `get_sliced_prediction`, y que SÍ
+llega cuando se pide), 3 mutaciones atrapadas.
+
+**Orden**: primero el resultado de jugadores (prioridad de Alex); con eso decidido,
+en la MISMA sesión de Colab:
+```
+python scripts/detectar_balon.py --config <el de siempre> --comparar-sahi \
+    --postprocess-metric IOU
+```
+
 ## 20. ¿Dónde se pierden las cajas entre el detector y el recuento? (29-ago-2026)
 
 Sale de refutar la premisa de BACKLOG 19. **17,6 detecciones por frame
