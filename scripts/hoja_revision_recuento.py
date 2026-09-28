@@ -12,6 +12,13 @@ Cada imagen sale del vídeo con `posicionar_en_frame()` (nunca `cap.set`, ver
 `src/tracking_data/processor.py`), y las cajas son las del CACHÉ de detecciones —
 exactamente lo que entra al tracking, no una re-detección.
 
+⚠️ El caché solo tiene 1 de cada 3 frames (`sample_every=3` en producción): pedir el
+frame más cercano al segundo objetivo y buscarlo en el caché por ese mismo índice
+FALLABA el 53 % de las veces (64 de 120 en la primera pasada) — el `cache.get()`
+devolvía `None` y la imagen salía con "cajas=0" que no significaba nada: el detector
+no había fallado, la búsqueda apuntaba a una llave que nunca existió. Por eso el
+objetivo se AJUSTA primero a la llave del caché más cercana.
+
 Uso:
     python scripts/hoja_revision_recuento.py --salida-dir outputs/hoja_recuento
 """
@@ -58,6 +65,27 @@ def dets_del_frame(cache: dict, frame_idx: int):
     return entrada if entrada is not None else []
 
 
+def frame_de_cache_mas_cercano(frames_cache: list, objetivo: int) -> int:
+    """El índice del caché (sample_every=3) más próximo al frame objetivo.
+
+    El caché no tiene TODOS los frames; buscar por el frame exacto del segundo
+    fallaba la mayoría de las veces (ver docstring del módulo). `frames_cache`
+    debe venir ordenado.
+    """
+    import bisect
+
+    i = bisect.bisect_left(frames_cache, objetivo)
+    candidatos = [
+        f
+        for f in (
+            frames_cache[i - 1] if i > 0 else None,
+            frames_cache[i] if i < len(frames_cache) else None,
+        )
+        if f is not None
+    ]
+    return min(candidatos, key=lambda f: abs(f - objetivo))
+
+
 def dibujar(imagen: np.ndarray, dets: list) -> np.ndarray:
     """Dibuja las cajas del caché numeradas por orden de confianza descendente."""
     salida = imagen.copy()
@@ -82,7 +110,14 @@ def dibujar(imagen: np.ndarray, dets: list) -> np.ndarray:
 
 
 def generar_ventana(
-    cap, cache: dict, fps: float, salida: Path, nombre: str, ini_s: float, dur_s: int
+    cap,
+    cache: dict,
+    frames_cache: list,
+    fps: float,
+    salida: Path,
+    nombre: str,
+    ini_s: float,
+    dur_s: int,
 ) -> list:
     """Una imagen por segundo de la ventana. Devuelve las rutas escritas."""
     carpeta = salida / nombre
@@ -90,7 +125,7 @@ def generar_ventana(
     rutas = []
     for s in range(dur_s):
         t = ini_s + s
-        objetivo = round(t * fps)
+        objetivo = frame_de_cache_mas_cercano(frames_cache, round(t * fps))
         real = posicionar_en_frame(cap, objetivo)
         ok, frame = cap.read()
         if not ok:
@@ -98,11 +133,13 @@ def generar_ventana(
                 "no se pudo leer el frame %d (t=%.1fs) de %s", real, t, nombre
             )
             continue
+        assert real in cache, f"frame {real} no está en el caché: la búsqueda mentiría"
         dets = dets_del_frame(cache, real)
         pintado = dibujar(frame, dets)
+        desfase = real - round(t * fps)
         cv2.putText(
             pintado,
-            f"{nombre}  t={t // 60}:{t % 60:02d}  frame={real}  cajas={len(dets)}",
+            f"{nombre}  t~={t // 60}:{t % 60:02d}  frame={real} ({desfase:+d})  cajas={len(dets)}",
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
@@ -130,6 +167,7 @@ def main() -> None:
     with open(args.dets, "rb") as f:
         datos = pickle.load(f)
     cache = {e["frame_idx"]: e["dets"] for e in datos["cache"]}
+    frames_cache = sorted(cache)
     fps = datos["fps"]
 
     cap = cv2.VideoCapture(args.video)
@@ -140,7 +178,9 @@ def main() -> None:
     total = 0
     for nombre, ini_s, dur_s, motivo in VENTANAS:
         logger.info("%s (%s): t=%d-%ds", nombre, motivo, ini_s, ini_s + dur_s)
-        rutas = generar_ventana(cap, cache, fps, salida, nombre, ini_s, dur_s)
+        rutas = generar_ventana(
+            cap, cache, frames_cache, fps, salida, nombre, ini_s, dur_s
+        )
         total += len(rutas)
     cap.release()
 
