@@ -21,6 +21,7 @@ Decisiones de diseño:
 
 import json
 import logging
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -238,6 +239,41 @@ def _filtrar_creible(
     return filtrado
 
 
+def _suavizar_parpadeo_visual(etiquetas: list, ventana: int = 3) -> list:
+    """Mayoría categórica en una ventana centrada — SOLO para lo que se PINTA.
+
+    28-sep-2026 (Alex, revisando el vídeo): un cambio de UN frame que vuelve
+    enseguida al color de antes ("parpadeo") es correcto en el dato —es la
+    etiqueta por observación, `docs/pizarra_colapsaba.md`, y ya se midió tres
+    veces que SUAVIZAR el dato empeora el sistema (`CLAUDE.md`, "vías
+    cerradas": el parpadeo es la señal de que la asociación acaba de fallar,
+    taparlo la esconde)— pero es ilegible de ver en el replay.
+
+    Esto no es esa vía: no toca la columna `etiqueta` ni nada que consuman
+    las métricas o el informe. Decide únicamente qué color se DIBUJA en cada
+    frame del replay, con una mediana categórica: el valor en `i` se
+    sustituye por el más frecuente en la ventana `[i-mitad, i+mitad]` SOLO si
+    tiene mayoría estricta (más de la mitad de la ventana). Un empate no se
+    toca — mejor conservar el dato ambiguo que inventar un ganador.
+
+    Con `ventana=3`, un único frame distinto rodeado del mismo valor a los
+    dos lados (`A,A,B,A,A`) se convierte en el valor de alrededor
+    (`A,A,A,A,A`); una racha de 2 o más (`A,A,B,B,A,A`) sobrevive intacta,
+    porque dos frames seguidos ya no son un parpadeo.
+    """
+    n = len(etiquetas)
+    if ventana < 3 or ventana % 2 == 0 or n < ventana:
+        return list(etiquetas)
+    mitad = ventana // 2
+    salida = list(etiquetas)
+    for i in range(n):
+        vecinos = etiquetas[max(0, i - mitad) : min(n, i + mitad + 1)]  # noqa: E203
+        mayor, votos = Counter(vecinos).most_common(1)[0]
+        if votos > len(vecinos) / 2:
+            salida[i] = mayor
+    return salida
+
+
 def generar_replay(
     csv_path: str | Path,
     salida_html: str | Path,
@@ -252,6 +288,7 @@ def generar_replay(
     espejar: str | None = None,
     colores_equipo: dict | None = None,
     etiqueta_por_identidad: bool = False,
+    suavizado_visual_ventana: int = 3,
 ) -> Path:
     """Genera el HTML del replay desde el CSV de posiciones.
 
@@ -283,6 +320,10 @@ def generar_replay(
             y las métricas no se tocan.
         colores_equipo: {'A': '#rrggbb', 'B': '#rrggbb'} del meta del
             processor. Sin ellos, azul y rojo por convenio.
+        suavizado_visual_ventana: ventana (impar) de la mediana categórica
+            que decide qué color se PINTA por frame (ver
+            `_suavizar_parpadeo_visual`). No toca el dato ni las métricas.
+            1 o un número par la desactiva (se pinta la etiqueta cruda).
     """
     if espejar not in (None, "", "x", "y", "xy"):
         raise ValueError(f"espejar debe ser 'x', 'y' o 'xy' (recibido {espejar!r})")
@@ -360,9 +401,15 @@ def generar_replay(
         # Solo se emite el array cuando la identidad NO es pura: la mayoría
         # lo son y así el HTML no crece por nada.
         etiquetas_muestra = [str(v) for v in grupo["etiqueta"]]
+        # Suavizado SOLO del dibujo (ver docstring de la función): el array
+        # `ets` que se embebe es el que decide el color en pantalla, nunca
+        # se relee para nada más.
+        etiquetas_pintadas = _suavizar_parpadeo_visual(
+            etiquetas_muestra, suavizado_visual_ventana
+        )
         por_muestra = (
-            [indice_de[e] for e in etiquetas_muestra]
-            if len(set(etiquetas_muestra)) > 1 and not etiqueta_por_identidad
+            [indice_de[e] for e in etiquetas_pintadas]
+            if len(set(etiquetas_pintadas)) > 1 and not etiqueta_por_identidad
             else None
         )
         identidades.append(

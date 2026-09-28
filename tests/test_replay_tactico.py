@@ -349,3 +349,90 @@ def test_las_identidades_de_balon_no_cuentan_como_jugadores_en_el_encabezado(tmp
     salida = generar_replay(ruta, tmp_path / "r.html")
     html = salida.read_text(encoding="utf-8")
     assert "!String(d.et).startsWith('balon')" in html
+
+
+# ────────────── suavizado VISUAL del parpadeo (28-sep-2026) ──────────────
+#
+# Alex, revisando el vídeo: "un jugador está todo el rato de un color y un
+# milisegundo se pone en el otro... en el vídeo da igual, en el replay se
+# nota mucho". El dato NO se toca (ya se midió tres veces que suavizarlo
+# empeora el sistema, CLAUDE.md); esto es solo qué color se DIBUJA.
+
+
+def test_un_parpadeo_de_UN_frame_no_se_pinta(tmp_path):
+    """A,A,B,A,A → se pinta A,A,A,A,A. El parpadeo desaparece del DIBUJO."""
+    from src.report.replay_tactico import _suavizar_parpadeo_visual
+
+    assert _suavizar_parpadeo_visual(["A", "A", "B", "A", "A"]) == ["A"] * 5
+
+
+def test_una_racha_de_DOS_frames_sobrevive():
+    """Dos frames seguidos ya no es un parpadeo: es un cambio de verdad."""
+    from src.report.replay_tactico import _suavizar_parpadeo_visual
+
+    entrada = ["A", "A", "B", "B", "A", "A"]
+    assert _suavizar_parpadeo_visual(entrada) == entrada
+
+
+def test_un_empate_no_se_toca():
+    """Ventana de 2 en el borde derecho, sin mayoría estricta: se conserva
+    el dato — y el desempate por orden de aparición NO puede colar un valor
+    ajeno (si lo colara, saldría 'A', el que aparece antes en la ventana)."""
+    from src.report.replay_tactico import _suavizar_parpadeo_visual
+
+    assert _suavizar_parpadeo_visual(["A", "A", "B"])[-1] == "B"
+
+
+def test_cada_ventana_usa_el_dato_ORIGINAL_no_lo_ya_corregido():
+    """Si una posición ya corregida contaminara la ventana de la siguiente,
+    este caso mínimo (hallado por búsqueda exhaustiva) da un resultado
+    distinto: ['A','A','A','B'] en vez del correcto ['A','A','B','B']."""
+    from src.report.replay_tactico import _suavizar_parpadeo_visual
+
+    assert _suavizar_parpadeo_visual(["A", "B", "A", "B"]) == ["A", "A", "B", "B"]
+
+
+def test_ventana_1_o_par_desactiva_el_suavizado():
+    from src.report.replay_tactico import _suavizar_parpadeo_visual
+
+    entrada = ["A", "A", "B", "A", "A"]
+    assert _suavizar_parpadeo_visual(entrada, ventana=1) == entrada
+    assert _suavizar_parpadeo_visual(entrada, ventana=2) == entrada
+
+
+def test_no_revienta_con_menos_muestras_que_la_ventana():
+    from src.report.replay_tactico import _suavizar_parpadeo_visual
+
+    assert _suavizar_parpadeo_visual(["A", "B"]) == ["A", "B"]
+    assert _suavizar_parpadeo_visual([]) == []
+
+
+def test_el_replay_pinta_el_parpadeo_suavizado_no_el_dato_crudo(tmp_path):
+    """Extremo a extremo: la identidad tiene un parpadeo de 1 frame en el CSV
+    y el HTML no lo pinta — pero es solo el DIBUJO, el CSV de origen sigue
+    intacto (esto no es una regla de negocio, es una consulta al fichero)."""
+    from src.report.replay_tactico import generar_replay
+
+    csv = _csv_identidad_que_cambia(
+        tmp_path, ["A"] * 5 + ["B"] + ["A"] * 5  # un parpadeo de 1 frame
+    )
+    crudo_antes = pd.read_csv(csv).etiqueta.tolist()
+    salida = tmp_path / "r.html"
+    generar_replay(csv, salida, largo=62.0, ancho=40.0, min_vida_s=0.0)
+    datos, catalogo = _datos_del_html(salida.read_text())
+    ident = datos[0]
+    assert "ets" not in ident, "sin variación tras suavizar, no hace falta el array"
+    assert pd.read_csv(csv).etiqueta.tolist() == crudo_antes, "el CSV no se toca"
+
+
+def test_se_puede_desactivar_desde_generar_replay(tmp_path):
+    """Con ventana=1, el HTML sí pinta el parpadeo crudo."""
+    from src.report.replay_tactico import generar_replay
+
+    csv = _csv_identidad_que_cambia(tmp_path, ["A"] * 5 + ["B"] + ["A"] * 5)
+    salida = tmp_path / "r.html"
+    generar_replay(
+        csv, salida, largo=62.0, ancho=40.0, min_vida_s=0.0, suavizado_visual_ventana=1
+    )
+    datos, catalogo = _datos_del_html(salida.read_text())
+    assert "ets" in datos[0], "sin suavizar, el parpadeo de 1 frame vuelve a estar"
