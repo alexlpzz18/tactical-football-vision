@@ -418,6 +418,16 @@ sin más (el borde inferior de una caja de cabeza no es el pie de nadie). El
 mecanismo queda validado; el arreglo, si se quiere, es más quirúrgico que un
 swap de parámetro — no construido. **No se pasa al banco.**
 
+**Apéndice (28-sep-2026): ¿aspecto como alarma de fusión, sin tocar el
+postproceso?** Medido y descartado en la forma que se propuso: el aspecto de
+las cajas de IOS con una escisión cercana es 2,43 de media contra 2,57 de las
+limpias — casi igual, y el caso confirmado a ojo (referee+jugador) tiene
+aspecto 3,05, MÁS alto que la mediana del frame, no más cuadrado (fusionar a
+alguien detrás y más arriba estira la caja, no la ensancha a cuadrado). **Lo
+que sí separa es el ANCHO relativo a lo esperado para esa profundidad**: >1,5×
+multiplica por 2,7 la probabilidad de ser fusión (24,3 % contra 9,1 % base).
+Pista real, no una alarma limpia (24 % de aciertos), anotada sin construir.
+
 ## 20. ¿Dónde se pierden las cajas entre el detector y el recuento? (29-ago-2026)
 
 Sale de refutar la premisa de BACKLOG 19. **17,6 detecciones por frame

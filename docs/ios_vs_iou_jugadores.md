@@ -131,3 +131,43 @@ mitad de camino de lo medido) — se deja escrito para decidir, no se adopta.
 3. Nada tocado en producción ni en `scripts/detectar_balon.py` (el parámetro
    preparado la sesión pasada sigue sin ejecutarse: eso era una pregunta
    independiente sobre el balón, no bloqueada por este resultado).
+
+## Apéndice (28-sep-2026): ¿sirve el ASPECTO como alarma de fusión, sin tocar el postproceso?
+
+Pregunta de Alex: si el fallo es "dos personas fundidas entran como un bloque",
+¿el aspecto (alto/ancho) de la caja de PRODUCCIÓN (la fundida, antes de IOU) sirve
+para SEÑALAR el problema en vez de corregirlo? Medido sobre el mismo pickle, sin
+construir nada.
+
+**La forma "cuadrada (~1,0)" NO es la señal — medido y descartado.** Comparando el
+aspecto de las cajas de IOS que SÍ tenían una escisión de IOU a menos de 30 px
+(478 de 5.275) contra las que no: 2,43 contra 2,57 de media — una diferencia
+pequeña, con las dos distribuciones muy solapadas (P25-P75 de 2,0 a 2,8-3,0 en
+ambas). Y el caso confirmado a ojo (la caja 9 del árbitro fundido con un jugador,
+`docs/proximidad_deteccion.md`) tiene aspecto **3,05** — MÁS alta que la mediana
+del resto de cajas de ese mismo frame (2,29), no más cuadrada. Fusionar a alguien
+que está detrás y más arriba en la imagen (el caso típico) estira la caja hacia
+ARRIBA, no la ensancha hacia lo cuadrado.
+
+**Lo que SÍ muestra señal: el ANCHO, comparado con lo esperado para esa
+profundidad.** Ajustando `ancho ~ y2` solo con las cajas SIN escisión cercana
+(la línea base "limpia") y mirando cuánto se pasa cada caja de ese ancho
+esperado:
+
+| ancho / esperado | n | % con escisión cercana |
+|---|---|---|
+| (base global) | 5.275 | 9,1 % |
+| > 1,2× | 1.194 | 20,9 % |
+| > 1,3× | 821 | 22,4 % |
+| > 1,5× | 391 | 24,3 % |
+
+Un ancho 1,5× el esperado para esa profundidad multiplica por 2,7 la probabilidad
+de ser una fusión. Tiene sentido físico: `GreedyNMM` fusiona al UNIÓN de las dos
+cajas, y dos personas juntas se separan sobre todo en horizontal (lado a lado),
+así que el ancho crece más que el alto.
+
+**Respuesta a Alex**: no es la misma vía muerta con otro nombre, pero la forma
+concreta que proponías (cuadrado ~1,0) no se sostiene con los datos — es el
+ANCHO relativo a la profundidad, no el aspecto, lo que separa. Con 20-24 % de
+aciertos sobre un 9 % base no es una alarma limpia (falsos positivos serían
+mayoría), pero es una pista real, no descartada. **Anotado, sin construir.**
