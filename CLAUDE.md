@@ -247,6 +247,17 @@ Todo lo demás acaba desembocando aquí:
   Pesa poco en el partido entero (0,16 m de centroide de A) y mucho donde
   ocurre (3,9 m y 15 m de profundidad en el 4 % de los frames)
   (`docs/peso_arbitro_y_portero.md`).
+- **PROXIMIDAD EN LA IMAGEN NO ES OCLUSIÓN.** Revisando a mano la hoja de
+  recuento se vio un patrón repetido: el detector funde en una caja a dos
+  personas CLARAMENTE visibles (torso, cara, camiseta — nada tapado), solo por
+  estar próximas en píxeles. Medido: a menos de 20 px de su vecino más cercano
+  el detector falla el 23,3 % de las veces; a más de 100 px, el 0 %. Es el
+  MISMO mecanismo del postproceso de SAHI (`GREEDYNMM`+`IOS`) ya documentado
+  para el balón, y el hallazgo agregado de agosto ("17,6 cajas/frame de
+  sobra") no lo veía porque el fallo es minoritario en la media (4,3 % de las
+  personas) pero pierde justo a quien hace falta en el momento concreto
+  (`docs/proximidad_deteccion.md`). Repite la lección de las marcas del campo:
+  el promedio miente sobre el instante.
 - **UN PROXY PUEDE SER UN ECO DÉBIL Y AUN ASÍ VALER LA PENA PROBARLO** — con la
   condición de decir cuánto pesa. Al buscar más episodios como el tercio 3 (filas
   desplazadas, invisibles en agregados) con proxies sin GT, el CONTROL fue puntuar el

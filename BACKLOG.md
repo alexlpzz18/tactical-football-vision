@@ -214,6 +214,12 @@ su relación de aspecto (1:1 contra 1:3).
 Coste hoy: pequeño en número, pero **suma al recuento del equipo B**, que
 es lo primero que un entrenador mira.
 
+**Confirmado con evidencia visual (25-sep-2026, `docs/proximidad_deteccion.md`)**:
+`D_13-25_control_s29_frame24996.jpg`, caja 18 (confianza 0,39) es el balón,
+detectado como persona, en la misma escena apretada donde el detector también
+funde a dos jugadores (BACKLOG 19). No se ha medido aún si el filtro de
+plausibilidad física lo captura en el CSV final — pendiente.
+
 ## 17. La banda del esquema mixto tiene que salir de la HOMOGRAFÍA (29-ago-2026)
 
 `BANDA_LEJOS = (540, 720)` en `scripts/detectar_balon.py` es donde el
@@ -329,6 +335,33 @@ Dos huellas locales que NO sirvieron, documentadas para no repetirlas:
 
 Celdas de Colab listas en `docs/colab_ios_jugadores.md`, con el control de
 que las cajas recuperadas tengan altura de persona.
+
+### Actualización (25-sep-2026, `docs/proximidad_deteccion.md`): de sospecha a medida
+
+Alex revisó a mano 9 de las 120 imágenes de la hoja de recuento
+(`scripts/hoja_revision_recuento.py`) y encontró el patrón EN VIVO: 5 casos de una
+caja que funde a dos personas claramente visibles (no ocultas — es proximidad en la
+imagen, no oclusión). Medido sobre el GT (814 personas, 60 frames, sin porteros que
+distorsionan la cola):
+
+| vecino más cercano (px) | n | FALLO |
+|---|---|---|
+| 0-20 | 30 | **23,3 %** |
+| 20-30 | 89 | 14,6 % |
+| 30-40 | 99 | 16,2 % |
+| 80-100 | 85 | 1,2 % |
+| > 100 | 37 | 0,0 % |
+
+Curva monótona y limpia. Confirmado que `get_sliced_prediction()` corre con los
+DEFAULTS de SAHI (nunca se pasó `postprocess_*`): `GREEDYNMM` + `IOS` + 0,5 — el
+mismo mecanismo del balón. **No contradice** el hallazgo de agosto (17,6 cajas/frame
+de sobra en el agregado): el fallo es minoritario (4,3 % de las personas a < 20 px)
+y por eso no mueve la media, pero en los frames donde ocurre pierde justo a quien
+hace falta contar.
+
+**Criterio de éxito ahora es medible**: tras correr las celdas de Colab con `IOU`,
+repetir `scripts/proximidad_deteccion.py` sobre las detecciones nuevas — la tasa de
+fallo a < 20-40 px tiene que bajar sin que el banco empeore en ninguna pata.
 
 ## 20. ¿Dónde se pierden las cajas entre el detector y el recuento? (29-ago-2026)
 
