@@ -711,7 +711,7 @@ limpios el 93,6 % (±6). La vía de cortar identidades por color ya era negativa
 El baile es el síntoma de que la identidad cambia de persona: se arregla en la asociación,
 no en el etiquetado. Opción `excluir_ocluidas` escrita y apagada.
 
-## 31. GT de RECUENTO en minutos malos + la pista de las filas lejos de toda detección (21-sep-2026) — 🔎 DIAGNÓSTICO HECHO (`docs/desglose_del_error.md`, `docs/desglose_por_episodios.md`)
+## 31. GT de RECUENTO en minutos malos + la pista de las filas lejos de toda detección (21-sep-2026) — ✅ "¿SOLO ENCUADRE?" RESPONDIDO (`docs/gt_recuento_reducido.md`); tercio 3 sigue abierto
 
 **Estado tras la segunda tanda (21-sep)**:
 - **Pista de las filas a >1 m de toda detección: MEDIDA.** Es el suavizado de 0,5 s (6,9 % de
@@ -743,3 +743,21 @@ tercio 3.
 
 **Comprobación previa**: repetir el desglose sobre las ventanas nuevas (`--gt`, `--offset`,
 `--paso`) y comprobar que el reparto por tercios aguanta.
+
+### Cierre parcial (28-sep-2026, `docs/gt_recuento_reducido.md`) — ✅ "¿ES SOLO ENCUADRE?" RESPONDIDO: SÍ
+
+Plan reducido de Alex: 10 imágenes (5 de `A_3-10`, la peor; 5 de `D_13-25_control`, el
+control), contando a mano solo "visibles sin caja". **`A_3-10`: 0 de 5 frames tiene a
+alguien visible sin caja** — el déficit de la ventana mala es encuadre genuino (gente
+fuera de plano), no el detector fallando sobre gente que se ve. **`D_13-25_control`: 4 de
+5 perfectos, 1 con el fallo YA CONOCIDO** (fusión por proximidad, confirmada con zoom:
+la misma caja-que-se-traga-al-de-detrás de `docs/proximidad_deteccion.md`) — ningún
+mecanismo nuevo.
+
+**El misterio se reduce, no desaparece del todo**: encuadre + fusión (ya medida, ya
+cerrada) explican todo lo visto en estas 10 imágenes. Lo único que sigue sin nombre es
+el tipo de episodio del tercio 3 (filas desplazadas con detecciones normales) — esta
+muestra no lo tocó, porque las ventanas se eligieron por detección cruda, no por esa
+franja horaria. **No hace falta ampliar a las 120 imágenes**: la pregunta que las
+motivaba ya tiene respuesta. Si se sigue con el tercio 3, el camino es mirar el vídeo
+en 10:00-10:45 directamente, no más GT de recuento.
