@@ -171,3 +171,40 @@ concreta que proponías (cuadrado ~1,0) no se sostiene con los datos — es el
 ANCHO relativo a la profundidad, no el aspecto, lo que separa. Con 20-24 % de
 aciertos sobre un 9 % base no es una alarma limpia (falsos positivos serían
 mayoría), pero es una pista real, no descartada. **Anotado, sin construir.**
+
+## Cierre del capítulo (28-sep-2026): resultado del balón y verdict final
+
+Alex corrió el paso 3 del lado del balón — `--comparar-sahi --postprocess-metric
+IOU` sobre el banco de 47 huecos + 60 de control
+(`configs/processor_benja_balon_parte_entera.yaml`). Su resultado, tal cual me lo
+pasó: **SAHI 3×5 con IOS pierde 24 del control; con IOU pierde 8. `mixto` se
+mantiene en 60/60 de control, a 31 min contra los ~121 de SAHI.**
+
+⚠️ **Nota de honestidad, sin reconciliar por mi cuenta**: la cifra de "24
+perdidos" de IOS no coincide con el "56 de 60" (4 perdidos) documentado en
+`docs/sahi_balon.md` el 29-ago. Puede ser una `--control` de otro tamaño, un
+muestreo distinto, u otra causa — no lo sé, porque no tengo la salida cruda de
+esta corrida. **No lo doy por reconciliado**: si en algún momento importa el
+número exacto (no aquí, porque la decisión no depende de él), habría que
+repetirlo con los mismos `--frames`/`--control` que el 29-ago y comparar la
+salida completa, no solo el resumen.
+
+Lo que SÍ es sólido con cualquiera de las dos lecturas: **IOU mejora el control
+de SAHI** (menos pérdidas que con IOS, confirmando que IOS era parte del
+problema — el mecanismo exacto de `docs/sahi_balon.md`), **y aun así pierde
+más que `mixto` y cuesta 4× más**. La decisión no cambia.
+
+- **Jugadores**: IOU recupera cajas reales (confirmado visualmente y por
+  proximidad, 100 % pegadas a una detección de IOS), pero la mayoría son
+  fragmentos cuya posición saldría mal en tracking. Cerrado negativo.
+- **Balón**: IOU mejora el mecanismo exacto que ya se sospechaba (la caja
+  grande que se traga a la pequeña) pero `mixto` ya evita el problema por
+  DISEÑO (el frame entero, sin trocear, no pasa por `GreedyNMM`+`IOS` en la
+  franja donde el balón es grande) y además es varias veces más rápido. `IOU`
+  no gana ni en precisión final ni en coste.
+
+**El capítulo GREEDYNMM/IOS queda CERRADO DEL TODO.** El mecanismo (identificado
+29-ago para el balón, sospechado para jugadores, confirmado visualmente 25-sep,
+medido en proximidad y validado con IOU real en Colab 28-sep) explica una parte
+real y ya cuantificada del ruido, en ambas mitades del sistema, y en ninguna de
+las dos cambia lo que hay en producción hoy.

@@ -220,7 +220,7 @@ detectado como persona, en la misma escena apretada donde el detector también
 funde a dos jugadores (BACKLOG 19). No se ha medido aún si el filtro de
 plausibilidad física lo captura en el CSV final — pendiente.
 
-## 17. La banda del esquema mixto tiene que salir de la HOMOGRAFÍA (29-ago-2026)
+## 17. La banda del esquema mixto tiene que salir de la HOMOGRAFÍA (29-ago-2026) — ✅ HECHO (`src/balon/franja_lejana.py::banda_a_trocear`, confirmado 28-sep: el mixto gana también con IOU)
 
 `BANDA_LEJOS = (540, 720)` en `scripts/detectar_balon.py` es donde el
 esquema mixto trocea. Está **medida sobre la cámara del benjamín**: la
@@ -270,7 +270,7 @@ en los frames de control.
 - [ ] El control: comparar contra el mismo tramo con frame entero, donde
       sabemos que el balón elegido es el bueno.
 
-## 19. El postproceso de SAHI puede estar comiéndose JUGADORES (29-ago-2026) — ❌ CERRADO, IOU en crudo NEGATIVO (`docs/ios_vs_iou_jugadores.md`)
+## 19. El postproceso de SAHI puede estar comiéndose JUGADORES (29-ago-2026) — ❌ CERRADO DEL TODO, jugadores Y balón (`docs/ios_vs_iou_jugadores.md`)
 
 Demostrado sobre el balón (`docs/sahi_balon.md`): `get_sliced_prediction`
 fusiona con **`GREEDYNMM` y métrica `IOS`** (intersección sobre la caja
@@ -427,6 +427,21 @@ alguien detrás y más arriba estira la caja, no la ensancha a cuadrado). **Lo
 que sí separa es el ANCHO relativo a lo esperado para esa profundidad**: >1,5×
 multiplica por 2,7 la probabilidad de ser fusión (24,3 % contra 9,1 % base).
 Pista real, no una alarma limpia (24 % de aciertos), anotada sin construir.
+
+### Cierre definitivo (28-sep-2026): el balón confirma lo mismo, la decisión no cambia
+
+Alex corrió `--comparar-sahi --postprocess-metric IOU` en Colab sobre el banco de
+47 huecos + 60 de control: SAHI 3×5 pasa de perder 24 del control (IOS) a perder 8
+(IOU) — confirma que IOS era parte del problema — pero sigue perdiendo 8 y
+sigue costando ~121 min, contra 0 perdidos y 31 min de `mixto`. **`mixto` sigue
+siendo la opción correcta**, ahora con el mecanismo completo entendido y
+verificado en las dos mitades del sistema (jugadores y balón), no solo
+intuido. ⚠️ La cifra de "24 perdidos" no reconciliada con el "4 perdidos"
+(56/60) de `docs/sahi_balon.md` (29-ago) — ver la nota de honestidad en
+`docs/ios_vs_iou_jugadores.md`; no cambia la decisión, así que no se persigue.
+
+**Capítulo GREEDYNMM/IOS cerrado del todo.** No se toca el postproceso de SAHI
+en ningún sitio del proyecto.
 
 ## 20. ¿Dónde se pierden las cajas entre el detector y el recuento? (29-ago-2026)
 
