@@ -258,6 +258,20 @@ Todo lo demás acaba desembocando aquí:
   personas) pero pierde justo a quien hace falta en el momento concreto
   (`docs/proximidad_deteccion.md`). Repite la lección de las marcas del campo:
   el promedio miente sobre el instante.
+- **UN FILTRO DE "ALTURA DE PERSONA" ASUME UN CUERPO ENTERO, Y UN FRAGMENTO
+  MIENTE SOBRE SÍ MISMO.** Al probar IOU en vez de IOS (BACKLOG 19), solo el
+  51 % de las cajas nuevas medía 1,0-2,2 m — no llegaba al 80 % del criterio.
+  No era basura: revisando 30 al azar, el 49 % eran FRAGMENTOS reales (cabeza,
+  torso, pierna) de personas que IOU estaba separando de una caja fundida — su
+  aspecto (alto/ancho) subía de 0,98 a 3,0 con la altura, la firma de un
+  fragmento cada vez más completo, no dos poblaciones. El 100 % de las cajas
+  nuevas estaba a menos de 60 px de una detección que ya existía: confirmaba el
+  mecanismo, y aun así el experimento se cerró negativo, porque meter medio
+  cuerpo en el tracking calcula un "pie" que no es el pie de nadie
+  (`docs/ios_vs_iou_jugadores.md`). ⇒ Cuando un criterio falla, preguntar SI
+  falla por lo que se sospechaba (basura) o por otra cosa que el propio
+  criterio no distingue (una premisa que no se cumple para parte de los
+  casos) — cambia qué se hace después, aunque el cierre sea el mismo.
 - **UN PROXY PUEDE SER UN ECO DÉBIL Y AUN ASÍ VALER LA PENA PROBARLO** — con la
   condición de decir cuánto pesa. Al buscar más episodios como el tercio 3 (filas
   desplazadas, invisibles en agregados) con proxies sin GT, el CONTROL fue puntuar el

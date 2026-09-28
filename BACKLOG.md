@@ -270,7 +270,7 @@ en los frames de control.
 - [ ] El control: comparar contra el mismo tramo con frame entero, donde
       sabemos que el balón elegido es el bueno.
 
-## 19. El postproceso de SAHI puede estar comiéndose JUGADORES (29-ago-2026)
+## 19. El postproceso de SAHI puede estar comiéndose JUGADORES (29-ago-2026) — ❌ CERRADO, IOU en crudo NEGATIVO (`docs/ios_vs_iou_jugadores.md`)
 
 Demostrado sobre el balón (`docs/sahi_balon.md`): `get_sliced_prediction`
 fusiona con **`GREEDYNMM` y métrica `IOS`** (intersección sobre la caja
@@ -392,6 +392,31 @@ en la MISMA sesión de Colab:
 python scripts/detectar_balon.py --config <el de siempre> --comparar-sahi \
     --postprocess-metric IOU
 ```
+
+### Cierre del experimento IOU en jugadores (28-sep-2026, `docs/ios_vs_iou_jugadores.md`) — ❌ NEGATIVO, DOCUMENTADO
+
+Celdas 1-2 de Colab: IOU sube a 19,85 detecciones/frame (+2,20) pero solo el 51 %
+de las 487 cajas nuevas tiene altura de persona — no llega al 80 % del criterio.
+
+**Revisión de 30 cajas al azar + control de proximidad, antes de cerrar del
+todo**: el 49 % sin altura de persona es sobre todo **FRAGMENTOS de personas
+reales** (cabeza, torso, pierna — no basura; la excepción real, un poste de
+portería, se distingue por confianza 0,32, la más baja de la muestra). La
+distribución de alturas es un único bulto suave, NO bimodal: el aspecto
+(alto/ancho) sube de 0,98 a 3,0 con la altura, la firma de que son fragmentos
+cada vez más completos, no dos poblaciones distintas. **El 100 % de las 487
+cajas nuevas, plausibles o no, está a menos de 60 px de una detección que IOS
+ya tenía** — confirma el mecanismo de fusión de `docs/proximidad_deteccion.md`
+por segunda vez, independiente de la revisión manual. Pero de las 248
+"plausibles", 78 (31 %) proyectan FUERA del campo (espectadores del talud):
+solo 170 de 487 (35 %, 0,73/frame) sirven de verdad para el recuento.
+
+**Cerrado como el protocolo manda** (criterio 1 no se cumple → se documenta y se
+cierra), con un matiz importante: no es basura lo que falla, es que muchas cajas
+son medios cuerpos cuya posición en metros saldría mal si entraran a tracking
+sin más (el borde inferior de una caja de cabeza no es el pie de nadie). El
+mecanismo queda validado; el arreglo, si se quiere, es más quirúrgico que un
+swap de parámetro — no construido. **No se pasa al banco.**
 
 ## 20. ¿Dónde se pierden las cajas entre el detector y el recuento? (29-ago-2026)
 
