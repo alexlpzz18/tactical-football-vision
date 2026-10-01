@@ -220,6 +220,61 @@ detectado como persona, en la misma escena apretada donde el detector también
 funde a dos jugadores (BACKLOG 19). No se ha medido aún si el filtro de
 plausibilidad física lo captura en el CSV final — pendiente.
 
+### Las 10 marcas fijas del balón, localizadas y verificadas visualmente (28-sep-2026)
+
+Alex, revisando el vídeo: "el balón se detecta debajo del entrenador cuando no
+está ahí". `src/balon/marcas_estaticas.py` ya quita 10 celdas del caché —
+localizadas todas, proyectadas a metros y comprobadas con un recorte del vídeo
+en su píxel exacto (no solo por posición):
+
+| celda(s) | metros | n | verificado |
+|---|---|---|---|
+| 5 celdas contiguas (30,52)(31,52)(26,53)(20,54)(27,53) | ~(44-48, 41) | 4.973+2.908+1.751+860+366 | el fantasma YA conocido (BACKLOG 21): cruce de líneas junto al muro del fondo. Son celdas del MISMO objeto partido por el troceado, no 5 objetos — confirmado con el recorte |
+| (80,59) | (32.7, 20.1) | 213 | **el punto central**, exactamente donde predecía el docstring del módulo |
+| (96,52) | (58.7, 13.5) | 140 | cruce de líneas pintadas cerca de un área |
+| **(147,59)** | **(37.8, −1.5)** | 108 | **bajo el entrenador y junto a un cono**, en la banda técnica — el mismo sitio exacto que en `D_13-25_control_s04` (`docs/proximidad_deteccion.md`). Es la que Alex vio en el replay |
+| (122,57) | (41.9, 5.3) | 349 | césped liso en el recorte, sin marca visible — sin confirmar |
+| (53,57) | (35.1, 29.0) | 314 | césped liso, activa solo 800-1080s (no todo el partido) — sin confirmar, podría ser sombra o desgaste, no una marca pintada |
+
+**Las 4 marcas DENTRO del campo (no solo el fantasma de la banda) sí pueden
+comerse balón real** durante paradas de juego cerca de esos puntos —
+exactamente el mecanismo que explicó la falta de 1:03-1:28. La del punto
+central es la más peligrosa: un saque de centro se posa justo ahí. Las dos
+sin confirmar visualmente (122,57 y 53,57) no tienen marca pintada obvia en
+el recorte; si son sombras o desgaste del césped, el filtro también las
+quita bien (siguen siendo estáticas), pero merece una segunda mirada en
+otro momento del día si alguna vez se sospecha que cambian de posición con
+la luz.
+
+**No se ha construido nada**: el filtro `filtrar_marcas_estaticas` ya
+las quita todas, así que producción no cambia. Esto es diagnóstico, no una
+corrección pendiente — la corrección (si se quisiera) sería no perder el
+balón real cuando coincide con una marca durante una parada, que sigue
+siendo el "coste aceptado" documentado en el propio módulo.
+
+### El salto-y-vuelta del balón: mecanismo encontrado en los 2 casos (28-sep-2026)
+
+Los dos casos que dio `scripts` (t=531,3s y t=975,2s): en NINGUNO de los dos
+hay dos candidatos reales disputándose el balón. En los dos, la trayectoria
+real se corta (hueco de ~0,7-0,8 s casi vacío de candidatos crudos) y aparece
+UN único candidato aislado, de confianza baja (0,35-0,39, apenas por encima
+del umbral de producción 0,3) y lejos de por dónde iba el balón — al no
+competir con nada, se selecciona igualmente para ese frame suelto, y el hueco
+sigue hasta que la trayectoria real reaparece cerca de donde iba antes.
+
+No es el mecanismo de "cambio de candidato disfrazado de vuelo"
+(`docs/balon_sin_alas.md`, la puerta de píxeles): ahí compiten DOS
+detecciones reales simultáneas. Aquí compite una detección débil contra la
+NADA, y la velocidad implícita (≈15 m/s en campo medio) es fisiológicamente
+plausible para un balón, así que ningún gate de velocidad la caza.
+
+**Solo 2 casos en los 20 minutos.** Es raro, no el patrón dominante. Antes de
+construir un arreglo (p. ej. exigir que un candidato aislado y de confianza
+baja tenga apoyo de un frame vecino antes de aceptarse como real, o subir el
+umbral de confianza SOLO cuando no hay continuidad reciente), decidir si
+merece la pena por 2 casos en todo el partido o se documenta como caso raro
+aceptable. No construido — pendiente de la decisión de Alex.
+
 ## 17. La banda del esquema mixto tiene que salir de la HOMOGRAFÍA (29-ago-2026) — ✅ HECHO (`src/balon/franja_lejana.py::banda_a_trocear`, confirmado 28-sep: el mixto gana también con IOU)
 
 `BANDA_LEJOS = (540, 720)` en `scripts/detectar_balon.py` es donde el
@@ -649,6 +704,34 @@ segunda fila verde (417 frames) y excluir al portero por posición o por color.
 Medir en las DOS patas (Villaviciosa tiene GT del árbitro, track 22).
 **¿Qué podría inventar?** Jugadores capturados como árbitro: medir con la
 métrica "cuántas de las filas movidas a `otro` NO son árbitro".
+
+## 26b. Reabierto (28-sep-2026): el árbitro SIEMPRE está entre los dos porteros
+
+Idea de Alex, revisando el vídeo: dentro del cajón "otro" tiene que haber un
+árbitro y DOS porteros, y el árbitro está casi siempre ENTRE los dos —
+portero1 · árbitro · portero2, en ese orden espacial.
+
+**Premisa comprobada ANTES de tocar código**, como se pidió — sobre el GT de
+Villaviciosa (`data/annotations/ground_truth_tracking/annotations.xml`,
+track 0=portero_A, 1=portero_B, 22=referee; el único de los dos partidos que
+anota al árbitro):
+
+- **100 de 100 frames** con los tres presentes: el árbitro cae ENTRE los dos
+  porteros en el eje portería-portería (x). En el eje banda-banda (y), solo
+  el 4 %.
+- ⚠️ **Sample pequeño**: son 100 frames, TODOS del mismo clip continuo de
+  59,4 s (frame 7500-8985, paso 15). No cubre córners, saques de puerta ni
+  otros momentos donde el árbitro se acerca a un área — el 100 % real sobre
+  el partido entero será más bajo. Sigue siendo una premisa fuerte: el eje
+  correcto es x (portería-portería), no y, y con margen de sobra en este
+  clip (gA∈[85,96], gB∈[12,18], árbitro∈[47,68] — nunca cerca del filo).
+
+**Confirma la premisa.** Pendiente: diseñar CÓMO se usa —¿filtro de
+plausibilidad sobre candidatos a árbitro (rechazar uno fuera del rango
+x de los dos porteros del instante)? ¿o señal para que la regla de porteros
+no se lleve un fragmento que por posición x cae fuera de donde debería estar
+un portero, dejándolo para el árbitro?— sin tocar el umbral de saturación
+(sigue en pie no tocarlo, `docs/peso_arbitro_y_portero.md`). No construido.
 
 ## 27. El baile de colores: dos personas en una caja (21-sep-2026) — ❌ ATACADO POR EL LADO DEL COLOR, NEGATIVO (`docs/baile_y_oclusion.md`)
 
