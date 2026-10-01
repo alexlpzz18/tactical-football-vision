@@ -222,6 +222,16 @@ plausibilidad física lo captura en el CSV final — pendiente.
 
 ### Las 10 marcas fijas del balón, localizadas y verificadas visualmente (28-sep-2026)
 
+> ⚠️ **CORREGIDO el 1-oct-2026 (`docs/selector_balon.md` §4): esta sección se
+> equivoca en lo importante.** Solo 5 de las 10 celdas son marcas de verdad (5 px,
+> presentes en 15-16 de 20 minutos). Las otras 5 son **balón real parado** —saques
+> de centro, una falta, saques de puerta— más un **segundo balón** junto al
+> banquillo, y pasaron el filtro porque la presencia se mide como último tiempo
+> menos primero. El "punto central confirmado" de abajo confirmaba que la pintura
+> está ahí, no que lo detectado fuera pintura: eran los saques de centro. Y "el
+> balón debajo del entrenador" es sobre todo un objeto de 5 px a sus pies que
+> gana porque el staff contaba como jugador.
+
 Alex, revisando el vídeo: "el balón se detecta debajo del entrenador cuando no
 está ahí". `src/balon/marcas_estaticas.py` ya quita 10 celdas del caché —
 localizadas todas, proyectadas a metros y comprobadas con un recorte del vídeo
