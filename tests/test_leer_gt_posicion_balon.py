@@ -56,3 +56,51 @@ def test_celda_fuera_del_rango_de_letras_da_none():
     # 'Z' no está en LETRAS (se para en 'Y' aposta, 25 letras para 25 columnas).
     estado, x, y = _parsear_respuesta("Z1", 0, 0, 20)
     assert estado is None
+
+
+def test_entre_dos_celdas_da_el_punto_medio():
+    # M9 (col 12, fila 8) y M10 (col 12, fila 9), celda de 20px desde origen 0,0.
+    estado, x, y = _parsear_respuesta("M9/M10", origen_x=0, origen_y=0, celda_px=20)
+    assert estado == "visto"
+    x_m9 = (12 + 0.5) * 20
+    y_m9 = (8 + 0.5) * 20
+    y_m10 = (9 + 0.5) * 20
+    assert x == x_m9
+    assert y == (y_m9 + y_m10) / 2
+
+
+def test_entre_dos_celdas_distintas_columna_y_fila():
+    estado, x, y = _parsear_respuesta("P11/O11", origen_x=0, origen_y=0, celda_px=20)
+    assert estado == "visto"
+    x_p = (15 + 0.5) * 20
+    x_o = (14 + 0.5) * 20
+    assert x == (x_p + x_o) / 2
+    assert y == (10 + 0.5) * 20
+
+
+def test_entre_dos_celdas_con_espacios_alrededor_de_la_barra():
+    estado, x, y = _parsear_respuesta("M9 / M10", origen_x=0, origen_y=0, celda_px=20)
+    assert estado == "visto"
+
+
+def test_tapado_con_celda_da_posicion_pero_estado_tapado():
+    estado, x, y = _parsear_respuesta(
+        "Tapado en M9", origen_x=0, origen_y=0, celda_px=20
+    )
+    assert estado == "tapado"
+    assert x == (12 + 0.5) * 20
+    assert y == (8 + 0.5) * 20
+
+
+def test_tapado_sin_celda_sigue_sin_posicion():
+    # "tapado" a secas (sin "en X") no debe confundirse con el patrón nuevo.
+    estado, x, y = _parsear_respuesta("tapado", origen_x=0, origen_y=0, celda_px=20)
+    assert estado == "tapado"
+    assert x is None and y is None
+
+
+def test_tapado_con_celda_invalida_da_none():
+    estado, x, y = _parsear_respuesta(
+        "Tapado en Z1", origen_x=0, origen_y=0, celda_px=20
+    )
+    assert estado is None

@@ -34,26 +34,64 @@ logger = logging.getLogger("leer_gt_posicion_balon")
 
 LETRAS = "ABCDEFGHIJKLMNOPQRSTUVWXY"
 ESTADOS_SIN_POSICION = {"fuera", "tapado", "no_se"}
-RE_CELDA = re.compile(r"^([A-Ya-y])(\d{1,2})$")
+RE_CELDA = re.compile(r"^([A-Ya-y])\s*(\d{1,2})$")
+# "M9/M10": el balón está justo entre dos celdas vecinas, se promedia.
+RE_DOS_CELDAS = re.compile(r"^([A-Ya-y]\s*\d{1,2})\s*/\s*([A-Ya-y]\s*\d{1,2})$")
+# "Tapado en M9": oculto pero con una posición aproximada aprovechable.
+RE_TAPADO_CON_CELDA = re.compile(r"^tapado\s+en\s+([A-Ya-y]\s*\d{1,2})$", re.IGNORECASE)
+
+
+def _celda_a_px(celda: str, origen_x: float, origen_y: float, celda_px: int):
+    """'K7' -> (x_px, y_px) del CENTRO de esa celda, en píxeles del vídeo."""
+    m = RE_CELDA.match(celda.strip())
+    if not m:
+        return None
+    letra, numero = m.group(1).upper(), int(m.group(2))
+    if letra not in LETRAS:
+        return None
+    col = LETRAS.index(letra)
+    fila = numero - 1
+    x_px = origen_x + (col + 0.5) * celda_px
+    y_px = origen_y + (fila + 0.5) * celda_px
+    return x_px, y_px
 
 
 def _parsear_respuesta(respuesta: str, origen_x: float, origen_y: float, celda_px: int):
-    """Devuelve (estado, x_px, y_px). x_px/y_px son None si no hay posición."""
+    """Devuelve (estado, x_px, y_px). x_px/y_px son None si no hay posición.
+
+    Formatos aceptados, de los más a los menos frecuentes en la práctica:
+      - "K7"               -> una celda, visto.
+      - "fuera"/"tapado"/"no_se" -> sin posición.
+      - "M9/M10"            -> entre dos celdas vecinas: el centro de la
+        posición es el PUNTO MEDIO de los dos centros, visto.
+      - "Tapado en M9"      -> oculto, pero con la posición aproximada que
+        Alex pudo inferir (p.ej. por dónde miran los jugadores). Se guarda
+        como "tapado" CON x_px/y_px, a diferencia del "tapado" a secas.
+    """
     r = respuesta.strip()
     r_norm = r.lower()
     if r_norm in ESTADOS_SIN_POSICION:
         return r_norm, None, None
 
-    m = RE_CELDA.match(r)
-    if not m:
-        return None, None, None  # formato no reconocido: se avisa y se salta
+    m_tapado = RE_TAPADO_CON_CELDA.match(r)
+    if m_tapado:
+        punto = _celda_a_px(m_tapado.group(1), origen_x, origen_y, celda_px)
+        if punto is None:
+            return None, None, None
+        return "tapado", punto[0], punto[1]
 
-    letra, numero = m.group(1).upper(), int(m.group(2))
-    col = LETRAS.index(letra)
-    fila = numero - 1
-    x_px = origen_x + (col + 0.5) * celda_px
-    y_px = origen_y + (fila + 0.5) * celda_px
-    return "visto", x_px, y_px
+    m_dos = RE_DOS_CELDAS.match(r)
+    if m_dos:
+        p1 = _celda_a_px(m_dos.group(1), origen_x, origen_y, celda_px)
+        p2 = _celda_a_px(m_dos.group(2), origen_x, origen_y, celda_px)
+        if p1 is None or p2 is None:
+            return None, None, None
+        return "visto", (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2
+
+    punto = _celda_a_px(r, origen_x, origen_y, celda_px)
+    if punto is None:
+        return None, None, None  # formato no reconocido: se avisa y se salta
+    return "visto", punto[0], punto[1]
 
 
 def main() -> None:
