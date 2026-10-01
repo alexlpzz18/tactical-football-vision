@@ -203,6 +203,58 @@ síntoma esperando explicación: el **recuento de jugadores sale corto**
 (5-6 contra 7-8). No está medido que sea esto; está medido que el
 mecanismo existe. Va al backlog.
 
+## Corrección (1-oct-2026): la regla NO es "confianza de la pequeña, geometría de la grande"
+
+Releído el código real instalado (`sahi==0.12.1`,
+`sahi/postprocess/combine.py` + `_numpy_backend.py` + `utils.py`, no de
+memoria) y confirmado con las dos cajas sintéticas de arriba más un caso
+invertido:
+
+```python
+GreedyNMMPostprocess(match_threshold=0.5, match_metric="IOS")(
+    [balon(score=0.69), impostor(score=0.42)]
+)  # → score=0.69, bbox=impostor   (coincide con lo documentado)
+
+GreedyNMMPostprocess(match_threshold=0.5, match_metric="IOS")(
+    [balon(score=0.30), impostor(score=0.75)]
+)  # → score=0.75, bbox=impostor   (NO coincide con "confianza intacta")
+```
+
+La regla real, leída en `_numpy_backend.py::greedy_nmm_from_matrix` +
+`utils.py::merge_object_prediction_pair`:
+
+1. Las cajas se procesan en orden de **score descendente**
+   (`_score_tiebreak_order`). La caja que sobrevive (`keep_ind`) de cada
+   grupo fusionado es **siempre la de mayor confianza del grupo**, sea
+   grande o pequeña.
+2. El score final es `max(score1, score2)` (`get_merged_score`) — que por
+   construcción del punto 1 es **el score que ya tenía la que sobrevive**.
+   No es "la confianza del balón" por ser el balón: es la confianza de
+   quien gane el pulso de score, y el balón solo gana ese pulso en el
+   ejemplo documentado porque 0,69 > 0,42.
+3. La geometría final es la **UNIÓN** de las cajas (`calculate_box_union`,
+   envolvente mínima), no literalmente "la caja grande". Coincide con la
+   caja grande solo cuando esta contiene por completo a la pequeña — que
+   es el caso típico de una marca fija o un grupo tragándose al balón o a
+   un jugador, así que en la práctica el ejemplo documentado sigue siendo
+   representativo.
+
+**Lo que cambia de verdad**: si alguna vez el candidato intruso (una
+marca, un grupo, una sombra) tiene **más** confianza que el objeto real
+—el caso invertido de arriba—, el resultado hereda la confianza ALTA del
+intruso, no la confianza "intacta" del objeto real. Es un caso **peor**
+que el documentado: pasa cualquier filtro de confianza con más margen,
+no menos. No está medido cuánto pesa este caso invertido en el partido
+real (haría falta cruzar scores reales balón-vs-marca para saberlo); solo
+está confirmado que el mecanismo lo permite y que la frase "con su
+confianza intacta" generaliza mal más allá del ejemplo con el que se
+escribió.
+
+No cambia la decisión del esquema mixto (sigue sin pasar por este
+postproceso en la franja) ni invalida la medición de huecos cerrados.
+Si cambia algo del BACKLOG 19 (IOS vs IOU en jugadores) queda por decidir
+con Alex antes de seguir.
+
 ## Los 5 huecos que el mixto no cierra: el balón se sale de la franja
 
 Con la franja fija 540-720, tres de los 47 huecos se pierden a y≈600 y
