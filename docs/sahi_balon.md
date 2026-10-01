@@ -317,3 +317,98 @@ todo creyendo que se ahorra, y nadie se enteraría hasta ver la factura.
 La firma del checkpoint lleva ahora el esquema y la franja: sin eso,
 reanudar un caché empezado con otro esquema mezclaría dos detectores
 dentro del mismo fichero.
+
+## Verificación del 1-oct-2026: ¿el caso "peor" de la corrección de arriba ya muerde?
+
+Tras corregir el mecanismo de GREEDYNMM (arriba: la confianza final es la
+de quien gane el score, no la de la caja pequeña por ser pequeña), Alex
+pidió cruzar los scores reales de las 10 marcas conocidas contra los del
+balón real en los mismos instantes, para saber si el caso invertido
+—la marca puntuando más que el balón— es teórico o ya está pasando.
+
+**Script**: `scripts/marcas_vs_balon_score.py`, reutilizando el pipeline
+real (`src.balon.carga`, `seleccionar_balon_activo`) para que "el balón
+real de ese frame" sea el mismo que usa producción, no un criterio
+inventado para la medida.
+
+**Resultado, sobre la parte entera (`cache_balon_p1.pkl`)**:
+
+| | score p10 | p50 | p90 | n |
+|---|---|---|---|---|
+| candidatos de MARCA (crudos, antes del filtro) | 0,38 | 0,50 | 0,62 | 11.982 |
+| balón REAL seleccionado por producción | 0,43 | 0,64 | 0,75 | 8.086 |
+
+En mediana el balón real puntúa más que las marcas (0,64 contra 0,50),
+pero las colas se solapan: **14,7 % de los instantes de balón real
+tienen, dentro de ±1,0 s, al menos un candidato de marca con MÁS
+confianza que el balón en ese momento** (1.192 de 8.086). **No es solo
+teórico.**
+
+⚠️ **Lo que esto NO dice, para no leerlo de más**: que la marca puntúe
+más alto en un instante CERCANO no significa que GREEDYNMM los fusionara
+de verdad — para eso además hacen falta las cajas solapando por encima
+del umbral IOS (0,5), y el balón real rara vez está físicamente ENCIMA de
+una marca salvo en el caso ya documentado y aceptado (saque de centro,
+penalti). Esto mide la PRECONDICIÓN (confianza) sobre candidatos ya
+separados por el filtro de marcas, no una fusión confirmada caja a caja.
+Sirve para decir "el riesgo es real, no de laboratorio", no para
+cuantificar cuántas fusiones concretas ya han pasado.
+
+## Las dos métricas de adopción nuevas (`src/balon/metricas_adopcion.py`)
+
+Construidas y con tests (`tests/test_metricas_adopcion.py`, 8 casos). Las
+pidió Alex explícitamente para que "huecos cerrados" deje de ser el único
+criterio: un sistema puede dar 0 huecos y estar enganchado 300 frames a
+una marca, que es justo lo que pasó la primera vez con el mixto.
+
+- **`duracion_maxima_anclada`**: no necesita GT, es una propiedad de la
+  trayectoria de SALIDA. El tramo continuo más largo sin salir de un
+  radio de 1 m, cortando también por huecos de detección largos. Sobre
+  el `v3` actual: **5,3 s** — una parada de juego razonable, nada
+  alarmante.
+- **`fraccion_en_marcas`**: sobre el `v3` actual da **0,00 %**, como
+  tiene que ser — el filtro de marcas ya las quita ANTES de que
+  `seleccionar_balon_activo` elija una, así que la salida no puede
+  aterrizar en una celda de marca por construcción. El valor es útil
+  como GUARDA DE REGRESIÓN para cualquier cambio futuro al pipeline
+  (el selector condicional del punto 5, por ejemplo): si algún día deja
+  de ser 0, algo ha vuelto a dejar pasar una marca.
+
+⚠️ **Es solo la MITAD de lo que pidió Alex**, y hay que decirlo: el
+`static-lock ratio` que describió tiene dos partes — "cae en una marca"
+Y "mientras el balón real está en otra zona". La segunda mitad necesita
+saber dónde está el balón real, y **no hay GT de posición de balón en
+el proyecto** (ni en `gt_benja/` ni en `ground_truth_tracking/`, que solo
+anotan `player` y `referee`; `scripts/oraculo_balon.py` ya lo decía en
+su propio docstring). `fraccion_en_marcas` mide solo si el OUTPUT cae en
+una marca, sin poder confirmar si el balón real estaba realmente en otro
+sitio en ese instante. Es una cota superior del problema, no la métrica
+completa: un valor alto no prueba el fallo (podría ser el coste aceptado
+de un balón real posado en la marca), pero un valor bajo sí lo descarta.
+
+## BLOQUEADO por falta de GT: los puntos 2 (recall completo), 4 y 5 del plan de Alex
+
+Comprobada la premisa antes de construir nada más (como pide
+`CLAUDE.md`): **no existe en el proyecto ningún GT de posición de balón**
+—ni coordenadas de píxel ni de metros, en ningún frame. Esto bloquea,
+tal y como estaban planteados, tres de los cinco pasos que pidió Alex:
+
+- **Punto 2 (recall@K de candidatos crudos contra el GT)**: no se puede
+  calcular "en qué posición del ranking queda el candidato correcto" sin
+  saber cuál es el candidato correcto. Lo que SÍ se pudo hacer sin GT —el
+  cruce de scores marcas-vs-balón de arriba— está hecho y es la pieza que
+  más importaba de este punto.
+- **Punto 4 (señal de diferencia-de-fondo en frames sin candidatos)**:
+  "mide si esos máximos caen cerca del balón real" es, otra vez, recall
+  contra una posición que no existe en ningún fichero del proyecto.
+- **Punto 5 (selector condicional)**: depende de que el punto 2 muestre
+  un hueco real de recall, que no se ha podido medir.
+
+**No se ha construido nada de esto.** La vía para destrabarlo es
+etiquetar un GT de posición de balón, aunque sea pequeño — con la
+herramienta que ya existe para huecos concretos
+(`scripts/gt_huecos_balon.py`) o una nueva más simple que solo pida un
+clic por frame en una muestra de 30-50 frames repartidos entre
+"candidato bajo encontrado" y "cero candidatos". Es la decisión de Alex:
+si vale la pena ese etiquetado ahora, o si se deja documentado y cerrado
+aquí como los otros negativos del proyecto.
