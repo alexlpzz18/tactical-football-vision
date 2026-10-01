@@ -309,6 +309,10 @@ arbitro:
   # "aquí no hay". Verificado en Villaviciosa: borrando al árbitro del
   # caché, corona a la identidad 39 (106 obs).
   uno_solo: true
+  # Devolver por COLOR a los 'otro' que no gana la exclusividad. APAGADO:
+  # se midió y empeoraba Villaviciosa 3,55 -> 3,65 m (docs/arbitro.md). La
+  # clave existe para MEDIRLO (1-oct-2026), no para usarlo.
+  devolver_por_color: false
   # ── margen_equipo: ADOPTADO el 26-ago-2026 (decisión de Alex) ──────
   #
   # El catálogo SOLO manda cuando el color de la identidad está a más de

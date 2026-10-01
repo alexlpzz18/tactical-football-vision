@@ -424,3 +424,38 @@ con cinco jugadores en vez de siete. **No hay punto de operación bueno.**
 Línea cerrada. No hay causa barata: el arreglo pasa por la asociación, y
 el árbitro colado cuesta 0,41-0,61 m de centroide y CERO de anchura, por
 debajo del suelo de ruido. Vuelve solo cuando la asociación mejore.
+
+---
+
+# `devolver_por_color`, re-medido en el partido entero (1-oct-2026): NEGATIVO otra vez
+
+Alex propuso conectar `devolver_por_color`, creyendo que era un cable suelto:
+`un_solo_arbitro` corona una identidad y **no cambia ninguna etiqueta**, porque
+el parámetro no se pasaba en ningún sitio. No era un cable suelto: se apagó a
+propósito tras medir que empeoraba Villaviciosa (3,55 → 3,65 m, arriba). Se
+añadió la clave al config (`arbitro.devolver_por_color`, **false por defecto**,
+con test de que el config SE LEE) y se midió encendida y apagada.
+
+| | apagada | encendida |
+|---|---|---|
+| Villaviciosa 60 s | — | **CSV idénticos byte a byte**: el tercer grupo tiene 1 identidad, no hay a quién devolver |
+| benjamín, ventana del GT (30 s) | centroide 0,86 m · equipo equivocado 1,24 % | **idéntico**: ninguna devuelta cae en la ventana |
+| benjamín 20 min: frames con 0 `otro` | 3.303 (28 %) | **5.396 (45 %)** |
+| frames con exactamente 1 `otro` | 7.224 | 6.234 |
+| trío portero-árbitro-portero completo | 24 % | **20 %** |
+
+Lo que hace al encenderla, mirado identidad a identidad (dos recortes de cada una):
+de las 7 que devuelve, **5 contienen al árbitro** mezclado con jugadores (436,
+155, 865, 129, 814 → todas a B). Solo una sale ganando: la **26 es el portero de
+A** (negro, #1, minutos 0-2) y va a A, que es su equipo.
+
+⇒ El árbitro está **partido en al menos 6 identidades y mezclado con
+jugadores**: devolver por color mete al árbitro en un equipo durante ~2.100
+frames. Es la misma conclusión de arriba —el árbitro es un problema de
+asociación— con la causa a la vista. **La clave se queda en false.**
+
+⚠️ Lo que el GT NO ve: la ventana de 30 s del benjamín no contiene ninguna de las
+identidades afectadas, así que el banco de siempre daba "sin cambios". El efecto
+solo aparece mirando el partido entero. Y un mensaje que miente, corregido: el
+log decía "Las otras N vuelven a su equipo" también con la clave apagada (el
+docstring igual). Corregidos los dos.

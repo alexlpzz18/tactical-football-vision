@@ -372,6 +372,12 @@ def clasificar_identidades(
             min_observaciones=cfg_equipos.get("arbitro", {}).get(
                 "min_observaciones", 25
             ),
+            # Apagado por defecto y con motivo medido (docs/arbitro.md):
+            # devolver por color a los no coronados empeoró Villaviciosa de
+            # 3,55 a 3,65 m. La clave existe para poder MEDIRLO, no adoptarlo.
+            devolver_por_color=cfg_equipos.get("arbitro", {}).get(
+                "devolver_por_color", False
+            ),
         )
 
     # Regla de staff: quien vive FUERA del campo no juega (línier, cuerpo

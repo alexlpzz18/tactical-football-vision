@@ -730,6 +730,62 @@ def test_un_solo_arbitro_corona_al_de_mas_evidencia():
     assert salida[2] == "otro"  # el otro NO se reasigna por color (medido)
 
 
+def test_un_solo_arbitro_con_devolver_por_color_reasigna_a_los_no_coronados():
+    from src.team_classification.arbitro import un_solo_arbitro
+
+    colores = {}
+    arbitro = _ident_con_color(31.0, 20.0, 60, 120, colores, 0)
+    robado = _ident_con_color(25.0, 20.0, 30, 10, colores, 1000)  # color = A
+    salida = un_solo_arbitro(
+        {1: "otro", 2: "otro"},
+        [arbitro, robado],
+        colores,
+        _protos(),
+        _modelo_f7(),
+        devolver_por_color=True,
+    )
+    assert salida[1] == "otro"
+    assert salida[2] == "A"
+
+
+def _clasificar_dos_otros(devolver):
+    """clasificar_identidades entera con un árbitro y un jugador robado en 'otro'."""
+    from types import SimpleNamespace
+
+    from src.team_classification.pipeline_equipos import clasificar_identidades
+
+    colores = {}
+    arbitro = _ident_con_color(31.0, 20.0, 60, 120, colores, 0)
+    robado = _ident_con_color(25.0, 20.0, 30, 10, colores, 1000)
+    a, b = _protos()
+
+    class ClasificadorTodoOtro:
+        _prototipos = SimpleNamespace(a=a, b=b)
+
+        def predict_color(self, media, **_kw):
+            return "otro"
+
+    cfg = {
+        "campo": {"tipo": "f7", "largo": 62.0, "ancho": 40.0},
+        "arbitro": {"uno_solo": True, "devolver_por_color": devolver},
+    }
+    return clasificar_identidades(
+        [arbitro, robado], colores, ClasificadorTodoOtro(), cfg
+    )
+
+
+def test_la_clave_devolver_por_color_del_config_SE_LEE():
+    """Encender la clave en el config tiene que cambiar el resultado.
+
+    Es la guarda de `test_interruptores_de_config.py` aplicada aquí: no se
+    comprueba que la clave aparezca en el código, se EJERCE.
+    """
+    apagada = _clasificar_dos_otros(False)
+    encendida = _clasificar_dos_otros(True)
+    assert apagada == {1: "otro", 2: "otro"}
+    assert encendida == {1: "otro", 2: "A"}
+
+
 def test_un_solo_arbitro_no_toca_nada_si_solo_hay_uno():
     from src.team_classification.arbitro import un_solo_arbitro
 

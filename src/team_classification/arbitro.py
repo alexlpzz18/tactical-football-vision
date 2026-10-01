@@ -242,7 +242,11 @@ def un_solo_arbitro(
     razón: es conocimiento del reglamento, no un umbral. De todas las
     identidades que acaban en el tercer grupo DENTRO del campo —las
     marque el catálogo de equipaciones o el prototipo 'otro' del color—
-    se queda una y **las demás vuelven a su equipo por color**.
+    se queda una. **Las demás se quedan en 'otro'** salvo que se pase
+    `devolver_por_color=True` (config `arbitro.devolver_por_color`), que
+    está apagado por defecto: devolverlas por color se midió y empeoraba
+    (ver el comentario de abajo). Con el valor por defecto esta función
+    NO cambia ninguna etiqueta: solo deja constancia en el log.
 
     Por qué hace falta, y es lo que Alex vio en el vídeo: el catálogo roba
     jugadores. En Villaviciosa se lleva a un naranja (id 40, 110
@@ -306,11 +310,16 @@ def un_solo_arbitro(
     _ev, elegido, n_obs, dist = candidatos[0]
     logger.info(
         "Un solo árbitro: identidad %d (%d obs, color a %.2f del prototipo). "
-        "Las otras %d vuelven a su equipo.",
+        "Las otras %d %s.",
         elegido,
         n_obs,
         dist,
         len(candidatos) - 1,
+        (
+            "vuelven a su equipo por color"
+            if devolver_por_color
+            else "se quedan en 'otro'"
+        ),
     )
     for _ev, indice, n_obs, dist in candidatos[1:]:
         if not devolver_por_color:
