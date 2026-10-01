@@ -208,6 +208,31 @@ def _recortar(cap, frame_idx, ancho_video, alto_video, cx, cy):
     return recorte, (x0, y0)
 
 
+def _construir_casos(grupo_a, grupo_b_cerca, grupo_b_lejos, ancho_video, alto_video):
+    """Arma la lista (nombre, grupo, frame, t, cx, cy) que se recorta.
+
+    ⚠️ `cx, cy` tienen que ser PÍXELES del vídeo, no metros. El det crudo del
+    caché es `(mx, my, x1, y1, x2, y2, conf)` — `det[0], det[1]` son METROS
+    (un bug real: los 20 recortes del grupo A salieron pegados a la esquina
+    (0,0) porque `np.clip` fuerza cualquier metro-como-si-fuera-píxel a caer
+    dentro del vídeo). Por eso aquí SIEMPRE se pasa por `_centro_px`.
+    """
+    return (
+        [
+            (f"A{i+1:02d}", "candidato_bajo", f, t, *_centro_px(det))
+            for i, (f, t, det) in enumerate(grupo_a)
+        ]
+        + [
+            (f"Bm{i+1:02d}", "hueco_cerca_marca", f, t, vecino[2], vecino[3])
+            for i, (f, t, vecino) in enumerate(grupo_b_cerca)
+        ]
+        + [
+            (f"Bl{i+1:02d}", "hueco_lejos_marca", f, t, ancho_video / 2, alto_video / 2)
+            for i, (f, t, _) in enumerate(grupo_b_lejos)
+        ]
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache", default="data/tracking_benja/cache_balon_p1.pkl")
@@ -231,19 +256,8 @@ def main() -> None:
     alto_video = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     filas_csv = []
-    casos = (
-        [
-            (f"A{i+1:02d}", "candidato_bajo", f, t, det[0], det[1])
-            for i, (f, t, det) in enumerate(grupo_a)
-        ]
-        + [
-            (f"Bm{i+1:02d}", "hueco_cerca_marca", f, t, vecino[2], vecino[3])
-            for i, (f, t, vecino) in enumerate(grupo_b_cerca)
-        ]
-        + [
-            (f"Bl{i+1:02d}", "hueco_lejos_marca", f, t, ancho_video / 2, alto_video / 2)
-            for i, (f, t, _) in enumerate(grupo_b_lejos)
-        ]
+    casos = _construir_casos(
+        grupo_a, grupo_b_cerca, grupo_b_lejos, ancho_video, alto_video
     )
 
     for nombre, grupo, frame_idx, t, cx, cy in casos:
