@@ -50,3 +50,47 @@ contra otra cosa), pero aquí no es GreedyNMM ni las marcas: es la plausibilidad
   805 px; por encima solo actúa el frame entero reducido a 1.280. En todo el partido solo
   133 de 24.901 detecciones están por encima de la franja, y 3 de los 6 balones aéreos
   claros sí se detectaron ahí (y = 365, 492, 525). No dice si se pierden muchos más.
+
+## Paso barato 1: ¿más resolución por encima de la franja? (2-oct-2026)
+
+**No puede recuperar ninguno de los 6 casos confirmados**: los 6 sí los detectó el
+detector (3 por encima de la franja, a y = 365/492/525, y 3 dentro); los perdió la
+plausibilidad. La resolución solo podría afectar al 62 % de huecos de vuelo SIN
+detección, que no tienen GT.
+
+No se ha podido probar aquí: el modelo (`best_balon_v1.pt`) está en el Drive
+sincronizado, pero en este entorno torch está compilado para numpy 1.x y hay numpy
+2.4.6 (`CLAUDE.md` fija `numpy<2.1`): la inferencia falla con "Numpy is not available".
+Arreglarlo es cambiar el entorno; no se ha tocado. Coste estimado SIN medir: una segunda
+franja de 5 tiles por encima de y = 534 cuesta del orden de lo que ya cuesta la franja
+actual, así que entre +10 y +30 min sobre los 29 min del mixto por parte en una T4.
+Medible en Colab (o aquí con el entorno arreglado) contando detecciones nuevas en los
+huecos de vuelo y mirándolas a ojo.
+
+## Paso barato 2: readmitir lo que tira la plausibilidad por CONTINUIDAD (simulado)
+
+Simulación sobre los cachés, sin tocar producción. Las 3.646 detecciones que tira la
+plausibilidad (menos las de celdas de marca) vuelven como candidatos del Viterbi del
+Plan 1, en tres variantes:
+
+| variante | readmitidas elegidas | en huecos de vuelo | 6 casos | muestra de 30 a ojo |
+|---|---|---|---|---|
+| A: sin restricción | 1.747 | 239 | — | (no se miró) |
+| B: no pueden EMPEZAR una pista (salto = ∞) | 1.023 | 227 | 6/6 | 12 balón · 6 dudosas · **12 basura** |
+| **C: B + la racha tiene que SALIR y VOLVER al suelo por continuidad, ≤ 2,5 s** | **604** | **214** | **6/6** | **20 balón · 6 dudosas · 4 basura** |
+
+B no basta: la basura del fondo (personas, la grada, tierra) está "cerca" en píxeles
+del balón cuando el balón va por el fondo, y la puerta de 1.000 px/s la deja pasar. C es
+la forma de vuelo de verdad —un vuelo sale de un pie y cae al césped— y se queda con
+~2/3 de balón real (en el aire, saques de banda con el balón sobre la cabeza, rebotes en
+la grada).
+
+**Viable con lo que ya existe** (el Viterbi con un candidato que no puede abrir pista, y
+una comprobación posterior de entrada y salida), pero NO construido. Dos condiciones
+antes de adoptarlo:
+
+1. Estas filas no son posiciones: la homografía de suelo las pone a decenas de metros.
+   Tienen que entrar como **aéreas (`es_real = 0`)**, fuera de contactos y posesión. Lo
+   que aportan es CONTINUIDAD (la pista no se corta en un vuelo) y, en una vista sobre
+   el vídeo real, el balón dibujado en su píxel, que sí es correcto.
+2. Medir lo que inventa: ~13 % de basura clara y ~20 % de dudosas en la muestra.
