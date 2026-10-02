@@ -26,11 +26,11 @@ from src.balon.tracking_balon import ParametrosBalon, seleccionar_balon_activo
 # que siguen decidiendo el ORDEN de los candidatos; la selección por
 # continuidad (por defecto desde el 1-oct-2026) tiene los suyos en
 # test_seleccion_por_continuidad.py.
-FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False)
+FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False, quitar_balon_de_staff=False)
 
 
 def params_frame_a_frame(params):
-    return replace(params, continuidad_activa=False)
+    return replace(params, continuidad_activa=False, quitar_balon_de_staff=False)
 
 
 FPS, SAMPLE = 29.97, 2
@@ -213,3 +213,33 @@ def test_sin_posiciones_de_jugadores_el_desempate_cae_a_la_confianza():
     assert activo
     for det in activo.values():
         assert det[6] == pytest.approx(0.95)
+
+
+def test_dos_visitas_sueltas_de_un_balon_parado_NO_son_una_marca():
+    """El fallo del 1-oct-2026: el saque de centro (minuto 0 y minuto 19)
+    sumaba 19 minutos de "presencia" midiendo último menos primero. Un balón
+    parado en dos momentos del partido no es una marca: no está repartido
+    por los minutos. Debajo, un partido de 20 min con un balón en juego."""
+    dets, tiempos = _balon_en_juego(n=1200, paso=30)  # ~20 min
+    for i in range(80):  # 80 detecciones en el minuto 0 y 80 en el 19, mismo píxel
+        for base in (2, 34200):
+            f = base + 2 * i * 3 + 1
+            dets.setdefault(f, []).append(_det(700.0, 500.0))
+            tiempos[f] = f / FPS
+    assert encontrar_marcas_estaticas(dets, tiempos) == set()
+    # y con el criterio viejo (sin exigir minutos repartidos) sí lo era
+    assert encontrar_marcas_estaticas(dets, tiempos, min_fraccion_minutos=0.0)
+
+
+def test_una_marca_partida_entre_dos_celdas_cuenta_sus_minutos_juntos():
+    """La marca sobre el borde de la rejilla: cada celda por separado tiene
+    la mitad de los minutos; el grupo, todos."""
+    dets, tiempos = _balon_en_juego(n=1200, paso=30)
+    for i in range(600):
+        f = 2 + i * 60
+        px = (
+            359.0 if (i // 60) % 2 == 0 else 361.0
+        )  # minutos alternos a cada lado de 360
+        dets.setdefault(f, []).append(_det(px, 500.0))
+        tiempos[f] = f / FPS
+    assert {c[0] for c in encontrar_marcas_estaticas(dets, tiempos)} == {29, 30}

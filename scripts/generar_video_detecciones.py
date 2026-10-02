@@ -208,11 +208,7 @@ def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
         )
     import numpy as np
 
-    from src.balon.carga import (
-        cargar_detecciones_limpias,
-        cargar_homografia_de_campo,
-        jugadores_por_frame_de_balon,
-    )
+    from src.balon.carga import cargar_detecciones_limpias, contexto_del_selector
     from src.balon.tracking_balon import (
         ParametrosBalon,
         detectar_fases_aereas,
@@ -220,17 +216,15 @@ def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
     )
     from src.campo_modelo import cargar_modelo
 
-    dets, tiempos, _meta = cargar_detecciones_limpias(
-        ruta_cache_balon, cargar_modelo(config=ruta_campo)
-    )
-    jug = jugadores_por_frame_de_balon(ruta_csv, tiempos, dets)
+    modelo = cargar_modelo(config=ruta_campo)
+    dets, tiempos, _meta = cargar_detecciones_limpias(ruta_cache_balon, modelo)
+    jug, ctx = contexto_del_selector(ruta_csv, tiempos, dets, ruta_campo, modelo)
     params = ParametrosBalon()
     activo = seleccionar_balon_activo(
         dets,
         {f: [(j[0], j[1]) for j in v] for f, v in jug.items()},
         params,
-        tiempos,
-        cargar_homografia_de_campo(ruta_campo),
+        **ctx,
     )
     orden = sorted(activo)
     trayectoria = [

@@ -101,8 +101,37 @@ def cargar_homografia_de_campo(ruta_config_campo):
     return np.load(ruta if ruta.is_absolute() or ruta.exists() else raiz / ruta)
 
 
+def contexto_del_selector(
+    ruta_csv_jugadores, tiempos: dict, frames, ruta_config_campo, modelo
+):
+    """Todo lo que necesita `seleccionar_balon_activo` además de las detecciones.
+
+    Un solo sitio para los cinco consumidores (procesar_balon, el vídeo y
+    los scripts de medida): si cada uno lo armara a su manera, dos
+    renderizadores podrían elegir balones distintos.
+
+    Returns:
+        (jugadores {frame: [(x, y, id)]}, kwargs para seleccionar_balon_activo).
+    """
+    jug = jugadores_por_frame_de_balon(ruta_csv_jugadores, tiempos, frames)
+    staff = jugadores_por_frame_de_balon(
+        ruta_csv_jugadores, tiempos, frames, solo_etiquetas=("staff",)
+    )
+    kwargs = {
+        "tiempos": tiempos,
+        "homografia": cargar_homografia_de_campo(ruta_config_campo),
+        "posiciones_staff": {f: [(s[0], s[1]) for s in v] for f, v in staff.items()},
+        "dimensiones_campo": (float(modelo.largo), float(modelo.ancho)),
+    }
+    return jug, kwargs
+
+
 def jugadores_por_frame_de_balon(
-    ruta_csv_jugadores, tiempos: dict, frames, excluir_etiquetas=("staff",)
+    ruta_csv_jugadores,
+    tiempos: dict,
+    frames,
+    excluir_etiquetas=("staff",),
+    solo_etiquetas=None,
 ) -> dict:
     """{frame_de_balón: [(x_m, y_m, id)]} con los jugadores REALES de ese instante.
 
@@ -113,7 +142,8 @@ def jugadores_por_frame_de_balon(
     y podían recibir un contacto. Sacarlos sube el GT de desempates de 14 a
     16 de 38 y cuesta 14 frames: 7 del zapato y 7 de un balón real FUERA de
     juego, detrás de la línea de fondo. `excluir_etiquetas=()` es el
-    comportamiento anterior.
+    comportamiento anterior. Con `solo_etiquetas=("staff",)` devuelve solo
+    el staff (lo usa la regla del balón del banquillo, Plan 2).
 
     El balón y los jugadores van a frecuencias distintas (1 de cada 2
     frames contra 1 de cada 3), así que se casan por TIEMPO: el instante
@@ -127,7 +157,10 @@ def jugadores_por_frame_de_balon(
     import pandas as pd
 
     jug = pd.read_csv(ruta_csv_jugadores)
-    reales = jug[(jug.es_real == 1) & ~jug.etiqueta.isin(list(excluir_etiquetas))]
+    if solo_etiquetas is not None:
+        reales = jug[(jug.es_real == 1) & jug.etiqueta.isin(list(solo_etiquetas))]
+    else:
+        reales = jug[(jug.es_real == 1) & ~jug.etiqueta.isin(list(excluir_etiquetas))]
     por_tiempo = {
         round(float(t), 2): [
             (float(r.x_m), float(r.y_m), int(r.id_jugador)) for r in g.itertuples()

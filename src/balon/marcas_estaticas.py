@@ -50,10 +50,21 @@ logger = logging.getLogger(__name__)
 #   - 120 s: una marca aparece a lo largo de todo el partido; un balón
 #     parado en una falta dura segundos.
 #   - 4 px de dispersión: las marcas van de 0,6 a 3,2 px.
+#   - presencia en la MITAD de los minutos del partido (1-oct-2026,
+#     docs/selector_balon.md, Plan 2). ⚠️ Los 120 s de arriba se medían como
+#     último instante menos primero, y DOS VISITAS SUELTAS separadas por
+#     minutos cuentan como presencia: 5 de las 10 "marcas" eran balón REAL
+#     parado (saques de centro, una falta, saques de puerta, saques de banda
+#     y el balón de un niño del banquillo). Agrupando celdas contiguas (una
+#     marca sobre el borde de la rejilla cae en dos), las 5 marcas de verdad
+#     aparecen en 15-16 de 20 minutos y las de balón en 3-6: el umbral va en
+#     el centro del hueco. Se SUMA a los 120 s, no los sustituye: en un
+#     tramo corto (un minuto) todo estaría "en la mitad de los minutos".
 CELDA_PX = 12
 MIN_DETECCIONES = 100
 MIN_DURACION_S = 120.0
 MAX_DISPERSION_PX = 4.0
+MIN_FRACCION_MINUTOS = 0.5
 
 
 def _centro_px(det):
@@ -67,6 +78,7 @@ def encontrar_marcas_estaticas(
     min_detecciones: int = MIN_DETECCIONES,
     min_duracion_s: float = MIN_DURACION_S,
     max_dispersion_px: float = MAX_DISPERSION_PX,
+    min_fraccion_minutos: float = MIN_FRACCION_MINUTOS,
 ) -> set:
     """Celdas (cx, cy) que contienen una marca fija, no el balón.
 
@@ -92,7 +104,7 @@ def encontrar_marcas_estaticas(
             px, py = _centro_px(det)
             por_celda[(int(px // celda_px), int(py // celda_px))].append((t, px, py))
 
-    marcas = set()
+    candidatas = set()
     for celda, puntos in por_celda.items():
         if len(puntos) < min_detecciones:
             continue
@@ -103,8 +115,38 @@ def encontrar_marcas_estaticas(
             np.hypot(np.std([p[1] for p in puntos]), np.std([p[2] for p in puntos]))
         )
         if disp <= max_dispersion_px:
-            marcas.add(celda)
+            candidatas.add(celda)
+
+    # Presencia REPARTIDA por el partido, sobre grupos de celdas contiguas.
+    todos_t = [t for t in tiempos.values() if t is not None]
+    if not todos_t:
+        return set()
+    minutos_partido = max(1, int(np.ceil((max(todos_t) - min(todos_t)) / 60.0)))
+    marcas = set()
+    for grupo in _grupos_contiguos(candidatas):
+        minutos = {int(p[0] // 60) for c in grupo for p in por_celda[c]}
+        if len(minutos) / minutos_partido >= min_fraccion_minutos:
+            marcas |= grupo
     return marcas
+
+
+def _grupos_contiguos(celdas: set) -> list[set]:
+    """Componentes conexas (vecindad de 8) de un conjunto de celdas."""
+    pendientes, grupos = set(celdas), []
+    while pendientes:
+        pila = [pendientes.pop()]
+        grupo = set(pila)
+        while pila:
+            cx, cy = pila.pop()
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    v = (cx + dx, cy + dy)
+                    if v in pendientes:
+                        pendientes.remove(v)
+                        grupo.add(v)
+                        pila.append(v)
+        grupos.append(grupo)
+    return grupos
 
 
 def filtrar_marcas_estaticas(

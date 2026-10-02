@@ -169,6 +169,15 @@ class ParametrosBalon:
     # ajustado, es la definición de "no sirve como balón".
     continuidad_coste_pequeno: float = 1.0
     diametro_balon_m: float = 0.20  # balón del número 4 (fútbol base)
+    # ── Plan 2: el balón de un STAFF fuera del campo no es el del partido ──
+    # Un niño del banquillo juega con otro balón fuera de la banda; mientras
+    # el del partido no se detecta, es el ÚNICO candidato y es grande y real:
+    # ni la continuidad ni el tamaño lo quitan (183 frames en 4 episodios).
+    # Se quita lo que está FUERA del campo, con un staff más cerca que
+    # cualquier jugador y ningún jugador a `dist_max_contacto` (nadie puede
+    # estar tocándolo). Coste medido: 5 frames de balón en juego disputado en
+    # la línea delante del entrenador (docs/selector_balon.md).
+    quitar_balon_de_staff: bool = True
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -183,6 +192,8 @@ def seleccionar_balon_activo(
     params: ParametrosBalon,
     tiempos: dict | None = None,
     homografia=None,
+    posiciones_staff: dict | None = None,
+    dimensiones_campo: tuple[float, float] | None = None,
 ) -> dict:
     """Se queda con UNA detección de balón por frame: la del partido.
 
@@ -194,6 +205,9 @@ def seleccionar_balon_activo(
             `params.continuidad_activa`.
         homografia: matriz 3x3 de píxeles a metros; solo hace falta con
             `params.continuidad_umbral_pequeno` > 0.
+        posiciones_staff, dimensiones_campo: {frame: [(mx, my)]} del staff y
+            (largo, ancho) en metros; solo hacen falta con
+            `params.quitar_balon_de_staff`.
 
     Returns:
         {frame_idx: deteccion} con como mucho una por frame.
@@ -203,6 +217,19 @@ def seleccionar_balon_activo(
     segurísimo de que son balones — porque lo son, solo que no el del
     partido.
     """
+    if params.quitar_balon_de_staff:
+        if posiciones_staff is None or dimensiones_campo is None:
+            raise ValueError(
+                "Quitar el balón del staff necesita las posiciones del staff y el campo"
+            )
+        detecciones = quitar_balones_de_staff(
+            detecciones,
+            posiciones_jugadores,
+            posiciones_staff,
+            dimensiones_campo,
+            params,
+        )
+
     # Agrupar detecciones en "candidatos" por continuidad espacial, para
     # poder medir si cada uno se mueve o está parado.
     candidatos: list[list[tuple]] = []
@@ -306,6 +333,47 @@ def seleccionar_balon_activo(
             raise ValueError("Juzgar si un candidato es pequeño necesita la homografía")
         return _viterbi_de_continuidad(ordenados, tiempos, params, homografia)
     return {f: lista[0] for f, lista in ordenados.items()}
+
+
+def quitar_balones_de_staff(
+    detecciones: dict,
+    posiciones_jugadores: dict,
+    posiciones_staff: dict,
+    dimensiones_campo: tuple[float, float],
+    params: "ParametrosBalon",
+) -> dict:
+    """Quita los balones FUERA del campo que son de un staff, no de un jugador.
+
+    Tres condiciones a la vez (ver `ParametrosBalon.quitar_balon_de_staff`):
+    fuera de las líneas, un staff más cerca que cualquier jugador, y ningún
+    jugador a `dist_max_contacto`.
+    """
+    largo, ancho = dimensiones_campo
+    salida, quitadas = {}, 0
+    for frame, dets in detecciones.items():
+        jug = np.array(posiciones_jugadores.get(frame) or [], dtype=float).reshape(
+            -1, 2
+        )
+        staff = np.array(posiciones_staff.get(frame) or [], dtype=float).reshape(-1, 2)
+        buenas = []
+        for det in dets:
+            p = np.array(det[:2], dtype=float)
+            fuera = not (0.0 <= p[0] <= largo and 0.0 <= p[1] <= ancho)
+            d_jug = float(np.linalg.norm(jug - p, axis=1).min()) if len(jug) else np.inf
+            d_staff = (
+                float(np.linalg.norm(staff - p, axis=1).min()) if len(staff) else np.inf
+            )
+            if fuera and d_staff < d_jug and d_jug > params.dist_max_contacto:
+                quitadas += 1
+            else:
+                buenas.append(det)
+        if buenas:
+            salida[frame] = buenas
+    if quitadas:
+        logger.info(
+            "Balones de staff fuera del campo quitados: %d detecciones", quitadas
+        )
+    return salida
 
 
 def _centro_px(det) -> tuple[float, float]:

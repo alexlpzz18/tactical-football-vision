@@ -45,7 +45,15 @@ def _jug_junto_a(dets):
 
 def _elegir(dets, params=P, jug=None):
     tiempos = {f: f * DT for f in dets}
-    return seleccionar_balon_activo(dets, jug or _jug_junto_a(dets), params, tiempos, H)
+    return seleccionar_balon_activo(
+        dets,
+        jug or _jug_junto_a(dets),
+        params,
+        tiempos,
+        H,
+        posiciones_staff={},
+        dimensiones_campo=(62.0, 40.0),
+    )
 
 
 def test_la_escala_sale_de_la_homografia():
@@ -108,7 +116,11 @@ def test_sin_conflicto_da_lo_mismo_que_frame_a_frame():
 
 def test_sin_tiempos_o_sin_homografia_falla_en_vez_de_elegir_otra_cosa():
     dets = {f: [_det(100 + 5 * f, 500)] for f in range(5)}
+    jug, tiempos = _jug_junto_a(dets), {f: f * DT for f in dets}
+    contexto = {"posiciones_staff": {}, "dimensiones_campo": (62.0, 40.0)}
+    with pytest.raises(ValueError, match="staff"):
+        seleccionar_balon_activo(dets, jug, P, tiempos, H)
     with pytest.raises(ValueError, match="tiempos"):
-        seleccionar_balon_activo(dets, _jug_junto_a(dets), P)
+        seleccionar_balon_activo(dets, jug, P, **contexto)
     with pytest.raises(ValueError, match="homografía"):
-        seleccionar_balon_activo(dets, _jug_junto_a(dets), P, {f: f * DT for f in dets})
+        seleccionar_balon_activo(dets, jug, P, tiempos, **contexto)

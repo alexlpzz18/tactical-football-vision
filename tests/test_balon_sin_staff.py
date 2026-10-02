@@ -14,7 +14,7 @@ from src.balon.tracking_balon import ParametrosBalon, seleccionar_balon_activo
 # El staff afecta al desempate por cercanía, que sigue decidiendo el ORDEN de
 # los candidatos; se prueba frame a frame para aislarlo. La selección por
 # continuidad tiene sus tests en test_seleccion_por_continuidad.py.
-FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False)
+FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False, quitar_balon_de_staff=False)
 
 DT = 1 / 15.0
 

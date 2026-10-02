@@ -39,8 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.balon.carga import (  # noqa: E402
     cargar_detecciones_limpias,
-    cargar_homografia_de_campo,
-    jugadores_por_frame_de_balon,
+    contexto_del_selector,
 )
 from src.balon.tracking_balon import (  # noqa: E402
     ParametrosBalon,
@@ -58,17 +57,15 @@ def trayectoria_de_suelo(ruta_balon, ruta_csv, ruta_campo):
     """(frames, tiempos, posiciones, aéreo) del balón activo, como el pipeline."""
     logging.disable(logging.CRITICAL)
     with contextlib.redirect_stdout(io.StringIO()):
-        dets, tiempos, _ = cargar_detecciones_limpias(
-            ruta_balon, cargar_modelo(config=ruta_campo)
-        )
-    jug = jugadores_por_frame_de_balon(ruta_csv, tiempos, dets)
+        modelo = cargar_modelo(config=ruta_campo)
+        dets, tiempos, _ = cargar_detecciones_limpias(ruta_balon, modelo)
+    jug, ctx = contexto_del_selector(ruta_csv, tiempos, dets, ruta_campo, modelo)
     params = ParametrosBalon()
     activo = seleccionar_balon_activo(
         dets,
         {f: [(j[0], j[1]) for j in v] for f, v in jug.items()},
         params,
-        tiempos,
-        cargar_homografia_de_campo(ruta_campo),
+        **ctx,
     )
     tray = [(f, np.array(d[:2]), d[5] - d[3], d[6]) for f, d in sorted(activo.items())]
     aereo = np.array(detectar_fases_aereas(tray, tiempos, params))

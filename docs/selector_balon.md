@@ -181,3 +181,81 @@ Código: `seleccionar_balon_activo(..., tiempos, homografia)` con `continuidad_*
 `ParametrosBalon`; sin tiempos u homografía **falla** en vez de elegir otra cosa. La
 homografía sale del config de campo (`cargar_homografia_de_campo`). Tests en
 `tests/test_seleccion_por_continuidad.py` y `tests/test_balon_sin_staff.py`.
+
+## 6. Plan 2, retomado con 1b/1c debajo (2-oct-2026): ADOPTADO
+
+### Qué era de verdad el "balón de repuesto"
+
+No era un balón parado: es **un niño del banquillo (staff, de azul) que juega con
+otro balón FUERA de la banda** (y ≈ −0,7 m), en cuatro episodios (126-147, 240,
+428-439 s; 183 frames). Mientras el del partido no se detecta en el medio campo, el
+del niño es el ÚNICO candidato, y es grande y real: **ni la continuidad ni el tamaño
+lo quitan**. Lo confirma la medida: con el filtro de marcas nuevo y sin regla de
+staff, el selector lo elige en 314 frames (216 antes de recuperar las marcas).
+
+### La regla: balón de un staff fuera del campo (`quitar_balones_de_staff`)
+
+Se quita una detección si está **fuera de las líneas**, con **un staff más cerca que
+cualquier jugador** y **ningún jugador a `dist_max_contacto` (3 m)**: nadie del partido
+puede estar tocándolo. Los 3 m son el parámetro que ya existía, no uno elegido aquí.
+
+Revisado a ojo, grupo a grupo, lo que lleva esa firma en el partido: los 183 frames del
+niño (los quita todos), 24 de un balón junto al banquillo con el entrenador señalando
+(355-359 s, probablemente el del partido fuera de juego) y **el coste: 5 frames del
+balón del partido EN JUEGO, disputado sobre la línea delante del entrenador**
+(762-780 s). Con 4 m serían 2, pero sería elegir el umbral sobre estos 8 frames.
+
+### El filtro de marcas, corregido (`min_fraccion_minutos`)
+
+Se añade, sin quitar los 120 s: el grupo de celdas contiguas tiene que aparecer en al
+menos **la mitad de los minutos** del partido. Marcas de verdad: 15-16 de 20 minutos
+(agrupando la que cae entre dos celdas); balón parado: 3-6. Recupera las 5 "marcas"
+falsas, revisadas a ojo: saques de centro (0, 455, 643, 1.187 s), saques de puerta,
+la falta de 55-80 s, el episodio de (53, 57) y el balón del niño (que ya quita la regla).
+
+### Medida (configuración final contra el Plan 1 solo)
+
+| | Plan 1 | + regla staff | + marcas nuevas, sin staff | **+ las dos** |
+|---|---|---|---|---|
+| GT de desempates | 31/38 | 32/38 | 30/38 | **32/38** |
+| frames con balón | 7.169 | 6.995 | 8.239 | **8.009** |
+| balón del niño elegido | 216 | 0 | **314** | **0** |
+| cambios de objeto/min | 2 | 2 | 2 | 2 |
+| tramos etiquetados (balón / malos) | 239 / 3 | 239 / 3 | 239 / 4 | 239 / 4 |
+| fracción en marcas de verdad | 0 % | 0 % | 0 % | 0 % |
+| duración máxima anclada | 5,6 s | 5,4 s | 19,4 s | **19,4 s** |
+
+⚠️ **La duración anclada sube a 19,4 s y hay que leerlo**: es exactamente la alarma de
+"¿se engancha a algo quieto?". Los dos tramos largos son balón real parado, mirados a
+ojo: 936-960 s en (53, 57), que Alex verificó en el vídeo como el balón del partido (en
+el plano entero se ve un balón quieto junto a un jugador de blanco y a 961 s ya no
+está: una parada de juego), y la falta de 55-80 s (18,2 s). La métrica no distingue un
+balón de partido parado de un objeto fijo: es su falso positivo conocido.
+
+Resto conocido: 6 frames del balón del niño a 139 s y 3 a 1.128 s, en (147, 59), que la
+regla no quita (no cumplen las tres condiciones a la vez).
+
+## 7. Qué cambia aguas abajo: posesión y contactos (`procesar_balon`, partido entero)
+
+Selector de antes de hoy (`3ae98d5`) contra el adoptado. Sin GT de posesión ni de
+contactos en el partido entero: son cambios, no aciertos.
+
+| | antes | ahora |
+|---|---|---|
+| frames con balón activo | 8.086 | 8.009 |
+| observaciones marcadas "aéreas" | **30 %** | **10 %** |
+| cortes de la puerta de píxeles | 65 | 11 |
+| filas de balón MEDIDAS (`es_real`) | 5.676 | **7.186 (+27 %)** |
+| posesión A / B (dueño a ≤ 3 m) | 40,9 / 59,1 % | 38,5 / 61,5 % |
+| filas con dueño staff | 231 | **28** |
+| contactos | 536 (26,8/min) | **654 (32,7/min)** |
+| contactos atribuidos a staff | 13 | **0** |
+
+Lo grande es lo de las aéreas: el 30 % de "vuelos" eran, en su mayoría, **cambios de
+candidato disfrazados de vuelo** (la lección de `balon_sin_alas.md`), y al dejar de
+saltar de objeto vuelven a ser posiciones medidas. La posesión se mueve 2,4 puntos.
+
+⚠️ **Los contactos suben a 32,7/min, por encima de los 20-30 de un partido real** que
+se usaron para endurecer el detector (`ParametrosBalon`, 16-ago). Hay más trayectoria
+continua sobre la que detectar toques, pero sin GT de contactos en el partido entero no
+se sabe cuántos de los 118 nuevos son reales. Queda para medir contra el GT de los clips.

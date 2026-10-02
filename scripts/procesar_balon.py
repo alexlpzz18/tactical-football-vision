@@ -93,15 +93,15 @@ def main() -> None:
     )
     n_frames_cache = meta["n_frames"]
 
-    from src.balon.carga import jugadores_por_frame_de_balon
+    from src.balon.carga import contexto_del_selector
 
     jug = pd.read_csv(args.csv_jugadores)
     equipo_de = {
         int(r.id_jugador): str(r.etiqueta) for r in jug[jug.es_real == 1].itertuples()
     }
-    # Mismo emparejado por tiempo que usa el vídeo de diagnóstico.
-    jug_de_frame = jugadores_por_frame_de_balon(
-        args.csv_jugadores, tiempos, detecciones
+    # Mismo emparejado por tiempo y mismo contexto que el vídeo de diagnóstico.
+    jug_de_frame, ctx_selector = contexto_del_selector(
+        args.csv_jugadores, tiempos, detecciones, args.campo, modelo_campo
     )
 
     def jugadores_en(frame):
@@ -109,11 +109,7 @@ def main() -> None:
 
     params = ParametrosBalon()
     pos_jug = {f: [(j[0], j[1]) for j in jugadores_en(f)] for f in detecciones}
-    from src.balon.carga import cargar_homografia_de_campo
-
-    activo = seleccionar_balon_activo(
-        detecciones, pos_jug, params, tiempos, cargar_homografia_de_campo(args.campo)
-    )
+    activo = seleccionar_balon_activo(detecciones, pos_jug, params, **ctx_selector)
     logger.info(
         "Balón activo: %d frames de %d con detección (%d frames en total)",
         len(activo),

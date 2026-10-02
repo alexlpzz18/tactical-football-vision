@@ -18,7 +18,7 @@ from src.balon.tracking_balon import (
 # que siguen decidiendo el ORDEN de los candidatos; la selección por
 # continuidad (por defecto desde el 1-oct-2026) tiene los suyos en
 # test_seleccion_por_continuidad.py.
-FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False)
+FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False, quitar_balon_de_staff=False)
 
 DT = 1 / 15.0
 TIEMPOS = {k: k * DT for k in range(0, 400)}
