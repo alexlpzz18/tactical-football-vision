@@ -94,3 +94,41 @@ antes de adoptarlo:
    que aportan es CONTINUIDAD (la pista no se corta en un vuelo) y, en una vista sobre
    el vídeo real, el balón dibujado en su píxel, que sí es correcto.
 2. Medir lo que inventa: ~13 % de basura clara y ~20 % de dudosas en la muestra.
+
+## C, construido y ADOPTADO (2-oct-2026)
+
+`ParametrosBalon.readmitir_vuelos` (True) y `vuelo_max_s` (2,5 s). Lo que quita la
+plausibilidad, sin celdas de marca, sale de `cargar_detecciones_limpias` en
+`meta["fuera_de_campo"]` y entra al selector por `contexto_del_selector`. En el Viterbi
+esos candidatos **no pueden abrir pista**, y después `_solo_vuelos_de_ida_y_vuelta` deja
+una racha solo si la pista entra desde el suelo y vuelve al suelo por continuidad en
+≤ 2,5 s. Producción da exactamente los 604 frames de la simulación C.
+
+⚠️ **ESTAS POSICIONES NO SON POSICIONES.** `marcar_vuelos_readmitidos` las marca como
+aéreas, así que `preparar_balon` pinta en su lugar la recta atenuada entre despegue y
+bote, con `es_real=0`, y los detectores de contactos las saltan. Comprobado en el partido
+entero: los 604 frames tienen `es_real=0`, 0 contactos, y ninguna fila dibujada cae fuera
+del campo. Solo sirven para no cortar la pista, igual que los rellenos de huecos. Donde
+sí valen tal cual es dibujadas en su PÍXEL sobre el vídeo real.
+
+### Resultado sobre los 687 frames de vuelo sin balón
+
+| | frames |
+|---|---|
+| ahora con balón | **225** (214 vuelos readmitidos + 11 de suelo) |
+| siguen sin nada | **462** |
+
+De los 604 readmitidos en total, la muestra de 30 a ojo dio 20 balón real, 6 dudosos y
+4 basura: **~80 frames de basura** (13 %, con una muestra tan pequeña el intervalo va
+del 4 % al 31 %) y ~120 dudosos. Por ser `es_real=0` no tocan posesión ni contactos.
+
+Meseta de `vuelo_max_s`: con 1,5 s se resuelven 198 de los 687; con 2,5 y con 4 s, los
+mismos 225. Lo que añade pasar de 2,5 a 4 s (100 readmitidos más) cae todo FUERA de
+vuelos, así que es basura en potencia: 2,5 es el primer punto de la meseta.
+
+Resto de métricas: GT 32 → 34 de 38; cambios de objeto 2 → 3/min; tramos etiquetados
+iguales (un frame de balón menos en 365-378 s); contactos 654 → 644; filas medidas
+7.186 → 7.147.
+
+Los 462 restantes no tienen ninguna detección del balón: es el 62 % que solo se puede
+atacar en el detector (pista 1, en Colab) o con GT.

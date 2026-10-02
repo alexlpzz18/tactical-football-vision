@@ -32,6 +32,7 @@ from src.balon.tracking_balon import (  # noqa: E402
     detectar_contactos_por_velocidad,
     fusionar_contactos,
     detectar_fases_aereas,
+    marcar_vuelos_readmitidos,
     seleccionar_balon_activo,
 )
 
@@ -101,7 +102,12 @@ def main() -> None:
     }
     # Mismo emparejado por tiempo y mismo contexto que el vídeo de diagnóstico.
     jug_de_frame, ctx_selector = contexto_del_selector(
-        args.csv_jugadores, tiempos, detecciones, args.campo, modelo_campo
+        args.csv_jugadores,
+        tiempos,
+        detecciones,
+        args.campo,
+        modelo_campo,
+        meta["fuera_de_campo"],
     )
 
     def jugadores_en(frame):
@@ -121,6 +127,10 @@ def main() -> None:
         (f, np.array(d[:2]), d[5] - d[3], d[6]) for f, d in sorted(activo.items())
     ]
     aereo = detectar_fases_aereas(trayectoria, tiempos, params)
+    # Los vuelos readmitidos (fuera del campo para la homografía de suelo) NO son
+    # posiciones: se marcan aéreos -> recta atenuada, es_real=0, fuera de contactos.
+    n_vuelo = marcar_vuelos_readmitidos(trayectoria, aereo, detecciones)
+    logger.info("Balón en vuelo readmitido por continuidad: %d filas (aéreas)", n_vuelo)
     logger.info(
         "Fases aéreas: %d de %d observaciones (%.0f %%)",
         sum(aereo),

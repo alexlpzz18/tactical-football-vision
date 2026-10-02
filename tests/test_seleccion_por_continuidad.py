@@ -53,6 +53,7 @@ def _elegir(dets, params=P, jug=None):
         H,
         posiciones_staff={},
         dimensiones_campo=(62.0, 40.0),
+        detecciones_fuera_de_campo={},
     )
 
 
@@ -117,10 +118,19 @@ def test_sin_conflicto_da_lo_mismo_que_frame_a_frame():
 def test_sin_tiempos_o_sin_homografia_falla_en_vez_de_elegir_otra_cosa():
     dets = {f: [_det(100 + 5 * f, 500)] for f in range(5)}
     jug, tiempos = _jug_junto_a(dets), {f: f * DT for f in dets}
-    contexto = {"posiciones_staff": {}, "dimensiones_campo": (62.0, 40.0)}
+    contexto = {
+        "posiciones_staff": {},
+        "dimensiones_campo": (62.0, 40.0),
+        "detecciones_fuera_de_campo": {},
+    }
     with pytest.raises(ValueError, match="staff"):
         seleccionar_balon_activo(dets, jug, P, tiempos, H)
     with pytest.raises(ValueError, match="tiempos"):
         seleccionar_balon_activo(dets, jug, P, **contexto)
     with pytest.raises(ValueError, match="homografía"):
         seleccionar_balon_activo(dets, jug, P, tiempos, **contexto)
+    sin_vuelos = {
+        k: v for k, v in contexto.items() if k != "detecciones_fuera_de_campo"
+    }
+    with pytest.raises(ValueError, match="plausibilidad"):
+        seleccionar_balon_activo(dets, jug, P, tiempos, H, **sin_vuelos)

@@ -44,6 +44,7 @@ from src.balon.carga import (  # noqa: E402
 from src.balon.tracking_balon import (  # noqa: E402
     ParametrosBalon,
     detectar_fases_aereas,
+    marcar_vuelos_readmitidos,
     seleccionar_balon_activo,
 )
 from src.campo_modelo import cargar_modelo  # noqa: E402
@@ -58,8 +59,10 @@ def trayectoria_de_suelo(ruta_balon, ruta_csv, ruta_campo):
     logging.disable(logging.CRITICAL)
     with contextlib.redirect_stdout(io.StringIO()):
         modelo = cargar_modelo(config=ruta_campo)
-        dets, tiempos, _ = cargar_detecciones_limpias(ruta_balon, modelo)
-    jug, ctx = contexto_del_selector(ruta_csv, tiempos, dets, ruta_campo, modelo)
+        dets, tiempos, meta = cargar_detecciones_limpias(ruta_balon, modelo)
+    jug, ctx = contexto_del_selector(
+        ruta_csv, tiempos, dets, ruta_campo, modelo, meta["fuera_de_campo"]
+    )
     params = ParametrosBalon()
     activo = seleccionar_balon_activo(
         dets,
@@ -68,7 +71,9 @@ def trayectoria_de_suelo(ruta_balon, ruta_csv, ruta_campo):
         **ctx,
     )
     tray = [(f, np.array(d[:2]), d[5] - d[3], d[6]) for f, d in sorted(activo.items())]
-    aereo = np.array(detectar_fases_aereas(tray, tiempos, params))
+    aereo = detectar_fases_aereas(tray, tiempos, params)
+    marcar_vuelos_readmitidos(tray, aereo, dets)  # vuelos: aéreos, no posiciones
+    aereo = np.array(aereo)
     f = np.array([x[0] for x in tray])
     return f, np.array([tiempos[x] for x in f]), np.array([x[1] for x in tray]), aereo
 

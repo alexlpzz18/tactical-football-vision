@@ -102,8 +102,10 @@ def elegir_espaciados(items, n, sep_s, rng):
 
 def construir_desempates(ruta_cache_balon, ruta_cache_jug, ruta_csv_jug, ruta_campo):
     modelo = cargar_modelo(config=ruta_campo)
-    dets, tiempos, _meta = cargar_detecciones_limpias(ruta_cache_balon, modelo)
-    jug, ctx = contexto_del_selector(ruta_csv_jug, tiempos, dets, ruta_campo, modelo)
+    dets, tiempos, meta = cargar_detecciones_limpias(ruta_cache_balon, modelo)
+    jug, ctx = contexto_del_selector(
+        ruta_csv_jug, tiempos, dets, ruta_campo, modelo, meta["fuera_de_campo"]
+    )
     pos_jug = {f: [(j[0], j[1]) for j in jug.get(f, [])] for f in dets}
     activo = seleccionar_balon_activo(
         dets,

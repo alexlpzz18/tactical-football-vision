@@ -178,6 +178,16 @@ class ParametrosBalon:
     # estar tocándolo). Coste medido: 5 frames de balón en juego disputado en
     # la línea delante del entrenador (docs/selector_balon.md).
     quitar_balon_de_staff: bool = True
+    # ── el balón EN VUELO que tira la plausibilidad (docs/balon_en_vuelo.md) ──
+    # La homografía es de SUELO: un balón alto se proyecta más allá de la
+    # portería del fondo y `filtrar_balon_plausible` lo quita. Vuelve como
+    # candidato, pero SOLO como continuación de la pista (no puede abrirla) y
+    # solo si la racha sale del suelo y vuelve al suelo por continuidad en
+    # `vuelo_max_s`: la forma de un vuelo. ⚠️ Sus posiciones NO son
+    # posiciones: van marcadas como aéreas (`marcar_vuelos_readmitidos`), con
+    # es_real=0 y fuera de contactos y posesión. Solo evitan cortar la pista.
+    readmitir_vuelos: bool = True
+    vuelo_max_s: float = 2.5
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -194,6 +204,7 @@ def seleccionar_balon_activo(
     homografia=None,
     posiciones_staff: dict | None = None,
     dimensiones_campo: tuple[float, float] | None = None,
+    detecciones_fuera_de_campo: dict | None = None,
 ) -> dict:
     """Se queda con UNA detección de balón por frame: la del partido.
 
@@ -208,6 +219,9 @@ def seleccionar_balon_activo(
         posiciones_staff, dimensiones_campo: {frame: [(mx, my)]} del staff y
             (largo, ancho) en metros; solo hacen falta con
             `params.quitar_balon_de_staff`.
+        detecciones_fuera_de_campo: lo que quitó la plausibilidad (sin las
+            celdas de marca); hace falta con continuidad y
+            `params.readmitir_vuelos`. Ver `marcar_vuelos_readmitidos`.
 
     Returns:
         {frame_idx: deteccion} con como mucho una por frame.
@@ -229,6 +243,18 @@ def seleccionar_balon_activo(
             dimensiones_campo,
             params,
         )
+
+    no_abren: set = set()
+    if params.continuidad_activa and params.readmitir_vuelos:
+        if detecciones_fuera_de_campo is None:
+            raise ValueError(
+                "Readmitir los vuelos necesita las detecciones que quitó la plausibilidad"
+            )
+        detecciones = {f: list(v) for f, v in detecciones.items()}
+        for frame, dets in detecciones_fuera_de_campo.items():
+            for det in dets:
+                detecciones.setdefault(frame, []).append(det)
+                no_abren.add((frame, tuple(det)))
 
     # Agrupar detecciones en "candidatos" por continuidad espacial, para
     # poder medir si cada uno se mueve o está parado.
@@ -331,7 +357,10 @@ def seleccionar_balon_activo(
             )
         if params.continuidad_umbral_pequeno > 0 and homografia is None:
             raise ValueError("Juzgar si un candidato es pequeño necesita la homografía")
-        return _viterbi_de_continuidad(ordenados, tiempos, params, homografia)
+        elegido = _viterbi_de_continuidad(
+            ordenados, tiempos, params, homografia, no_abren
+        )
+        return _solo_vuelos_de_ida_y_vuelta(elegido, no_abren, tiempos, params)
     return {f: lista[0] for f, lista in ordenados.items()}
 
 
@@ -408,8 +437,98 @@ def tamano_relativo(det, homografia, diametro_m: float = 0.20) -> float:
     return _lado_px(det) / (diametro_m * escala_px_por_m(homografia, cx, det[5]))
 
 
+def _solo_vuelos_de_ida_y_vuelta(
+    elegido: dict, no_abren: set, tiempos: dict, params: "ParametrosBalon"
+) -> dict:
+    """Quita las rachas readmitidas que no tienen la forma de un vuelo.
+
+    Una racha de candidatos readmitidos (fuera del campo según la homografía)
+    se queda solo si la pista ENTRA en ella desde el suelo y SALE de ella al
+    suelo por continuidad (puerta de píxeles), y dura ≤ `vuelo_max_s`. Sin la
+    vuelta al suelo, en la simulación entraba casi tanta basura como balón:
+    personas y grada del fondo, "cerca" en píxeles del balón cuando va por el
+    fondo (docs/balon_en_vuelo.md: 12 de 30 basura sin ella, 4 de 30 con ella).
+    """
+    if not no_abren:
+        return elegido
+    frames = sorted(elegido)
+    es_r = [(f, tuple(elegido[f])) in no_abren for f in frames]
+
+    def continuo(a, b):
+        dt = tiempos[b] - tiempos[a]
+        if dt <= 0 or dt > params.continuidad_dt_max_s:
+            return False
+        ca, cb = np.array(_centro_px(elegido[a])), np.array(_centro_px(elegido[b]))
+        puerta = params.vel_max_px_s * dt + params.continuidad_holgura_px
+        return float(np.linalg.norm(cb - ca)) <= puerta
+
+    salida = dict(elegido)
+    i = 0
+    while i < len(frames):
+        if not es_r[i]:
+            i += 1
+            continue
+        j = i
+        while (
+            j + 1 < len(frames) and es_r[j + 1] and continuo(frames[j], frames[j + 1])
+        ):
+            j += 1
+        vale = (
+            i > 0
+            and j + 1 < len(frames)
+            and not es_r[i - 1]
+            and not es_r[j + 1]
+            and continuo(frames[i - 1], frames[i])
+            and continuo(frames[j], frames[j + 1])
+            and tiempos[frames[j]] - tiempos[frames[i]] <= params.vuelo_max_s
+        )
+        if not vale:
+            for k in range(i, j + 1):
+                del salida[frames[k]]
+        i = j + 1
+    return salida
+
+
+def marcar_vuelos_readmitidos(
+    trayectoria: list[tuple], aereo: list[bool], detecciones: dict
+) -> int:
+    """Marca como AÉREAS las filas cuyo balón no está entre las detecciones de suelo.
+
+    Son las que el selector readmitió por continuidad desde lo que quitó la
+    plausibilidad: su caja sí es el balón, pero su posición en metros es la de
+    una homografía de SUELO aplicada a un balón en el aire, decenas de metros
+    más allá. ⚠️ NO SON POSICIONES VÁLIDAS para pizarra, posesión ni
+    contactos: al marcarlas aéreas, `preparar_balon` las sustituye por la recta
+    atenuada entre despegue y bote, con es_real=0, y los contactos las saltan.
+    Igual que los rellenos de huecos: sirven para no cortar la pista, no son
+    medidas.
+
+    Args:
+        trayectoria: [(frame, pos_m, alto_px, conf)], como en procesar_balon.
+        aereo: la salida de `detectar_fases_aereas`; se modifica en el sitio.
+        detecciones: las detecciones de SUELO (tras plausibilidad y marcas).
+
+    Returns:
+        Cuántas filas se han marcado.
+    """
+    n = 0
+    for k, fila in enumerate(trayectoria):
+        dets = detecciones.get(fila[0], [])
+        de_suelo = any(
+            float(d[6]) == float(fila[3]) and np.allclose(d[:2], fila[1]) for d in dets
+        )
+        if not de_suelo and not aereo[k]:
+            aereo[k] = True
+            n += 1
+    return n
+
+
 def _viterbi_de_continuidad(
-    ordenados: dict, tiempos: dict, params: "ParametrosBalon", homografia=None
+    ordenados: dict,
+    tiempos: dict,
+    params: "ParametrosBalon",
+    homografia=None,
+    no_abren: set | frozenset = frozenset(),
 ) -> dict:
     """Elige la secuencia de candidatos más COHERENTE de todo el partido.
 
@@ -493,7 +612,13 @@ def _viterbi_de_continuidad(
         fila, fila_atras = [], []
         for j, c in enumerate(centros[k]):
             desempate = 0 if j == preferido[k] else 1
-            mejor = (previo_nulo[0] + salto + propio[k][j], previo_nulo[1] + desempate)
+            # Un candidato readmitido (vuelo) NO puede abrir pista: solo se
+            # llega a él como continuación de otro.
+            entrada = float("inf") if (f, tuple(ordenados[f][j])) in no_abren else salto
+            mejor = (
+                previo_nulo[0] + entrada + propio[k][j],
+                previo_nulo[1] + desempate,
+            )
             de_donde = (k - 1, None)
             k2 = k - 1
             while k2 >= 0 and t - tiempos[frames[k2]] <= params.continuidad_dt_max_s:

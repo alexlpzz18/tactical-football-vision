@@ -56,12 +56,31 @@ def cargar_detecciones_limpias(
     dets = {e["frame_idx"]: e["dets"] for e in datos["cache"] if e["dets"]}
     crudas = len(dets)
 
+    crudas_por_frame = dets
     dets = filtrar_balon_plausible(dets, modelo_campo)
     tras_plausible = len(dets)
 
+    # Lo que quita la plausibilidad se GUARDA aparte: ahí está el balón en
+    # vuelo (docs/balon_en_vuelo.md), que el selector puede readmitir por
+    # continuidad. Sin las celdas de marca.
+    plausibles = dets
     marcas = set()
     if quitar_marcas:
         dets, marcas = filtrar_marcas_estaticas(dets, tiempos, **umbrales_marcas)
+    celda = umbrales_marcas.get("celda_px", 12)
+    fuera_de_campo = {}
+    for frame, todas in crudas_por_frame.items():
+        quedan = plausibles.get(frame, [])
+        fuera = [
+            d
+            for d in todas
+            if d not in quedan
+            and (int((d[2] + d[4]) / 2 // celda), int((d[3] + d[5]) / 2 // celda))
+            not in marcas
+        ]
+        if fuera:
+            fuera_de_campo[frame] = fuera
+    meta["fuera_de_campo"] = fuera_de_campo
 
     # ⚠️ Se dice SIEMPRE de qué caché salen los números y cuánto se ha
     # quitado. El susto del 29-ago fue exactamente esto: un script dando
@@ -102,7 +121,12 @@ def cargar_homografia_de_campo(ruta_config_campo):
 
 
 def contexto_del_selector(
-    ruta_csv_jugadores, tiempos: dict, frames, ruta_config_campo, modelo
+    ruta_csv_jugadores,
+    tiempos: dict,
+    frames,
+    ruta_config_campo,
+    modelo,
+    fuera_de_campo=None,
 ):
     """Todo lo que necesita `seleccionar_balon_activo` además de las detecciones.
 
@@ -122,6 +146,9 @@ def contexto_del_selector(
         "homografia": cargar_homografia_de_campo(ruta_config_campo),
         "posiciones_staff": {f: [(s[0], s[1]) for s in v] for f, v in staff.items()},
         "dimensiones_campo": (float(modelo.largo), float(modelo.ancho)),
+        # Lo que quitó la plausibilidad (`meta["fuera_de_campo"]` de
+        # cargar_detecciones_limpias): el balón en vuelo vuelve desde aquí.
+        "detecciones_fuera_de_campo": fuera_de_campo,
     }
     return jug, kwargs
 

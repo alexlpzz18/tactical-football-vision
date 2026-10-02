@@ -82,7 +82,12 @@ def main() -> None:
         args.cache, modelo_campo
     )
     jug_de_frame, ctx = contexto_del_selector(
-        args.csv_jugadores, tiempos_limpias, detecciones, args.campo, modelo_campo
+        args.csv_jugadores,
+        tiempos_limpias,
+        detecciones,
+        args.campo,
+        modelo_campo,
+        meta["fuera_de_campo"],
     )
     pos_jug = {f: [(j[0], j[1]) for j in jug_de_frame.get(f, [])] for f in detecciones}
     params = ParametrosBalon()

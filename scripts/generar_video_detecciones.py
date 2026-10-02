@@ -212,13 +212,16 @@ def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
     from src.balon.tracking_balon import (
         ParametrosBalon,
         detectar_fases_aereas,
+        marcar_vuelos_readmitidos,
         seleccionar_balon_activo,
     )
     from src.campo_modelo import cargar_modelo
 
     modelo = cargar_modelo(config=ruta_campo)
-    dets, tiempos, _meta = cargar_detecciones_limpias(ruta_cache_balon, modelo)
-    jug, ctx = contexto_del_selector(ruta_csv, tiempos, dets, ruta_campo, modelo)
+    dets, tiempos, meta = cargar_detecciones_limpias(ruta_cache_balon, modelo)
+    jug, ctx = contexto_del_selector(
+        ruta_csv, tiempos, dets, ruta_campo, modelo, meta["fuera_de_campo"]
+    )
     params = ParametrosBalon()
     activo = seleccionar_balon_activo(
         dets,
@@ -232,6 +235,7 @@ def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
         for f in orden
     ]
     aereo = detectar_fases_aereas(trayectoria, tiempos, params)
+    marcar_vuelos_readmitidos(trayectoria, aereo, dets)  # vuelos: aéreos, no posiciones
     logger.info(
         "Balón activo para el vídeo: %d frames (%d en el aire)", len(orden), sum(aereo)
     )
