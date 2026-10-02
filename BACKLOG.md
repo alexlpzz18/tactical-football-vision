@@ -669,6 +669,11 @@ combinatoria (36 % es el techo con un 86,5 % por persona) y no distingue
 
 - [ ] Sustituirla en el informe por el recuento MEDIANO por equipo y el
       error por observación, que es lo que ya está medido y validado.
+      **Hecho en nuestros scripts (2-oct-2026)**: `desglose_del_error.py` (2 sitios)
+      y `peso_arbitro_y_portero.py` (2) imprimen ahora mediana + error medio
+      |7 − n|. El informe de producto (`src/report/`) no la usaba (comprobado con
+      grep). `banco_producto.py` tampoco. `desglose_por_episodios.py` se deja: ahí el
+      7 es una casilla de un histograma (≤5 · 6 · 7 · ≥8), no la métrica.
 - [ ] ⚠️ Control: comprobar que la métrica nueva sigue bajando cuando se
       introduce un fallo de verdad. Una métrica más amable que no se mueve
       ante un fallo real es peor que la frágil.

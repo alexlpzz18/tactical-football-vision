@@ -80,8 +80,8 @@ def informe(base: pd.DataFrame, contra: pd.DataFrame, equipo: str, afectados: se
     )
     print(
         f"    recuento en los afectados: mediana {a.n_0.median():.0f} → "
-        f"{a.n_1.median():.0f} · exactamente 7: {(a.n_0 == 7).mean():.0%} → "
-        f"{(a.n_1 == 7).mean():.0%}"
+        f"{a.n_1.median():.0f} · error |7−n| medio {(7 - a.n_0).abs().mean():.2f} → "
+        f"{(7 - a.n_1).abs().mean():.2f}"
     )
     for col, nombre in [
         ("cx", "centroide x"),
@@ -98,7 +98,9 @@ def informe(base: pd.DataFrame, contra: pd.DataFrame, equipo: str, afectados: se
         f"centroide {(T.cx_1 - T.cx_0).abs().mean():.3f} m · "
         f"anchura {(T.ancho_1 - T.ancho_0).abs().mean():.3f} m · "
         f"profundidad {(T.prof_1 - T.prof_0).abs().mean():.3f} m · "
-        f"recuento=7: {(T.n_0 == 7).mean():.1%} → {(T.n_1 == 7).mean():.1%}"
+        f"recuento mediano {T.n_0.median():.0f} → {T.n_1.median():.0f} · error |7−n| "
+        f"{(7 - T.n_0).abs().mean():.2f} → {(7 - T.n_1).abs().mean():.2f}"
+        # ⚠️ Antes "recuento=7" (igualdad exacta): ver BACKLOG 24.
     )
 
 

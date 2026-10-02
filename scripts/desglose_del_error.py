@@ -238,7 +238,9 @@ def recuento(frames) -> pd.DataFrame:
     )
     print(
         f"   |7 − n_sistema| medio {(7 - C.n_sis).abs().mean():.2f} · |n_gt − n_sistema| "
-        f"{(C.n_gt - C.n_sis).abs().mean():.2f} · recuento exacto 7: {(C.n_sis == 7).mean():.0%}"
+        f"{(C.n_gt - C.n_sis).abs().mean():.2f} · recuento mediano {C.n_sis.median():.0f}"
+        # ⚠️ Ya no "recuento exacto 7" (BACKLOG 24): la igualdad exacta sobre 7
+        # personas castiga por combinatoria (0,865^7 = 36 % sin fallo extra).
     )
     print(f"   n del GT: {C.n_gt.value_counts().sort_index().to_dict()}")
     return C
@@ -545,7 +547,9 @@ def partido_entero(
     tabla = por.groupby("minuto").agg(
         n_frames=("n", lambda s: s.size // 2),
         n_medio=("n", "mean"),
-        exacto7=("n", lambda s: (s == 7).mean()),
+        # mediana + error, no "exactamente 7" (BACKLOG 24: castiga por combinatoria)
+        mediana=("n", "median"),
+        error_abs_7=("n", lambda s: (7 - s).abs().mean()),
         mas_de_7=("n", lambda s: (s > 7).mean()),
         menos_de_7=("n", lambda s: (s < 7).mean()),
         arbitro_en_equipo=("arb", "mean"),
