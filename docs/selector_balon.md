@@ -259,3 +259,27 @@ saltar de objeto vuelven a ser posiciones medidas. La posesión se mueve 2,4 pun
 se usaron para endurecer el detector (`ParametrosBalon`, 16-ago). Hay más trayectoria
 continua sobre la que detectar toques, pero sin GT de contactos en el partido entero no
 se sabe cuántos de los 118 nuevos son reales. Queda para medir contra el GT de los clips.
+
+### Contactos contra el GT de los 3 clips (2-oct-2026)
+
+Casado 1-a-1 con tolerancia ±1,0 s (la del registro de `plan_deteccion_balon.md`), en
+la ventana de cada clip (primer toque − 1 s, último + 1 s):
+
+| | clip 1 | clip 2 | clip 3 | **total** |
+|---|---|---|---|---|
+| GT | 20 | 17 | 17 | 54 |
+| antes: detectados / aciertos | 30 / 13 | 25 / 15 | 13 / 8 | 68 / 36 → **P 0,53 · R 0,67** |
+| ahora: detectados / aciertos | 36 / 15 | 30 / 15 | 19 / 11 | 85 / 41 → **P 0,48 · R 0,76** |
+
+De los 17 contactos más en los clips, **5 son reales y 12 son ruido**: el recall sube
+nueve puntos y la precisión baja cinco. **El filtro de marcas corregido NO es la
+causa**: en los tres clips pone 1 contacto, y en el partido entero 3 de 654 caen sobre
+frames de las "marcas" recuperadas (369 y 1.097 s, saques de puerta con balón real;
+1.128 s, el balón del niño del banquillo que la regla de staff no quita). El ruido
+nuevo viene de tener más trayectoria medida (+27 % de filas reales) sobre la que el
+criterio de velocidad dispara.
+
+⚠️ La alarma de "32,7/min está por encima de lo normal" usaba la referencia vieja de
+20-30/min, que este mismo registro corrigió el 16-ago con el GT del clip 2: **juego
+continuo = 60 toques/min**. Lo que sí dice la medida es que la precisión del criterio
+de velocidad sigue siendo la pieza floja (0,48), como ya lo era (0,53).
