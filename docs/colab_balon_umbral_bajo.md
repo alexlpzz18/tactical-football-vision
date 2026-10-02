@@ -106,3 +106,29 @@ celda sola caía lejos del balón (V06, en el cielo). ⚠️ Si se reentrena con
 puede medir en estos frames ni en sus vecinos: es el mismo partido que el banco. V06 es
 un balón ALTO contra el cielo (~15 px, bien visible): el único caso real de la pista de
 la resolución.
+
+## Resultado de la celda 2 (2-oct-2026): NINGÚN umbral pasa. No se adopta nada.
+
+Control en Colab: 300 frames idénticos a producción. Control en el Mac: el reconstruido
+a 0,35 coincide en 17.669 de 17.983 frames (98,3 %, bajo el 99 % fijado); lo que difiere
+es ruido numérico (298 frames con las mismas cajas a ≤ 1,8 px y ≤ 0,0009 de confianza) y
+16 frames con distinto número de cajas (24.907 contra 24.901). Por el criterio 0, todo se
+compara contra el reconstruido a 0,35, que da las mismas métricas que producción.
+
+| umbral | GT desempates | cambios/min | marcas | anclada | frames con balón | GT vuelo recuperados | t365 bal/malo/sin et. | t990 |
+|---|---|---|---|---|---|---|---|---|
+| 0,05 | 33 | 11,80 | 0 | 19,6 s | 10.993 | 7 | 78/0/52 | 158/3/4 |
+| 0,10 | 34 | 8,15 | 0 | 19,6 s | 10.130 | 5 | 78/0/50 | 159/3/3 |
+| 0,15 | 35 | 6,10 | 0 | 19,6 s | 9.565 | 3 (V03, V08, V12) | 79/0/43 | 160/3/1 |
+| 0,20 | 35 | 4,80 | 0 | 19,9 s | 9.310 | 1 | 79/0/38 | 160/3/0 |
+| 0,25 | 35 | 3,80 | 0 | 19,9 s | 9.026 | 1 | 79/1/35 | 159/3/0 |
+| 0,30 | 35 | 3,30 | 0 | 19,8 s | 8.691 | 0 | 79/1/29 | 160/3/0 |
+| **0,35** | **35** | **2,85** | 0 | 19,4 s | 8.608 | 0 | 79/0/28 | 159/3/0 |
+
+Criterio: 0,10 falla 1, 2 y 4; 0,15 falla 2 y 4; 0,20 falla 2, 4 y 6; 0,25 falla 2, 4, 5
+y 6. **El que manda es el 2: los cambios de objeto suben en cuanto se baja el umbral** —
+ya a 0,30 (3,30/min) se pasa de 3—, y a 0,15, el único que recupera los 3 casos que se
+vieron a 0,05, se duplican (6,10/min) por 957 frames más. El ruido sube mucho más rápido
+que lo recuperado: **se cierra la vía del umbral**. El criterio 7 (mirar los ganados) no
+hizo falta: todos fallan antes. Lo que queda es el detector (etiquetado dirigido,
+preparado en `outputs/etiquetado_balon_dirigido/`).
