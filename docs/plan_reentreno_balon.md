@@ -17,7 +17,8 @@ bajando el umbral: a 0,15 se recuperan 3 de 9 pero los cambios de objeto se dupl
 
 | | imágenes | de dónde |
 |---|---|---|
-| train | 117 | 30 del etiquetado dirigido (6 casos del GT × 5 frames) + 87 nuevas |
+| train | 102 | 30 del etiquetado dirigido (6 casos del GT × 5 frames) + 72 nuevas |
+| val | 15 | minutos 13 y 19 enteros (para la parada temprana, ver abajo) |
 | test | 36 | minutos 0, 9, 10 y 17 enteros |
 
 - Candidatos: frames SIN balón elegido dentro de un hueco ≤ 1,5 s de la pista de
@@ -51,6 +52,10 @@ Estimación: con la caja ya cerca, ~10-15 s por imagen ajustándola, ~5 s borrá
 ~30 s en las difíciles → **35-50 min** las 153, más ~10 min de crear las tareas y
 exportar. Por lo visto en el GT de vuelo, esperamos que ~60 % tengan el balón visible.
 
+⚠️ Antes de entrenar se cuentan los negativos que deja el etiquetado: si pasan de la
+mitad del pool, se avisa a Alex (el reentreno aprendería sobre todo "aquí no hay balón";
+v1 tenía un 37 % de negativos).
+
 ## Cómo entrenar
 
 1. **Partir de `best_balon_v1.pt`, no desde cero.** Con 117 imágenes nuevas no se
@@ -59,10 +64,14 @@ exportar. Por lo visto en el GT de vuelo, esperamos que ~60 % tengan el balón v
 2. **Junto con el dataset original** (el de v1, en Drive: `balon_benja_frames.zip` y
    sus etiquetas), para que no olvide el balón normal (olvido catastrófico): el pool
    repetido ×3 para que pese, el resto tal cual.
-3. Mismos hiperparámetros de base que v1 (`configs/entrenamiento_balon.yaml`:
+3. Mismos hiperparámetros de base que v1 (`configs/entrenamiento_balon.yaml`, bloque
+   `reentreno`; corregido el 3-oct: la base es yolov8s, no la 'n' que decía:
    yolov8s, imgsz 1280, batch 8, la misma augmentation) salvo: **lr0 = 0,001** (diez
    veces menor: es un ajuste fino), **40 épocas**, paciencia 15, semilla fija.
-4. Validación para la parada temprana: la del dataset original. **El test del pool no
+4. Validación para la parada temprana: la del dataset original **más la del pool**
+   (minutos 13 y 19 enteros, 15 imágenes, sin dirigidos). Ajuste de Alex: con solo la
+   del dataset original, `best.pt` saldría de las primeras épocas —esa validación no ve
+   lo nuevo— y el reentreno no aprendería el balón pegado al pie. **El test del pool no
    entra en ningún paso del entrenamiento.**
 5. Antes de entrenar, dos comprobaciones (en Colab):
    - volcar 50 imágenes aumentadas y contar cuántas conservan el balón (≥ 95 %,
@@ -92,7 +101,7 @@ Se adopta solo si se cumple TODO:
 
 | | criterio |
 |---|---|
-| 1 | A: recall del nuevo − recall del viejo ≥ **+0,25** |
+| 1 | A: recall del nuevo − recall del viejo ≥ **+0,25**, que se REESCRIBE en balones absolutos al contar los positivos reales del test (`contar_etiquetado_pool.py`: ⌈0,25 × positivos⌉ balones más que v1). Con menos de 12 positivos, el test se amplía con más frames de los MISMOS minutos de test antes de entrenar |
 | 2 | A: falsos positivos por imagen del nuevo ≤ los del viejo + **0,10** |
 | 3 | B: GT de desempates **≥ 35/38** (lo que da producción con la misma vara) |
 | 4 | B: cambios de objeto **≤ 3/min** (producción: 2,85) |

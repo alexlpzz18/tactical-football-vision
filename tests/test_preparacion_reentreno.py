@@ -1,0 +1,70 @@
+"""Piezas puras de la preparación del reentreno del detector de balón.
+
+- scripts/colab_comprobaciones_reentreno.py: el frame desde el nombre y el
+  emparejado imagen↔etiqueta de los zips (lo de ultralytics solo corre en Colab).
+- scripts/contar_etiquetado_pool.py: el lector del export YOLO 1.1 de CVAT y el
+  criterio 1 en balones.
+- scripts/preparar_pool_balon_pegado.py: la validación por minutos enteros.
+"""
+
+import random
+import sys
+import zipfile
+from pathlib import Path
+
+import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import colab_comprobaciones_reentreno as cr  # noqa: E402
+import contar_etiquetado_pool as ce  # noqa: E402
+import preparar_pool_balon_pegado as pp  # noqa: E402
+
+
+def test_frame_del_nombre():
+    assert cr.frame_del_nombre("benja_gredos_p1_f004430.png") == 4430
+    assert cr.frame_del_nombre("img_2026_00012.jpg") == 12  # el ÚLTIMO grupo
+    assert cr.frame_del_nombre("sin_numeros.png") is None
+    assert cr.frame_del_nombre("frame_99999.png") is None  # no cabe en el vídeo
+
+
+def test_normalizar_empareja_por_nombre_y_deja_negativos(tmp_path):
+    zi, ze = tmp_path / "img.zip", tmp_path / "lab.zip"
+    with zipfile.ZipFile(zi, "w") as z:
+        z.writestr("frames/a/f000010.png", b"x")
+        z.writestr("frames/b/f000020.png", b"x")  # sin etiqueta: negativo
+    with zipfile.ZipFile(ze, "w") as z:
+        z.writestr("labels/f000010.txt", "0 0.5 0.5 0.01 0.01\n")
+        z.writestr("labels/classes.txt", "balon\n")
+    n_img, n_lab = cr.normalizar_dataset(zi, ze, tmp_path / "ds")
+    assert (n_img, n_lab) == (2, 1)
+    assert (tmp_path / "ds" / "labels" / "todo" / "f000010.txt").exists()
+    assert not (tmp_path / "ds" / "_crudo").exists()
+
+
+def test_export_cvat_y_recuento(tmp_path):
+    zp = tmp_path / "export.zip"
+    with zipfile.ZipFile(zp, "w") as z:
+        z.writestr("obj.names", "balon\n")
+        z.writestr("obj_train_data/f000010.txt", "0 0.5 0.5 0.01 0.01\n")
+        z.writestr("obj_train_data/f000020.txt", "")  # sin balón
+    et = ce.leer_export_yolo(zp)
+    assert et == {"f000010": ["0 0.5 0.5 0.01 0.01"], "f000020": []}
+    m = pd.DataFrame({"frame": [10, 20, 30], "split": ["test", "test", "train"]})
+    t = ce.contar(m, et, {"f000010": ["0 0.5 0.5 0.01 0.01"]})
+    assert list(t.positivo) == [True, False, False]
+    assert list(t.en_export) == [True, True, False]  # el 30 falta en el export
+    assert t.sin_tocar.iloc[0]  # caja idéntica a la preanotación
+
+
+def test_criterio_1_en_balones_redondea_hacia_arriba():
+    assert ce.balones_para_mejorar(12) == 3
+    assert ce.balones_para_mejorar(13) == 4
+    assert ce.balones_para_mejorar(20) == 5
+
+
+def test_validacion_por_minutos_enteros_entre_15_y_20():
+    por_minuto = {1: 3, 5: 7, 6: 9, 11: 10, 13: 5, 19: 10}
+    val = pp.minutos_de_validacion(por_minuto, random.Random(4))
+    n = sum(por_minuto[m] for m in val)
+    assert 15 <= n <= 20

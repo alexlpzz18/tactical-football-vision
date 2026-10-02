@@ -43,6 +43,7 @@ import io
 import json
 import random
 import sys
+import zipfile
 from pathlib import Path
 
 import cv2
@@ -83,6 +84,27 @@ def minutos_de_test(n_minutos: int, rng: random.Random, bloque: int = 5) -> set[
         rng.randrange(b, min(b + bloque, n_minutos))
         for b in range(0, n_minutos, bloque)
     }
+
+
+def minutos_de_validacion(
+    por_minuto: dict, rng: random.Random, min_n=15, max_n=20
+) -> set:
+    """Minutos ENTEROS para validar la parada temprana, sumando min_n-max_n imágenes.
+
+    Sin esto `best.pt` saldría de las primeras épocas (la validación del dataset
+    original no ve lo nuevo) y el reentreno no aprendería el balón pegado al pie.
+    Por minutos, igual que el test: frames vecinos son casi la misma imagen.
+    """
+    minutos = sorted(por_minuto)
+    rng.shuffle(minutos)
+    elegidos, n = set(), 0
+    for m in minutos:
+        if n >= min_n:
+            break
+        if n + por_minuto[m] <= max_n:
+            elegidos.add(m)
+            n += por_minuto[m]
+    return elegidos
 
 
 def excluido_de_entrenamiento(
@@ -269,8 +291,27 @@ def main() -> None:
                 "pre_y": round(float(ppx[1]), 1),
             }
         )
-        if split in por_split:
-            por_split[split].append((f, ppx, origen))
+
+    # Validación: minutos enteros de TRAIN sin dirigidos (esos son lo que tiene que
+    # aprender), con un generador APARTE para no mover ninguna elección anterior.
+    con_dirigidos = {
+        r["minuto"] for r in manifiesto if r["origen"].startswith("dirigido")
+    }
+    por_minuto = {}
+    for r in manifiesto:
+        if r["split"] == "train" and r["minuto"] not in con_dirigidos:
+            por_minuto[r["minuto"]] = por_minuto.get(r["minuto"], 0) + 1
+    val_min = minutos_de_validacion(por_minuto, random.Random(SEMILLA + 1))
+    for r in manifiesto:
+        if r["split"] == "train" and r["minuto"] in val_min:
+            r["split"] = "val"
+    # Dos tareas de CVAT: train (lleva dentro la validación) y test.
+    por_frame = {f: (ppx, origen) for f, _t, ppx, origen, _z in filas}
+    for r in manifiesto:
+        tarea = {"train": "train", "val": "train", "test": "test"}.get(r["split"])
+        if tarea:
+            ppx, origen = por_frame[r["frame"]]
+            por_split[tarea].append((r["frame"], ppx, origen))
 
     cap = cv2.VideoCapture(args.video)
     ancho, alto = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
@@ -351,21 +392,41 @@ def main() -> None:
         ]
         cv2.imwrite(str(salida / f"hoja_{s}.jpg"), np.vstack(filas_img))
     pd.DataFrame(manifiesto).to_csv(salida / "manifiesto.csv", index=False)
+    # Para CVAT: la preanotación en COCO 1.0 (Acciones → Subir anotaciones). Las
+    # imágenes se suben DIRECTAMENTE desde <tarea>/images: un zip las duplicaría
+    # (~400 MB de PNG) y el disco de este Mac va justo.
+    for s in por_split:
+        with zipfile.ZipFile(salida / f"cvat_{s}_preanotaciones_coco.zip", "w") as z:
+            z.write(
+                salida / s / "preanotaciones_coco.json",
+                "annotations/instances_default.json",
+            )
+    n_val = sum(r["split"] == "val" for r in manifiesto)
     (salida / "LEEME.txt").write_text(
         "Pool de etiquetado del balón pegado al pie (NO entrenar sin el OK de Alex).\n"
-        f"train: {len(por_split['train'])} imágenes · test: {len(por_split['test'])} "
-        f"(minutos de test: {sorted(test_min)}). El test NO se mira hasta medir.\n"
-        "Cada imagen trae UNA caja pre-puesta donde el sistema cree que está el balón.\n"
-        "- Ajusta la caja al balón visible (aunque esté medio tapado: la caja cubre lo\n"
-        "  que se VE). Si el balón no se ve en la imagen, BORRA la caja: la imagen\n"
-        "  queda como ejemplo sin balón, que también enseña.\n"
-        "- Si ves el balón en otro sitio, mueve la caja allí.\n"
-        "- Clase única: balon. Exportar en YOLO 1.1 (labels/*.txt).\n"
+        f"Tarea train: {len(por_split['train'])} imágenes ({n_val} de ellas son la VALIDACIÓN,\n"
+        f"minutos {sorted(val_min)}, se etiquetan igual). Tarea test: {len(por_split['test'])} "
+        f"(minutos {sorted(test_min)}). El test NO se mira hasta medir.\n\n"
+        "EN CVAT, una tarea por carpeta (train y test, por separado):\n"
+        "1. Crear tarea con UNA etiqueta: balon (rectángulo). Subir todas las imágenes de\n"
+        "   <tarea>/images/ (arrastrarlas: no hace falta zip).\n"
+        "2. Acciones → Subir anotaciones → formato COCO 1.0 →\n"
+        "   cvat_<tarea>_preanotaciones_coco.zip\n"
+        "   (trae una caja pre-puesta por imagen donde el sistema cree que está el balón).\n"
+        "3. En cada imagen:\n"
+        "   - ajusta la caja al balón visible (aunque esté medio tapado: cubre lo que se VE);\n"
+        "   - si ves el balón en otro sitio, mueve la caja allí;\n"
+        "   - si el balón NO se ve, BORRA la caja (queda como ejemplo sin balón).\n"
+        "4. Acciones → Exportar dataset de la tarea → YOLO 1.1, SIN imágenes.\n"
+        "   Deja los dos zips (train y test) en outputs/pool_balon_pegado/etiquetado/.\n\n"
         "manifiesto.csv: frame, tiempo de archivo y de tu reproductor (+1:33), minuto,\n"
-        "tercio del campo, origen (pegado / dirigido_Vxx) y split.\n"
+        "tercio del campo, origen (pegado / dirigido_Vxx) y split (train/val/test).\n"
     )
     cuenta = pd.DataFrame(manifiesto).groupby("split").size().to_dict()
-    print(f"minutos de test: {sorted(test_min)} · {cuenta} · candidatos {len(cands)}")
+    print(
+        f"minutos de test: {sorted(test_min)} · de validación: {sorted(val_min)} · {cuenta}"
+        f" · candidatos {len(cands)}"
+    )
 
 
 if __name__ == "__main__":

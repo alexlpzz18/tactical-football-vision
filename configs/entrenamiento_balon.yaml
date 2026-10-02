@@ -5,15 +5,15 @@
 # mAP50 0.90 del v4pre por un objeto que aparece 1 vez por frame frente a
 # 20 jugadores, mide 5-12 px y se desenfoca al moverse.
 #
-# NO EJECUTADO: faltan las etiquetas. Esto es la receta lista para lanzar
-# en Colab en cuanto lleguen.
+# v1 ENTRENADO el 11-ago-2026 (best_balon_v1.pt, mAP50 0,789; 799 frames del
+# benjamín: 502 con balón + 297 negativos). docs/plan_deteccion_balon.md.
 
 modelo:
-  # 'n' y no 's': el balón es un objeto de una sola clase y forma simple;
-  # lo que le falta es RESOLUCIÓN, no capacidad. Con el modelo pequeño
-  # cabe una imagen de entrada mayor en la misma GPU, que es el cambio
-  # que de verdad mueve la aguja con objetos diminutos.
-  base: yolov8n.pt
+  # ⚠️ CORREGIDO el 3-oct-2026: v1 se entrenó con yolov8s, NO con la 'n' que
+  # decía aquí. El plan original razonaba 'n' (al balón le falta resolución,
+  # no capacidad), pero lo que existe y está en producción es una 's', y un
+  # reentreno que parta de v1 tiene que usar su misma arquitectura.
+  base: yolov8s.pt
   clases: [balon]
 
 entrenamiento:
@@ -63,3 +63,20 @@ evaluacion:
   # centro de juego) serían ficción.
   recall_min: 0.60
   precision_min: 0.80
+
+# ── REENTRENO del balón pegado al pie (docs/plan_reentreno_balon.md) ──
+# Plan aprobado, NO lanzado. Ajuste fino desde v1, junto con el dataset original
+# para que no olvide el balón normal.
+reentreno:
+  partir_de: best_balon_v1.pt # no desde cero: se ajusta lo que ya sabe
+  lr0: 0.001 # diez veces menor que el de por defecto: es un ajuste fino
+  epochs: 40
+  patience: 15
+  seed: 20261003
+  repeticion_pool: 3 # el pool pesa x3 frente al dataset original
+  # Parada temprana: la validación del dataset original + la del pool (minutos
+  # 13 y 19 enteros, 15 imágenes). Sin la del pool, best.pt saldría de las
+  # primeras épocas sin haber aprendido lo nuevo. El TEST (minutos 0, 9, 10 y
+  # 17) no entra en ningún paso del entrenamiento.
+  validacion_pool_minutos: [13, 19]
+  test_pool_minutos: [0, 9, 10, 17]
