@@ -130,5 +130,15 @@ Resto de métricas: GT 32 → 34 de 38; cambios de objeto 2 → 3/min; tramos et
 iguales (un frame de balón menos en 365-378 s); contactos 654 → 644; filas medidas
 7.186 → 7.147.
 
-Los 462 restantes no tienen ninguna detección del balón: es el 62 % que solo se puede
-atacar en el detector (pista 1, en Colab) o con GT.
+⚠️ Corregido el mismo día: dije que los 462 restantes "no tienen ninguna detección del
+balón", y no es exacto. **372 no tienen ninguna** (176 nada, 196 solo marcas); los otros
+90 sí tenían alguna, que tiraron el selector por pequeña (46), la regla de staff (29) o
+la plausibilidad sin ida y vuelta (15). Con la definición estricta del GT (ninguna
+detección cruda que no sea marca, ni siquiera fuera del campo) son 356.
+
+## GT corto: ¿se VE el balón en esos frames? (`scripts/gt_balon_en_vuelo.py`)
+
+25 frames al azar de los 356, separados ≥ 10 s, en `outputs/gt_balon_en_vuelo/`.
+Frame entero con rejilla de 80 px + zoom ×2 de la zona del vuelo; respuesta `K7` /
+`no_visible` / `no_se`. Si la mayoría tiene balón visible, merece la pena medir la
+resolución en Colab; si no, es el techo físico del vídeo.
