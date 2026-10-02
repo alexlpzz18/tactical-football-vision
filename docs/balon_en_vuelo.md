@@ -142,3 +142,33 @@ detección cruda que no sea marca, ni siquiera fuera del campo) son 356.
 Frame entero con rejilla de 80 px + zoom ×2 de la zona del vuelo; respuesta `K7` /
 `no_visible` / `no_se`. Si la mayoría tiene balón visible, merece la pena medir la
 resolución en Colab; si no, es el techo físico del vídeo.
+
+### Resultado del GT (2-oct-2026), leído a mano: CAMBIA el diagnóstico
+
+Alex escribió respuestas largas (`outputs/gt_balon_en_vuelo/respuestas_alex.numbers`,
+no versionado) y se leyeron a mano, no con el lector del script.
+
+| lo que hay en el frame | casos | n |
+|---|---|---|
+| balón visible con claridad | V03, V05, V06, V08, V12, V15, V16, V24 | 8 |
+| visible pero borroso | V18 | 1 |
+| visible, medio tapado o en conducción | V07, V09, V17, V19 | 4 |
+| en las manos (falta, saque) | V02, V14 | 2 |
+| tapado por un jugador o el árbitro | V01, V04, V10, V11, V21 | 5 |
+| fuera de plano | V13, V22 | 2 |
+| no se ve, sin razón clara | V20, V23, V25 | 3 |
+
+1. **Visible en 15 de 25**; fuera de plano solo 2. No es el techo físico del vídeo.
+2. **Pero NO son vuelos**: solo 3 de 25 son balón en el aire (V15, V16 tras un bote,
+   V20 en un tiro de falta). El resto es balón en el SUELO, casi siempre en el pie de un
+   jugador o al lado, junto a la última o la siguiente posición conocida. ⚠️ El criterio
+   "> 8 m en ≤ 2 s" no medía vuelos: en el fondo pocos píxeles son muchos metros.
+3. **La pista de la resolución queda descartada**: de los visibles con celda, todos
+   menos uno (V06, fila 5) están en las filas 8-9 (y 560-720 px), DENTRO de la franja que
+   ya se trocea a resolución completa (534-805). Subir la resolución por encima de
+   y = 534 recuperaría como mucho 1 de 25.
+
+Lo que queda es un fallo del DETECTOR con el balón pegado al pie, medio tapado o
+desenfocado, a resolución completa. Se ataca con datos (ejemplos de balón junto a
+jugadores) o reentrenando, en Colab. El "balón en vuelo" como tal se cierra aquí: lo que
+tenía arreglo barato (los vuelos que tiraba la plausibilidad) está arreglado.
