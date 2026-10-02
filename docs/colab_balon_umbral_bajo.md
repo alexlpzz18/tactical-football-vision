@@ -36,22 +36,73 @@ sobre el balón, con su confianza. Deja en `salidas/umbral_bajo/` un recorte por
 círculo amarillo es dónde marcó Alex el balón; rojo, cajas ≥ 0,35; magenta, < 0,35) y
 `resultado.json`. **Tráeme `resultado.json` y los recortes.**
 
-## Celda 2 — SOLO si la 1 sale positiva: el COSTE en el partido entero
+## Resultado de la celda 1 (2-oct-2026)
 
-Bajar el umbral mete ruido en todo el partido (marcas, botas, dorsales), no solo en 9
-frames. Esta celda rehace el caché de balón de la parte entera a 0,05 guardando la
-confianza de cada caja; con él, cualquier umbral ≥ 0,05 se simula aquí en el Mac, con
-todo el banco (GT de desempates, tramos etiquetados, continuidad, métricas de adopción),
-sin volver a Colab.
+Control OK en los 9 (a 0,35 reproduce el caché local). A 0,05, caja sobre el balón en
+4 de 9 (V03 0,17 · V05 0,097 · V08 0,288 · V12 0,154). Mirando los recortes (Alex), la
+de V05 cae a la derecha del balón y no cuenta: **3 de 9 recuperables a umbral bajo, 6
+sin señal ni a 0,05** (V05, V06, V15, V16, V18, V24).
+
+## Celda 2 — el COSTE en el partido entero, con su control
+
+⚠️ No vale "detectar a 0,05 y quedarse con lo que pase de 0,35", por tres razones:
+
+1. SAHI cambia SOLO el postproceso a NMS/IOU por debajo de 0,1 (el aviso
+   "Switching postprocess…"); producción usa GREEDYNMM/IOS. SAHI lo deja fijar con
+   `force_postprocess_type=True`.
+2. Aun fijándolo, la fusión depende del umbral: GreedyNMM se queda con la UNIÓN de las
+   cajas que fusiona, así que una débil agranda a una fuerte.
+3. La deduplicación del mixto tira una caja buena de la franja si se solapa con una
+   débil del frame entero (`tests/test_cache_balon_umbrales.py`).
+
+Así que `scripts/colab_cache_balon_umbrales.py` guarda lo de ANTES de cualquier fusión
+(postproceso identidad registrado en SAHI) y, para cada umbral (0,05 … 0,35), aplica la
+cadena de producción tal cual. Una pasada de GPU, siete cachés. **Control 1, dentro de
+la pasada**: en los primeros 300 frames corre además el camino de producción literal a
+0,35 y PARA si no sale idéntico. **Control 2, en el Mac**: el caché reconstruido a 0,35
+contra `cache_balon_p1.pkl` de producción (mide además si la versión de SAHI de Colab ha
+cambiado desde agosto).
 
 ```python
-import yaml
-cfg = yaml.safe_load(open('configs/processor_benja_balon_parte_entera.yaml'))
-cfg['balon']['confianza'] = 0.05
-cfg['rutas']['cache_balon'] = f'{D}/salidas/umbral_bajo/cache_balon_p1_conf005.pkl'
-yaml.safe_dump(cfg, open('/content/cfg_conf005.yaml', 'w'), allow_unicode=True)
-!python scripts/detectar_balon.py --config /content/cfg_conf005.yaml
+!python scripts/colab_cache_balon_umbrales.py \
+    --config configs/processor_benja_balon_parte_entera.yaml \
+    --salida "{D}/salidas/umbral_bajo"
 ```
 
-Tiene checkpoint con reanudación: si la sesión se cae, volver a lanzar la misma celda
-continúa. **Tráeme `cache_balon_p1_conf005.pkl`** a `data/tracking_benja/`.
+Unos 30-40 min de T4, con checkpoint: si la sesión se cae, la misma celda reanuda. Tiene
+que imprimir `CONTROL OK: 300 frames idénticos a producción`; si para con "CONTROL
+FALLA", no sigas y tráeme el mensaje. **Tráeme los siete
+`cache_balon_p1_confNNN.pkl`** a `data/tracking_benja/umbral_bajo/`.
+
+## Criterio de adopción, fijado ANTES de ver números
+
+Escrito como código en `scripts/medir_umbral_balon.py` para que no se mueva. Un umbral
+intermedio (0,10-0,25) se adopta solo si cumple TODO:
+
+0. Control: el reconstruido a 0,35 es producción (≥ 99 % de frames idénticos); si no,
+   todo se compara con el reconstruido a 0,35 de la misma sesión, y se dice.
+1. GT de desempates sin bajar de producción con la misma vara (35/38 con la caja a
+   ≤ 15 px; con la caja exacta eran 34).
+2. Cambios de objeto ≤ 3/min (producción: 2,85).
+3. Fracción en las 5 marcas de verdad = 0.
+4. Duración anclada ≤ 19,4 s; si la supera, se mira a ojo y solo vale si es una parada.
+5. En los tramos etiquetados a ojo, lo que no es balón no sube.
+6. BENEFICIO: de los 14 casos visibles con posición del GT de vuelo, ≥ 3 recuperados
+   más que a 0,35.
+7. COSTE: de 30 frames ganados al azar, a ojo, ≥ 2/3 balón real y ≤ 1/6 basura clara.
+
+Si pasan varios, el centro del tramo que pasa. Si el ruido sube sin que suba lo
+recuperado, se cierra. Probado de punta a punta con el caché de producción en cada
+umbral: control 100 %, todas las filas iguales.
+
+## Preparado, NO lanzado: etiquetado dirigido de los 6 sin señal
+
+`scripts/preparar_etiquetado_balon_dirigido.py` → `outputs/etiquetado_balon_dirigido/`:
+30 imágenes (6 casos × el frame del GT y dos muestreados a cada lado), una caja
+pre-puesta por imagen en YOLO y en COCO, y `hoja.jpg` para revisarlas. La caja va donde
+Alex dijo que estaba el balón: el círculo verde/rojo que nombró (posiciones medidas por
+el sistema justo antes/después) o, si no nombró ninguno, el centro de su celda; con la
+celda sola caía lejos del balón (V06, en el cielo). ⚠️ Si se reentrena con esto, no se
+puede medir en estos frames ni en sus vecinos: es el mismo partido que el banco. V06 es
+un balón ALTO contra el cielo (~15 px, bien visible): el único caso real de la pista de
+la resolución.
