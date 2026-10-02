@@ -283,3 +283,28 @@ criterio de velocidad dispara.
 20-30/min, que este mismo registro corrigió el 16-ago con el GT del clip 2: **juego
 continuo = 60 toques/min**. Lo que sí dice la medida es que la precisión del criterio
 de velocidad sigue siendo la pieza floja (0,48), como ya lo era (0,53).
+
+## 8. Cierre (2-oct-2026): el reloj, y (53, 57)
+
+**El "segundo del sistema" es exactamente el segundo del archivo**
+`data/raw/benja_gredos_p1_20min.mp4`: `t = frame / 29,97` desde el frame 0, y
+decodificando frame a frame la marca de tiempo real del archivo difiere 0,007 s,
+constante del principio al final (sin deriva). El contenedor dice 36.033 frames y se
+decodifican 35.966: es un metadato, no un desfase.
+
+⚠️ **El vídeo que mira Alex (YouTube / partido completo) va 93 s (1:33) por delante**
+del archivo: medido en los GT de contactos de los clips 1 y 2, que tienen las dos horas.
+**Todos los tiempos de este registro están en reloj de ARCHIVO**: para buscarlos en el
+reproductor, sumar 1:33. Así se explica la confusión: "936-960 s" son 15:36-16:00 del
+archivo, pero 17:09-17:33 en el reproductor, y la falta sale hacia 17:33.
+
+**(53, 57), 936-960 s: es el balón del partido** — una falta que saca el equipo blanco,
+confirmada por Alex en el vídeo. Los 19,4 s anclados son una parada real: el sistema
+acierta y no hace falta ninguna regla. El único fantasma real era el balón del niño del
+banquillo, resuelto por la regla de staff.
+
+Fragmento para revisar a ojo (no versionado, en `outputs/fragmento_balon_7m03/`): archivo
+5:30-8:00 = reproductor 7:03-9:33, antes y ahora lado a lado, con los dos relojes
+sobreimpresos. En ese tramo: los frames de "balón" sobre el zapato del entrenador
+(365-378 s) pasan de 52 a 0, las filas aéreas de 301 a 141 y los cortes de la puerta de
+píxeles de 20 a 1.
