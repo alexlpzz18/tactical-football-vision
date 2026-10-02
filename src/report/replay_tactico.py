@@ -424,6 +424,11 @@ def generar_replay(
             }
         )
 
+    # El balón, el ÚLTIMO de la lista: el lienzo pinta en orden, así que lo
+    # último queda encima. Se garantiza aquí además de en el dibujo (dos
+    # pasadas) para que no dependa de una sola pieza.
+    identidades.sort(key=lambda i: str(i["et"]).startswith("balon"))
+
     t_min = float(df["tiempo_s"].min())
     t_max = float(df["tiempo_s"].max())
     paleta = colores_con_equipos(colores_equipo)
@@ -658,11 +663,22 @@ function dibujar(T) {
   dibujarCampo();
   ctx.font = 'bold ' + (RADIO_M * ESCALA) + 'px -apple-system, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // DOS PASADAS: primero las personas y DESPUÉS el balón, para que el balón
+  // quede SIEMPRE por encima. En una sola pasada el orden era el de DATOS y
+  // el balón se escondía bajo la ficha del jugador que lo llevaba: un
+  // problema de dibujo, no de datos (2-oct-2026).
+  const visibles = [];
   for (let i = 0; i < DATOS.length; i++) {
     const pos = posicionEn(DATOS[i], i, T);
     if (!pos) continue;
     // La etiqueta del INSTANTE, no la de toda la vida de la identidad.
     const etq = DATOS[i].ets ? CATALOGO[DATOS[i].ets[pos[3]]] : DATOS[i].et;
+    visibles.push([i, pos, etq]);
+  }
+  const esFichaBalon = (etq) => etq === 'balon' || etq === 'balon_aereo';
+  const orden = visibles.filter(v => !esFichaBalon(v[2]))
+    .concat(visibles.filter(v => esFichaBalon(v[2])));
+  for (const [i, pos, etq] of orden) {
     const [relleno, borde] = COLORES[etq] || COLORES['otro'];
     // Transparencia por antigüedad: cuanto más lejos está la posición de
     // una detección real, más se desvanece la ficha (aparecer/desaparecer

@@ -436,3 +436,34 @@ def test_se_puede_desactivar_desde_generar_replay(tmp_path):
     )
     datos, catalogo = _datos_del_html(salida.read_text())
     assert "ets" in datos[0], "sin suavizar, el parpadeo de 1 frame vuelve a estar"
+
+
+def test_el_balon_se_pinta_ENCIMA_de_los_jugadores(tmp_path):
+    """El balón se escondía bajo la ficha del jugador que lo llevaba: el
+    lienzo pinta en el orden de DATOS y el balón podía ir antes. Problema
+    de dibujo, no de datos (2-oct-2026)."""
+    filas = []
+    for k in range(25):  # 3 s: la pizarra no pinta vidas de menos de 2 s
+        t = round(300 + 0.12 * k, 2)
+        # el balón PRIMERO en el CSV, justo donde está el jugador
+        filas.append((7500 + 3 * k, t, -1, 3, "balon", 10.0 + k, 30.0, 1))
+        filas.append((7500 + 3 * k, t, 1, 0, "A", 10.0 + k, 30.0, 1))
+    ruta = tmp_path / "pos.csv"
+    pd.DataFrame(
+        filas,
+        columns=[
+            "frame",
+            "tiempo_s",
+            "id_jugador",
+            "equipo",
+            "etiqueta",
+            "x_m",
+            "y_m",
+            "es_real",
+        ],
+    ).to_csv(ruta, index=False)
+    html = generar_replay(ruta, tmp_path / "r.html").read_text()
+    datos = json.loads(re.search(r"const DATOS = (\[.*?\]);\n", html).group(1))
+    assert [str(d["et"]).startswith("balon") for d in datos] == [False, True]
+    # y el dibujo pinta en dos pasadas, el balón al final
+    assert "visibles.filter(v => esFichaBalon(v[2]))" in html
