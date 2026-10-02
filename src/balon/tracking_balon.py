@@ -136,6 +136,39 @@ class ParametrosBalon:
     vel_max_px_s: float = 1000.0
     dt_max_puerta_par_s: float = 0.3  # entre dos filas de suelo contiguas
     dt_max_puerta_vuelo_s: float = 6.0  # entre los extremos de un vuelo
+    # ── selección por CONTINUIDAD (Viterbi, docs/selector_balon.md, Plan 1b/1c) ──
+    # Elegir frame a frame acertaba 16 de 38 desempates y saltaba de objeto
+    # 53 veces por minuto. Con continuidad se busca la secuencia más coherente
+    # del partido entero (`_viterbi_de_continuidad`), con la MISMA puerta de
+    # píxeles de arriba. Adoptado el 1-oct-2026 con 1c: GT 16 → 31 de 38,
+    # 53 → 2 cambios de objeto por minuto, y en los dos tramos etiquetados a
+    # ojo el balón elegido sube de 219 a 239 frames y lo que no es balón baja
+    # de 79 a 3. Cuesta 903 frames con "balón" (−11 %): casi todos botas y
+    # objetos diminutos (3 de 40 al azar eran balón real).
+    continuidad_activa: bool = True
+    continuidad_dt_max_s: float = 0.5  # hueco máximo para seguir la misma pista
+    continuidad_holgura_px: float = 20.0  # temblor de la caja a velocidad cero
+    # Lo que cuesta saltar a un objeto que no es continuación de la pista,
+    # en FRAMES "sin balón": el único parámetro de 1b. Centro geométrico de
+    # la meseta de cambios por minuto (0,5-16, todos 2-3/min); a 32 ya
+    # pierde balón real.
+    continuidad_coste_salto: float = 3.0
+    # ── 1c: lo que es DEMASIADO PEQUEÑO para ser el balón en esa fila ──
+    # Con continuidad sola quedan dos fallos: la bota pegada al balón (están
+    # dentro de la misma puerta y desempata la cercanía al jugador, que gana
+    # la bota) y un objeto quieto que se detecta más que el balón (el zapato
+    # del entrenador). Los dos son PEQUEÑOS: el tamaño esperado sale de la
+    # física, un balón de `diametro_balon_m` proyectado con la homografía en
+    # ese punto. Medido en los 36 balones del GT, lado/esperado tiene mediana
+    # 1,90 (p10 1,77, p90 2,19); lo que no es balón, 0,87.
+    continuidad_desempate_por_tamano: bool = True  # el más grande gana el empate
+    # lado/esperado por debajo = pequeño; 0 = apagado. Meseta 0,8-1,8 (GT,
+    # tramos y cambios iguales); a 2,0 ya castiga balones. 1,2 es su centro.
+    continuidad_umbral_pequeno: float = 1.2
+    # Un candidato pequeño vale lo mismo que no ver nada: no es un número
+    # ajustado, es la definición de "no sirve como balón".
+    continuidad_coste_pequeno: float = 1.0
+    diametro_balon_m: float = 0.20  # balón del número 4 (fútbol base)
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -145,7 +178,11 @@ class ParametrosBalon:
 
 
 def seleccionar_balon_activo(
-    detecciones: dict, posiciones_jugadores: dict, params: ParametrosBalon
+    detecciones: dict,
+    posiciones_jugadores: dict,
+    params: ParametrosBalon,
+    tiempos: dict | None = None,
+    homografia=None,
 ) -> dict:
     """Se queda con UNA detección de balón por frame: la del partido.
 
@@ -153,6 +190,10 @@ def seleccionar_balon_activo(
         detecciones: {frame_idx: [(mx, my, x1, y1, x2, y2, conf), ...]}.
         posiciones_jugadores: {frame_idx: [(mx, my), ...]}.
         params: ver ParametrosBalon.
+        tiempos: {frame_idx: segundos}; solo hace falta con
+            `params.continuidad_activa`.
+        homografia: matriz 3x3 de píxeles a metros; solo hace falta con
+            `params.continuidad_umbral_pequeno` > 0.
 
     Returns:
         {frame_idx: deteccion} con como mucho una por frame.
@@ -239,22 +280,194 @@ def seleccionar_balon_activo(
         d = np.linalg.norm(np.array(jugadores) - np.array(det[:2]), axis=1)
         return float(d.min())
 
-    resultado: dict[int, tuple] = {}
-    mejor_dist: dict[int, float] = {}
+    # Todos los supervivientes de cada frame, ORDENADOS por ese criterio: el
+    # primero es el que se elige frame a frame. La selección por continuidad
+    # (`_viterbi_de_continuidad`) usa la lista entera y el orden solo para
+    # desempatar. Con todo empatado a infinito (sin posiciones de jugadores)
+    # se cae a la confianza: es lo único que queda, no un segundo criterio
+    # con voz propia. El orden es estable, así que en un empate total gana
+    # el primero que apareció, como antes.
+    por_frame: dict[int, list] = {}
     for i, cand in enumerate(candidatos):
         if i not in activos:
             continue
         for frame, det in cand:
-            dist = _dist_a_jugador(frame, det)
-            if frame not in resultado:
-                resultado[frame], mejor_dist[frame] = det, dist
-                continue
-            # Con todo empatado a infinito (sin posiciones de jugadores)
-            # se cae al criterio anterior, la confianza: es lo único que
-            # queda, no un segundo criterio con voz propia.
-            previo = mejor_dist[frame]
-            if dist < previo or (dist == previo and det[6] > resultado[frame][6]):
-                resultado[frame], mejor_dist[frame] = det, dist
+            por_frame.setdefault(frame, []).append((_dist_a_jugador(frame, det), det))
+    ordenados = {
+        f: [det for _d, det in sorted(lista, key=lambda x: (x[0], -x[1][6]))]
+        for f, lista in por_frame.items()
+    }
+    if params.continuidad_activa:
+        if tiempos is None:
+            raise ValueError(
+                "La selección por continuidad necesita los tiempos de cada frame"
+            )
+        if params.continuidad_umbral_pequeno > 0 and homografia is None:
+            raise ValueError("Juzgar si un candidato es pequeño necesita la homografía")
+        return _viterbi_de_continuidad(ordenados, tiempos, params, homografia)
+    return {f: lista[0] for f, lista in ordenados.items()}
+
+
+def _centro_px(det) -> tuple[float, float]:
+    return ((det[2] + det[4]) / 2.0, (det[3] + det[5]) / 2.0)
+
+
+def _lado_px(det) -> float:
+    return float(max(det[4] - det[2], det[5] - det[3]))
+
+
+def escala_px_por_m(homografia, cx: float, cy: float) -> float:
+    """Píxeles por metro en HORIZONTAL de la imagen, en el punto (cx, cy) del suelo.
+
+    Se usa la horizontal porque una esfera no se acorta con la perspectiva
+    como el césped: su anchura en la imagen es la de un segmento horizontal
+    a su misma distancia. Diferencia finita de 1 px con la homografía.
+    """
+    h = np.asarray(homografia, dtype=float)
+    p = np.array([[cx, cy, 1.0], [cx + 1.0, cy, 1.0]]) @ h.T
+    m = p[:, :2] / p[:, 2:3]
+    paso_m = float(np.linalg.norm(m[1] - m[0]))
+    return 1.0 / paso_m if paso_m > 0 else float("inf")
+
+
+def tamano_relativo(det, homografia, diametro_m: float = 0.20) -> float:
+    """Lado de la caja / lo que mediría un balón de `diametro_m` en su sitio.
+
+    Se mide en el PIE de la caja (el punto que toca el suelo). En los balones
+    del GT sale ~1,9 (la caja del detector es más holgada que el balón).
+    """
+    cx = (det[2] + det[4]) / 2.0
+    return _lado_px(det) / (diametro_m * escala_px_por_m(homografia, cx, det[5]))
+
+
+def _viterbi_de_continuidad(
+    ordenados: dict, tiempos: dict, params: "ParametrosBalon", homografia=None
+) -> dict:
+    """Elige la secuencia de candidatos más COHERENTE de todo el partido.
+
+    Se procesa en diferido, así que para decidir un frame se puede mirar el
+    pasado y el futuro. En cada frame con candidatos el estado es "el
+    candidato i" o "sin balón" (docs/selector_balon.md, Plan 1b):
+
+    - Seguir la pista (de un candidato a otro hasta `continuidad_dt_max_s`
+      después) es GRATIS si el salto cabe en la puerta de píxeles de siempre,
+      `vel_max_px_s` × dt + `continuidad_holgura_px`. Los frames intermedios
+      cuentan como "sin balón".
+    - Cada frame "sin balón" cuesta 1.
+    - Empezar una pista que no es continuación de la anterior (un SALTO a otro
+      objeto) cuesta `continuidad_coste_salto`, en las mismas unidades: un
+      objeto lejano solo gana si cubre más frames de los que cuesta saltar a
+      él y volver.
+
+    ⚠️ Con solo el coste de "sin balón" el problema no tiene parámetro: si
+    todo lo demás es gratis, multiplicarlo por cualquier λ da la misma
+    solución. Lo que se elige es la RELACIÓN entre los dos costes, y se lee
+    en frames: cuánto tiene que durar un objeto que aparece lejos de la pista
+    para creérselo.
+
+    Desempate (segunda cifra del coste, solo cuenta a igualdad de la
+    primera): preferir lo que elegiría el criterio frame a frame. Así, donde
+    la continuidad no dice nada, el resultado es exactamente el de antes.
+    Con `continuidad_desempate_por_tamano`, el preferido es el más GRANDE
+    (1c): la bota pegada al balón está más cerca del jugador, pero es menor.
+
+    1c, además: un candidato con `tamano_relativo` por debajo de
+    `continuidad_umbral_pequeno` cuesta `continuidad_coste_pequeno` (lo mismo
+    que un frame sin balón), así que un objeto pequeño ya no gana por
+    detectarse mucho.
+
+    Args:
+        ordenados: {frame: [det, ...]} supervivientes, el preferido primero.
+        tiempos: {frame: segundos}.
+        params: ver ParametrosBalon.
+
+    Returns:
+        {frame: det} con como mucho uno por frame; los frames "sin balón" no
+        aparecen.
+    """
+    frames = sorted(ordenados)
+    centros = [[np.array(_centro_px(d)) for d in ordenados[f]] for f in frames]
+    salto = float(params.continuidad_coste_salto)
+    # El preferido de cada frame para el desempate, y el coste propio de
+    # cada candidato (0, o el de "pequeño").
+    preferido = [
+        (
+            int(np.argmax([_lado_px(d) for d in ordenados[f]]))
+            if params.continuidad_desempate_por_tamano
+            else 0
+        )
+        for f in frames
+    ]
+    propio = [
+        [
+            (
+                params.continuidad_coste_pequeno
+                if params.continuidad_umbral_pequeno > 0
+                and tamano_relativo(d, homografia, params.diametro_balon_m)
+                < params.continuidad_umbral_pequeno
+                else 0.0
+            )
+            for d in ordenados[f]
+        ]
+        for f in frames
+    ]
+    # coste[k][j] = (primaria, desempate) del mejor camino que acaba en el
+    # candidato j del frame k; atras[k][j] = de dónde viene: (k2, i) o
+    # (k2, None) si viene de "sin balón" en k2. Igual para nulo[k].
+    coste: list[list[tuple]] = []
+    atras: list[list[tuple]] = []
+    nulo: list[tuple] = []
+    atras_nulo: list[tuple] = []
+    inicio = (0.0, 0)
+    for k, f in enumerate(frames):
+        t = tiempos[f]
+        previo_nulo = nulo[k - 1] if k else inicio
+        fila, fila_atras = [], []
+        for j, c in enumerate(centros[k]):
+            desempate = 0 if j == preferido[k] else 1
+            mejor = (previo_nulo[0] + salto + propio[k][j], previo_nulo[1] + desempate)
+            de_donde = (k - 1, None)
+            k2 = k - 1
+            while k2 >= 0 and t - tiempos[frames[k2]] <= params.continuidad_dt_max_s:
+                dt = t - tiempos[frames[k2]]
+                puerta = params.vel_max_px_s * dt + params.continuidad_holgura_px
+                for i, c2 in enumerate(centros[k2]):
+                    if float(np.linalg.norm(c - c2)) <= puerta:
+                        opcion = (
+                            coste[k2][i][0] + (k - k2 - 1) + propio[k][j],
+                            coste[k2][i][1] + desempate,
+                        )
+                        if opcion < mejor:
+                            mejor, de_donde = opcion, (k2, i)
+                k2 -= 1
+            fila.append(mejor)
+            fila_atras.append(de_donde)
+        coste.append(fila)
+        atras.append(fila_atras)
+        # "sin balón" en k: se llega desde cualquier estado de k-1.
+        opciones = [(previo_nulo, (k - 1, None))]
+        if k:
+            opciones += [
+                (coste[k - 1][i], (k - 1, i)) for i in range(len(coste[k - 1]))
+            ]
+        mejor_previo, de_donde = min(opciones, key=lambda x: x[0])
+        nulo.append((mejor_previo[0] + 1, mejor_previo[1] + 1))
+        atras_nulo.append(de_donde)
+
+    if not frames:
+        return {}
+    ultimo = len(frames) - 1
+    finales = [(nulo[ultimo], (ultimo, None))] + [
+        (coste[ultimo][i], (ultimo, i)) for i in range(len(coste[ultimo]))
+    ]
+    _c, (k, j) = min(finales, key=lambda x: x[0])
+    resultado: dict[int, tuple] = {}
+    while k >= 0:
+        if j is None:
+            k, j = atras_nulo[k]
+        else:
+            resultado[frames[k]] = ordenados[frames[k]][j]
+            k, j = atras[k][j]
     return resultado
 
 

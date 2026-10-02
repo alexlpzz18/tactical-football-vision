@@ -84,8 +84,36 @@ def cargar_detecciones_limpias(
     return dets, tiempos, meta
 
 
-def jugadores_por_frame_de_balon(ruta_csv_jugadores, tiempos: dict, frames) -> dict:
+def cargar_homografia_de_campo(ruta_config_campo):
+    """La homografía píxeles→metros del config de campo (`rutas.homografia`).
+
+    La necesita el selector del balón para saber cuánto mide un balón en
+    cada punto de la imagen (1c, docs/selector_balon.md). Se lee del MISMO
+    config de campo que ya usa la limpieza, para que no haya dos fuentes.
+    """
+    import numpy as np
+    import yaml
+
+    with open(ruta_config_campo) as fh:
+        cfg = yaml.safe_load(fh)
+    raiz = Path(ruta_config_campo).resolve().parent.parent
+    ruta = Path(cfg["rutas"]["homografia"])
+    return np.load(ruta if ruta.is_absolute() or ruta.exists() else raiz / ruta)
+
+
+def jugadores_por_frame_de_balon(
+    ruta_csv_jugadores, tiempos: dict, frames, excluir_etiquetas=("staff",)
+) -> dict:
     """{frame_de_balón: [(x_m, y_m, id)]} con los jugadores REALES de ese instante.
+
+    ⚠️ El STAFF no cuenta como jugador (1-oct-2026, docs/selector_balon.md).
+    Antes contaba: el entrenador y el niño del banquillo ganaban el desempate
+    de "cercanía a un jugador" para el objeto que tuvieran a los pies (el
+    zapato del entrenador llegó a ser el 43 % del balón elegido en un tramo)
+    y podían recibir un contacto. Sacarlos sube el GT de desempates de 14 a
+    16 de 38 y cuesta 14 frames: 7 del zapato y 7 de un balón real FUERA de
+    juego, detrás de la línea de fondo. `excluir_etiquetas=()` es el
+    comportamiento anterior.
 
     El balón y los jugadores van a frecuencias distintas (1 de cada 2
     frames contra 1 de cada 3), así que se casan por TIEMPO: el instante
@@ -99,7 +127,7 @@ def jugadores_por_frame_de_balon(ruta_csv_jugadores, tiempos: dict, frames) -> d
     import pandas as pd
 
     jug = pd.read_csv(ruta_csv_jugadores)
-    reales = jug[jug.es_real == 1]
+    reales = jug[(jug.es_real == 1) & ~jug.etiqueta.isin(list(excluir_etiquetas))]
     por_tiempo = {
         round(float(t), 2): [
             (float(r.x_m), float(r.y_m), int(r.id_jugador)) for r in g.itertuples()

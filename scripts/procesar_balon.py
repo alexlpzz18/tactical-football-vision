@@ -109,7 +109,11 @@ def main() -> None:
 
     params = ParametrosBalon()
     pos_jug = {f: [(j[0], j[1]) for j in jugadores_en(f)] for f in detecciones}
-    activo = seleccionar_balon_activo(detecciones, pos_jug, params)
+    from src.balon.carga import cargar_homografia_de_campo
+
+    activo = seleccionar_balon_activo(
+        detecciones, pos_jug, params, tiempos, cargar_homografia_de_campo(args.campo)
+    )
     logger.info(
         "Balón activo: %d frames de %d con detección (%d frames en total)",
         len(activo),

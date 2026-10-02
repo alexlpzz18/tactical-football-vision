@@ -45,6 +45,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.balon.carga import cargar_detecciones_limpias  # noqa: E402
+from src.balon.carga import cargar_homografia_de_campo  # noqa: E402
 from src.balon.carga import jugadores_por_frame_de_balon  # noqa: E402
 from src.balon.tracking_balon import ParametrosBalon  # noqa: E402
 from src.balon.tracking_balon import seleccionar_balon_activo  # noqa: E402
@@ -105,7 +106,13 @@ def construir_desempates(ruta_cache_balon, ruta_cache_jug, ruta_csv_jug, ruta_ca
     dets, tiempos, _meta = cargar_detecciones_limpias(ruta_cache_balon, modelo)
     jug = jugadores_por_frame_de_balon(ruta_csv_jug, tiempos, dets)
     pos_jug = {f: [(j[0], j[1]) for j in jug.get(f, [])] for f in dets}
-    activo = seleccionar_balon_activo(dets, pos_jug, ParametrosBalon())
+    activo = seleccionar_balon_activo(
+        dets,
+        pos_jug,
+        ParametrosBalon(),
+        tiempos,
+        cargar_homografia_de_campo(ruta_campo),
+    )
 
     with open(ruta_cache_jug, "rb") as fh:
         cajas_jug = {

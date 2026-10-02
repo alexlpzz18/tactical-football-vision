@@ -14,6 +14,12 @@ from src.balon.tracking_balon import (
     seleccionar_balon_activo,
 )
 
+# Estos tests son del filtro "quieto y lejos" y del desempate por cercanía,
+# que siguen decidiendo el ORDEN de los candidatos; la selección por
+# continuidad (por defecto desde el 1-oct-2026) tiene los suyos en
+# test_seleccion_por_continuidad.py.
+FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False)
+
 DT = 1 / 15.0
 TIEMPOS = {k: k * DT for k in range(0, 400)}
 
@@ -35,7 +41,7 @@ def test_descarta_el_balon_parado_lejos_del_juego():
             _det(5.0, 39.0),  # parado en la banda
         ]
         jugadores[k] = [(30.0 + 0.3 * k + 1.0, 20.5), (28.0, 19.0)]
-    activo = seleccionar_balon_activo(detecciones, jugadores, ParametrosBalon())
+    activo = seleccionar_balon_activo(detecciones, jugadores, FRAME_A_FRAME)
     assert len(activo) == 60
     for k in range(60):
         assert abs(activo[k][0] - (30.0 + 0.3 * k)) < 0.01
@@ -47,7 +53,7 @@ def test_un_balon_parado_pero_CERCA_no_se_descarta():
     jugada."""
     detecciones = {k: [_det(30.0, 20.0)] for k in range(60)}
     jugadores = {k: [(31.0, 20.0)] for k in range(60)}
-    activo = seleccionar_balon_activo(detecciones, jugadores, ParametrosBalon())
+    activo = seleccionar_balon_activo(detecciones, jugadores, FRAME_A_FRAME)
     assert len(activo) == 60
 
 

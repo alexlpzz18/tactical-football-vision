@@ -11,6 +11,8 @@ balón de verdad. Un filtro que limpia demasiado es tan malo como uno que
 no limpia.
 """
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -19,6 +21,17 @@ from src.balon.marcas_estaticas import (
     filtrar_marcas_estaticas,
 )
 from src.balon.tracking_balon import ParametrosBalon, seleccionar_balon_activo
+
+# Estos tests son del filtro "quieto y lejos" y del desempate por cercanía,
+# que siguen decidiendo el ORDEN de los candidatos; la selección por
+# continuidad (por defecto desde el 1-oct-2026) tiene los suyos en
+# test_seleccion_por_continuidad.py.
+FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False)
+
+
+def params_frame_a_frame(params):
+    return replace(params, continuidad_activa=False)
+
 
 FPS, SAMPLE = 29.97, 2
 
@@ -134,7 +147,7 @@ def test_la_guarda_de_distancia_puede_dispararse():
         dets[f] = [_det(100.0, 100.0, mx=2.0, my=2.0)]
         jugadores[f] = [(40.0, 20.0), (42.0, 22.0), (38.0, 18.0)]
 
-    activo = seleccionar_balon_activo(dets, jugadores, params)
+    activo = seleccionar_balon_activo(dets, jugadores, params_frame_a_frame(params))
     assert activo == {}, "la guarda no ha descartado un balón quieto y lejísimos"
 
 
@@ -146,7 +159,7 @@ def test_la_guarda_no_descarta_un_balon_quieto_JUNTO_a_un_jugador():
         dets[f] = [_det(100.0, 100.0, mx=30.0, my=20.0)]
         jugadores[f] = [(30.5, 20.5), (35.0, 25.0)]
 
-    activo = seleccionar_balon_activo(dets, jugadores, ParametrosBalon())
+    activo = seleccionar_balon_activo(dets, jugadores, FRAME_A_FRAME)
     assert len(activo) == len(dets), "ha matado un balón parado en un saque"
 
 
@@ -179,7 +192,7 @@ def test_el_desempate_elige_por_CERCANIA_no_por_confianza():
     dets = {f: [lejos[f], cerca[f]] for f in lejos}
     jugadores = {f: [(30.2, 20.1), (34.0, 24.0)] for f in dets}
 
-    activo = seleccionar_balon_activo(dets, jugadores, ParametrosBalon())
+    activo = seleccionar_balon_activo(dets, jugadores, FRAME_A_FRAME)
 
     assert activo, "no ha elegido ningún balón"
     for f, det in activo.items():
@@ -195,7 +208,7 @@ def test_sin_posiciones_de_jugadores_el_desempate_cae_a_la_confianza():
     b = _candidato(30.0, 20.0, 0, conf=0.50)
     dets = {f: [a[f], b[f]] for f in a}
 
-    activo = seleccionar_balon_activo(dets, {}, ParametrosBalon())
+    activo = seleccionar_balon_activo(dets, {}, FRAME_A_FRAME)
 
     assert activo
     for det in activo.values():

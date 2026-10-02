@@ -29,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.balon.carga import cargar_detecciones_limpias  # noqa: E402
+from src.balon.carga import cargar_homografia_de_campo  # noqa: E402
 from src.balon.carga import jugadores_por_frame_de_balon  # noqa: E402
 from src.balon.marcas_estaticas import encontrar_marcas_estaticas  # noqa: E402
 from src.balon.tracking_balon import ParametrosBalon  # noqa: E402
@@ -86,7 +87,13 @@ def main() -> None:
     )
     pos_jug = {f: [(j[0], j[1]) for j in jug_de_frame.get(f, [])] for f in detecciones}
     params = ParametrosBalon()
-    activo = seleccionar_balon_activo(detecciones, pos_jug, params)
+    activo = seleccionar_balon_activo(
+        detecciones,
+        pos_jug,
+        params,
+        tiempos_limpias,
+        cargar_homografia_de_campo(args.campo),
+    )
     print(f"Balón activo seleccionado: {len(activo)} frames")
 
     # Candidatos CRUDOS (antes de quitar marcas) que caen dentro de una
