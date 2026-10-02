@@ -172,3 +172,23 @@ Lo que queda es un fallo del DETECTOR con el balón pegado al pie, medio tapado 
 desenfocado, a resolución completa. Se ataca con datos (ejemplos de balón junto a
 jugadores) o reentrenando, en Colab. El "balón en vuelo" como tal se cierra aquí: lo que
 tenía arreglo barato (los vuelos que tiraba la plausibilidad) está arreglado.
+
+### ¿Es el mismo mecanismo que los jugadores fundidos por proximidad? NO (2-oct-2026)
+
+En los 9 casos visibles (los 8 claros + V18 borroso):
+
+- **Por construcción no puede serlo con la caja del jugador**: el detector del balón es
+  un modelo APARTE (`scripts/detectar_balon.py`); las cajas de jugadores salen de otro
+  modelo y otro caché y nunca entran en el postproceso del balón.
+- **Tampoco hay huella de una fusión balón-balón**: GreedyNMM deja la caja ganadora con
+  la geometría de la UNIÓN, así que un balón tragado por otra caja del propio modelo
+  dejaría una caja encima. En los 9 frames **no hay ninguna caja del modelo del balón
+  cerca del balón**, de ningún tamaño (solo marcas de 5 px a 700-1.300 px).
+- **Sí se parece en lo descriptivo**: en 6 de 9 el balón está a < 10 px de la caja de un
+  jugador (posición del balón con ±40 px, por la celda de 80 px).
+
+Conclusión: el modelo no da una detección con confianza ≥ 0,35 en el balón pegado al
+pie. No se distingue aún entre "la ve débil" (por debajo del umbral) y "no la ve": hace
+falta correr el modelo, que aquí no funciona (numpy 2 contra torch compilado para
+numpy 1). Paso barato propuesto antes de etiquetar: una celda de Colab con el modelo a
+conf 0,05 sobre estos 9 frames.
