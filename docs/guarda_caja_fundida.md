@@ -127,3 +127,45 @@ estos cortes malos (como une los del azar) y conservar los buenos.
    candidata, pero quitando la observación fundida antes del cosido. Se mediría con el
    MISMO criterio y el mismo control. La comprobación previa, barata y sin GPU: de los 4
    cortes malos de la hoja, ¿cuántos uniría el cosido sin esa observación?
+
+---
+
+# Segundo intento (3-oct-2026): quitar la observación fundida — NEGATIVO, guarda CERRADA
+
+Condición de Alex: primero la comprobación gratis. Si el cosido no une los cortes malos
+al quitar la observación fundida, la hipótesis es falsa y no se construye nada.
+
+**Qué se quita** (fijado antes de mirar): las observaciones de i-2 a i+1 en torno a cada
+corte cuya caja cumple la misma señal de fundida de la regla (alto ≥ 1,25× o ancho ≥ 1,5×
+la mediana de la identidad en ±2 s). Salen de la identidad y quedan sin asignar. En la
+práctica, 1-2 por corte.
+
+`python scripts/medir_guarda_caja_fundida.py --comprobacion-previa` (benjamín, candidata,
+los 16 cortes de la hoja):
+
+| lectura a ojo | n | los une el cosido |
+|---|---|---|
+| misma persona (corte malo) | 4 | **1** (#12) — #1, #5, #6 siguen cortados |
+| persona distinta (corte bueno) | 6 | 0 (los 6 siguen cortados, bien) |
+| dudoso | 6 | 1 (#10); #3, #9, #11, #13, #16 siguen cortados |
+
+En los 217 cortes, el cosido pasa a unir 33 (antes, 0). El mecanismo actúa, pero **solo
+une 1 de los 4 cortes malos.** La hipótesis ("el veto de velocidad del cosido no los
+une por la observación fundida") explica como mucho uno de cuatro. **Falsa.** La variante
+no se construye y la guarda se cierra: son los dos intentos.
+
+Sobre los 6 dudosos: no se sabe qué son, así que no se puede decir cuántos "resolvería".
+La variante une uno (#10) y deja cinco cortados. Si fueran personas distintas, los cinco
+estarían bien; si fueran la misma, mal. Sin una lectura cierta de esos 6, el recuento no
+dice nada.
+
+## Lo que queda de esta línea
+
+- **El mecanismo está confirmado y medido**: caja fundida + salto persistente señala un
+  cambio de persona con buena precisión cuando hay GT (3/4 en el benjamín), y resuelve la
+  525. Lo que no se consigue es partir SIN romper los cruces en que alguien pasa por detrás
+  de otro y sigue: el corte no se deshace, ni con la fundida quitada.
+- **Pista sin perseguir**: en esos cortes malos el jugador sigue corriendo en la misma
+  dirección. Una tercera señal sería la continuidad de la velocidad a través del hueco.
+  Eso sería un tercer intento, y la regla del proyecto dice que no.
+- La 525 sigue sin arreglar en producción: sus 165 s salen como `B`.

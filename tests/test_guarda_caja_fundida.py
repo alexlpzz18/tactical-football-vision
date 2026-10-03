@@ -151,3 +151,12 @@ def test_veredicto():
         mg.veredicto(base, buena, {"a": [_m(quim=2)] * 10, "b": azar["b"]})["pasa"]
         is False
     )
+
+
+def test_segundo_intento_quita_solo_la_observacion_fundida():
+    ident, cajas = cambio_de_persona()
+    obs = gcf.observaciones(ident)
+    assert gcf.observaciones_fundidas(obs, cajas, 20, params()) == [20]
+    trozos = gcf.partir(ident, [20], quitar=[20])
+    assert [sum(len(t) for t in tz) for tz in trozos] == [20, 19]
+    assert obs[20][2] not in {p for tz in trozos for t in tz for p in t.det_idxs}

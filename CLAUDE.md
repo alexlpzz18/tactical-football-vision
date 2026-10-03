@@ -413,6 +413,7 @@ Todo lo demás acaba desembocando aquí:
 | **Regla de portero por ÁREA** | Corona a quien más observaciones acumula dentro del área: cuenta para decidir QUIÉN. Sustituida por `ultimo_hombre`. |
 | **Suavizar el parpadeo** | Tres formas, tres negativos: el suavizado ya está en su óptimo (1,5 s). Y **el parpadeo es la señal de que la asociación acaba de fallar: taparlo esconde el fallo.** |
 | **Excluir ocluidos del voto por ventana** (21-sep, 2 variantes) | Empeora: cambios de etiqueta 741 → 789/758 y error contra el GT 1,2 % → 1,8 %. Los ocluidos aciertan el 91,4 % por recorte contra 93,6 % de los limpios (±6): votan casi igual. El baile es la identidad cambiando de persona, no color sucio (`docs/baile_y_oclusion.md`). |
+| **Guarda de CAJA FUNDIDA** (salto persistente + caja fundida, 2 intentos, 3-oct) | Resuelve la 525 y acierta 3/4 cortes con GT, pero no pasa el criterio en las dos patas (benja +1 obs de equipo, +2,3 cm de centroide; villa fragmentación +0,27). Los cortes malos son jugadores que pasan por detrás de otro y siguen corriendo; el cosido no los deshace ni quitando la observación fundida (une 1 de 4). `docs/guarda_caja_fundida.md` |
 | **Feature de color en `float32`** | Ahorraría disco pero movería la entrada del KMeans, que es la pieza frágil. |
 
 ---

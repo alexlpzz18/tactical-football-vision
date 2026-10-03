@@ -146,33 +146,58 @@ def detectar_cortes(obs, cajas: dict, p: ParametrosGuarda) -> list[dict]:
 
 def _es_fundida(ts, alto, anchura, i, p: ParametrosGuarda) -> bool:
     """¿La caja del salto (i) o la anterior (i-1) es anormalmente alta o ancha?"""
-    for j in (i - 1, i):
-        ref = (np.abs(ts - ts[j]) <= p.ventana_ref_s) & (np.arange(len(ts)) != j)
-        if not ref.any():
-            continue
-        if alto[j] >= p.factor_alto * np.median(alto[ref]):
-            return True
-        if anchura[j] >= p.factor_ancho * np.median(anchura[ref]):
-            return True
-    return False
+    return any(_caja_fundida(ts, alto, anchura, j, p) for j in (i - 1, i))
 
 
-def partir(identidad, indices_corte: list[int]):
+def _caja_fundida(ts, alto, anchura, j, p: ParametrosGuarda) -> bool:
+    """¿La caja de la observación j mide ≥ factor_alto de alto o ≥ factor_ancho de ancho
+    respecto a la mediana de la identidad en ±ventana_ref_s (sin contarse a sí misma)?
+    """
+    if not 0 <= j < len(ts):
+        return False
+    ref = (np.abs(ts - ts[j]) <= p.ventana_ref_s) & (np.arange(len(ts)) != j)
+    if not ref.any():
+        return False
+    return bool(
+        alto[j] >= p.factor_alto * np.median(alto[ref])
+        or anchura[j] >= p.factor_ancho * np.median(anchura[ref])
+    )
+
+
+def observaciones_fundidas(obs, cajas: dict, i: int, p: ParametrosGuarda) -> list[int]:
+    """SEGUNDO INTENTO (docs/guarda_caja_fundida.md): las observaciones FUNDIDAS en torno
+    al corte i, de i-2 a i+1, con la misma señal de caja fundida que usa la regla.
+
+    Se quitan de la identidad antes del cosido: la caja fundida no es el pie de nadie,
+    y si se queda, el trozo de después empieza con un salto imposible que el veto de
+    velocidad del cosido no deja unir — aunque sea la misma persona.
+    """
+    caja = np.array([cajas[o[2]] for o in obs], dtype=float)
+    ts = np.array([o[0] for o in obs])
+    alto, anchura = caja[:, 3] - caja[:, 1], caja[:, 2] - caja[:, 0]
+    return [j for j in range(i - 2, i + 2) if _caja_fundida(ts, alto, anchura, j, p)]
+
+
+def partir(identidad, indices_corte: list[int], quitar: list[int] | None = None):
     """Parte una identidad (lista de Tracklet) ANTES de cada índice de observación dado.
 
     Devuelve una lista de identidades (listas de Tracklet), en orden temporal. Cada
     trozo conserva los tracklets originales recortados, como hace la puerta de re-entrada.
+    `quitar`: índices de observación que se sacan de la identidad (quedan sin asignar).
     """
     from src.tracking.puerta_reentrada import _anadir, _tracklet_de
 
     obs = observaciones(identidad)
-    if not indices_corte:
+    if not indices_corte and not quitar:
         return [identidad]
     frames_corte = sorted(obs[i][2][0] for i in indices_corte)
+    fuera = {obs[j][2] for j in (quitar or [])}
     trozos = [[] for _ in range(len(frames_corte) + 1)]
     for tr in identidad:
         for k in range(len(tr.pos)):
             f = tr.det_idxs[k][0]
+            if tuple(tr.det_idxs[k]) in fuera:
+                continue
             destino = sum(1 for c in frames_corte if f >= c)
             nuevo = trozos[destino]
             if not nuevo or nuevo[-1].det_idxs[-1][0] > f:

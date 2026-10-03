@@ -217,15 +217,28 @@ def sin_cambios(identidades, cajas):
     return identidades, []
 
 
-def con_regla(p: gcf.ParametrosGuarda):
+def con_regla(p: gcf.ParametrosGuarda, quitar_fundidas: bool = False):
+    """La regla. Con `quitar_fundidas` (segundo intento), además se sacan de la identidad
+    las observaciones fundidas en torno a cada corte, antes del cosido."""
+
     def transformar(identidades, cajas):
         nuevas, eventos = [], []
         for k, ident in enumerate(identidades):
             obs = gcf.observaciones(ident)
             cortes = gcf.detectar_cortes(obs, cajas, p)
+            por_corte = {
+                c["i"]: (
+                    gcf.observaciones_fundidas(obs, cajas, c["i"], p)
+                    if quitar_fundidas
+                    else []
+                )
+                for c in cortes
+            }
+            quitar = {j for js in por_corte.values() for j in js}
             for c in cortes:
-                eventos.append(_evento(k, obs, c["i"], c))
-            nuevas.extend(gcf.partir(ident, [c["i"] for c in cortes]))
+                info = {**c, "quitadas": len(por_corte[c["i"]])}
+                eventos.append(_evento(k, obs, c["i"], info, quitar))
+            nuevas.extend(gcf.partir(ident, [c["i"] for c in cortes], sorted(quitar)))
         return nuevas, eventos
 
     return transformar
@@ -260,13 +273,17 @@ def al_azar(
     return transformar
 
 
-def _evento(k, obs, i, info) -> dict:
+def _evento(k, obs, i, info, quitar=frozenset()) -> dict:
+    # las claves de cada lado son las observaciones que SIGUEN en la identidad: si la
+    # fundida se quitó, la de antes/después más cercana que no se quitó
+    antes = next((j for j in range(i - 1, -1, -1) if j not in quitar), i - 1)
+    despues = next((j for j in range(i, len(obs)) if j not in quitar), i)
     return {
         "ident_original": k,
         "t": float(obs[i][0]),
         "frame": int(obs[i][2][0]),
-        "clave_antes": obs[i - 1][2],
-        "clave_despues": obs[i][2],
+        "clave_antes": obs[antes][2],
+        "clave_despues": obs[despues][2],
         "x": float(obs[i - 1][1][0]),
         "y": float(obs[i - 1][1][1]),
         **{kk: vv for kk, vv in info.items() if kk not in ("i",)},
@@ -469,16 +486,66 @@ def caso_525(df: pd.DataFrame) -> dict:
     }
 
 
+# ─────────────────────── segundo intento: la comprobación previa ───────────────────────
+# Los 16 cortes de la hoja (candidata, benjamín), por FRAME del corte, con la lectura a ojo
+# de docs/guarda_caja_fundida.md: "distinta" = cambio de persona claro, "misma" = corte malo.
+HOJA_16 = {
+    174: "misma", 489: "distinta", 2646: "dudoso", 3078: "distinta",
+    3267: "misma", 4302: "misma", 10782: "distinta", 12648: "distinta",
+    13824: "dudoso", 15234: "dudoso", 18648: "dudoso", 20709: "misma",
+    23694: "dudoso", 23757: "distinta", 25113: "distinta", 34725: "dudoso",
+}  # fmt: skip
+
+
+def comprobacion_previa(sal: Path) -> pd.DataFrame:
+    """¿Une el cosido los cortes malos de la hoja si se quita la observación fundida?"""
+    cfg = yaml.safe_load(open(R / PATAS["benja"]["config"]))
+    cr = correr(
+        cfg, sal / "benja_previa.csv", con_regla(_parametros(CANDIDATA, cfg), True)
+    )
+    idf = id_final_de(cr["finales"])
+    filas = []
+    for n, (frame, lectura) in enumerate(HOJA_16.items(), start=1):
+        ev = [e for e in cr["eventos"] if e["frame"] == frame]
+        if not ev:
+            filas.append({"n": n, "frame": frame, "lectura": lectura, "recosido": None})
+            continue
+        e = ev[0]
+        a, d = idf.get(tuple(e["clave_antes"])), idf.get(tuple(e["clave_despues"]))
+        filas.append(
+            {
+                "n": n,
+                "frame": frame,
+                "lectura": lectura,
+                "quitadas": e["quitadas"],
+                "recosido": a is not None and a == d,
+            }
+        )
+    (sal / "benja_previa.csv").unlink(missing_ok=True)
+    t = pd.DataFrame(filas)
+    print(t.to_string(index=False))
+    unidos = sum(
+        idf.get(tuple(e["clave_antes"])) == idf.get(tuple(e["clave_despues"]))
+        for e in cr["eventos"]
+    )
+    print(f"\ncortes totales {len(cr['eventos'])}, recosidos {unidos}")
+    return t
+
+
 # ──────────────────────────────────── main ────────────────────────────────────
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--patas", default="benja,villa")
     ap.add_argument("--semillas", type=int, default=SEMILLAS)
     ap.add_argument("--salida", default="outputs/guarda_caja_fundida")
+    ap.add_argument("--comprobacion-previa", action="store_true")
     args = ap.parse_args()
     logging.basicConfig(level=logging.ERROR)
     sal = R / args.salida
     sal.mkdir(parents=True, exist_ok=True)
+    if args.comprobacion_previa:
+        comprobacion_previa(sal)
+        return
     res = {}
     for pata in args.patas.split(","):
         d = PATAS[pata]

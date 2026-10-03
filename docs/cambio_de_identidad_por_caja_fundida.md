@@ -78,4 +78,5 @@ de Alex, y tocaría la asociación, que se mide contra las dos patas.
 **Medida el 3-oct-2026** (`docs/guarda_caja_fundida.md`): la guarda resuelve la 525 (sus
 165 s pasan a `portero_B`), pero no pasa el criterio en las dos patas. Los cortes malos
 son jugadores que pasan por detrás de otro y siguen corriendo, y el cosido no los
-deshace. Segundo intento posible, pendiente de Alex.
+deshace. Segundo intento (quitar la observación fundida antes del
+cosido) negativo: une 1 de los 4 cortes malos. **Guarda CERRADA.**
