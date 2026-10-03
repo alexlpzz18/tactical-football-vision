@@ -74,3 +74,8 @@ salto imposible en metros **Y** caja fundida (más alta de lo normal para esa
 identidad). Dos señales débiles que juntas son fuertes, como el resto de reglas
 que funcionan en este proyecto. **No está construida**: es la siguiente decisión
 de Alex, y tocaría la asociación, que se mide contra las dos patas.
+
+**Medida el 3-oct-2026** (`docs/guarda_caja_fundida.md`): la guarda resuelve la 525 (sus
+165 s pasan a `portero_B`), pero no pasa el criterio en las dos patas. Los cortes malos
+son jugadores que pasan por detrás de otro y siguen corriendo, y el cosido no los
+deshace. Segundo intento posible, pendiente de Alex.

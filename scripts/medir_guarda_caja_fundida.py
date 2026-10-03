@@ -441,39 +441,31 @@ def describir_cortes(corrida: dict, gt_m: dict, casado: list, ventana) -> dict:
     }
 
 
-def caso_525(base: dict, corrida: dict) -> dict | None:
-    """El portero de B (x≈61 m) que en producción se pasa a un jugador en t≈792,7 s."""
+def caso_525(df: pd.DataFrame) -> dict:
+    """El portero de B (x>55 m) que en producción se pasa a un jugador en t≈792,7 s.
 
-    def ident_portero(finales):
-        for n, ident in enumerate(finales, start=1):
-            obs = gcf.observaciones(ident)
-            ts = np.array([o[0] for o in obs])
-            if ts[0] > 650 or ts[-1] < 792.5:
-                continue
-            k = int(np.argmin(np.abs(ts - 792.5)))
-            if abs(ts[k] - 792.5) < 0.5 and obs[k][1][0] >= 55:
-                return n, obs, k
-        return None
+    Sobre el CSV: la identidad con más filas en la portería en 780-792,5 s. ¿Se aleja
+    > 3 m de la portería en los 3 s siguientes (se pasó al jugador)? ¿Cómo salen sus
+    filas de 628-792 s? (En producción: se aleja ~12 m y salen como `B`.)
 
-    hallado = ident_portero(base["finales"])
-    if hallado is None:
-        return None
-    n_base, obs_b, k = hallado
-    clave = obs_b[k][2]  # una detección del portero justo antes del cambio
-    n = id_final_de(corrida["finales"]).get(clave)
-    if n is None:
-        return {"id_base": n_base, "id_en_rama": None}
-    obs = gcf.observaciones(corrida["finales"][n - 1])
-    x0 = obs_b[k][1]
-    despues = [o for o in obs if o[0] > 793.0]
-    sigue_al_jugador = any(np.linalg.norm(o[1] - x0) > 3.0 for o in despues[:30])
-    g = corrida["df"]
-    g = g[(g.id_jugador == n) & (g.tiempo_s >= 628) & (g.tiempo_s <= 792)]
+    ⚠️ La primera versión cogía la primera identidad "en x≥55 a los 792,5 s" y daba la
+    448, un jugador que llega corriendo al área. Se corrigió tras la primera corrida.
+    """
+    r = df[df.es_real == 1]
+    w = r[(r.tiempo_s >= 780) & (r.tiempo_s <= 792.5) & (r.x_m > 55)]
+    idp = int(w.id_jugador.value_counts().index[0])
+    g = r[r.id_jugador == idp].sort_values("tiempo_s")
+    ref = g[g.tiempo_s <= 792.6].iloc[-1][["x_m", "y_m"]].to_numpy(float)
+    post = g[(g.tiempo_s > 793) & (g.tiempo_s <= 796)]
+    se_aleja = (
+        float(np.hypot(post.x_m - ref[0], post.y_m - ref[1]).max()) if len(post) else 0
+    )
+    filas = df[(df.id_jugador == idp) & (df.tiempo_s >= 628) & (df.tiempo_s <= 792.6)]
     return {
-        "id_base": n_base,
-        "id_en_rama": n,
-        "cortada": not sigue_al_jugador,
-        "etiqueta_627_792": g.etiqueta.value_counts().to_dict(),
+        "id": idp,
+        "se_aleja_m": round(se_aleja, 1),
+        "cortada": se_aleja <= 3.0,
+        "etiqueta_628_792": filas.etiqueta.value_counts().to_dict(),
     }
 
 
@@ -518,7 +510,7 @@ def main() -> None:
         mal_banco = min(mal_banco, sum(1 for g, s in pares if s in EQUIPOS and s == g))
         assert mal_banco == mb["equipo_mal"], (mal_banco, mb["equipo_mal"])
         if pata == "benja":
-            mb["caso_525"] = caso_525(base, base)  # en producción NO debe salir cortada
+            mb["caso_525"] = caso_525(base["df"])  # en producción NO debe salir cortada
         print(
             f"✓ base = producción; casado = el del banco · base: {_fmt(mb)}", flush=True
         )
@@ -530,7 +522,7 @@ def main() -> None:
             m = metricas_gt(cr["df"], gt_m)
             m.update(describir_cortes(cr, gt_m, m["_casado"], ventana))
             if pata == "benja":
-                m["caso_525"] = caso_525(base, cr)
+                m["caso_525"] = caso_525(cr["df"])
             m["_tabla"].to_csv(sal / f"{pata}_{rama}_cortes.csv", index=False)
             n_dentro = m["cortes_ventana"]
             azares = []
