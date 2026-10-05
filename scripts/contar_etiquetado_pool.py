@@ -44,6 +44,29 @@ def leer_export_yolo(ruta_zip) -> dict[str, list[str]]:
     return salida
 
 
+# "Sin tocar" = la caja exportada está a menos de esto de la preanotación, en píxeles del
+# frame (1920×1080). Se compara POR POSICIÓN: comparando el TEXTO daba 0 de 117, porque CVAT
+# exporta los decimales con otro formato (0.236250 contra 0.235990 para la misma caja a 0,5 px).
+TOL_SIN_TOCAR_PX = 1.0
+ANCHO_PX, ALTO_PX = 1920, 1080
+
+
+def cajas_iguales(
+    a: list[str], b: list[str] | None, tol_px: float = TOL_SIN_TOCAR_PX
+) -> bool:
+    """¿Las mismas cajas YOLO (cx cy w h normalizados) a < tol_px, en el mismo orden?"""
+    if not a or not b or len(a) != len(b):
+        return False
+    escala = [ANCHO_PX, ALTO_PX, ANCHO_PX, ALTO_PX]
+    for la, lb in zip(a, b):
+        va, vb = la.split()[1:5], lb.split()[1:5]
+        if any(
+            abs(float(x) - float(y)) * e >= tol_px for x, y, e in zip(va, vb, escala)
+        ):
+            return False
+    return True
+
+
 def balones_para_mejorar(positivos: int) -> int:
     """El +0,25 de recall del plan, en balones: redondeo hacia ARRIBA (más exigente)."""
     return math.ceil(MEJORA_RELATIVA * positivos)
@@ -65,7 +88,7 @@ def contar(
                 "en_export": cajas is not None,
                 "positivo": bool(cajas),
                 "cajas": len(cajas or []),
-                "sin_tocar": bool(cajas) and cajas == preanotadas.get(nombre),
+                "sin_tocar": cajas_iguales(cajas, preanotadas.get(nombre)),
             }
         )
     return pd.DataFrame(filas)
@@ -107,8 +130,8 @@ def main() -> None:
         "(¿un segundo balón real?)"
     )
     print(
-        f"cajas idénticas a la preanotación: {int(t.sin_tocar.sum())} de "
-        f"{int(t.positivo.sum())} positivos (¿revisadas?)"
+        f"cajas sin tocar (< {TOL_SIN_TOCAR_PX:.0f} px de la preanotación): "
+        f"{int(t.sin_tocar.sum())} de {int(t.positivo.sum())} positivos (¿revisadas?)"
     )
 
     negativos = int(len(t) - t.positivo.sum())

@@ -57,6 +57,16 @@ def test_export_cvat_y_recuento(tmp_path):
     assert t.sin_tocar.iloc[0]  # caja idéntica a la preanotación
 
 
+def test_sin_tocar_compara_posicion_no_texto():
+    pre = ["0 0.235990 0.563889 0.005244 0.009323"]
+    assert ce.cajas_iguales(
+        ["0 0.23599 0.563889 0.005244 0.009323"], pre
+    )  # otro formato
+    assert ce.cajas_iguales(["0 0.236100 0.564000 0.005300 0.009400"], pre)  # < 1 px
+    assert not ce.cajas_iguales(["0 0.240680 0.563889 0.005244 0.009323"], pre)  # ~9 px
+    assert not ce.cajas_iguales([], pre) and not ce.cajas_iguales(pre, None)
+
+
 def test_criterio_1_en_balones_redondea_hacia_arriba():
     assert ce.balones_para_mejorar(12) == 3
     assert ce.balones_para_mejorar(13) == 4
