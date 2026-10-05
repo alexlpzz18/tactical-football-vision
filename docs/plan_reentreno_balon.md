@@ -138,3 +138,26 @@ falla otra vez, se cierra y se documenta el negativo (regla del proyecto: dos in
 - **Cruce test/original, PENDIENTE.** El original cubre los 20 minutos (40 imágenes por
   minuto), incluidos los minutos de test y validación del pool. Falta saber si hay frames
   repetidos o a ≤ 2 frames (`scripts/cruzar_original_pool.py`).
+
+## Augmentation medida (5-oct-2026) — YA NO son los ajustes de v1
+
+Sin mosaico, 3 semillas. Se conserva el balón en estos porcentajes de las imágenes:
+
+| | original (502) | pool train (102) |
+|---|---|---|
+| v1 (scale 0,5 · translate 0,1) | 93,1 % | 91,6 % |
+| **elegido (scale 0,2 · translate 0,05)** | **97,2 %** | **96,0 %** |
+
+Casi toda la pérdida es "fuera de la imagen" (negativo correcto); "pequeño" ≤ 0,3 %. Alex eligió
+el par más estricto, el del pool, porque es lo que el reentreno tiene que aprender. **Es otra
+variable cambiada respecto a v1**, aunque el criterio de adopción juzga resultados.
+
+Balones conservados < 7,1 px en el original: **33,4 % sin augmentation** (control: 525 de 1.572),
+40,0 % con la de v1. Lo natural es la mayor parte; la de v1 añadía ~7 puntos. Con la elegida no
+está medido (el barrido solo guarda "conserva"), pero escala menos que la de v1. Se anota y se sigue.
+
+## Cruce test/original (5-oct-2026)
+
+Ningún frame exacto. A ≤ 2 frames de uno del original: **test 3 de 36** (1586, 18412, 32240) y
+**validación 3 de 15** (24186, 34314, 34828). Mediana de distancia al más cercano: 15 frames en
+test y 7 en validación. Pendiente de Alex: decidir si esos 3 de test se sacan o se informan aparte.

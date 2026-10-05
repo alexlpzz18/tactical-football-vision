@@ -96,11 +96,11 @@ reentreno:
   # imágenes, 3 semillas; docs/colab_reentreno_balon.md). Si la de v1 no llega al 95 %, aquí
   # irá el ajuste más suave que sí llegue, y YA NO SERÁN LOS AJUSTES DE v1.
   # La celda de entrenamiento LEE esto y no entrena mientras sea false.
-  augmentation_medida: false
+  augmentation_medida: true # medida el 5-oct-2026 (docs/plan_reentreno_balon.md)
   augmentation:
     mosaic: 1.0
-    scale: 0.5 # PENDIENTE
-    translate: 0.1 # PENDIENTE
+    scale: 0.2 # YA NO es la de v1 (0,5): el par más estricto, el del pool
+    translate: 0.05 # YA NO es la de v1 (0,1)
     fliplr: 0.5
     flipud: 0.0
     hsv_h: 0.15
