@@ -69,7 +69,15 @@ evaluacion:
 # para que no olvide el balón normal.
 reentreno:
   partir_de: best_balon_v1.pt # no desde cero: se ajusta lo que ya sabe
-  lr0: 0.001 # diez veces menor que el de por defecto: es un ajuste fino
+  # ⚠️ CORREGIDO el 5-oct-2026. v1 se entrenó con `optimizer` automático, y en ese modo
+  # ultralytics IGNORA lr0: con 640 imágenes de train, 100 épocas y 1 clase (menos de
+  # 10.000 iteraciones) elige AdamW con lr = 0,002 × 5 / (4 + 1) = 0,002. Para que el
+  # "diez veces menor" del plan tenga efecto hay que FIJAR el optimizador. Se fija el mismo
+  # de v1, con lr diez veces menor que el que usó de verdad. Si se conserva el
+  # args.yaml de la corrida de v1, compruébalo ahí (optimizer y lr0 efectivos).
+  optimizer: AdamW
+  lr0: 0.0002
+  batch: -1 # como v1 (auto); el `batch: 8` de arriba no se usó nunca
   epochs: 40
   patience: 15
   seed: 20261003
@@ -80,3 +88,24 @@ reentreno:
   # 17) no entra en ningún paso del entrenamiento.
   validacion_pool_minutos: [13, 19]
   test_pool_minutos: [0, 9, 10, 17]
+  # Augmentation del reentreno: lo que v1 usó DE VERDAD (notebooks/entrenamiento_balon_v1.ipynb),
+  # NO el bloque `augmentation` de arriba. Diferían los tres hsv: v1 usó 0,15 / 0,7 / 0,5, y
+  # arriba decía 0,015 / 0,5 / 0,4. scale y translate son los valores por defecto de
+  # ultralytics, que v1 no tocó.
+  # ⚠️ scale y translate quedan PENDIENTES de la medida fina de Colab (sin mosaico, 502
+  # imágenes, 3 semillas; docs/colab_reentreno_balon.md). Si la de v1 no llega al 95 %, aquí
+  # irá el ajuste más suave que sí llegue, y YA NO SERÁN LOS AJUSTES DE v1.
+  # La celda de entrenamiento LEE esto y no entrena mientras sea false.
+  augmentation_medida: false
+  augmentation:
+    mosaic: 1.0
+    scale: 0.5 # PENDIENTE
+    translate: 0.1 # PENDIENTE
+    fliplr: 0.5
+    flipud: 0.0
+    hsv_h: 0.15
+    hsv_s: 0.7
+    hsv_v: 0.5
+    mixup: 0.0
+    copy_paste: 0.0
+    erasing: 0.0

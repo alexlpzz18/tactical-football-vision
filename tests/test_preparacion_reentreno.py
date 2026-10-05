@@ -13,6 +13,7 @@ import zipfile
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -78,3 +79,33 @@ def test_validacion_por_minutos_enteros_entre_15_y_20():
     val = pp.minutos_de_validacion(por_minuto, random.Random(4))
     n = sum(por_minuto[m] for m in val)
     assert 15 <= n <= 20
+
+
+def test_cruce_original_pool_por_distancia_en_frames():
+    import cruzar_original_pool as co
+
+    m = pd.DataFrame({"frame": [100, 200, 300, 400], "minuto": [0, 0, 0, 13],
+                      "split": ["test", "test", "train", "val"]})  # fmt: skip
+    t = co.cruzar([100, 202, 305, 500], m, radio=2)
+    assert list(t.frame) == [100, 200, 400]  # el train no se cruza
+    assert list(t.repetido) == [True, True, False]
+    assert list(t.dist_frames) == [0, 2, 95]  # 400 está a 95 de 305
+
+
+def test_augmentacion_clasifica_el_destino_de_cada_caja():
+    assert cr.clasificar_caja(10, 10, 9, 9, True) == "conservado"
+    assert cr.clasificar_caja(10, 10, 0, 9, False) == "fuera"  # negativo correcto
+    assert cr.clasificar_caja(10, 10, 3, 3, False) == "recortado"  # 9 % del área
+    assert cr.clasificar_caja(2, 2, 1.5, 1.5, False) == "pequeno"  # visible pero ≤ 2 px
+    assert cr.lado_px([(0.5, 0.5, 0.01, 0.02)], alto=720, ancho=1280) == pytest.approx(
+        [13.6]
+    )
+
+
+def test_augmentacion_elige_el_ajuste_mas_suave_que_llega():
+    b = [{"scale": 0.5, "translate": 0.1, "conserva": 0.92},
+         {"scale": 0.3, "translate": 0.1, "conserva": 0.96},
+         {"scale": 0.3, "translate": 0.05, "conserva": 0.97},
+         {"scale": 0.2, "translate": 0.1, "conserva": 0.99}]  # fmt: skip
+    assert cr.elegir_mas_suave(b) == b[1]
+    assert cr.elegir_mas_suave(b[:1]) is None

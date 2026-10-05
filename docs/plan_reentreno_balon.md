@@ -120,3 +120,21 @@ falla otra vez, se cierra y se documenta el negativo (regla del proyecto: dos in
   puede no mejorar en otro partido.
 - Villaviciosa no tiene caché de balón: la segunda pata no se puede medir, igual que
   en el selector.
+
+
+## Correcciones de la receta antes de entrenar (5-oct-2026)
+
+- **La config no era la receta de v1.** `notebooks/entrenamiento_balon_v1.ipynb` usó `hsv_h 0,15`,
+  `hsv_s 0,7`, `hsv_v 0,5` (la config decía 0,015 / 0,5 / 0,4), `batch -1`, 100 épocas y
+  `optimizer` automático. El reentreno usa lo de v1 (bloque `reentreno.augmentation`).
+- **`lr0` no tenía efecto.** Con `optimizer` automático, ultralytics ignora `lr0` (v1 acabó
+  en AdamW con lr 0,002). El reentreno fija AdamW con lr0 0,0002: diez veces menor que lo
+  que v1 usó de verdad.
+- **Augmentation, PENDIENTE.** La comprobación con 50 imágenes dio 92 % sin mosaico
+  (regla ≥ 95 %). Se repite con las 502 y 3 semillas, atribuyendo la pérdida a escala o
+  traslación. ⚠️ **Si la de v1 no llega al 95 %, el `scale`/`translate` que se adopte YA NO
+  SERÁ EL DE v1**: se anotará aquí con el % de cada valor del barrido. La celda de
+  entrenamiento no corre mientras `reentreno.augmentation_medida` sea `false`.
+- **Cruce test/original, PENDIENTE.** El original cubre los 20 minutos (40 imágenes por
+  minuto), incluidos los minutos de test y validación del pool. Falta saber si hay frames
+  repetidos o a ≤ 2 frames (`scripts/cruzar_original_pool.py`).
