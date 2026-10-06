@@ -138,3 +138,35 @@ model.train(
     project=f"{D}/salidas/reentreno_balon", name="balon-v2-pegado",
 )
 ```
+
+## 5. Medir el candidato (6-oct-2026) — un paso cada vez, con el OK de Alex
+
+Celda 0, la de siempre (`docs/colab_balon_umbral_bajo.md`), y además el candidato enlazado:
+```python
+!ln -sf "{D}/salidas/reentreno_balon/balon-v2-pegado/weights/best.pt" models/weights/best_balon_v2_pegado.pt
+```
+
+**Paso 1 — Medida A (test del pool, v1 y candidato, ~5 min).** Necesita en Drive
+`{D}/pool_balon/test_yolo.zip` y `{D}/pool_balon/manifiesto.csv` (16 KB entre los dos):
+```python
+!python scripts/colab_test_pool_balon.py \
+    --test-zip "{D}/pool_balon/test_yolo.zip" \
+    --manifiesto "{D}/pool_balon/manifiesto.csv" \
+    --salida "{D}/salidas/reentreno_balon/medida_A.json"
+```
+
+**Paso 2 — Medida B: caché de balón de la parte entera con el candidato (~30-40 min).**
+Las mismas condiciones que producción (`configs/processor_benja_balon_v2pegado.yaml`: solo
+cambian el modelo y el nombre del caché). El caché se escribe directamente en Drive:
+```python
+!mkdir -p "{D}/salidas/reentreno_balon/cache" data
+!ln -sfn "{D}/salidas/reentreno_balon/cache" data/tracking_benja
+!python scripts/detectar_balon.py --config configs/processor_benja_balon_v2pegado.yaml
+```
+
+**Paso 3 — En el Mac (sin GPU):** los criterios 1-8 y la hoja de la medida C:
+```bash
+python scripts/medir_reentreno_balon.py --medida-a ".../salidas/reentreno_balon/medida_A.json" --cache-v2 ".../salidas/reentreno_balon/cache/cache_balon_p1_v2pegado.pkl"
+```
+El criterio 9 se lee de un CSV `n,juicio` (balon / basura / dudoso) con el juicio de las 30
+casillas de la hoja, que se pasa con `--juicio-c`.

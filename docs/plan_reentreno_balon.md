@@ -161,3 +161,15 @@ está medido (el barrido solo guarda "conserva"), pero escala menos que la de v1
 Ningún frame exacto. A ≤ 2 frames de uno del original: **test 3 de 36** (1586, 18412, 32240) y
 **validación 3 de 15** (24186, 34314, 34828). Mediana de distancia al más cercano: 15 frames en
 test y 7 en validación. Pendiente de Alex: decidir si esos 3 de test se sacan o se informan aparte.
+
+## Entrenado (6-oct-2026) y declarado ANTES de medir
+
+`best.pt` (época 13, mAP50 de validación 0,862) y `last.pt` (época 28); paró por paciencia
+(15), no por el límite de épocas. Declarado por Alex antes de ver ningún número:
+- **El candidato es `best.pt`.** `last.pt` solo se mide si best.pt no pasa los 9 criterios.
+- **Los 3 frames de test cercanos al original (1586, 18412, 32240) se quedan en el test.** El
+  criterio 1 se informa con y sin ellos, con el MISMO umbral de 6 balones (calculado sobre
+  23 positivos). Decide la medida con ellos.
+- Los 9 criterios, tal cual y sin relajar ninguno: `scripts/medir_reentreno_balon.py::CRITERIO`.
+  El arnés de B reproduce exactamente a producción con v1: 35/38 desempates, 2,85 cambios por
+  minuto, 0 en marcas, 19,4 s de anclada y 0 de 8 en vuelo.
