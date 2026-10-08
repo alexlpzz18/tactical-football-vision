@@ -225,7 +225,10 @@ def _ventana(csv: pd.DataFrame, lados: dict, segundos: float) -> tuple[int, int,
     ok = np.array(ok, float)
     paso = int(round(segundos * FPS / (marcos[1] - marcos[0])))
     suma = np.convolve(ok, np.ones(paso), "valid")
-    i = int(np.argmax(suma))
+    # A igualdad, la primera desde el minuto 5: los minutos 0-5 son OTRO RÉGIMEN (CLAUDE.md).
+    desde_min5 = np.array(marcos[: len(suma)]) >= 300 * FPS
+    candidatas = np.nonzero((suma == suma.max()) & desde_min5)[0]
+    i = int(candidatas[0]) if len(candidatas) else int(np.argmax(suma))
     return int(marcos[i]), int(marcos[i + paso - 1]), float(suma[i] / paso)
 
 
@@ -248,8 +251,20 @@ def _texto(img, s, org, color=(255, 255, 255), escala=0.7):
     cv2.putText(img, s, org, cv2.FONT_HERSHEY_SIMPLEX, escala, color, 2, cv2.LINE_AA)
 
 
-def dibujar(img, g: pd.DataFrame, lados: dict, colores: dict, Hinv, frame: int) -> None:
-    """Las líneas de los dos equipos sobre el fotograma (en su sitio, desde metros)."""
+def dibujar(
+    img,
+    g: pd.DataFrame,
+    lados: dict,
+    colores: dict,
+    Hinv,
+    frame: int,
+    aviso: str | None = None,
+) -> None:
+    """Las líneas de los dos equipos sobre el fotograma (en su sitio, desde metros).
+
+    `aviso`: si las líneas defensiva y de presión NO pasaron el criterio contra el GT, no se
+    dibujan y se escribe esto en su lugar. La anchura se dibuja siempre que pase.
+    """
     import cv2
 
     t = frame / FPS
@@ -258,6 +273,8 @@ def dibujar(img, g: pd.DataFrame, lados: dict, colores: dict, Hinv, frame: int) 
         f"archivo {reloj(t)} | reproductor {reloj(t + ADELANTO_REPRODUCTOR_S)}",
         (20, 40),
     )
+    if aviso is not None:
+        _texto(img, aviso, (20, img.shape[0] - 30), (0, 200, 255), 0.65)
     for k, (eq, bajo) in enumerate(lados.items()):
         col = _hex_bgr(colores.get(eq, "#ffffff"))
         s = _de_campo(g, eq)
@@ -276,6 +293,9 @@ def dibujar(img, g: pd.DataFrame, lados: dict, colores: dict, Hinv, frame: int) 
             Hinv, lin["x_media"], lin["y_max"]
         )
         cv2.line(img, tuple(map(int, a)), tuple(map(int, b)), col, 2, cv2.LINE_AA)
+        if aviso is not None:
+            _texto(img, f"{eq}: anchura {lin['anchura']:.1f} m", (20, y_txt), col)
+            continue
         if not lin["medible"]:
             _texto(img, f"{eq}: anchura {lin['anchura']:.1f} m · lineas NO MEDIBLES "
                         f"(bloque fuera de la zona visible)", (20, y_txt), col)  # fmt: skip
@@ -298,6 +318,22 @@ def clip(args) -> None:
     colores = json.loads((trabajo / "posiciones_meta.json").read_text())[
         "colores_equipo"
     ]
+    # Lo que se enseña lo decide la MEDICIÓN contra el GT, no este script.
+    med = json.loads((trabajo / "medicion.json").read_text())["resultado"]
+    if not med["anchura"]["ensenable"]:
+        raise SystemExit("la anchura no pasó el criterio: no hay nada enseñable. PARA")
+    lineas_ok = all(med[m]["ensenable"] for m in ("defensa", "presion", "distancia"))
+    aviso = (
+        None
+        if lineas_ok
+        else (
+            "lineas defensiva y de presion NO VALIDADAS contra el GT (p90 "
+            + ", ".join(
+                f"{med[m]['p90']:.1f}" for m in ("defensa", "presion", "distancia")
+            )
+            + " m): no se dibujan"
+        )
+    )
     f0, f1, frac = _ventana(csv, lados, args.segundos)
     t0 = f0 / FPS
     print(
@@ -322,7 +358,7 @@ def clip(args) -> None:
             break
         # el CSV va a 1 de cada 3 frames: se usa la fila más cercana hacia atrás
         fc = int(marcos[np.searchsorted(marcos, pos, side="right") - 1])
-        dibujar(img, por_frame[fc], lados, colores, Hinv, pos)
+        dibujar(img, por_frame[fc], lados, colores, Hinv, pos, aviso)
         ffmpeg.stdin.write(cv2.resize(img, (1280, 720)).tobytes())
         pos += 1
     ffmpeg.stdin.close()

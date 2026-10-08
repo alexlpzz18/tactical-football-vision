@@ -53,3 +53,36 @@ falta o sobra un jugador, la línea salta. Es un listón, no una verdad.
 30 s donde los dos bloques estén en la zona visible la mayor parte del tiempo, elegida con las
 posiciones del sistema. **Ahí no hay GT: no hay verdad.** A 1280×720 en H.264, menos de 50 MB, en
 `outputs/` (no se versiona). Antes se comprueba `df` y después se borran los temporales.
+
+## Resultado (8-oct-2026)
+
+**Sentido de ataque**: `deducir_lados` (producción) da A defendiendo la portería x = 0 y B la x = 62.
+Los porteros lo confirman: `portero_A` con x mediana 7,5 m y `portero_B` con 57,6 m (en el GT,
+8,1 y 56,8). Equipos del sistema = equipos del GT (casado: 612 directos contra 13 cruzados).
+
+**Contra el GT de 14** (ventana 5:25-5:55 de archivo; las líneas solo en los frames con el bloque
+del GT entero en la zona visible):
+
+| métrica | n | mediana | p90 | sesgo | ¿enseñable? |
+|---|---|---|---|---|---|
+| línea defensiva | 36 | 0,54 m | **6,73 m** | −0,39 | **NO** |
+| línea de presión | 36 | 0,91 m | **5,66 m** | −0,59 | **NO** |
+| distancia defensa-presión | 36 | 1,82 m | **7,39 m** | −1,57 | **NO** |
+| anchura (todos los frames) | 120 | 0,38 m | 2,26 m | −0,16 | **SÍ** |
+
+La decisión "medible / no medible" del sistema coincide con la del GT en 119 de 120 pares
+(36 los dos medibles, 83 ninguno, 1 solo el sistema).
+
+**Por qué fallan las líneas: presencia, no localización.** Los 12 errores > 4 m caen todos al final
+de la ventana (347,8-354,9 s de archivo, el "tercio 3" ya conocido). A tiene 4-5 jugadores de campo
+en vez de 6: si falta el más adelantado, la presión salta 4-9 m. B tiene 7-8 en vez de 6: el que
+sobra tira de su línea defensiva 5-10 m. Es el "faltan y sobran" de `docs/desglose_del_error.md`,
+amplificado porque una línea es UN jugador (un extremo), no una media. Cuando la presencia está
+bien, las líneas aciertan (medianas de 0,5-0,9 m).
+
+**El clip** (`outputs/lineas_tacticas_benja.mp4`, 30 s, 3,7 MB, no se versiona): archivo
+6:44,1-7:14,0, reproductor 8:17,1-8:47,0; los dos bloques en la zona visible el 100 % del tiempo.
+**Sin GT: no hay verdad en esa ventana.** Por el criterio, solo dibuja la ANCHURA; las líneas
+defensiva y de presión se sustituyen por el aviso "no validadas", con sus p90. Corrección decidida
+antes de mirar el clip: a igualdad, la ventana se toma desde el minuto 5 (los minutos 0-5 son otro
+régimen); la primera elegida caía en 0:25-0:55.
