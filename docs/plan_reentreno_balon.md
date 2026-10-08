@@ -173,3 +173,8 @@ test y 7 en validación. Pendiente de Alex: decidir si esos 3 de test se sacan o
 - Los 9 criterios, tal cual y sin relajar ninguno: `scripts/medir_reentreno_balon.py::CRITERIO`.
   El arnés de B reproduce exactamente a producción con v1: 35/38 desempates, 2,85 cambios por
   minuto, 0 en marcas, 19,4 s de anclada y 0 de 8 en vuelo.
+
+## Resultado (8-oct-2026): CERRADO
+
+Los dos candidatos suspenden el criterio 2 (falsos positivos por imagen). Detalle y lección en
+`docs/reentreno_balon_pegado.md`.
