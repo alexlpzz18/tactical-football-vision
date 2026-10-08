@@ -45,3 +45,25 @@ instante que se vea en los dos (por ejemplo, el saque inicial).
 3. Procesar el tramo tal cual y decir QUÉ FALLA y en qué etapa (encuadre, detección, color,
    calibración con distorsión) antes de proponer nada. Sin suponer un eje de profundidad: la
    distancia a la cámara se aproxima por el tamaño aparente de la caja.
+
+## Resultado del paso 1 (8-oct-2026): NO APORTAN — se para aquí
+
+| vídeo | resolución | duración | mediana corregida | p10 / p90 | < 25 px | mediana en bruto |
+|---|---|---|---|---|---|---|
+| Bazán p1 | 1920×798, 25 fps | 45,9 min | **22,8 px** | 16,5 / 40,4 | 61 % | 22,2 |
+| Bazán p2 | 1920×798, 25 fps | 49,0 min | **23,4 px** | 17,2 / 38,6 | 58 % | 22,6 |
+| Arganzuela p1 | 1920×798, 25 fps | 47,4 min | **23,8 px** | 18,6 / 36,5 | 56 % | 23,3 |
+| Arganzuela p2 | 1920×798, 25 fps | 49,0 min | **23,3 px** | 17,5 / 33,9 | 65 % | 21,7 |
+
+**La predicción se cumple: 23 px, por debajo incluso de los 26 de Villaviciosa.** Ninguno de los
+cuatro sirve de pata (hacían falta ≥ 40 px). Comprobaciones del proxy:
+- 22-23 cajas con el pie en el césped por frame (mediana), lo que corresponde a 22 jugadores más
+  el árbitro: el filtro deja fuera al público y no se deja jugadores.
+- Si el detector perdiera jugadores lejanos (los más pequeños), la mediana real sería MÁS BAJA:
+  el veredicto solo puede empeorar.
+- Las cuatro partes coinciden (22,8-23,8 px). Corregir la distorsión apenas cambia el número.
+
+Pasos 2 y 3 no se hacen: procesar un tramo mediría otra vez lo ya sabido de Villaviciosa (a 26 px
+el acierto de color cae a ~60 %). Es la misma conclusión de `docs/diagnostico_villaviciosa.md`:
+la palanca es la CÁMARA (más píxeles por jugador), no el software. Para una segunda pata F11 hace
+falta otro vídeo, grabado más cerca o con más resolución.

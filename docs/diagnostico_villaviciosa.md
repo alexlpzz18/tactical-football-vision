@@ -99,3 +99,7 @@ negativos medidos contra Villaviciosa** (la puerta de distancia, el
 `margen_equipo`, el `por_observacion`...). No hay que borrarlos —
 siguen siendo ciertos para una panorámica— pero sí re-medirlos en la pata
 nueva antes de darlos por vigentes allí.
+
+
+**Predicción comprobada (8-oct-2026)**: Bazán y Arganzuela (misma cámara panorámica, otro campo)
+dan 22,8-23,8 px de mediana en sus cuatro partes. No sirven de pata. `docs/plan_generalizacion_f11.md`.
