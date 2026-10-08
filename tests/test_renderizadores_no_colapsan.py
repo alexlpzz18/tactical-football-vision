@@ -226,6 +226,8 @@ NO_PINTAN_POR_OBSERVACION = {
     "scripts/comparar_instante.py": "pinta UN instante: no hay vida de identidad que colapsar",
     "scripts/deriva_parte_entera.py": "banco de medida; solo lee los colores del fit para informar",
     "scripts/etiquetar_equipos_gt.py": "herramienta de etiquetado manual, no pinta el sistema",
+    "scripts/lineas_tacticas.py": "pinta LÍNEAS por equipo calculadas con la etiqueta de cada fila "
+    "EN ESE FRAME (no la moda de la identidad); no hay ficha por observación que colapsar",
 }
 
 
