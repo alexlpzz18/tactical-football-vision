@@ -65,7 +65,7 @@ def casado_en_pixeles(det, caja, pie_px: float = CRITERIO["pie_px"]) -> bool:
 
 
 def reconcilian(recall_px: float, recall_m: float) -> bool:
-    return abs(recall_px - recall_m) * 100 <= CRITERIO["recalls_max_dif_pts"]
+    return bool(abs(recall_px - recall_m) * 100 <= CRITERIO["recalls_max_dif_pts"])
 
 
 # ─────────────────────────────── la pasada con espías ─────────────────────────

@@ -296,9 +296,18 @@ def hoja(args) -> None:
     for nombre, grupo in (("sin_balon", sin), ("con_balon", con)):
         grupo = sorted(grupo)
         tiles, indice = [], []
+        actual = None  # frame que devolvería el próximo read()
         for k, (f, i, alto, ancho, _cb) in enumerate(grupo):
-            posicionar_en_frame(cap, f)
+            # Se posiciona UNA vez con posicionar_en_frame (nunca cap.set) y luego se
+            # avanza decodificando: los frames van ordenados y buscar cada uno desde
+            # su fotograma clave era lentísimo.
+            if actual is None or f < actual:
+                actual = posicionar_en_frame(cap, f)
+            while actual < f:
+                cap.grab()
+                actual += 1
             ok, img = cap.read()
+            actual += 1
             if not ok:
                 continue
             x1, y1, x2, y2 = (int(round(v)) for v in por_frame[f]["dets"][i][2:6])

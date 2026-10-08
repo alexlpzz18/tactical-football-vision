@@ -59,3 +59,39 @@ escrita.
 
 Intentos: como mucho dos. El segundo, si hace falta, solo puede ENDURECER la regla (quitar
 menos), nunca aflojarla para cazar más.
+
+## Resultado (8-oct-2026): NO SE ADOPTA — pierde jugadores reales
+
+Reproducir: `scripts/balon_como_persona.py medir`, `hoja` y `veredicto --personas-a-ojo 7`.
+
+| | |
+|---|---|
+| detecciones de persona (parte entera, tras los filtros de producción) | 206.812 |
+| **quitadas por la regla** | **4.839** |
+| … con un balón dentro (caché de balón limpio, f ± 1) | **136** |
+| … sin balón | 4.703: 3.972 fuera del campo, 632 cortadas por el borde inferior, 99 dentro |
+| personas del GT de 14 perdidas | **0** de 794 (la persona más baja del GT mide 0,50× la mediana) |
+| **jugadores reales en la revisión a ojo** (60 al azar de las «sin balón») | **7 de 60** |
+
+**Los 7 son el mismo caso: la cabeza de un jugador de camiseta negra cortado por el borde
+inferior**, a 4:23,5, 6:45,1, 13:38,6, 17:07,4, 18:45,5, 19:48,6 y 19:49,1 de archivo (5:56,5,
+8:18,1, 15:11,6, 18:40,4, 20:18,5, 21:21,6 y 21:22,1 del reproductor). Una caja cortada es baja Y
+cuadrada: tiene la forma de un balón. El GT de 14 no lo veía porque en su ventana nadie está así.
+Es la misma lección de siempre: **una muestra corta no ve el caso que rompe la regla**.
+
+El resto de la hoja: **unos 35 de 60 son CONOS** de entrenamiento junto al banquillo, y el resto
+balones fuera del campo (el del otro campo o los de reserva) y pies. El control (20 «con balón») sí
+son balones los 20.
+
+**Lo que quitaría del «id 62 y similares»** (CSV de producción de hoy, 174.618 filas reales): 2.941
+filas salen de una caja con forma de balón, **pero solo 44 tienen un balón dentro**. 35 identidades
+son mayoritariamente de esa forma: 24 `staff` (muy probablemente los conos, por la hoja; no se ha
+comprobado identidad a identidad), 8 `B`, 2 `portero_A` (el portero cortado) y 1 `otro`. (La
+etiqueta de cada identidad es la de su primera fila.) El equivalente de hoy del id 62 es **el id 70** (15 filas de `B`, las 15 con
+balón dentro). El balón como persona existe, pero es pequeño: 136 detecciones en 20 minutos.
+
+**Decidido por los datos** (Alex fijó «si pierde jugadores reales, no se adopta»): no se adopta y no
+hay segundo intento. El único endurecimiento evidente, excluir las cajas que tocan el borde inferior,
+sería otra regla con su propio criterio, no este intento. Hallazgo de paso: **los conos son
+detecciones de persona** (identidades `staff` como la 851, con 189 filas). Hoy no hacen daño porque
+salen como `staff`, fuera de los bloques.

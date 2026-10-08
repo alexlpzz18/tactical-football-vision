@@ -194,7 +194,7 @@ Precedente que aplica: **actuar solo donde hay riesgo**. No tocar el fit
 en general — solo decidir mejor cuando el clip es corto y arranca en el
 minuto 0, que es detectable sin ambigüedad.
 
-## 16. El detector de PERSONAS está marcando el BALÓN (28-ago-2026)
+## 16. El detector de PERSONAS está marcando el BALÓN (28-ago-2026) — ❌ REGLA DE FORMA MEDIDA Y NO ADOPTADA (`docs/balon_como_persona.md`)
 
 Visto en los recortes de intrusos: la identidad `id 62`, etiquetada como
 jugador del equipo B, es **un balón** en t=59 s (`outputs/intrusos_equipo_B.png`).
@@ -219,6 +219,11 @@ es lo primero que un entrenador mira.
 detectado como persona, en la misma escena apretada donde el detector también
 funde a dos jugadores (BACKLOG 19). No se ha medido aún si el filtro de
 plausibilidad física lo captura en el CSV final — pendiente.
+
+**Medido (8-oct-2026, `docs/balon_como_persona.md`)**: el balón como persona son 136 detecciones en
+20 minutos (el filtro de producción no lo quita). La regla «bajo Y cuadrado» (alto < 0,40× la
+mediana, ancho/alto ≥ 0,70) quita 4.839 detecciones y pierde **un jugador real cortado por el borde
+inferior** (7 de 60 en la revisión a ojo): no se adopta. El resto que quita son sobre todo conos.
 
 ### Las 10 marcas fijas del balón, localizadas y verificadas visualmente (28-sep-2026)
 
