@@ -158,10 +158,16 @@ Celda 0, la de siempre (`docs/colab_balon_umbral_bajo.md`), y además el candida
 **Paso 2 — Medida B: caché de balón de la parte entera con el candidato (~30-40 min).**
 Las mismas condiciones que producción (`configs/processor_benja_balon_v2pegado.yaml`: solo
 cambian el modelo y el nombre del caché). El caché se escribe directamente en Drive:
+Sin enlazar carpetas de `data/` (un `ln -sfn` sobre una carpeta que ya existe acaba
+DENTRO de ella): la ruta va por `--cache-balon`. Si Drive tiene < 300 MB libres, escribe
+en `/content/cache` y se baja a mano (el caché de producción pesa 2,3 MB).
 ```python
-!mkdir -p "{D}/salidas/reentreno_balon/cache" data
-!ln -sfn "{D}/salidas/reentreno_balon/cache" data/tracking_benja
-!python scripts/detectar_balon.py --config configs/processor_benja_balon_v2pegado.yaml
+import shutil
+libre_mb = shutil.disk_usage(D).free / 1e6
+destino = f"{D}/salidas/reentreno_balon/cache" if libre_mb >= 300 else "/content/cache"
+print(f"Drive libre: {libre_mb:.0f} MB → el caché va a {destino}")
+CACHE = f"{destino}/cache_balon_p1_v2pegado.pkl"
+!python scripts/detectar_balon.py --config configs/processor_benja_balon_v2pegado.yaml --cache-balon "{CACHE}"
 ```
 
 **Paso 3 — En el Mac (sin GPU):** los criterios 1-8 y la hoja de la medida C:

@@ -641,11 +641,22 @@ def main() -> None:
         default=0.5,
         help="Umbral de fusión con --postprocess-metric (default de SAHI: 0.5)",
     )
+    parser.add_argument(
+        "--cache-balon",
+        default=None,
+        help="Ruta del caché de balón (y de su checkpoint). Sustituye a rutas.cache_balon "
+        "del config: así el caché va donde se pide sin enlazar carpetas de data/.",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
+    if args.cache_balon:
+        # Un solo sitio: todo lo que lee o escribe el caché (y el checkpoint) usa esta clave.
+        cfg["rutas"]["cache_balon"] = args.cache_balon
+        Path(args.cache_balon).parent.mkdir(parents=True, exist_ok=True)
+        logger.info("Caché de balón en %s (por --cache-balon)", args.cache_balon)
     cb = cfg["balon"]
     H = np.load(cfg["rutas"]["homografia"])
 
