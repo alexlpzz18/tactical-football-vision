@@ -67,3 +67,19 @@ Pasos 2 y 3 no se hacen: procesar un tramo mediría otra vez lo ya sabido de Vil
 el acierto de color cae a ~60 %). Es la misma conclusión de `docs/diagnostico_villaviciosa.md`:
 la palanca es la CÁMARA (más píxeles por jugador), no el software. Para una segunda pata F11 hace
 falta otro vídeo, grabado más cerca o con más resolución.
+
+## Cierre (8-oct-2026): paso 2 cerrado — los vídeos panorámicos de grada, fuera de alcance
+
+Medido en TRES partidos con este tipo de cámara (panorámica desde la grada, 1920×798):
+Villaviciosa 26 px de mediana por jugador; Bazán 22,8 y 23,4 px; Arganzuela 23,8 y 23,3 px, con
+entre el 56 y el 65 % de los jugadores por debajo de 25 px. Bruto y corregido coinciden. Por debajo de
+25 px el detector se degrada y el color acierta en torno al 60 %. Queda fuera de alcance por
+**píxeles por jugador**, no por software. Para una segunda pata F11 hace falta otra cámara.
+
+**`src/validacion_video.py` con estos cuatro vídeos** (20 frames reales cada uno):
+- **Aviso de tamaño: salta en los cuatro** ("jugadores de 23-24 px… el detector se degrada"). Con una
+  salvedad: se le pasaron el p10, la mediana y el p90 del resumen, no las alturas caja a caja (la
+  medición no las guardó), así que lo comprobado es la decisión sobre la mediana.
+- **Aviso de campo cortado: NO es fiable aquí.** Bazán p1 lo da por la derecha en el 85 % de los
+  frames y Bazán p2 en el 15 %, con la misma cámara y el mismo campo. Algo en el borde derecho de la
+  panorámica (luz o tono del césped) lo engaña. Anotado, sin tocar.
