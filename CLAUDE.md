@@ -221,8 +221,9 @@ Todo lo demás acaba desembocando aquí:
   la resolución MEDIA de toda la identidad, y en la práctica la ventana real tiene una
   **mediana de 1,9 s (p90 2,5 s)** y el **82 % de las trayectorias pasa de 1 s**. Además es
   una media móvil sobre MUESTRAS consecutivas, no sobre tiempo: **promedia a través de un
-  hueco de tiempo** (hasta 1,3 s visto) y a través de saltos imposibles (el 4 % de los pasos
-  entre muestras reales supera los 12 m/s). Así movió las 9 filas que el post-proceso pierde
+  hueco de tiempo** (hasta 1,3 s visto) y a través de saltos (el 4 % de los pasos entre
+  muestras reales supera los 12 m/s, aunque con un umbral FIJO eso incluye temblor del fondo,
+  donde 1 px vale 0,42 m: el umbral tiene que ser local, `docs/plan_suavizado_por_tiempo.md`). Así movió las 9 filas que el post-proceso pierde
   en la ventana del GT, 0,8-6,4 m. La causa de fondo es la asociación: en 5 de 9 la identidad
   recorre 2-3 personas dentro de la ventana. ⇒ **Un parámetro en segundos puede no estar en
   segundos**: comprobar la ventana que se usa DE VERDAD, no la del YAML.

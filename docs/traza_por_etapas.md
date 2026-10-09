@@ -139,7 +139,8 @@ e, no solo 5:**
    los frames del GT de la ventana, en **5 de 9 recorre 2-3 personas** (por ejemplo, el id 274
    pasa por los tracks 13, 12 y 3; el id 308 por los tracks 12, 5 y 3), y en los demás alterna
    saltos de 4-8 m entre muestras consecutivas (40-80 m/s). En el partido entero, **el 4,0 % de
-   los pasos entre muestras reales consecutivas supera los 12 m/s**.
+   los pasos entre muestras reales consecutivas supera los 12 m/s**. ⚠️ Con un umbral fijo eso
+   incluye temblor del fondo (allí 1 px vale 0,42 m): no son todos saltos de identidad.
 
 Contrafactual (no es una propuesta): con la ventana base de 0,5 s, o con la mediana en vez de la
 media, se recuperan **3 de los 9** (a ≤ 1,3 m). En los otros 6 hasta los vecinos inmediatos son otra
