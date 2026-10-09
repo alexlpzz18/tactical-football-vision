@@ -117,3 +117,64 @@ persona: 11 tracks distintos, como mucho 9 casos el track 9.
 
 **Pérdidas reales del pipeline después del detector: 17 de 814 (2,1 %)**: tracking 7, etiqueta 1,
 post-proceso 9. **En el detector, 23 (2,8 %).** Los filtros no cuestan nada aquí.
+
+## Segunda vuelta (9-oct-2026)
+
+### Las pérdidas del post-proceso: las mueve el SUAVIZADO, y la causa es la asociación
+
+`scripts/diagnostico_filas_movidas.py` (espía en `suavizar_trayectorias`). **Los 9 casos de la etapa
+e, no solo 5:**
+- **No es la reproyección**: ByteTrack guarda la posición de la detección del caché, no la de su
+  Kalman. La entrada al post-proceso coincide con la detección (0,00 m en los 9).
+- **No es el casado**: nada mueve la fila después del suavizado (CSV = posición suavizada, 0,00 m).
+- **Es el suavizado**, que la mueve 0,8-6,4 m.
+
+**Por qué la mueve:**
+1. **La ventana no es de 0,5 s sino de ~2 s.** `escalar_con_resolucion: 1.0` alarga la ventana
+   base (5 muestras) según la resolución MEDIA de toda la identidad: factor 15-31 en estos casos,
+   ventanas de 19-21 muestras. En el partido entero la ventana real tiene una **mediana de 1,9 s**
+   (p90 2,5 s) y el **82 % de las trayectorias pasa de 1 s**. El método es la media móvil, y
+   promedia muestras reales consecutivas aunque haya un hueco entre ellas (hasta 1,3 s en un caso).
+2. **Dentro de esos 2 s la identidad no es una sola persona.** Mirando a qué persona del GT cubre en
+   los frames del GT de la ventana, en **5 de 9 recorre 2-3 personas** (por ejemplo, el id 274
+   pasa por los tracks 13, 12 y 3; el id 308 por los tracks 12, 5 y 3), y en los demás alterna
+   saltos de 4-8 m entre muestras consecutivas (40-80 m/s). En el partido entero, **el 4,0 % de
+   los pasos entre muestras reales consecutivas supera los 12 m/s**.
+
+Contrafactual (no es una propuesta): con la ventana base de 0,5 s, o con la mediana en vez de la
+media, se recuperan **3 de los 9** (a ≤ 1,3 m). En los otros 6 hasta los vecinos inmediatos son otra
+persona, y ningún suavizado lo arregla. **El suavizado es quien mueve la fila; la causa es una
+identidad que mezcla personas**: la prioridad uno de siempre, la asociación. La ventana de 2 s
+multiplica su alcance.
+
+⚠️ Corrige lo de ayer: no son «5 movidas + 4 de casado». Las 9 las mueve el suavizado; en 4 el
+movimiento es de 0,8-2 m y la fila acaba cubriendo a otra persona en el 1-a-1. Y CLAUDE.md habla de
+«suavizado de 0,5 s»: en la práctica son ~2 s.
+
+### El sesgo hacia la cámara está en la CAJA, no en tu clic (salvo el portero)
+
+`scripts/sesgo_pies_gt.py` (criterio commiteado antes). Pie de la caja del detector contra tu clic
+SIN corregir y corregido. dy > 0 = el pie de la caja queda más abajo en la imagen = más cerca de la
+cámara. Emparejado 1-a-1 sin condicionar en dy: 784 de 814 clics.
+
+| | n | dy sin corregir | dy corregido | hacia la cámara (corregido) | dy / alto |
+|---|---|---|---|---|---|
+| todas | 784 | +7,5 px (1,45 m) | **−0,1 px (0,0 m)** | | 0,00 |
+| **filas mal puestas** | 50 | +13,5 px | **+8,5 px** | **2,2 m**, el 82 % hacia la cámara | 0,23 |
+| — de ellas, el portero (track 6) | 10 | | +47 px en todas sus parejas | | 0,51 |
+| — **sin el portero** | 40 | +11,3 px | **+5,3 px** | **1,8 m**, el 78 % | 0,14 |
+
+- **El signo NO cambia en las filas mal puestas** (criterio 1): no es un artefacto de tu corrección.
+  Era aritméticamente imposible: la corrección solo baja el clic, y ahí el pie ya queda por debajo
+  del clic corregido. En la población entera tu corrección deja el sesgo en −0,1 px: está bien
+  calibrada.
+- **10 de las 50 son el portero**, cuyo clic está en el PECHO (`docs/portero_cortado.md`): esas sí
+  son un artefacto del GT, uno ya conocido y distinto de la corrección.
+- **Las otras 40 son de la CAJA** (criterio 2: dy/alto 0,14 frente a −0,01 en las normales). No es
+  una caja más alta de lo normal (alto implícito 0,87× la mediana frente a 0,96×). Lo que tienen es
+  **otra caja pegada: el 70 % toca otra caja**, frente al 34 % de las normales (78 % y 47 % a
+  < 10 px). Es el mecanismo de `docs/proximidad_deteccion.md`: con otra persona encima, el pie de
+  la caja baja hasta el de la persona de delante.
+
+⇒ El 17 % del desglose (DES) **no es un artefacto del GT**, salvo la parte del portero (10 de 50).
+El resto es la caja del detector en situaciones de proximidad.
