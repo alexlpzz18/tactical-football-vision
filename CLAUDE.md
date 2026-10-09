@@ -212,10 +212,20 @@ Todo lo demás acaba desembocando aquí:
   sobrantes, desplazadas o etiqueta empeora. Pero hay un SEGUNDO tipo de episodio, con
   detecciones normales, que los proxies de recuento no ven (`docs/desglose_por_episodios.md`).
 - **Una fila `es_real=1` que no está en una detección puede venir del SUAVIZADO.** Sin el
-  suavizado de 0,5 s, el 100 % coincide (mediana 0,004 m); con él, el 6,9 % queda a > 1 m
+  suavizado, el 100 % coincide (mediana 0,004 m); con él, el 6,9 % queda a > 1 m
   (11,5 % en el fondo). Cuesta +0,066 m de centroide (IC 95 % [+0,033, +0,103]) y **no**
   causa las filas desplazadas 2-5 m: siguen ahí sin suavizar. Antes de culpar a una etapa,
   apagarla y repetir.
+- **EL SUAVIZADO NO ES DE 0,5 s: ES DE ~2 s** (medido el 9-oct, `docs/traza_por_etapas.md`).
+  `ventana_s: 0.5` es solo la BASE (5 muestras). `escalar_con_resolucion: 1.0` la alarga según
+  la resolución MEDIA de toda la identidad, y en la práctica la ventana real tiene una
+  **mediana de 1,9 s (p90 2,5 s)** y el **82 % de las trayectorias pasa de 1 s**. Además es
+  una media móvil sobre MUESTRAS consecutivas, no sobre tiempo: **promedia a través de un
+  hueco de tiempo** (hasta 1,3 s visto) y a través de saltos imposibles (el 4 % de los pasos
+  entre muestras reales supera los 12 m/s). Así movió las 9 filas que el post-proceso pierde
+  en la ventana del GT, 0,8-6,4 m. La causa de fondo es la asociación: en 5 de 9 la identidad
+  recorre 2-3 personas dentro de la ventana. ⇒ **Un parámetro en segundos puede no estar en
+  segundos**: comprobar la ventana que se usa DE VERDAD, no la del YAML.
 - **EL GT DE UNA VENTANA NO REPRESENTA EL PARTIDO.** El de 30 s cae en un minuto bueno
   (recuento 6,69) y el error triplica entre sus propios tercios (0,75 → 2,46 m); por
   minuto, el recuento va de 4,83 a 7,25 y correlaciona +0,93 con las detecciones
