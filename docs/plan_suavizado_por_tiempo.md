@@ -108,3 +108,82 @@ Para el temblor, el remuestreo es por identidades. Una diferencia «cuenta» si 
 
 **Adopción**: mejora al menos una de 1-3 con IC, no empeora ninguna de 4-7 en ninguna pata y pasa
 los controles. Y, como siempre, solo con el OK de Alex.
+
+## Resultado (16-oct-2026): ninguna variante pasa — se cierra, sin segundo intento
+
+`scripts/suavizado_por_tiempo.py correr`, `medir` y `veredicto` (el veredicto está escrito como
+código y commiteado antes de ver ningún número). Producción intacta: las variantes sustituyen a
+`suavizar_trayectorias` solo durante cada pasada.
+
+**Veredicto del criterio, tal cual: NO CONCLUYENTE en las tres variantes**, porque en el benjamín
+falla un control exacto (abajo). **Pero aunque se leyera, ninguna pasaría**: todas empeoran con IC
+algo de lo que «podría estar rompiendo», en las dos patas.
+
+### El control que falla, y por qué
+
+- **Entrada al suavizado idéntica en todas las corridas: SÍ** (202.358 puntos en el benjamín, la
+  misma huella en Villaviciosa).
+- **Mismas filas por identidad que B0 en el CSV: NO en el benjamín** (sí en Villaviciosa). Cambian
+  entre 14 y 65 filas de 180.479 (≤ 0,04 %), en 6-21 identidades, y también en B1, que es solo
+  apagar el suavizado. Las diferencias aparecen DESPUÉS del suavizado: el export recorta las filas
+  que caen fuera del margen del campo, y la interpolación reduce el hueco máximo según la resolución
+  en las posiciones de sus extremos. Las dos cosas dependen de dónde deja cada punto el suavizado.
+  El control quería decir «el suavizado no añade ni quita puntos», y eso se cumple; pero se escribió
+  sobre el CSV, y por la letra no pasa. ⇒ Lección para el próximo plan: un control de conteo se
+  pone en la SALIDA de la etapa que se toca, no al final del pipeline.
+
+### Los números (Δ = variante − B0; IC 95 % por bloques de 5 s; temblor por identidades)
+
+**Benjamín** (parte entera; GT de 5:25 a 5:55 de archivo, de 6:58 a 7:28 del reproductor):
+
+| | B1 (cota) | V1 | V2 | V3 |
+|---|---|---|---|---|
+| 1. filas reales a > 1 m de toda detección (B0 6,93 %) | 0 % | 6,29 % ✓ | 5,15 % ✓ | **4,52 %** ✓ |
+| … en el fondo, x > 40 (B0 11,5 %) | 0 % | 10,8 % ✓ | 9,0 % ✓ | **8,3 %** ✓ |
+| 2. pérdidas de la etapa e (B0 9) | 0 | 6 ✓ | 5 ✓ | **4** ✓ |
+| 3. error de centroide (B0 1,453 m) | −0,066 | −0,018 ✓ | −0,033 ✓ | **−0,041** ✓ |
+| — fracción del margen B0→B1 recuperada | 100 % | 27 % | 50 % | 62 % |
+| 4. temblor, x 0-20 / 20-40 / > 40 (Δ medio, m) | +0,12 / +0,14 / +0,23 ✗ | **+0,002 / +0,002 / +0,001 ✗** | +0,008 / −0,000 / +0,008 (IC con 0) | +0,010 / +0,002 / +0,009 ✗ |
+| 5. pasos pintados sobre su v_umbral local (B0 0,00 %) | 0,86 % ✗ | 0,00 % | **0,73 % ✗** | 0,73 % ✗ |
+| 6. anchura / profundidad | −0,068 ✓ / ruido | −0,011 / ruido | ruido / ruido | ruido / ruido |
+
+**Villaviciosa** (60 s, GT completo). Allí el suavizado NO escala la ventana (`escalado_resolucion`
+no está activo en `tracking.yaml`): su ventana es de 0,5 s de verdad.
+
+| | B1 (cota) | V1 | V2 | V3 |
+|---|---|---|---|---|
+| 1. filas a > 1 m (B0 6,45 %) | 0 % | 4,91 % ✓ | 6,12 % ✓ | 4,61 % ✓ |
+| 3. centroide (B0 4,817 m) | +0,019 (ruido) | ruido | ruido | ruido |
+| 4. temblor del fondo (m/píxel > 0,24) | +0,40 ✗ | **+0,099 ✗** | −0,000 | +0,099 ✗ |
+| 5. pasos sobre v_umbral (B0 0,00 %) | 0,12 % ✗ | 0 | **0,10 % ✗** | 0,10 % ✗ |
+| 7. IDF1 propio / IDF1 / AssA | −0,012 ✗ / ruido / −0,008 ✗ | ruido | ruido | ruido |
+
+**Tasa de cortes de V2 por franja** (el control de «¿corta temblor?»):
+- Benjamín, x 0-10 · 10-20 · 20-30 · 30-40 · 40-50 · 50-62 m: **0,23 · 0,81 · 0,96 · 0,78 · 1,12 ·
+  1,23 %** de los pasos. El fondo es 1,5× la franja 10-20: **no corta temblor** (el límite era 2×).
+  Si cortara temblor, crecería como el m/píxel (×17).
+- Villaviciosa, por m/píxel: 21 cortes en 10.516 pasos (0,2 %), casi todos en el fondo. Por la letra
+  **sí «corta ruido»**: la segunda franja tiene 0 cortes, así que cualquier corte en el fondo supera
+  2×. Pero esa franja solo tiene **15 pasos**: el control no tiene con qué comparar en esta cámara,
+  donde casi todo el juego está a > 0,35 m/píxel.
+
+### Lectura
+
+1. **V1 hace lo que se esperaba en las métricas de exactitud y empeora el temblor**: poco (+0,002 m
+   sobre 0,009 en el benjamín; +0,099 m en el fondo de Villaviciosa), pero con IC por encima de 0
+   en las dos patas. Es inherente: junto a un hueco, la ventana por tiempo tiene menos muestras.
+2. **V2 es la que más recupera** (la mitad del margen del centroide, pérdidas de 9 a 5) **y no sube
+   el temblor**. Lo que empeora es la métrica 5: B0 tenía 0 pasos pintados sobre el umbral porque
+   **la media EMBORRONABA el salto** a través de la ventana; V2 lo deja a la vista (el 0,73 % de los
+   pasos). Es la lección de «suavizar el parpadeo» de CLAUDE.md, vista desde el otro lado: lo que
+   el criterio cuenta como roto aquí es la asociación fallando, que deja de estar tapada. El
+   criterio era ese, y el criterio manda.
+3. **V3 suma las dos cosas buenas y las dos malas.**
+
+**Sin segundo intento, decidido por los datos.** El plan solo permite ajustar T, y ninguna T arregla
+lo que falla. La métrica 5 de V2 no depende de T: es el salto mismo. Y el temblor de V1 sale de las
+ventanas recortadas junto a los huecos; un tope en segundos las recortaría más. **Se cierra.**
+
+Lo que queda como dato, no como propuesta: **el suavizado de hoy esconde los saltos de identidad**,
+con 0 pasos imposibles pintados en el benjamín cuando la entrada tiene el 4 % de saltos
+(`docs/traza_por_etapas.md`).
