@@ -256,6 +256,15 @@ Todo lo demás acaba desembocando aquí:
   clic: la zona cercana es la MÁS estable, 0,09 m contra 0,29 del fondo;
   la envolvente de los 19 puntos; y reajustar sin los clics del borde)
   (`docs/homografia_zona_cercana.md`).
+- **UN CRITERIO QUE LEE LA ETIQUETA DESPUÉS DE LA DECISIÓN NO VE UNA DECISIÓN QUE CONTAMINA
+  SU PROPIA MEDIDA.** El plan de la resolución en el cosido preguntaba «¿las uniones nuevas
+  cambian de etiqueta?» mirando el CSV de la propia rama. Pero una unión se etiqueta JUNTA: el
+  fit vota sobre la identidad ya unida, así que el jugador pegado al árbitro sale con una sola
+  etiqueta y el cambio no existe en esa medida. El proxy era ciego por construcción, y la
+  quimera (495 filas de jugador a `otro`) solo apareció al leer las etiquetas de cada trozo en
+  la BASE, antes de unir. ⇒ **Para juzgar una decisión, leer sus entradas en la base, no su
+  salida en la rama**: lo que la decisión toca no puede ser también el instrumento que la mide
+  (`docs/resolucion_en_cosido.md`).
 - **TODO CRITERIO QUE MUEVE FILAS HACIA UN CAJÓN LLEVA UNA SEGUNDA MEDIDA:**
   *¿cuántas de las movidas NO son lo que el cajón dice?* El catálogo arbitral
   por observación movió 3.555 filas a `otro`; el 78,5 % parecen árbitro y el
@@ -439,6 +448,7 @@ Todo lo demás acaba desembocando aquí:
 | **Regla de forma contra el balón detectado como persona** (bajo Y cuadrado, 8-oct) | 0 personas perdidas en el GT de 14, pero en el partido entero quita la cabeza del portero cortado por el borde inferior (7 de 60 a ojo): una caja cortada tiene forma de balón. Solo 136 de las 4.839 quitadas eran balón; el resto, conos y balones fuera del campo. `docs/balon_como_persona.md` |
 | **Procesar 1/1 en vez de 1/3** (ablación en el piloto de 5 min, 16-oct) | Mejora la presencia (sobran −0,23, faltan −0,06 por equipo y frame) pero no la asociación: DetA, AssA e IDF1 dentro del ruido de las tres fases 1/3, y las identidades por persona EMPEORAN (+0,33 contra 0,21 de ruido). Fuera de la ventana del GT, el portero de B queda dentro de una quimera de 5 min: a 1/1 su identidad no se corta y sigue a otra persona sin saltar. ×3 de GPU por nada. `docs/plan_ablacion_1a1.md` |
 | **Suavizado por tiempo real y sin cruzar saltos** (V1/V2/V3, 16-oct) | Ninguna variante pasa en las dos patas. V1 (ventana por tiempo) mejora la exactitud pero sube el temblor con IC (+0,002 m benja, +0,099 m en el fondo de Villaviciosa). V2 (cortar en saltos > v_umbral local) recupera la mitad del margen del centroide sin subir el temblor, pero deja a la vista los saltos que la media emborronaba (0,73 % de pasos pintados sobre el umbral contra 0). Formalmente NO CONCLUYENTE: el control de filas por identidad se puso sobre el CSV, donde el recorte del export y la interpolación lo mueven ≤ 0,04 %. `docs/plan_suavizado_por_tiempo.md` |
+| **Resolución local en el cosido por pureza** (cablear `_resolucion`, 16-oct) | Veredicto OFICIAL: **NO CONCLUYENTE** (no mueve ni una cifra contra el GT en ninguna pata: benja 0 uniones cambiadas en la ventana, Villaviciosa CSV idéntico porque allí el escalado está apagado). **El cierre se apoya en un diagnóstico A POSTERIORI** sobre los 20 min: 40 uniones nuevas, 16 fuera del campo; de las 24 dentro, **10 juntan trozos con etiquetas distintas en la base** (8 A↔B, 1 jugador+staff, y 1 jugador+árbitro que manda **495 filas de jugador a `otro`**, 53 s). Fabrica quimeras. No se adopta (decisión de Alex). `docs/resolucion_en_cosido.md` |
 | **Feature de color en `float32`** | Ahorraría disco pero movería la entrada del KMeans, que es la pieza frágil. |
 
 ---
