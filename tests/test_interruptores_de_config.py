@@ -181,13 +181,17 @@ def test_apagar_el_interruptor_CAMBIA_el_resultado(seccion):
 # cosido por pureza corre SIN márgenes locales y `jitter_px` no lo lee nadie en producción:
 # es el patrón del interruptor que no apaga nada, con un número en vez de un `activa`.
 #
-# Dos tests, y hacen falta los dos:
+# Cablearla se midió en las dos patas y NO se adoptó (fabrica quimeras,
+# docs/resolucion_en_cosido.md). El 16-oct se QUITÓ la clave muerta: el cosido recibe
+# `resolucion=None` escrito a la vista, con el CSV de las dos patas idéntico byte a byte.
+#
+# Tres tests:
 # 1. el caso sintético SÍ ejerce el margen cuando la resolución llega al cosido (si no,
-#    el test 2 podría «no cambiar nada» porque el caso está mal hecho, no por el cableado);
-# 2. por el camino de PRODUCCIÓN (`procesar_desde_cache`), hoy NO cambia: xfail ESTRICTO.
-#    El día que alguien cablee la resolución al cosido, este test pasará, el xfail estricto
-#    lo convertirá en fallo y obligará a quitar el xfail y a leer
-#    docs/plan_resolucion_en_cosido.md, que dice si ese cambio se midió y qué dio.
+#    el test 3 podría «no cambiar nada» porque el caso está mal hecho, no por el cableado);
+# 2. la clave `_resolucion` ya no existe en el perfil: nadie puede creer que se inyecta;
+# 3. por el camino de PRODUCCIÓN (`procesar_desde_cache`), jitter_px NO cambia la salida.
+#    Antes era un xfail estricto (esperaba el cableado); ahora es la decisión tomada. Si
+#    alguien vuelve a cablear la resolución, este test falla y le manda a leer el doc.
 
 _HOMOGRAFIA_BENJA = "data/calibracion_benja/homografia_benja.npy"
 
@@ -302,16 +306,32 @@ def _identidades_por_produccion(tmp_path, jitter_px):
     return pd.read_csv(d / "posiciones.csv").id_jugador.nunique()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="HOY jitter_px no llega al cosido del perfil bytetrack: nadie inyecta "
-    "`_resolucion` (docs/plan_resolucion_en_cosido.md). Si esto pasa, alguien lo ha "
-    "cableado: quitar el xfail y comprobar que el cambio se midió en las dos patas.",
-)
-def test_jitter_px_CAMBIA_la_salida_de_produccion_con_bytetrack(tmp_path):
+def test_la_clave_muerta_resolucion_ya_no_existe_en_el_perfil():
+    """`_resolucion` («lo inyecta el processor») no la escribía nadie: se quitó."""
+    import ast
+    import inspect
+
+    import src.tracking.perfiles as perfiles
+
+    arbol = ast.parse(inspect.getsource(perfiles))
+    literales = {
+        n.value
+        for n in ast.walk(arbol)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    }
+    assert "_resolucion" not in literales, (
+        "Alguien ha vuelto a leer la clave `_resolucion` en perfiles.py. Nadie la escribe; "
+        "si se quiere la resolución en el cosido, se midió y NO se adopta "
+        "(docs/resolucion_en_cosido.md)."
+    )
+
+
+def test_jitter_px_NO_cambia_la_salida_de_produccion_con_bytetrack(tmp_path):
+    """Decisión tomada: el cosido de producción corre sin resolución local."""
     con_margen = _identidades_por_produccion(tmp_path, 3.5)
     sin_margen = _identidades_por_produccion(tmp_path, 0.0)
-    assert con_margen != sin_margen, (
-        f"jitter_px no hace nada en producción: {con_margen} identidades con 3,5 px "
-        f"y {sin_margen} con 0. El cosido no recibe la resolución."
+    assert con_margen == sin_margen, (
+        f"jitter_px ha empezado a cambiar la producción ({con_margen} identidades con "
+        f"3,5 px y {sin_margen} con 0): alguien ha cableado la resolución al cosido. Se "
+        "midió y NO se adoptó: fabrica quimeras (docs/resolucion_en_cosido.md)."
     )

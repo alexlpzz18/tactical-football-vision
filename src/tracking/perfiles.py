@@ -202,12 +202,16 @@ def _perfil_bytetrack(
         alturas=alturas,
         cruces=cruces,
     )
-    resolucion = cfg_tracking.get("_resolucion")  # lo inyecta el processor
+    # El cosido corre SIN resolución local, a propósito: aquí se leía una clave
+    # `_resolucion` que «inyectaba el processor» y que nadie escribía, así que el
+    # resultado siempre fue `resolucion=None`. Cablearla se midió en las dos patas y
+    # NO se adopta: fabrica quimeras (docs/resolucion_en_cosido.md). Sin resolución,
+    # `jitter_px` no tiene efecto en este perfil.
     return coser_por_pureza(
         identidades,
         colores,
         ParametrosCosidoPureza.desde_dict(cfg_tracking.get("cosido_pureza")),
-        resolucion=resolucion,
+        resolucion=None,
         jitter_px=_jitter(cfg_tracking, uso="cosido"),
         dt=dt,
     )
