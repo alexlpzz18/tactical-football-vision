@@ -151,6 +151,14 @@ Todo lo demás acaba desembocando aquí:
   que cambiar el resultado. ⚠️ Un test de "claves de config sin usar" NO
   lo habría cazado — `activa` sí aparece en el código, solo que en otra
   rama. Es una omisión de CAMINO.
+  **Segundo caso (16-oct, `docs/plan_ablacion_1a1.md`): un parámetro que NADIE INYECTA.**
+  `escalado_resolucion.jitter_px` (3,5 px, medido) no se usa en producción: el perfil
+  `bytetrack` pasa al cosido `cfg_tracking.get("_resolucion")` con el comentario «lo inyecta el
+  processor», y nadie asigna esa clave, así que el cosido corre con `resolucion=None` y sus
+  márgenes locales nunca se aplican. El corte y la consolidación, que también lo usan, no
+  corren con `bytetrack`. Se cazó por COMPORTAMIENTO: el 1/1 con jitter 2,2 y con 3,5 dio el
+  CSV idéntico byte a byte. ⇒ Un comentario que dice «lo hace otro» es una afirmación sin
+  comprobar: buscar la asignación (`grep`) o, mejor, cambiar el valor y ver si algo se mueve.
 - **Una guarda que CUENTA no puede detectar un fallo de IDENTIDAD.** Se
   adoptó un margen con una guarda que exigía "queda 1 en el tercer
   grupo": quedaba 1, pero no era el árbitro. El aviso debe dispararse
