@@ -159,7 +159,9 @@ def suavizar_tramo(puntos, frames, ventana, paso, por_tiempo: bool):
     return media_movil(puntos, v)
 
 
-def suavizar_variante(trayectorias, params, resolucion, dt, variante, fps, registro):
+def suavizar_variante(
+    trayectorias, params, resolucion, dt, variante, fps, registro, res_umbral=None
+):
     """Sustituto de `suavizar_trayectorias` para V1, V2 y V3 (mismas entradas y salidas)."""
     if params.metodo != "media":
         raise ValueError(
@@ -187,7 +189,9 @@ def suavizar_variante(trayectorias, params, resolucion, dt, variante, fps, regis
         if variante == "V1":
             suave = media_por_tiempo(puntos, frames, ventana, paso)
         else:  # V2 y V3: por tramos
-            cortes, pasos = cortes_v2(puntos, frames, fps, resolucion)
+            # El umbral necesita m/píxel AUNQUE producción no escale la ventana (Villaviciosa
+            # no activa `escalado_resolucion`): sale de la homografía, como dice el plan.
+            cortes, pasos = cortes_v2(puntos, frames, fps, res_umbral or resolucion)
             registro.extend(pasos)
             suave = np.empty_like(puntos)
             limites = [0] + [k + 1 for k in cortes] + [len(puntos)]
@@ -241,6 +245,13 @@ def pasada(pata: str, variante: str, trabajo: Path) -> dict:
         cfg["config_tracking"] = str(d / "tracking.yaml")
     fps = float(pickle.load(open(R / cfg["rutas"]["cache"], "rb"))["fps"])
 
+    from src.tracking.resolucion import ResolucionCampo
+
+    res_umbral = ResolucionCampo(
+        np.load(R / cfg["rutas"]["homografia"]),
+        cfg["campo_m"]["largo"],
+        cfg["campo_m"]["ancho"],
+    )
     original, info, registro = sv.suavizar_trayectorias, {}, []
 
     def sustituto(trayectorias, params=None, resolucion=None, dt=0.12):
@@ -249,7 +260,7 @@ def pasada(pata: str, variante: str, trabajo: Path) -> dict:
         if variante == "B0":
             return original(trayectorias, params, resolucion=resolucion, dt=dt)
         return suavizar_variante(
-            trayectorias, params, resolucion, dt, variante, fps, registro
+            trayectorias, params, resolucion, dt, variante, fps, registro, res_umbral
         )
 
     sv.suavizar_trayectorias = sustituto
@@ -630,6 +641,56 @@ def medir(args) -> None:
     print(json.dumps(out, indent=1, ensure_ascii=False))
 
 
+def veredicto_de(res: dict) -> dict:
+    """El criterio del plan, aplicado a `resultado.json`, variante a variante.
+
+    - mejora: alguna de 1-3 con el IC entero por DEBAJO de 0, en alguna pata;
+    - empeora: alguna de 4-6 con el IC entero por ENCIMA de 0, o (7) IDF1/AssA con el IC entero
+      por debajo de 0, en alguna pata;
+    - controles exactos: filas por identidad iguales que B0 y entrada al suavizado idéntica;
+    - V2/V3: si cortan ruido (tasa del fondo > 2× la de la 2.ª franja), no se leen como mejora.
+    B1 (sin suavizar) es la COTA, no un candidato: se informa, no se adopta.
+    """
+    out = {}
+    for v in ("V1", "V2", "V3"):
+        mejoras, empeoras, controles_ok, ruido = [], [], True, []
+        for pata, r in res.items():
+            c = r["controles"]
+            controles_ok &= bool(c["entrada_al_suavizado_identica"])
+            controles_ok &= bool(c["filas_por_id_igual_que_B0"].get(v, False))
+            m = r["variantes"][v]
+            for k, val in m.items():
+                if not isinstance(val, dict):
+                    continue
+                if k == "7_idf1_assa":
+                    for sub, x in val.items():
+                        if x["dif_IC"][2] < 0:
+                            empeoras.append(f"{pata}:{sub}")
+                    continue
+                ic = val.get("dif_IC") or val.get("dif_IC_por_frame")
+                if ic is None:
+                    continue
+                if k.startswith(("1_", "2_", "3_6_centroide")) and ic[2] < 0:
+                    mejoras.append(f"{pata}:{k}")
+                if k.startswith(("4_", "5_", "3_6_ancho", "3_6_prof")) and ic[1] > 0:
+                    empeoras.append(f"{pata}:{k}")
+            if m.get("corta_ruido"):
+                ruido.append(pata)
+        if not controles_ok:
+            final = "NO CONCLUYENTE (falla un control exacto)"
+        elif ruido:
+            final = f"NO SE LEE COMO MEJORA (V2 corta temblor en {ruido})"
+        elif empeoras:
+            final = f"NO SE ADOPTA (empeora: {empeoras})"
+        elif not mejoras:
+            final = "NO SE ADOPTA (no mejora nada con IC)"
+        else:
+            final = f"PASA EL CRITERIO (mejora: {mejoras}); se adopta solo con el OK de Alex"
+        out[v] = {"mejoras": mejoras, "empeoras": empeoras, "controles_ok": controles_ok,
+                  "corta_ruido_en": ruido, "veredicto": final}  # fmt: skip
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -638,8 +699,14 @@ def main() -> None:
     c.add_argument("--pata", default="ambas", choices=["benja", "villa", "ambas"])
     m = sub.add_parser("medir")
     m.add_argument("--trabajo", required=True)
+    v = sub.add_parser("veredicto")
+    v.add_argument("--trabajo", required=True)
     args = ap.parse_args()
-    correr(args) if args.cmd == "correr" else medir(args)
+    if args.cmd == "veredicto":
+        res = json.loads((Path(args.trabajo) / "resultado.json").read_text())
+        print(json.dumps(veredicto_de(res), indent=1, ensure_ascii=False))
+    else:
+        correr(args) if args.cmd == "correr" else medir(args)
 
 
 if __name__ == "__main__":

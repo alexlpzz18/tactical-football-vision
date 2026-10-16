@@ -112,3 +112,38 @@ def test_la_huella_cambia_si_cambia_la_entrada():
     t2[0][3] = (t2[0][3][0], t2[0][3][1] + 0.001, True)
     assert sp.huella(t) == sp.huella([list(t[0])])
     assert sp.huella(t) != sp.huella(t2)
+
+
+def _res(v1_lejos_ic, v1_temblor_ic, ruido_v2=False, control=True):
+    vari = {
+        "1_lejos_todas": {"dif_IC": v1_lejos_ic},
+        "4_temblor_franja2": {"dif_IC": v1_temblor_ic},
+    }
+    base = {"1_lejos_todas": {"dif_IC": (0.0, -0.01, 0.01)}}
+    return {
+        "benja": {
+            "controles": {
+                "entrada_al_suavizado_identica": control,
+                "filas_por_id_igual_que_B0": {"V1": True, "V2": True, "V3": True},
+            },
+            "variantes": {
+                "V1": vari,
+                "V2": {**base, "corta_ruido": ruido_v2},
+                "V3": base,
+            },
+        }
+    }
+
+
+def test_veredicto_del_criterio():
+    v = sp.veredicto_de(_res((-0.02, -0.03, -0.01), (0.0, -0.01, 0.01)))
+    assert v["V1"]["veredicto"].startswith("PASA")
+    assert v["V3"]["veredicto"].startswith("NO SE ADOPTA (no mejora")
+    v = sp.veredicto_de(_res((-0.02, -0.03, -0.01), (0.01, 0.005, 0.02)))
+    assert v["V1"]["veredicto"].startswith(
+        "NO SE ADOPTA (empeora"
+    )  # el temblor sube con IC
+    v = sp.veredicto_de(_res((-0.02, -0.03, -0.01), (0.0, -0.01, 0.01), ruido_v2=True))
+    assert v["V2"]["veredicto"].startswith("NO SE LEE COMO MEJORA")
+    v = sp.veredicto_de(_res((-0.02, -0.03, -0.01), (0.0, -0.01, 0.01), control=False))
+    assert all(x["veredicto"].startswith("NO CONCLUYENTE") for x in v.values())
