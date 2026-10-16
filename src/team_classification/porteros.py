@@ -603,15 +603,21 @@ def aplicar_regla_portero_ultimo_hombre(
             continue
         for f in elegidos:
             resultado[f["id"]] = f"portero_{equipo}"
+        # ⚠️ El mayor de los ELEGIDOS, no `filas[0]`: `filas` está ordenada por
+        # frames sobre TODAS las candidatas del lado, así que su primera fila
+        # podía ser un jugador de campo que no entra en el conjunto (en la
+        # ablación 1/1 salió «9/8933, área 0 %», y era un jugador de B a x = 50).
+        mayor = max(elegidos, key=lambda f: f["vista"])
         logger.info(
             "Portero de %s: %d fragmento(s) %s, presencia conjunta %.0f %% "
-            "(el mayor: último hombre %d/%d, área %.0f %%)",
+            "(el mayor de los elegidos, id %d: último hombre %d/%d, área %.0f %%)",
             equipo,
             len(elegidos),
             [f["id"] for f in elegidos],
             100 * presencia,
-            filas[0]["veces"],
-            filas[0]["vista"],
-            100 * filas[0]["pisa"],
+            mayor["id"],
+            mayor["veces"],
+            mayor["vista"],
+            100 * mayor["pisa"],
         )
     return resultado
