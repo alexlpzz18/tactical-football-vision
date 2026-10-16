@@ -15,6 +15,7 @@ models/weights/
 data/tracking/
 # cachés y CSVs del benjamín (viven en Drive)
 data/tracking_benja/
+data/ablacion_1a1/
 data/annotations/
 
 # Outputs generados

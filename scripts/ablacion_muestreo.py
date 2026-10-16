@@ -57,6 +57,9 @@ CRITERIO = {
     "quimera_min_frames_segunda": 3,
 }
 
+JITTER_1A1_MEDIDO = (
+    2.2  # paso 3 del plan, medido el 16-oct (ver docs/plan_ablacion_1a1.md)
+)
 PILOTO = {
     "frame_ini": 8991,
     "frame_fin": 17982,
@@ -344,8 +347,14 @@ def quimeras_e_ids(
 
 
 # ─────────────────────────────── corridas y métricas ──────────────────────────
-def _pasada(datos, colores, cfg_eq, factor, trabajo: Path, nombre: str):
-    """Pasada de producción desde caché (código de HOY) sobre un caché dado."""
+def _pasada(datos, colores, cfg_eq, factor, trabajo: Path, nombre: str, cfg_tr=None):
+    """Pasada de producción desde caché (código de HOY) sobre un caché dado.
+
+    `cfg_tr`: config de tracking a usar (None = la de producción). El log INFO de la pasada
+    queda en `<nombre>/pasada.log` (los avisos de porteros y árbitro salen ahí).
+    """
+    import logging
+
     import yaml
 
     from src.tracking_data.processor import procesar_desde_cache
@@ -358,14 +367,28 @@ def _pasada(datos, colores, cfg_eq, factor, trabajo: Path, nombre: str):
     cfg = yaml.safe_load(open(CONFIG_BASE))
     cfg["modo"] = "desde_cache"
     cfg["config_equipos"] = str(d / "equipos.yaml")
+    if cfg_tr is not None:
+        yaml.safe_dump(cfg_tr, open(d / "tracking.yaml", "w"), allow_unicode=True)
+        cfg["config_tracking"] = str(d / "tracking.yaml")
+    manejador = logging.FileHandler(d / "pasada.log", mode="w")
+    manejador.setLevel(logging.INFO)
+    raiz = logging.getLogger()
+    nivel_previo = raiz.level
+    raiz.setLevel(logging.INFO)
+    raiz.addHandler(manejador)
     cfg["rutas"].update(
         cache=str(d / "cache.pkl"),
         cache_colores=str(d / "colores.pkl"),
         salida_csv=str(d / "posiciones.csv"),
         salida_meta=str(d / "meta.json"),
     )
-    with velocidad_final_en_segundos(factor):
-        procesar_desde_cache(cfg)
+    try:
+        with velocidad_final_en_segundos(factor):
+            procesar_desde_cache(cfg)
+    finally:
+        raiz.removeHandler(manejador)
+        raiz.setLevel(nivel_previo)
+        manejador.close()
     (d / "cache.pkl").unlink()  # disco justo: el caché ya está en data/
     (d / "colores.pkl").unlink()
 
@@ -380,11 +403,23 @@ def correr(args) -> None:
     cfg_eq = yaml.safe_load(
         open(R / yaml.safe_load(open(CONFIG_BASE))["config_equipos"])
     )
-    _pasada(datos, colores, convertir_configs(cfg_eq, 3), 3, trabajo, "1a1")
+    cfg_tr = yaml.safe_load(
+        open(R / yaml.safe_load(open(CONFIG_BASE))["config_tracking"])
+    )
+    # Paso 3 del plan: jitter_px re-medido a 1/1 con el mismo método que a 1/3 (razón 0,64 →
+    # 3,5 × 0,64 ≈ 2,2 px). El brazo que decide usa el medido; «1a1_jitter35» es la
+    # sensibilidad. ⚠️ Con el perfil bytetrack nadie inyecta `_resolucion` en el cosido, así
+    # que jitter_px no debería cambiar nada: los dos CSV tienen que salir IDÉNTICOS.
+    cfg_tr_11 = copy.deepcopy(cfg_tr)
+    cfg_tr_11["escalado_resolucion"]["jitter_px"] = JITTER_1A1_MEDIDO
+    _pasada(datos, colores, convertir_configs(cfg_eq, 3), 3, trabajo, "1a1", cfg_tr_11)
+    _pasada(
+        datos, colores, convertir_configs(cfg_eq, 3), 3, trabajo, "1a1_jitter35", cfg_tr
+    )
     for fase in (0, 1, 2):
         sub, col = submuestrear(datos, colores, fase)
-        _pasada(sub, col, cfg_eq, 1, trabajo, f"fase{fase}")
-    print(f"✓ cuatro pasadas en {trabajo}")
+        _pasada(sub, col, cfg_eq, 1, trabajo, f"fase{fase}", cfg_tr)
+    print(f"✓ cinco pasadas en {trabajo}")
 
 
 def metricas_de(csv_path: Path, cache: list[dict], fase: int | None) -> dict:

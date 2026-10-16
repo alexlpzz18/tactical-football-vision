@@ -161,3 +161,78 @@ print('colores', len(c), '· detecciones', sum(len(e['dets']) for e in d['cache'
 **Qué bajas a local**: los dos `.pkl` de `MyDrive/tactical/ablacion_1a1/` a `data/ablacion_1a1/`
 (~20 MB y ~350 MB; comprobar `df` antes). El CSV de Colab no hace falta: las pasadas se repiten en
 local con el código de la rama.
+
+## Resultado (16-oct-2026): NO SE ADOPTA
+
+Caché 1/1 de Colab: 8.991 frames, sample 1, completo; 95 ms/frame (~14 min de T4). Firma igual que
+la del config.
+
+**Pasos previos del plan:**
+- **Control del detector (paso 2): pasa.** En los frames de la fase 0, el 99,9 % de las cajas
+  1/1 tienen gemela a < 1 px en el caché 1/3 de hoy, y 2.942 de 2.997 frames son idénticos. Además,
+  la fase 0 reproduce EXACTAMENTE las métricas del 1/3 de hoy (0,758 · 0,842 · 45 · 3,07 · 10 ·
+  0,329 · 0,259 · 0,354).
+- **Temblor a 1/1 (paso 3):** con el mismo método en los dos muestreos, la razón 1/1 ÷ 1/3 es 0,64
+  (rms del residuo 1,43 contra 2,24 px). El brazo que decide usa 3,5 × 0,64 ≈ 2,2 px. ⚠️ Pero
+  **da igual: con el perfil `bytetrack`, `jitter_px` no se usa en ningún sitio.** El cosido lee
+  `cfg_tracking["_resolucion"]`, que según su comentario «lo inyecta el processor», y no lo
+  inyecta nadie (`grep`: ninguna asignación). Comprobado por comportamiento: el 1/1 con 2,2 y con
+  3,5 da el CSV idéntico byte a byte. Es un interruptor de config que nadie lee (CLAUDE.md).
+
+**Los cuatro brazos** (`resultado.json`; ruido = rango de las tres fases 1/3):
+
+| métrica | 1/1 | fase 0 | fase 1 | fase 2 | Δ | ruido | lectura |
+|---|---|---|---|---|---|---|---|
+| detecciones en campo / frame (control) | 13,719 | 13,717 | 13,718 | 13,723 | +0,000 | 0,006 | igual ✓ |
+| faltan / equipo y frame | 0,675 | 0,758 | 0,708 | 0,742 | −0,061 | 0,050 | mejora (justa) |
+| sobran / equipo y frame | 0,592 | 0,842 | 0,833 | 0,783 | −0,228 | 0,058 | mejora |
+| fragmentaciones | 41 | 45 | 43 | 43 | −2,7 | 2,0 | mejora (justa) |
+| **identidades por persona** | 3,43 | 3,07 | 3,00 | 3,21 | **+0,33** | 0,21 | **empeora** |
+| quimeras | 11 | 10 | 10 | 8 | +1,7 | 2,0 | dentro del ruido |
+| DetA | 0,327 | 0,329 | 0,328 | 0,332 | −0,003 | 0,004 | dentro del ruido |
+| AssA | 0,278 | 0,259 | 0,277 | 0,298 | −0,000 | 0,039 | dentro del ruido |
+| IDF1 | 0,342 | 0,354 | 0,344 | 0,373 | −0,015 | 0,030 | dentro del ruido |
+
+**Veredicto del criterio: NO SE ADOPTA (empeora identidades por persona).** Además, ni DetA ni AssA
+ni IDF1 suben más que el ruido, así que tampoco pasaría la condición 4. Lo que sí mejora es
+presencia (sobran −0,23, faltan −0,06), y la asociación no. Por ×3 de GPU, no paga.
+
+⚠️ Límite de estas métricas: todas salen de la ventana del GT (30 s). Lo de abajo pasa FUERA de
+ella y ninguna lo ve.
+
+### Los dos avisos del log de Colab
+
+**(b) Colab usó los recuentos de PRODUCCIÓN**, sin convertir: la celda 3 corre
+`procesar_partido.py` con los YAML de producción, y la conversión y el parche de velocidad solo
+existen en `ablacion_muestreo.py correr`. Una pasada local 1/1 sin convertir reproduce el log de
+Colab exactamente (fragmentos 321, 238 y 205; mejor candidata de B, la 178). **Con los recuentos
+convertidos salen los MISMOS dos avisos**: no es un parámetro en frames sin convertir.
+
+**(a) ¿Solo en el 1/1?**
+
+1. **«El portero de A sale con 5 fragmentos y el mayor con último hombre 9/8933 y área 0 %»: es un
+   fallo del LOG, no del portero.** El mensaje (`porteros.py`, l. ~608) imprime `filas[0]`, la
+   candidata con MÁS FRAMES de todo el lado, no el mayor fragmento elegido. Esa candidata es el id
+   8 (un jugador de B a x = 50) y no está en el conjunto. Los fragmentos elegidos pasan las dos
+   puertas por construcción, viven a x = 6,5-8,3 m y salen `portero_A` en el CSV, en los cuatro
+   brazos (las fases 1/3 dicen lo mismo: «0/2698, área 0 %»). Que tres estén también en
+   `azul_electrico` es el robo conocido de la camiseta negra (CLAUDE.md); la regla de porteros
+   corre después y los recupera. Pasa en los cuatro brazos: no es del 1/1.
+2. **«SIN PORTERO en el lado de B»: pasa en el 1/1 y en la fase 1, no en las fases 0 y 2.** Es
+   frágil también a 1/3 (uno de cada tres submuestreos falla), pero el mecanismo del 1/1 es otro y
+   es de ASOCIACIÓN:
+   - en la ventana del GT el portero de B es el id 8 en los cuatro brazos (60 de 60 frames);
+   - a 1/3 el id 8 se corta a los ~6:30 de archivo y el portero sigue en un fragmento limpio (el 84
+     de la fase 0: último hombre el 91 % de sus frames, el 99 % en el área);
+   - **a 1/1 el id 8 no se corta: dura 8.933 de 8.991 frames.** De 5:00 a 7:30 de archivo (6:33-9:03
+     del reproductor) está siempre en su área (x 57-60); **desde las 7:30 pasa, sin un solo salto
+     de más de 5 m, a vivir en x ≈ 19-29 hasta el final**, en la otra mitad del campo. Es una
+     quimera nacida en un cruce: a 1/1 las cajas se solapan más entre pasos y ByteTrack sigue a la
+     persona equivocada sin saltar. Con el portero diluido (último hombre 42 %, área 51 %), ningún
+     fragmento pasa las puertas, que son FRACCIONES y no dependen del muestreo.
+   - En la fase 1 el fallo es otro y es de margen: su mejor fragmento largo se queda en Wilson 0,53
+     frente a 0,55.
+
+⇒ 1/1 alarga las identidades, y una identidad que no se corta también cruza a otra persona. Es el
+«partir y luego unir» de CLAUDE.md visto desde el otro lado: menos cortes no es mejor si los cortes
+eran los que separaban a dos personas.
