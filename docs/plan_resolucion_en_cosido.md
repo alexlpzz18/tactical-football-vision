@@ -1,5 +1,8 @@
 # Plan: la resolución local en el cosido por pureza (16-oct-2026) — SOLO MEDICIÓN
 
+> **Resultado** (medido después de commitear este plan): `docs/resolucion_en_cosido.md`. NO
+> CONCLUYENTE según el criterio, y fabrica quimeras en los 20 min. Recomendación: no adoptar.
+
 Origen: `docs/plan_ablacion_1a1.md`, paso 3. Cambiar `escalado_resolucion.jitter_px` de 3,5 a
 2,2 daba el CSV de producción **idéntico byte a byte**. Encargo de Alex: medir qué pasa si la
 resolución llega de verdad al cosido, **sin tocar producción**. Este plan y el criterio (en

@@ -20,6 +20,7 @@ Los cachés viven en el checkout principal (gitignored). `--datos` es la raíz d
 Uso:
     python scripts/medir_resolucion_en_cosido.py --datos /ruta/al/checkout  # intento 1
     python scripts/medir_resolucion_en_cosido.py --datos ... --intento 2  # si el plan lo pide
+    python scripts/medir_resolucion_en_cosido.py --datos ... --diagnostico  # post hoc
 """
 
 import argparse
@@ -476,6 +477,66 @@ def veredicto(
     return {"puntos": puntos, "concluyente": concluyente, "pasa": pasa}
 
 
+# ─────────────────── diagnóstico POST HOC (no forma parte del criterio) ───────────────────
+def diagnostico_etiqueta_en_base(datos: Path, sal: Path) -> pd.DataFrame:
+    """Para cada unión nueva o perdida de la candidata (benjamín): ¿qué etiqueta tenían sus
+    dos trozos EN LA BASE?
+
+    Se añadió DESPUÉS de medir, al ver que el proxy del criterio («cambio de etiqueta a
+    través de la unión», leído en el CSV de la propia rama) es ciego a la quimera que
+    importa: cuando dos trozos se unen, la identidad se etiqueta junta y los dos lados
+    salen iguales. Aquí la etiqueta se lee en la base, antes de que la unión exista.
+    """
+    cfg = con_datos(yaml.safe_load(open(R / PATAS["benja"]["config"])), datos)
+    base = correr(cfg, sal / "diag_base.csv", "base")
+    cand = correr(cfg, sal / "diag_candidata.csv", "candidata")
+    id_base = {
+        tuple(tr.det_idxs[0]): n
+        for n, ident in enumerate(base["finales"], start=1)
+        for tr in ident
+    }
+    reales = base["df"][base["df"].es_real == 1]
+    por_id = {k: g for k, g in reales.groupby("id_jugador")}
+    w = CRITERIO["ventana_etiqueta_s"]
+
+    def etiqueta(frag, lado):
+        primero = min(frag, key=lambda tr: tr.ts[0])
+        n = id_base[tuple(primero.det_idxs[0])]
+        t_ini, t_fin, _, _ = cosido_pureza._extremos(frag)
+        g = por_id.get(n)
+        if g is None:
+            return n, None
+        ini, fin = (t_fin - w, t_fin) if lado == "a" else (t_ini, t_ini + w)
+        s = g[(g.tiempo_s >= ini) & (g.tiempo_s <= fin)].etiqueta
+        return n, (s.value_counts().index[0] if len(s) else None)
+
+    frags = {_clave(f): f for f in base["fragmentos"]}
+    res_d = ResolucionCampo(
+        np.load(cfg["rutas"]["homografia"]),
+        cfg["campo_m"]["largo"],
+        cfg["campo_m"]["ancho"],
+        2.0,
+    )
+    ub, uc = uniones(base, res_d), uniones(cand, res_d)
+    pb, pc = set(zip(ub.clave_a, ub.clave_b)), set(zip(uc.clave_a, uc.clave_b))
+    filas = []
+    for tipo, pares, u in (("nueva", pc - pb, uc), ("perdida", pb - pc, ub)):
+        for a, b in pares:
+            f = u[(u.clave_a == a) & (u.clave_b == b)].iloc[0]
+            (ia, ea), (ib, eb) = etiqueta(frags[a], "a"), etiqueta(frags[b], "b")
+            filas.append(
+                dict(
+                    tipo=tipo, t=f.t, x=f.x, y=f.y, hueco_s=f.hueco_s,
+                    v_salto=f.v_salto, en_campo=bool(0 <= f.x <= cfg["campo_m"]["largo"]),
+                    id_base_a=ia, etiqueta_base_a=ea, id_base_b=ib, etiqueta_base_b=eb,
+                )
+            )  # fmt: skip
+    t = pd.DataFrame(filas).sort_values(["tipo", "t"])
+    t.to_csv(sal / "diagnostico_etiqueta_en_base.csv", index=False)
+    print(t.round(2).to_string(index=False))
+    return t
+
+
 # ──────────────────────────────────── main ────────────────────────────────────
 def _fmt(m: dict) -> str:
     return (
@@ -500,10 +561,14 @@ def main() -> None:
     ap.add_argument("--datos", type=Path, default=R, help="raíz donde está data/")
     ap.add_argument("--intento", type=int, default=1, choices=(1, 2))
     ap.add_argument("--salida", default="outputs/resolucion_en_cosido")
+    ap.add_argument("--diagnostico", action="store_true", help="post hoc, benjamín")
     args = ap.parse_args()
     logging.basicConfig(level=logging.ERROR)
     sal = R / args.salida
     sal.mkdir(parents=True, exist_ok=True)
+    if args.diagnostico:
+        diagnostico_etiqueta_en_base(args.datos, sal)
+        return
     ramas = RAMAS_INTENTO[args.intento]
     res = {}
     for pata, d in PATAS.items():
