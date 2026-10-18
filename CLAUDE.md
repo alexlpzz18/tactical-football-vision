@@ -461,7 +461,10 @@ Todo lo demás acaba desembocando aquí:
 - Configuración externalizada (umbrales en un YAML), nunca números
   mágicos hardcodeados.
 - Logging con el módulo `logging` (no prints) en `src/`.
-- Rama `experimento/asociacion-global`. **Nada se mergea a `main` sin el
+- **`main` es el estado bueno**: lo que hay ahí está medido, revisado y pasa la suite. **Se
+  trabaja en ramas** que salen de `main`, una por frente (hoy: `clasificacion-benja`).
+  `experimento/asociacion-global` se fusionó a `main` el 18-oct-2026 y ya no existe
+  (`docs/merge_asociacion_global_a_main.md`). **Nada se mergea a `main` sin el
   OK de Alex.** Nada se adopta como default sin su OK, **salvo** que
   mejore TODAS las métricas a la vez sin degradar ninguna.
 - Si una vía no paga en DOS intentos, se abandona.
