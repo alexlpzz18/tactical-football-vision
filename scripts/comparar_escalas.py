@@ -119,7 +119,7 @@ def informar(nombre, pares):
     )
     if en_equipo:
         print(
-            f"  EQUIPO EQUIVOCADO           : {en_equipo - aciertos}"
+            f"  EQUIPO EQUIVOCADO, jugadores: {en_equipo - aciertos}"
             f" ({100*(en_equipo-aciertos)/en_equipo:.1f} %)"
             f"{'  [emparejamiento invertido]' if invertido else ''}"
         )
@@ -140,6 +140,12 @@ def main():
     p.add_argument("--gt", default="data/annotations/gt_benja/annotations.xml")
     p.add_argument(
         "--homografia", default="data/calibracion_benja/homografia_benja.npy"
+    )
+    p.add_argument(
+        "--dets-colores",
+        default="data/tracking_benja/cache_detecciones_benja_p1.pkl,"
+        "data/tracking_benja/cache_colores_benja_p1.pkl",
+        help="cachés para la 2.ª línea (árbitro contado en un equipo); vacío = no calcularla",
     )
     p.add_argument("--offset", type=int, default=9750)
     p.add_argument("--paso", type=int, default=15)
@@ -172,6 +178,30 @@ def main():
         res[nombre] = informar(
             nombre, casar(df, {f: gt_m[f] for f in comunes}, args.radio)
         )
+        # El equipo equivocado va en DOS líneas: la de arriba son JUGADORES (casado con el GT);
+        # esta es el ÁRBITRO contado en un equipo, que el GT no anota. ESTIMACIÓN por el proxy de
+        # píxeles hasta que haya un GT del árbitro (docs/plan_causas_equipo_equivocado.md).
+        if args.dets_colores:
+            import importlib.util
+            import pickle
+
+            from src.tracking.cache_io import cargar_cache
+
+            ruta_d, ruta_c = args.dets_colores.split(",")
+            spec = importlib.util.spec_from_file_location(
+                "arbitro_medicion",
+                Path(__file__).resolve().parent / "arbitro_medicion.py",
+            )
+            am = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(am)
+            dets = {e["frame_idx"]: e["dets"] for e in cargar_cache(ruta_d)["cache"]}
+            a_eq = am.filas_arbitro_en_equipo(df, dets, pickle.load(open(ruta_c, "rb")))
+            print(
+                f"  árbitro contado en un equipo (ESTIMACIÓN, proxy de píxeles): "
+                f"{a_eq['en_un_equipo']} filas de {a_eq['filas_arbitro_proxy']} de árbitro "
+                f"({100 * a_eq['en_un_equipo'] / max(a_eq['filas_reales_AB'], 1):.1f} % de las "
+                f"{a_eq['filas_reales_AB']} filas reales A/B)"
+            )
 
     if len(res) == 2:
         (n1, a), (n2, b) = res.items()

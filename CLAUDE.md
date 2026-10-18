@@ -26,6 +26,13 @@ aguanta la escala:
 | | 5 min | 20 min |
 |---|---|---|
 | equipo equivocado (casado 1-a-1, radio 2 m) | 1,2 % | **1,2 %** |
+
+⚠️ **El equipo equivocado son DOS líneas, no una** (18-oct, `docs/plan_causas_equipo_equivocado.md`):
+- **jugadores**: 1,24 % (9 de 723 casadas, contra el GT, casado 1-a-1 a 2 m);
+- **filas de ÁRBITRO contadas en un equipo**: **4.035 filas** en la parte entera (el 3,0 % de las
+  filas reales A/B; 28 en la ventana del GT, contra 9 de jugador), casi todas en el B. **ESTIMACIÓN**
+  con el proxy de píxeles (`scripts/arbitro_medicion.py`) hasta que haya un GT del árbitro: el GT
+  del benjamín no lo anota, así que el casado no puede verlas. `comparar_escalas.py` imprime las dos.
 | deriva de los minutos 5-20 | — | **plana** |
 
 ⚠️ **Tres avisos que costó una verificación adversarial, y sin los que
