@@ -50,7 +50,8 @@ Comparando los YAML como datos (clave a clave) y los defaults del código:
 producción de Villaviciosa.
 
 **Balón** (`ParametrosBalon`, defaults del código):
-- `dist_max_jugadores` baja de 25 a 10 m;
+- `dist_max_jugadores` baja de 25 a 10 m. ⚠️ **Escrito a mano**, no derivado del ancho del campo
+  aunque su comentario lo diga: deuda anotada en `BACKLOG.md` 32;
 - relleno de huecos con FUTURO (recta entre anclas, ≤ 1,2 s, ≤ 12 m/s, x ≥ 20 m);
 - selector por continuidad (Viterbi) activo;
 - balón de staff fuera del campo quitado;

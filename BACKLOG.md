@@ -864,3 +864,17 @@ muestra no lo tocó, porque las ventanas se eligieron por detección cruda, no p
 franja horaria. **No hace falta ampliar a las 120 imágenes**: la pregunta que las
 motivaba ya tiene respuesta. Si se sigue con el tercio 3, el camino es mirar el vídeo
 en 10:00-10:45 directamente, no más GT de recuento.
+
+## 32. DEUDA: `dist_max_jugadores` del balón está escrito a mano, no derivado del campo (18-oct-2026)
+
+`ParametrosBalon.dist_max_jugadores = 10.0` (`src/balon/tracking_balon.py`) es un número fijo. Su
+comentario dice que «sale de la ANCHURA DEL CAMPO —un cuarto—» y existe `fraccion_ancho_campo =
+0.25`, pero **nadie la usa para calcularlo**: en un F11 de 64 m seguiría valiendo 10, no 16. Y el
+test que lo «comprueba» (`test_la_fraccion_del_campo_da_el_umbral_de_cada_campo`) es tautológico:
+multiplica la fracción por el ancho dentro del test, no mira si el código la usa.
+
+Hoy no hace daño: solo hay campo de fútbol 7 (40 m × 0,25 = 10). Se rompe el día que entre otro
+campo. Arreglo previsto: derivar `dist_max_jugadores = fraccion_ancho_campo × ancho` de
+`dimensiones_campo` (ya llega a `seleccionar_balon_activo`), con un test de COMPORTAMIENTO que
+cambie el ancho y vea cambiar la guarda. Antes, comprobar que el benjamín sale byte a byte igual.
+Mismo patrón que el `_resolucion` del cosido: un comentario que promete algo que el código no hace.
