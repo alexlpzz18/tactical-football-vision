@@ -256,3 +256,33 @@ suavizado:
   ventana_s: 0.5
   metodo: media # media | savgol
   escalar_con_resolucion: 1.0
+
+# ── Plausibilidad FÍSICA: qué mide en metros lo que hay en la caja ───
+#
+# ADOPTADO el 26-ago-2026. La homografía da la escala del suelo en cada
+# píxel, así que `ancho_px × escala` es el ancho REAL del objeto, sin
+# saber dónde está la cámara (ver src/tracking/plausibilidad_fisica.py).
+#
+# El blanco concreto: la línea del área pequeña de la portería del fondo,
+# que el detector coge 81 veces en el caché v4 y sale etiquetada como
+# jugador del equipo B. Mide **0,22 m de ancho implícito**; la persona
+# real más estrecha del GT mide **0,39**. Hay hueco de sobra.
+#
+# El umbral va como fracción de la altura implícita MEDIANA del partido,
+# nunca en metros absolutos: aquí juegan niños de 8-9 años y en
+# Villaviciosa adultos.
+#
+#   umbral   benjamín v3            benjamín v4            Villaviciosa
+#   sin      1,30 / 0,64 / 4,1 %    1,27 / 0,43 / 5,5 %    3,55 / 3,81 / 9,0 %
+#   0,15     0,97 / 0,40 / 2,9 %    1,03 / 0,33 / 5,1 %    3,55 / 3,81 / 9,0 %
+#   (mediana de centroide / anchura / ocupación)
+#
+# Lo ÚNICO que empeora en cualquier pata es el p90 del benjamín v3
+# (3,25 → 3,39 m). A cambio, la mediana baja un 25 % y la anchura un 38 %.
+#
+# Solo se activa el mínimo de ANCHURA. El de altura se midió y no aporta
+# (mata 414 detecciones en v3 y empeora la anchura), y los máximos no
+# tocan nada. Ver docs/reglas_fisicas.md.
+plausibilidad_fisica:
+  activo: true
+  ancho_min_frac: 0.15

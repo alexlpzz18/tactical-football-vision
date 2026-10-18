@@ -1,0 +1,151 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calibrar __CAMPO__</title>
+<style>
+:root { --fondo:#111; --texto:#eee; --acento:#ffd23f; --ok:#4cd964; --mal:#ff5e5e; }
+body { margin:0; background:var(--fondo); color:var(--texto); font:14px system-ui, sans-serif; }
+#barra { display:flex; gap:12px; align-items:center; padding:8px 12px; flex-wrap:wrap; }
+#barra button { font:inherit; padding:6px 12px; border-radius:6px; border:1px solid #555;
+  background:#222; color:var(--texto); cursor:pointer; }
+#barra button:disabled { opacity:.4; cursor:default; }
+#pide { font-size:16px; } #pide b { color:var(--acento); }
+#zona { display:flex; flex-wrap:wrap; gap:12px; padding:0 12px 12px; align-items:flex-start; }
+/* el lienzo ocupa TODO el ancho que deje el panel: cuanto más grande, más preciso el clic */
+#lienzo { flex:1 1 600px; min-width:0; width:100%; height:auto; cursor:crosshair;
+  border:1px solid #333; }
+#lado { width:300px; flex:none; } #mapa { background:#1d5c2c; width:300px; } #lupa { border:1px solid #555; }
+#lista { font-size:12px; line-height:1.6; } .aviso { color:var(--mal); } .ok { color:var(--ok); }
+</style></head><body>
+<div id="barra">
+  <span id="pide"></span>
+  <button id="saltar">Saltar (no se ve)</button>
+  <button id="deshacer">Deshacer</button>
+  <button id="exportar" disabled>Exportar</button>
+  <label><input type="checkbox" id="verCampo" checked> campo encima</label>
+</div>
+<div id="zona">
+  <canvas id="lienzo"></canvas>
+  <div id="lado"><canvas id="mapa"></canvas>
+    <p>Lupa (×4): apunta al cruce EXACTO de las líneas.</p><canvas id="lupa" width="240" height="240"></canvas>
+    <div id="estado"></div><div id="lista"></div></div>
+</div>
+<script>
+const CAMPO = __MODELO__, PUNTOS = __PUNTOS__, MIN = __MIN__, BORDE = __BORDE__;
+__JS_HOMOGRAFIA__
+const img = new Image(); img.src = "__FRAME__";
+const lz = document.getElementById("lienzo"), cx = lz.getContext("2d");
+const mapa = document.getElementById("mapa"), mx = mapa.getContext("2d");
+let marcados = [], saltados = new Set(), H = null;  // marcados: {nombre, metros, pixel}
+
+function pendientes() { return PUNTOS.filter(p => !saltados.has(p.nombre) && !marcados.some(m => m.nombre === p.nombre)); }
+function areaEnvolvente(pts) {  // área de la envolvente convexa (cadena monótona)
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]); if (p.length < 3) return 0;
+  const cruz = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const abajo = [], arriba = [];
+  for (const q of p) { while (abajo.length >= 2 && cruz(abajo[abajo.length - 2], abajo[abajo.length - 1], q) <= 0) abajo.pop(); abajo.push(q); }
+  for (const q of [...p].reverse()) { while (arriba.length >= 2 && cruz(arriba[arriba.length - 2], arriba[arriba.length - 1], q) <= 0) arriba.pop(); arriba.push(q); }
+  const h = abajo.slice(0, -1).concat(arriba.slice(0, -1)); let a = 0;
+  for (let i = 0; i < h.length; i++) { const [x1, y1] = h[i], [x2, y2] = h[(i + 1) % h.length]; a += x1 * y2 - x2 * y1; }
+  return Math.abs(a) / 2;
+}
+function visible(px) { return px && px[0] >= BORDE && px[1] >= BORDE && px[0] <= img.width - BORDE && px[1] <= img.height - BORDE; }
+function siguiente() {
+  const p = pendientes(); if (!p.length) return null;
+  if (!H) return p[0];                        // sin H: el orden fijo
+  // con H: de los visibles, el que más agranda la envolvente (sin bajar al círculo si hay otros)
+  const ya = marcados.map(m => m.pixel), base = areaEnvolvente(ya);
+  const vis = p.map(q => ({q, px: aplicar(H, ...q.metros)})).filter(o => visible(o.px));
+  if (!vis.length) return p[0];
+  const prioridad = q => (q.nombre.startsWith("circulo_") || q.nombre === "center") ? 1 : 0;
+  vis.sort((a, b) => prioridad(a.q) - prioridad(b.q) || areaEnvolvente([...ya, b.px]) - areaEnvolvente([...ya, a.px]));
+  return vis[0].q;
+}
+function recalcular() {
+  H = marcados.length >= 4 ? homografia(marcados.map(m => m.metros), marcados.map(m => m.pixel)) : null;
+}
+function errorDejandoUnoFuera() {  // solo para el JSON: NO es un validador
+  if (marcados.length < 5) return {};
+  const e = {};
+  for (const m of marcados) {
+    const resto = marcados.filter(o => o !== m);
+    const Hr = homografia(resto.map(o => o.metros), resto.map(o => o.pixel)); if (!Hr) continue;
+    const p = aplicar(Hr, ...m.metros); e[m.nombre] = Math.hypot(p[0] - m.pixel[0], p[1] - m.pixel[1]);
+  }
+  return e;
+}
+function dibujar() {
+  lz.width = img.width; lz.height = img.height; cx.drawImage(img, 0, 0);
+  const sig = siguiente();
+  if (H && document.getElementById("verCampo").checked) {
+    cx.strokeStyle = "rgba(255,210,63,.9)"; cx.lineWidth = 2;
+    for (const [a, b] of CAMPO.lineas) {
+      const N = 40; cx.beginPath();
+      for (let i = 0; i <= N; i++) { const t = i / N; const p = aplicar(H, a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])); i ? cx.lineTo(...p) : cx.moveTo(...p); }
+      cx.stroke();
+    }
+    for (const c of CAMPO.circulos) { cx.beginPath(); for (let i = 0; i <= 72; i++) { const t = i / 72 * 2 * Math.PI; const p = aplicar(H, c.cx + c.r * Math.cos(t), c.cy + c.r * Math.sin(t)); i ? cx.lineTo(...p) : cx.moveTo(...p); } cx.stroke(); }
+    if (sig) { const p = aplicar(H, ...sig.metros); cx.strokeStyle = "#fff"; cx.beginPath(); cx.arc(p[0], p[1], 18, 0, 7); cx.stroke(); }
+  }
+  for (const m of marcados) { cx.fillStyle = "#ff3b30"; cx.beginPath(); cx.arc(m.pixel[0], m.pixel[1], 6, 0, 7); cx.fill(); }
+  // mapa del campo con el punto que toca
+  const W = 300, esc = (W - 20) / CAMPO.largo; mapa.width = W; mapa.height = CAMPO.ancho * esc + 20;
+  const M = (x, y) => [10 + x * esc, 10 + (CAMPO.ancho - y) * esc];
+  mx.strokeStyle = "#fff"; mx.lineWidth = 1;
+  for (const [a, b] of CAMPO.lineas) { mx.beginPath(); mx.moveTo(...M(...a)); mx.lineTo(...M(...b)); mx.stroke(); }
+  for (const c of CAMPO.circulos) { mx.beginPath(); mx.arc(...M(c.cx, c.cy), c.r * esc, 0, 7); mx.stroke(); }
+  for (const p of PUNTOS) {
+    const hecho = marcados.some(m => m.nombre === p.nombre);
+    mx.fillStyle = sig && p.nombre === sig.nombre ? "#ffd23f" : hecho ? "#ff3b30" : saltados.has(p.nombre) ? "#555" : "#ccc";
+    mx.beginPath(); mx.arc(...M(...p.metros), sig && p.nombre === sig.nombre ? 6 : 3, 0, 7); mx.fill();
+  }
+  document.getElementById("pide").innerHTML = sig
+    ? `Haz clic en <b>${sig.texto}</b> (${marcados.length}/${MIN} mínimo)` : "No quedan puntos por pedir.";
+  // El error "dejando uno fuera" NO se enseña: como alarma no pasó el criterio (AUC < 0,80)
+  // y un punto en el extremo siempre sale alto. Solo va al JSON, marcado como informativo.
+  document.getElementById("lista").innerHTML = marcados.map(m => {
+    const borde = !visible(m.pixel) ? ' <span class="aviso">· pegado al borde: mejor otro</span>' : "";
+    return `${m.nombre}${borde}`;
+  }).join("<br>");
+  document.getElementById("estado").innerHTML = marcados.length >= MIN
+    ? '<p class="ok">Ya puedes exportar. Antes, mira que el campo amarillo caiga SOBRE las líneas en toda la imagen.</p>'
+    : `<p>Faltan ${MIN - marcados.length} puntos para exportar.</p>`;
+  document.getElementById("exportar").disabled = marcados.length < MIN || !H;
+}
+lz.addEventListener("click", ev => {
+  const sig = siguiente(); if (!sig) return;
+  // el ÁREA INTERIOR del lienzo (sin su borde de 1 px): con la caja exterior el clic se
+  // desplazaba hasta 4 px abajo del todo (medido simulando los 19 clics del benjamín)
+  const [x, y] = aImagen(ev);
+  marcados.push({nombre: sig.nombre, metros: sig.metros, pixel: [Math.round(x), Math.round(y)]});
+  recalcular(); dibujar();
+});
+function aImagen(ev) {
+  const r = lz.getBoundingClientRect();
+  return [(ev.clientX - r.left - lz.clientLeft) * img.width / lz.clientWidth,
+          (ev.clientY - r.top - lz.clientTop) * img.height / lz.clientHeight];
+}
+const lupa = document.getElementById("lupa"), lx = lupa.getContext("2d");
+lz.addEventListener("mousemove", ev => {  // 60×60 px de imagen, ampliados ×4
+  const [x, y] = aImagen(ev); lx.imageSmoothingEnabled = false;
+  lx.clearRect(0, 0, 240, 240); lx.drawImage(lz, x - 30, y - 30, 60, 60, 0, 0, 240, 240);
+  lx.strokeStyle = "#ff3b30"; lx.beginPath(); lx.moveTo(120, 0); lx.lineTo(120, 240);
+  lx.moveTo(0, 120); lx.lineTo(240, 120); lx.stroke();
+});
+document.getElementById("saltar").onclick = () => { const s = siguiente(); if (s) { saltados.add(s.nombre); dibujar(); } };
+document.getElementById("deshacer").onclick = () => { marcados.pop(); recalcular(); dibujar(); };
+document.getElementById("verCampo").onchange = dibujar;
+function descargar(nombre, texto) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([texto], {type: "application/json"}));
+  a.download = nombre; a.click();
+}
+document.getElementById("exportar").onclick = () => {
+  const puntos = marcados.map(m => ({nombre: m.nombre, pixel: m.pixel, metros: m.metros}));
+  descargar("puntos_marcados___CAMPO__.json", JSON.stringify(puntos, null, 2));
+  const Hpm = homografia(marcados.map(m => m.pixel), marcados.map(m => m.metros));  // píxel → metros
+  descargar("homografia___CAMPO__.json", JSON.stringify({
+    homografia_pixel_a_metros: Hpm, campo: {largo: CAMPO.largo, ancho: CAMPO.ancho},
+    informativo_error_dejando_uno_fuera_px: errorDejandoUnoFuera(), n_puntos: marcados.length,
+  }, null, 2));
+};
+img.onload = dibujar;
+</script></body></html>

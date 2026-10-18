@@ -14,8 +14,8 @@ Uso:
 """
 
 import argparse
+import bisect
 import logging
-import pickle
 import sys
 from pathlib import Path
 
@@ -26,11 +26,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.balon.tracking_balon import (  # noqa: E402
     ParametrosBalon,
-    preparar_para_replay,
+    id_de_tramo,
+    preparar_balon,
     detectar_contactos,
     detectar_contactos_por_velocidad,
     fusionar_contactos,
     detectar_fases_aereas,
+    marcar_vuelos_readmitidos,
     seleccionar_balon_activo,
 )
 
@@ -57,51 +59,78 @@ def main() -> None:
         "queda disponible: es prescindible (lo que ve, lo ve la "
         "velocidad) pero no se borra.",
     )
+    parser.add_argument(
+        "--campo",
+        default="configs/campo_benja.yaml",
+        help="config del campo, para el filtro de plausibilidad del balón",
+    )
+    parser.add_argument(
+        "--sin-filtro-marcas",
+        action="store_true",
+        help="NO quitar las marcas fijas del campo (punto central, de "
+        "penalti, manchas). Solo para MEDIR su efecto: en producción van "
+        "quitadas, y llegaron a ser el 56 % del caché.",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    with open(args.cache_balon, "rb") as f:
-        datos = pickle.load(f)
-    cache = datos["cache"]
-    tiempos = {e["frame_idx"]: e["t"] for e in cache}
-    detecciones = {e["frame_idx"]: e["dets"] for e in cache if e["dets"]}
+    # ⚠️ LOS DOS FILTROS DEL BALÓN VAN JUNTOS Y POR UN SOLO SITIO
+    # (`src.balon.carga`), porque tenerlos sueltos significaba cinco
+    # consumidores donde olvidar uno — y un consumidor que se olvida no
+    # falla: da un número distinto.
+    #   1. PLAUSIBILIDAD FÍSICA: entre el 12 % y el 20 % de las
+    #      detecciones proyectan FUERA del campo (la x llega a 24.876 m en
+    #      un campo de 62). Sin quitarlas la velocidad máxima del balón
+    #      sale a 4151 m/s y dos tercios de las FASES AÉREAS son basura.
+    #   2. MARCAS FIJAS del campo: el punto central, el de penalti y una
+    #      mancha del fondo llegaron a ser el 56 % del caché tras el
+    #      esquema mixto (`docs/balon_fantasma.md`).
+    from src.balon.carga import cargar_detecciones_limpias
+    from src.campo_modelo import cargar_modelo
+
+    modelo_campo = cargar_modelo(config=args.campo)
+    detecciones, tiempos, meta = cargar_detecciones_limpias(
+        args.cache_balon, modelo_campo, quitar_marcas=not args.sin_filtro_marcas
+    )
+    n_frames_cache = meta["n_frames"]
+
+    from src.balon.carga import contexto_del_selector
 
     jug = pd.read_csv(args.csv_jugadores)
-    reales = jug[jug.es_real == 1]
-    # Los jugadores van a otra frecuencia: se indexan por tiempo para
-    # poder emparejar con el balón, que se muestrea más denso.
-    por_tiempo, equipo_de = {}, {}
-    for t, g in reales.groupby("tiempo_s"):
-        por_tiempo[round(float(t), 2)] = [
-            (float(r.x_m), float(r.y_m), int(r.id_jugador)) for r in g.itertuples()
-        ]
-        for r in g.itertuples():
-            equipo_de[int(r.id_jugador)] = str(r.etiqueta)
+    equipo_de = {
+        int(r.id_jugador): str(r.etiqueta) for r in jug[jug.es_real == 1].itertuples()
+    }
+    # Mismo emparejado por tiempo y mismo contexto que el vídeo de diagnóstico.
+    jug_de_frame, ctx_selector = contexto_del_selector(
+        args.csv_jugadores,
+        tiempos,
+        detecciones,
+        args.campo,
+        modelo_campo,
+        meta["fuera_de_campo"],
+    )
 
     def jugadores_en(frame):
-        t = round(tiempos.get(frame, 0.0), 2)
-        if t in por_tiempo:
-            return por_tiempo[t]
-        # El instante más cercano dentro de medio paso de jugadores
-        cercano = min(por_tiempo, key=lambda x: abs(x - t), default=None)
-        if cercano is None or abs(cercano - t) > 0.08:
-            return []
-        return por_tiempo[cercano]
+        return jug_de_frame.get(frame, [])
 
     params = ParametrosBalon()
     pos_jug = {f: [(j[0], j[1]) for j in jugadores_en(f)] for f in detecciones}
-    activo = seleccionar_balon_activo(detecciones, pos_jug, params)
+    activo = seleccionar_balon_activo(detecciones, pos_jug, params, **ctx_selector)
     logger.info(
         "Balón activo: %d frames de %d con detección (%d frames en total)",
         len(activo),
         len(detecciones),
-        len(cache),
+        n_frames_cache,
     )
 
     trayectoria = [
         (f, np.array(d[:2]), d[5] - d[3], d[6]) for f, d in sorted(activo.items())
     ]
     aereo = detectar_fases_aereas(trayectoria, tiempos, params)
+    # Los vuelos readmitidos (fuera del campo para la homografía de suelo) NO son
+    # posiciones: se marcan aéreos -> recta atenuada, es_real=0, fuera de contactos.
+    n_vuelo = marcar_vuelos_readmitidos(trayectoria, aereo, detecciones)
+    logger.info("Balón en vuelo readmitido por continuidad: %d filas (aéreas)", n_vuelo)
     logger.info(
         "Fases aéreas: %d de %d observaciones (%.0f %%)",
         sum(aereo),
@@ -127,14 +156,30 @@ def main() -> None:
         )
 
     # Suavizado + fase aérea sin coordenadas inventadas
-    preparadas = preparar_para_replay(trayectoria, aereo, tiempos, params)
+    # Centros de las cajas en PÍXELES: con ellos, la puerta de continuidad
+    # distingue un vuelo de un cambio de balón (docs/balon_sin_alas.md).
+    centros_px = {
+        f: ((d[2] + d[4]) / 2.0, (d[3] + d[5]) / 2.0) for f, d in activo.items()
+    }
+    preparadas, cortes = preparar_balon(trayectoria, aereo, tiempos, params, centros_px)
+    cortes_ordenados = sorted(cortes)
+    logger.info(
+        "Puerta de píxeles (> %.0f px/s): %d cortes; el balón se reparte en %d tramos",
+        params.vel_max_px_s,
+        len(cortes),
+        len(cortes) + 1,
+    )
+
+    def tramo_de(frame: int) -> int:
+        return bisect.bisect_right(cortes_ordenados, frame)
 
     filas = []
     for f, pos, es_aereo, es_real in preparadas:
-        # El balón es UNA identidad continua (-1). Durante el vuelo su
-        # posición queda congelada en la última fiable, así que la serie
-        # no da saltos; el aéreo se marca además con una ficha propia
-        # (-2) en el mismo sitio, que es la que el replay atenúa.
+        # El balón es UNA identidad continua (-1) POR TRAMO: un corte de la
+        # puerta de píxeles abre otra (`id_de_tramo`), para que el replay no
+        # una con una recta dos detecciones que no son el mismo balón. El
+        # aéreo se marca además con una ficha propia (-2 en el primer tramo)
+        # en el mismo sitio, que es la que el replay atenúa.
         filas.append(
             {
                 "frame": f,
@@ -142,7 +187,7 @@ def main() -> None:
                 # Convenio: el balón no es un jugador, y el aéreo va con
                 # id propio porque el replay asigna UNA etiqueta por
                 # identidad — mezclarlos perdía la marca de "no fiable".
-                "id_jugador": -1,
+                "id_jugador": id_de_tramo(tramo_de(f)),
                 "equipo": 3,
                 "etiqueta": "balon",
                 "x_m": round(float(pos[0]), 2),
@@ -157,7 +202,7 @@ def main() -> None:
                 {
                     "frame": f,
                     "tiempo_s": round(tiempos[f], 2),
-                    "id_jugador": -2,
+                    "id_jugador": id_de_tramo(tramo_de(f), aereo=True),
                     "equipo": 3,
                     "etiqueta": "balon_aereo",
                     "x_m": round(float(pos[0]), 2),
@@ -181,14 +226,14 @@ def main() -> None:
     print(f"\n✓ CSV conjunto en {args.salida} ({len(conjunto)} filas)")
     print(f"✓ Contactos en {ruta_c}")
     print("\n── NÚMEROS DEL PILOTO ──")
-    print(f"  frames del tramo            : {len(cache)}")
+    print(f"  frames del tramo            : {n_frames_cache}")
     print(
         f"  con balón detectado         : {len(detecciones)} "
-        f"({100 * len(detecciones) / len(cache):.0f} %)"
+        f"({100 * len(detecciones) / n_frames_cache:.0f} %)"
     )
     print(
         f"  tras seleccionar el activo  : {n_con} "
-        f"({100 * n_con / len(cache):.0f} % del tramo)"
+        f"({100 * n_con / n_frames_cache:.0f} % del tramo)"
     )
     print(
         f"  en FASE AÉREA               : {sum(aereo)} "

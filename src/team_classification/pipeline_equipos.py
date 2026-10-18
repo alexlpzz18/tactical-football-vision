@@ -20,11 +20,13 @@ from src.team_classification.color_classifier import (
     TeamClassifierColor,
 )
 from src.campo_modelo import MODELO_F11, EjeProfundidad, cargar_modelo
-from src.team_classification.arbitro import identificar_arbitros
+from src.team_classification.arbitro import identificar_arbitros, un_solo_arbitro
 from src.team_classification.oclusion import color_medio_limpio
 from src.team_classification.porteros import (
     ReglaPorteros,
+    ReglaPorteroUltimoHombre,
     aplicar_regla_porteros,
+    aplicar_regla_portero_ultimo_hombre,
     deducir_lados,
 )
 from src.team_classification.staff import ReglaStaff, aplicar_regla_staff
@@ -104,6 +106,38 @@ def entrenar_clasificador(
     umbral = cfg_fit.get("umbral_profundidad_m", cfg_fit.get("umbral_my", 34.0))
     min_features = cfg_fit.get("min_features", 300)
     modelo, profundidad = _profundidad_configurada(cfg_equipos)
+
+    # ── Recortar el fit en el TIEMPO (entrenamiento.desde_s) ─────────
+    #
+    # Los primeros minutos de un partido son otro régimen: saque inicial,
+    # jugadores colocándose, gente entrando al campo. Medido en la parte
+    # entera del benjamín, el fit del tramo 0-5 se desvía un 35 % de la
+    # distancia A−B contra un nulo de remuestreo del 2,2 % — 16 veces el
+    # ruido (docs/verificacion_adversarial_27ago.md).
+    #
+    # Con `desde_s` el fit ignora esos minutos. Se deja en None (todo) por
+    # defecto: activarlo es una decisión de producto que hay que MEDIR,
+    # no un ajuste gratis, porque quitar minutos también quita muestra.
+    desde_s = cfg_fit.get("desde_s")
+    if desde_s is not None:
+        if cache is None:
+            raise ValueError(
+                "entrenar_clasificador: entrenamiento.desde_s necesita el "
+                "caché de detecciones para saber el tiempo de cada recorte."
+            )
+        t_de_frame = {e["frame_idx"]: e["t"] for e in cache}
+        antes = len(colores)
+        colores = {
+            clave: feature
+            for clave, feature in colores.items()
+            if t_de_frame.get(clave[0], 0.0) >= float(desde_s)
+        }
+        logger.info(
+            "Fit recortado a t >= %.0f s: %d recortes de %d",
+            float(desde_s),
+            len(colores),
+            antes,
+        )
 
     features = np.array(list(colores.values()))
     if solo_cercanos:
@@ -216,10 +250,25 @@ def clasificar_identidades(
 
     cfg_porteros = cfg_equipos.get("porteros", {})
     if cfg_porteros.get("activo", False):
+        lados = None
         opciones = {
             k: v
             for k, v in cfg_porteros.items()
-            if k not in ("activo", "desde_modelo", "margen_m", "deducir_lados")
+            if k
+            not in (
+                "activo",
+                "desde_modelo",
+                "margen_m",
+                "deducir_lados",
+                # claves del método por ÚLTIMO HOMBRE: no son de ReglaPorteros
+                "metodo",
+                "min_pisa_area",
+                "min_presencia",
+                "min_ultimo_hombre",
+                "min_frames_nuevos",
+                "margen_area_m",
+                "dup_dist_m",
+            )
         }
         # Qué equipo defiende cada portería NO se configura a mano: se
         # deduce de las posiciones. Configurarlo era la causa de que en
@@ -255,7 +304,81 @@ def clasificar_identidades(
             )
         else:
             regla = ReglaPorteros.desde_dict(opciones)
-        equipos = aplicar_regla_porteros(equipos, identidades, regla)
+
+        # ── Qué método decide quién es el portero ────────────────────
+        #
+        # ORDEN, que Alex pidió comprobar y no es indiferente: el
+        # catálogo arbitral ya ha corrido y puede haber mandado al
+        # portero al cajón 'otro' (en el benjamín lo hace: viste azul
+        # eléctrico). Las dos reglas de portero corren DESPUÉS y
+        # sobrescriben esa etiqueta, así que **la posición manda sobre el
+        # color**, que es lo acordado. Y ninguna de las dos vuelve a
+        # mirar el color, así que el catálogo no puede pisarlas luego.
+        metodo = cfg_porteros.get("metodo", "area")
+        if metodo == "ultimo_hombre":
+            lados_eq = None
+            if lados is not None:
+                lados_eq = {lados[0]: -1, lados[1]: +1}
+            elif "equipo_mx_bajo" in opciones:
+                lados_eq = {
+                    opciones["equipo_mx_bajo"]: -1,
+                    opciones["equipo_mx_alto"]: +1,
+                }
+            equipos = aplicar_regla_portero_ultimo_hombre(
+                equipos,
+                identidades,
+                modelo,
+                lados_eq or {},
+                ReglaPorteroUltimoHombre.desde_dict(
+                    {
+                        **{
+                            k: v
+                            for k, v in cfg_porteros.items()
+                            if k
+                            in (
+                                "min_pisa_area",
+                                "min_presencia",
+                                "min_ultimo_hombre",
+                                "min_frames_nuevos",
+                                "margen_area_m",
+                                "dup_dist_m",
+                            )
+                        },
+                        "activo": True,
+                    }
+                ),
+            )
+        else:
+            equipos = aplicar_regla_porteros(equipos, identidades, regla)
+
+    # UN SOLO ÁRBITRO dentro del campo. Va DESPUÉS de porteros y antes de
+    # staff, y el orden importa: los porteros están en el tercer grupo
+    # hasta que su regla los saca —el color de un portero no es fiable por
+    # diseño— así que ponerlo antes hacía que un PORTERO ganase la
+    # exclusividad (medido en Villaviciosa: la identidad 19, con 498
+    # observaciones, se llevaba el puesto y el árbitro de verdad volvía al
+    # equipo A). Lo cazó la guarda `avisar_tercer_grupo` avisando de
+    # "TERCER GRUPO VACÍO".
+    #
+    # Y va antes de staff porque staff mira geometría, no color: quien
+    # esté fuera del campo no es árbitro y da igual el orden.
+    if cfg_equipos.get("arbitro", {}).get("uno_solo", True):
+        equipos = un_solo_arbitro(
+            equipos,
+            identidades,
+            colores,
+            [clasificador._prototipos.a, clasificador._prototipos.b],
+            modelo,
+            min_observaciones=cfg_equipos.get("arbitro", {}).get(
+                "min_observaciones", 25
+            ),
+            # Apagado por defecto y con motivo medido (docs/arbitro.md):
+            # devolver por color a los no coronados empeoró Villaviciosa de
+            # 3,55 a 3,65 m. La clave existe para poder MEDIRLO, no adoptarlo.
+            devolver_por_color=cfg_equipos.get("arbitro", {}).get(
+                "devolver_por_color", False
+            ),
+        )
 
     # Regla de staff: quien vive FUERA del campo no juega (línier, cuerpo
     # técnico). Va DESPUÉS de porteros: un portero está dentro del campo,
@@ -273,4 +396,267 @@ def clasificar_identidades(
     logger.info(
         "Equipos por identidad: %d/%d clasificadas", len(equipos), len(identidades)
     )
+    avisar_tercer_grupo(equipos, identidades, modelo)
     return equipos
+
+
+def avisar_tercer_grupo(equipos: dict[int, str], identidades, modelo) -> int:
+    """Comprueba que en el TERCER GRUPO quede exactamente una persona.
+
+    La guarda que pidió Alex, y protege de un umbral frágil. El árbitro no
+    se identifica con ninguna señal de comportamiento —los cinco medidos
+    fallan (docs/arbitro.md)— sino **por eliminación**: dentro del campo,
+    quitando los dos equipos, los dos porteros y el staff, debería quedar
+    él y nadie más. Medido: queda exactamente 1 en las dos patas.
+
+    Pero eso depende de `arbitro.margen_equipo`, cuya ventana en el
+    benjamín es de solo 0,62-0,75, con acantilado en 0,78. En otro campo
+    puede caerse, y el síntoma sería silencioso: o el árbitro se cuela en
+    un equipo (0 en el tercer grupo) o el catálogo roba jugadores (2 o
+    más). Las dos cosas salen por el log.
+
+    No corrige nada a propósito: solo avisa. Corregir a ciegas con una
+    señal que no separa es exactamente lo que este proyecto lleva
+    aprendiendo a no hacer.
+
+    Returns:
+        Cuántas identidades quedan en el tercer grupo.
+    """
+    quedan = []
+    for indice, identidad in enumerate(identidades, start=1):
+        etiqueta = str(equipos.get(indice, "otro"))
+        if etiqueta in ("A", "B") or etiqueta.startswith("portero"):
+            continue
+        if etiqueta == "staff":
+            continue
+        posiciones = np.array([pos for tr in identidad for pos in tr.pos])
+        if len(posiciones) < 25:
+            continue
+        mx = float(np.median(posiciones[:, 0]))
+        my = float(np.median(posiciones[:, 1]))
+        if not (0.0 <= mx <= modelo.largo and 0.0 <= my <= modelo.ancho):
+            continue
+        quedan.append((indice, len(posiciones), mx, my))
+
+    if len(quedan) == 1:
+        logger.info(
+            "Tercer grupo: 1 identidad (la %d, %d obs en (%.1f, %.1f)) — "
+            "el árbitro sale por eliminación",
+            *quedan[0],
+        )
+    elif not quedan:
+        logger.warning(
+            "TERCER GRUPO VACÍO: no queda nadie dentro del campo que no sea "
+            "jugador, portero o staff. Si hay árbitro en este partido, está "
+            "contando para un equipo. Revisa arbitro.margen_equipo (ventana "
+            "medida: 0,62-0,75)."
+        )
+    else:
+        detalle = ", ".join(
+            f"{i} ({n} obs en {mx:.0f},{my:.0f})" for i, n, mx, my in quedan
+        )
+        logger.warning(
+            "TERCER GRUPO CON %d IDENTIDADES: debería quedar solo el árbitro. "
+            "Puede que el catálogo esté robando jugadores. Candidatas: %s. "
+            "Revisa arbitro.margen_equipo (ventana medida: 0,62-0,75).",
+            len(quedan),
+            detalle,
+        )
+    return len(quedan)
+
+
+def _recortes_para_votar(
+    cerca: list,
+    obs: list,
+    t_actual: float,
+    colores: dict,
+    ocluidas: set[tuple[int, int]],
+    ampliar_s: float,
+) -> list:
+    """Los recortes de la ventana que pueden votar color, sin los ocluidos.
+
+    1. Si hay recortes limpios en la ventana, solo votan ellos.
+    2. Si TODOS están ocluidos y `ampliar_s` > 0, se buscan limpios de la misma
+       identidad hasta `ampliar_s / 2` a cada lado.
+    3. Si no hay ninguno, votan todos (como antes: mejor un voto contaminado que
+       ninguno, o la observación se queda sin etiqueta).
+    """
+    limpios = [(p, c) for p, c in cerca if p not in ocluidas]
+    if limpios:
+        return limpios
+    if ampliar_s > 0:
+        ampliados = [
+            (p, colores[p])
+            for t2, p in obs
+            if abs(t2 - t_actual) <= ampliar_s / 2
+            and p in colores
+            and p not in ocluidas
+        ]
+        if ampliados:
+            return ampliados
+    return cerca
+
+
+def etiquetar_por_observacion(
+    identidades,
+    equipos: dict[int, str],
+    colores: dict,
+    clasificador,
+    cfg_equipos: dict | None = None,
+    ocluidas: set[tuple[int, int]] | None = None,
+) -> dict[tuple[int, int], str]:
+    """{(id_identidad, frame_idx): etiqueta} decidida por VENTANA de color.
+
+    Por qué existe: hoy la etiqueta de equipo la decide un voto sobre TODA
+    la identidad, así que una identidad que mezcla dos personas manda a
+    todas sus observaciones al equipo de la dominante. Medido en el
+    benjamín: **116 de 747 observaciones tienen el equipo equivocado
+    (15,5 %) y 11 identidades mezclan los dos equipos**; decidiendo por
+    ventana corta bajan a 3,2 %.
+
+    ⚠️ **NO se activa por defecto, y el motivo es que NO VIAJA.** Medido
+    contra las métricas de producto en las dos patas:
+
+    | estrategia | benjamín centroide | Villaviciosa centroide |
+    |---|---|---|
+    | voto por identidad | 1,30 m | **3,55 m** |
+    | ventana 1-2 s | **0,36 m** | 3,94 m |
+
+    En el benjamín divide el error por 3,6 y en Villaviciosa lo empeora.
+    La causa está medida: allí el color de cada recorte es MUCHO menos
+    fiable —los jugadores están a 0,19-0,80 de su prototipo, contra
+    0,27-0,56 en el benjamín— porque media plantilla juega en la mitad
+    lejana. Donde el recorte es señal, decidir por recorte gana; donde es
+    ruido, lo que salva es promediar.
+
+    Con dos partidos no se puede derivar un selector automático sin
+    ajustarlo a dos puntos, así que se deja como decisión POR PARTIDO en
+    el config (`agregacion.por_observacion`).
+
+    Las reglas posicionales mandan: un portero es portero en todas sus
+    observaciones y el staff no juega en ninguna. Lo que pasa a decidirse
+    por ventana es solo el A/B del color.
+
+    `ocluidas` ({(frame, det_idx)} de los recortes que se pisan con otra caja,
+    ver `oclusion.py`) solo se usa si `por_observacion.excluir_ocluidas` está
+    activo: entonces los recortes ocluidos NO votan en la media de la ventana.
+    Con `ampliar_ventana_s` > 0, una ventana en la que TODOS los recortes están
+    ocluidos busca recortes limpios de la misma identidad hasta esa distancia
+    (y si no hay ninguno, se cae a todos, como antes). Es lo que se ataca del
+    baile de colores: el 73 % de los cambios A↔B cae en una caja solapada
+    (`docs/arbitro_y_baile_de_colores.md`). ⚠️ El negativo de agosto sobre
+    excluir ocluidos (`docs/experimentos_tracking.md`, 3a) era POR IDENTIDAD,
+    donde una minoría contaminada se promedia sola; aquí la ventana es de
+    ~15 recortes y un solape de un segundo la contamina entera.
+    """
+    cfg_equipos = cfg_equipos or {}
+    cfg = cfg_equipos.get("agregacion", {}).get("por_observacion", {})
+    if not cfg.get("activo", False):
+        return {}
+    ventana = float(cfg.get("ventana_s", 1.5))
+    forzar = bool(cfg.get("forzar_ab", True))
+    excluir_ocluidas = bool(cfg.get("excluir_ocluidas", False)) and bool(ocluidas)
+    ampliar_s = float(cfg.get("ampliar_ventana_s", 0.0)) if excluir_ocluidas else 0.0
+
+    # ── EL CATÁLOGO ARBITRAL, TAMBIÉN POR OBSERVACIÓN (28-ago-2026) ──
+    #
+    # `identificar_arbitros` juzga la MEDIA DE TODA LA IDENTIDAD, y eso lo
+    # rompe una identidad contaminada: el id 292 del benjamín mezcla al
+    # árbitro con jugadores naranjas, su media da un tono intermedio
+    # (H=28 S=72) que no cae en ningún arquetipo, y con **3.187 recortes**
+    # no dispara. **No es cantidad, es PUREZA.**
+    #
+    # Y la señal está: el 68 % de los recortes de esa identidad están MÁS
+    # LEJOS de los dos prototipos de equipo que los prototipos entre sí
+    # (mediana 1,12 contra una separación A−B de 0,98). Lo que fallaba era
+    # preguntar "¿a cuál de los dos se parece más?" —que siempre tiene
+    # respuesta— en vez de "¿se parece a alguno?".
+    #
+    # Aquí se pregunta lo segundo sobre la MISMA ventana que ya se calcula
+    # para el A/B, así que no cuesta una pasada extra. Una observación
+    # suelta no convierte a nadie en árbitro: manda la media de la ventana.
+    catalogo = bool(cfg.get("catalogo_arbitral", False))
+    # `solo_catalogo` separa las dos preguntas que esta función hace sobre
+    # la MISMA ventana. Están acopladas en el código pero no en la
+    # naturaleza, y medido en Villaviciosa van en direcciones opuestas:
+    # la ventana A/B empeora el centroide (4,37 → 4,67) porque allí el
+    # recorte suelto es ruido, mientras el catálogo lo mejora (→ 4,10)
+    # porque saca de los equipos a quien no es jugador. Con esto se puede
+    # tener lo segundo sin lo primero.
+    solo_catalogo = bool(cfg.get("solo_catalogo", False))
+    activos = ()
+    if catalogo:
+        from src.team_classification.arbitro import (
+            ARQUETIPOS,
+            arquetipos_activos,
+            brillo_medio,
+            tono_dominante,
+        )
+
+        pr = getattr(clasificador, "_prototipos", None)
+        if pr is not None:
+            activos = arquetipos_activos([pr.a, pr.b], ARQUETIPOS)
+        if not activos:
+            catalogo = False
+
+    salida: dict[tuple[int, int], str] = {}
+    n_cambios = 0
+    n_arbitro = 0
+    for id_identidad, identidad in enumerate(identidades, start=1):
+        etiqueta = str(equipos.get(id_identidad, "otro"))
+        if etiqueta not in ("A", "B"):
+            continue  # portero, staff y 'otro' los decide la posición
+        obs = sorted(
+            (
+                (t, tuple(par))
+                for tracklet in identidad
+                for t, par in zip(tracklet.ts, tracklet.det_idxs)
+            ),
+            key=lambda o: o[0],
+        )
+        for t_actual, par in obs:
+            cerca = [
+                (p, colores[p])
+                for t2, p in obs
+                if abs(t2 - t_actual) <= ventana / 2 and p in colores
+            ]
+            if not cerca:
+                continue
+            if excluir_ocluidas:
+                cerca = _recortes_para_votar(
+                    cerca, obs, t_actual, colores, ocluidas, ampliar_s
+                )
+            media = color_medio_limpio(cerca, None)
+            if media is None:
+                continue
+            # Primero: ¿esta ventana viste de árbitro? Si sí, la
+            # observación sale del cómputo de equipos (va al tercer
+            # grupo) y NO se le pregunta a qué equipo se parece más.
+            if catalogo:
+                tono = tono_dominante(media)
+                if tono is not None:
+                    brillo = brillo_medio(media)
+                    if any(a.contiene(tono[0], tono[1], brillo) for a in activos):
+                        salida[(id_identidad, par[0])] = "otro"
+                        n_arbitro += 1
+                        continue
+            if solo_catalogo:
+                continue  # el A/B lo sigue decidiendo el voto de la identidad
+            nueva = clasificador.predict_color(media, solo_equipos=forzar)
+            salida[(id_identidad, par[0])] = nueva
+            n_cambios += nueva != etiqueta
+    if salida:
+        logger.info(
+            "Etiqueta por observación (ventana %.1f s): %d observaciones "
+            "etiquetadas, %d cambian respecto al voto de su identidad"
+            "%s",
+            ventana,
+            len(salida),
+            n_cambios,
+            (
+                f", {n_arbitro} sacadas de los equipos por el catálogo arbitral"
+                if n_arbitro
+                else ""
+            ),
+        )
+    return salida

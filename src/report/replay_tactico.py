@@ -21,6 +21,7 @@ Decisiones de diseño:
 
 import json
 import logging
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -185,12 +186,24 @@ def _filtrar_creible(
 
     Requiere la columna `es_real`; sin ella devuelve el CSV tal cual (los
     CSV antiguos no la tienen y siguen funcionando).
+
+    ⚠️ EL BALÓN NO PASA POR ESTE FILTRO. Sus reglas de credibilidad ya se
+    aplicaron en su propio pipeline (`preparar_para_replay`: recta
+    atenuada en vuelo, relleno solo de huecos cortos y lentos), y estas,
+    pensadas para jugadores, lo rompían: la ficha de "balón por el aire"
+    (id −2) va entera con `es_real=0` a propósito, así que la regla 1 la
+    borraba SIEMPRE. La leyenda ofrecía "Balón por el aire" y no aparecía
+    nunca — el 30 % de las observaciones de balón de la parte entera
+    (`docs/pizarra_parte_entera.md`).
     """
     if "es_real" not in df.columns:
         logger.info("CSV sin columna 'es_real': el replay pinta todo el CSV.")
         return df
 
-    conservar = []
+    es_balon = df["etiqueta"].astype(str).str.startswith("balon")
+    balon, df = df[es_balon], df[~es_balon]
+
+    conservar = [balon] if len(balon) else []
     for _id_jugador, grupo in df.groupby("id_jugador"):
         grupo = grupo.sort_values("tiempo_s")
         tiempos_reales = grupo.loc[grupo["es_real"] == 1, "tiempo_s"].to_numpy()
@@ -210,17 +223,55 @@ def _filtrar_creible(
             "max_edad_interp_s / min_vida_s."
         )
     filtrado = pd.concat(conservar)
+    jugadores = filtrado[~filtrado["etiqueta"].astype(str).str.startswith("balon")]
     logger.info(
-        "Filtro de credibilidad: %d → %d posiciones, %d → %d identidades "
-        "(interpolado ≤ %.1f s de un real, vida ≥ %.1f s)",
+        "Filtro de credibilidad (jugadores): %d → %d posiciones, %d → %d "
+        "identidades (interpolado ≤ %.1f s de un real, vida ≥ %.1f s). "
+        "Balón intacto: %d filas.",
         len(df),
-        len(filtrado),
+        len(jugadores),
         df["id_jugador"].nunique(),
-        filtrado["id_jugador"].nunique(),
+        jugadores["id_jugador"].nunique(),
         max_edad_interp_s,
         min_vida_s,
+        len(balon),
     )
     return filtrado
+
+
+def _suavizar_parpadeo_visual(etiquetas: list, ventana: int = 3) -> list:
+    """Mayoría categórica en una ventana centrada — SOLO para lo que se PINTA.
+
+    28-sep-2026 (Alex, revisando el vídeo): un cambio de UN frame que vuelve
+    enseguida al color de antes ("parpadeo") es correcto en el dato —es la
+    etiqueta por observación, `docs/pizarra_colapsaba.md`, y ya se midió tres
+    veces que SUAVIZAR el dato empeora el sistema (`CLAUDE.md`, "vías
+    cerradas": el parpadeo es la señal de que la asociación acaba de fallar,
+    taparlo la esconde)— pero es ilegible de ver en el replay.
+
+    Esto no es esa vía: no toca la columna `etiqueta` ni nada que consuman
+    las métricas o el informe. Decide únicamente qué color se DIBUJA en cada
+    frame del replay, con una mediana categórica: el valor en `i` se
+    sustituye por el más frecuente en la ventana `[i-mitad, i+mitad]` SOLO si
+    tiene mayoría estricta (más de la mitad de la ventana). Un empate no se
+    toca — mejor conservar el dato ambiguo que inventar un ganador.
+
+    Con `ventana=3`, un único frame distinto rodeado del mismo valor a los
+    dos lados (`A,A,B,A,A`) se convierte en el valor de alrededor
+    (`A,A,A,A,A`); una racha de 2 o más (`A,A,B,B,A,A`) sobrevive intacta,
+    porque dos frames seguidos ya no son un parpadeo.
+    """
+    n = len(etiquetas)
+    if ventana < 3 or ventana % 2 == 0 or n < ventana:
+        return list(etiquetas)
+    mitad = ventana // 2
+    salida = list(etiquetas)
+    for i in range(n):
+        vecinos = etiquetas[max(0, i - mitad) : min(n, i + mitad + 1)]  # noqa: E203
+        mayor, votos = Counter(vecinos).most_common(1)[0]
+        if votos > len(vecinos) / 2:
+            salida[i] = mayor
+    return salida
 
 
 def generar_replay(
@@ -236,6 +287,8 @@ def generar_replay(
     min_vida_s: float = 2.0,
     espejar: str | None = None,
     colores_equipo: dict | None = None,
+    etiqueta_por_identidad: bool = False,
+    suavizado_visual_ventana: int = 3,
 ) -> Path:
     """Genera el HTML del replay desde el CSV de posiciones.
 
@@ -267,6 +320,10 @@ def generar_replay(
             y las métricas no se tocan.
         colores_equipo: {'A': '#rrggbb', 'B': '#rrggbb'} del meta del
             processor. Sin ellos, azul y rojo por convenio.
+        suavizado_visual_ventana: ventana (impar) de la mediana categórica
+            que decide qué color se PINTA por frame (ver
+            `_suavizar_parpadeo_visual`). No toca el dato ni las métricas.
+            1 o un número par la desactiva (se pinta la etiqueta cruda).
     """
     if espejar not in (None, "", "x", "y", "xy"):
         raise ValueError(f"espejar debe ser 'x', 'y' o 'xy' (recibido {espejar!r})")
@@ -293,13 +350,29 @@ def generar_replay(
     df = _filtrar_fuera_del_campo(df, largo, ancho)
     df = _filtrar_creible(df, max_edad_interp_s, min_vida_s)
 
+    # Catálogo de etiquetas para no repetir la cadena en cada muestra: una
+    # identidad mixta de 1757 muestras metería 1757 veces "A"/"B" en el
+    # HTML. Con índices, el coste es un entero por muestra.
+    catalogo = sorted(str(v) for v in df["etiqueta"].unique())
+    indice_de = {e: i for i, e in enumerate(catalogo)}
+
     identidades = []
     for id_jugador, grupo in df.sort_values("tiempo_s").groupby("id_jugador"):
+        # moda-justificada: solo para el color de RESPALDO y la leyenda.
+        # Lo que se pinta es `ets`, la etiqueta de cada observación (ver
+        # abajo y docs/pizarra_colapsaba.md). Colapsar aquí y pintar esto
+        # era el bug del 27-ago-2026.
         etiquetas = grupo["etiqueta"].mode()
         # Opacidad por antigüedad: las posiciones interpoladas se
         # desvanecen conforme se alejan de una detección real, para que la
         # ficha no aparezca y desaparezca de golpe.
-        if "es_real" in grupo.columns:
+        tiene_reales = "es_real" in grupo.columns and (grupo["es_real"] == 1).any()
+        if "es_real" in grupo.columns and not tiene_reales:
+            # Solo la ficha de "balón por el aire" llega aquí sin ninguna
+            # fila real (el filtro de credibilidad la deja pasar a
+            # propósito): va entera a la opacidad mínima, atenuada.
+            alfas = [0.35] * len(grupo)
+        elif tiene_reales:
             tiempos_reales = grupo.loc[grupo["es_real"] == 1, "tiempo_s"].to_numpy()
             edades = np.min(
                 np.abs(grupo["tiempo_s"].to_numpy()[:, None] - tiempos_reales[None, :]),
@@ -313,16 +386,48 @@ def generar_replay(
             ]
         else:
             alfas = [1.0] * len(grupo)
+        # ⚠️ LA ETIQUETA VA POR OBSERVACIÓN, no por identidad.
+        #
+        # Antes se pintaba la MODA de toda la vida de la identidad, y eso
+        # deshacía en el visor la mejora que el pipeline ya hace
+        # (`etiquetar_por_observacion`: 15,5 % → 3,2 % de observaciones con
+        # el equipo equivocado). Medido en el saque inicial de la parte
+        # entera del benjamín: el sistema acertaba el equipo de los ids 6,
+        # 10 y 3 en el frame 0 —con márgenes del 62-85 %— y la pizarra los
+        # pintaba del contrario, porque más tarde esas identidades se
+        # contaminan (58/42, 53/47 y 75/25 de reparto). Se juzgaba al
+        # clasificador por un fallo del renderizador.
+        #
+        # Solo se emite el array cuando la identidad NO es pura: la mayoría
+        # lo son y así el HTML no crece por nada.
+        etiquetas_muestra = [str(v) for v in grupo["etiqueta"]]
+        # Suavizado SOLO del dibujo (ver docstring de la función): el array
+        # `ets` que se embebe es el que decide el color en pantalla, nunca
+        # se relee para nada más.
+        etiquetas_pintadas = _suavizar_parpadeo_visual(
+            etiquetas_muestra, suavizado_visual_ventana
+        )
+        por_muestra = (
+            [indice_de[e] for e in etiquetas_pintadas]
+            if len(set(etiquetas_pintadas)) > 1 and not etiqueta_por_identidad
+            else None
+        )
         identidades.append(
             {
                 "id": int(id_jugador),
                 "et": str(etiquetas.iloc[0]) if len(etiquetas) else "otro",
+                **({"ets": por_muestra} if por_muestra else {}),
                 "t": [round(float(v), 2) for v in grupo["tiempo_s"]],
                 "x": [round(float(v), 2) for v in grupo["x_m"]],
                 "y": [round(float(v), 2) for v in grupo["y_m"]],
                 "a": alfas,
             }
         )
+
+    # El balón, el ÚLTIMO de la lista: el lienzo pinta en orden, así que lo
+    # último queda encima. Se garantiza aquí además de en el dibujo (dos
+    # pasadas) para que no dependa de una sola pieza.
+    identidades.sort(key=lambda i: str(i["et"]).startswith("balon"))
 
     t_min = float(df["tiempo_s"].min())
     t_max = float(df["tiempo_s"].max())
@@ -332,6 +437,7 @@ def generar_replay(
         _PLANTILLA.replace("__TITULO__", titulo)
         .replace("__DATOS__", json.dumps(identidades, separators=(",", ":")))
         .replace("__COLORES__", json.dumps(paleta, separators=(",", ":")))
+        .replace("__CATALOGO__", json.dumps(catalogo, separators=(",", ":")))
         .replace("__LEYENDA__", _leyenda(paleta, set(df["etiqueta"].unique())))
         .replace("__RADIO_M__", f"{radio_m:.2f}")
         .replace("__ESPEJO_X__", "true" if espejar and "x" in espejar else "false")
@@ -353,7 +459,7 @@ def generar_replay(
     logger.info(
         "Replay generado: %s (%d identidades, t=%.1f–%.1f s)",
         salida_html,
-        len(identidades),
+        sum(1 for i in identidades if not str(i["et"]).startswith("balon")),
         t_min,
         t_max,
     )
@@ -439,6 +545,7 @@ _PLANTILLA = """<!DOCTYPE html>
 <script>
 const DATOS = __DATOS__;
 const COLORES = __COLORES__;
+const CATALOGO = __CATALOGO__;
 const LARGO = __LARGO__, ANCHO = __ANCHO__;
 const CAMPO = __CAMPO__;
 const TMIN = __TMIN__, TMAX = __TMAX__;
@@ -542,24 +649,37 @@ function posicionEn(ident, i, T) {
   if (ts[p] > T) return null;                       // aún no ha aparecido
   const alfa = ident.a ? ident.a[p] : 1;
   if (p === ts.length - 1)
-    return ts[p] >= T - 0.25 ? [ident.x[p], ident.y[p], alfa] : null;
+    return ts[p] >= T - 0.25 ? [ident.x[p], ident.y[p], alfa, p] : null;
   const dt = ts[p + 1] - ts[p];
   if (dt > MAX_HUECO) return null;                  // hueco: no inventamos posición
   const a = dt > 0 ? (T - ts[p]) / dt : 0;
   const alfaSig = ident.a ? ident.a[p + 1] : 1;
   return [ident.x[p] + a * (ident.x[p+1] - ident.x[p]),
           ident.y[p] + a * (ident.y[p+1] - ident.y[p]),
-          alfa + a * (alfaSig - alfa)];
+          alfa + a * (alfaSig - alfa), p];
 }
 
 function dibujar(T) {
   dibujarCampo();
   ctx.font = 'bold ' + (RADIO_M * ESCALA) + 'px -apple-system, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // DOS PASADAS: primero las personas y DESPUÉS el balón, para que el balón
+  // quede SIEMPRE por encima. En una sola pasada el orden era el de DATOS y
+  // el balón se escondía bajo la ficha del jugador que lo llevaba: un
+  // problema de dibujo, no de datos (2-oct-2026).
+  const visibles = [];
   for (let i = 0; i < DATOS.length; i++) {
     const pos = posicionEn(DATOS[i], i, T);
     if (!pos) continue;
-    const [relleno, borde] = COLORES[DATOS[i].et] || COLORES['otro'];
+    // La etiqueta del INSTANTE, no la de toda la vida de la identidad.
+    const etq = DATOS[i].ets ? CATALOGO[DATOS[i].ets[pos[3]]] : DATOS[i].et;
+    visibles.push([i, pos, etq]);
+  }
+  const esFichaBalon = (etq) => etq === 'balon' || etq === 'balon_aereo';
+  const orden = visibles.filter(v => !esFichaBalon(v[2]))
+    .concat(visibles.filter(v => esFichaBalon(v[2])));
+  for (const [i, pos, etq] of orden) {
+    const [relleno, borde] = COLORES[etq] || COLORES['otro'];
     // Transparencia por antigüedad: cuanto más lejos está la posición de
     // una detección real, más se desvanece la ficha (aparecer/desaparecer
     // de golpe se lee como un fallo; el desvanecido se lee como "aquí el
@@ -571,7 +691,7 @@ function dibujar(T) {
     ctx.shadowColor = 'rgba(0,0,0,0.45)';
     ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
     // El balón se pinta a la mitad de radio: es un objeto, no una persona
-    const esBalon = DATOS[i].et === 'balon' || DATOS[i].et === 'balon_aereo';
+    const esBalon = etq === 'balon' || etq === 'balon_aereo';
     ctx.arc(px(pos[0]), py(pos[1]), RADIO_M * ESCALA * (esBalon ? 0.5 : 1), 0, 7);
     ctx.fillStyle = relleno; ctx.fill();
     // La sombra es solo del disco: sobre el borde y el número la
@@ -634,7 +754,8 @@ barra.addEventListener('input', () => {
 
 document.getElementById('fin').textContent = mmss(TMAX);
 document.getElementById('meta').textContent =
-  DATOS.length + ' identidades · tramo ' + mmss(TMIN) + '–' + mmss(TMAX) +
+  DATOS.filter(d => !String(d.et).startsWith('balon')).length +
+  ' identidades · tramo ' + mmss(TMIN) + '–' + mmss(TMAX) +
   ' (reloj del vídeo) · generado por Tactical Lens';
 dibujar(T); refrescarUI();
 </script>

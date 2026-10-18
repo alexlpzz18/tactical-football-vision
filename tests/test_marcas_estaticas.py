@@ -1,0 +1,245 @@
+"""Las marcas pintadas del campo no son el balón.
+
+El esquema mixto presentó a la red, troceada y ampliada, la franja del
+fondo — y con ella el punto central, el de penalti y una mancha junto al
+muro. Tienen tamaño y color de balón, así que el detector dispara. Eran
+**11.982 detecciones, el 56 % del caché** (`docs/balon_fantasma.md`).
+
+⚠️ Estos tests vigilan las dos direcciones, que es la lección de la
+semana: que el filtro QUITE las marcas, y que NO se lleve por delante el
+balón de verdad. Un filtro que limpia demasiado es tan malo como uno que
+no limpia.
+"""
+
+from dataclasses import replace
+
+import numpy as np
+import pytest
+
+from src.balon.marcas_estaticas import (
+    encontrar_marcas_estaticas,
+    filtrar_marcas_estaticas,
+)
+from src.balon.tracking_balon import ParametrosBalon, seleccionar_balon_activo
+
+# Estos tests son del filtro "quieto y lejos" y del desempate por cercanía,
+# que siguen decidiendo el ORDEN de los candidatos; la selección por
+# continuidad (por defecto desde el 1-oct-2026) tiene los suyos en
+# test_seleccion_por_continuidad.py.
+FRAME_A_FRAME = ParametrosBalon(continuidad_activa=False, quitar_balon_de_staff=False)
+
+
+def params_frame_a_frame(params):
+    return replace(params, continuidad_activa=False, quitar_balon_de_staff=False)
+
+
+FPS, SAMPLE = 29.97, 2
+
+
+def _det(px, py, lado=10.0, conf=0.6, mx=30.0, my=20.0):
+    """(mx, my, x1, y1, x2, y2, conf) centrada en el píxel (px, py)."""
+    return (mx, my, px - lado / 2, py - lado / 2, px + lado / 2, py + lado / 2, conf)
+
+
+def _marca_fija(n=400, px=372.0, py=628.0, desde=0, paso=30):
+    """Una marca: siempre en el mismo píxel, a lo largo de todo el partido."""
+    dets, tiempos = {}, {}
+    for i in range(n):
+        f = desde + i * paso
+        dets[f] = [_det(px + np.sin(i) * 0.4, py + np.cos(i) * 0.4)]
+        tiempos[f] = f / FPS
+    return dets, tiempos
+
+
+def _balon_en_juego(n=400, desde=1, paso=30):
+    """Un balón que recorre el campo: cada detección en otro sitio."""
+    dets, tiempos = {}, {}
+    for i in range(n):
+        f = desde + i * paso
+        dets[f] = [_det(200 + (i * 37) % 1500, 400 + (i * 53) % 500)]
+        tiempos[f] = f / FPS
+    return dets, tiempos
+
+
+# ─────────────────────────── quita lo que debe ────────────────────────────
+
+
+def test_encuentra_una_marca_fija():
+    """⚠️ Se comprueba que la ENCUENTRA, no cuántas celdas ocupa: un objeto
+    sobre el borde de la rejilla cae en dos celdas, y en los datos reales
+    pasa igual (las celdas 360 y 372 son la misma mancha). El recuento de
+    celdas es una cota superior del número de objetos, no el número."""
+    dets, tiempos = _marca_fija()
+    marcas = encontrar_marcas_estaticas(dets, tiempos)
+    assert marcas, "no ha visto la marca fija"
+
+
+def test_el_filtro_deja_el_cache_vacio_si_solo_habia_una_marca():
+    dets, tiempos = _marca_fija()
+    limpio, marcas = filtrar_marcas_estaticas(dets, tiempos)
+    assert limpio == {}, "ha dejado detecciones de una marca fija"
+    assert marcas
+
+
+# ──────────────── y NO se lleva por delante el balón bueno ────────────────
+
+
+def test_no_toca_un_balon_que_recorre_el_campo():
+    dets, tiempos = _balon_en_juego()
+    limpio, marcas = filtrar_marcas_estaticas(dets, tiempos)
+    assert marcas == set(), "ha marcado como fijo un balón en movimiento"
+    assert len(limpio) == len(dets)
+
+
+def test_separa_la_marca_del_balon_cuando_conviven():
+    """El caso real: la marca y el balón en el mismo caché."""
+    marca, t1 = _marca_fija()
+    balon, t2 = _balon_en_juego()
+    dets = {**marca, **balon}
+    tiempos = {**t1, **t2}
+
+    limpio, marcas = filtrar_marcas_estaticas(dets, tiempos)
+
+    assert marcas, "no ha visto la marca"
+    assert len(limpio) == len(balon), "se ha llevado detecciones del balón"
+    assert set(limpio) == set(balon)
+
+
+def test_un_balon_parado_UN_RATO_no_es_una_marca():
+    """Una falta, un saque: el balón está quieto segundos, no minutos.
+
+    Es el falso positivo que hay que evitar, y el motivo de exigir
+    duración además de repetición."""
+    dets, tiempos = {}, {}
+    for i in range(60):  # 60 muestras seguidas = 4 s en el mismo sitio
+        f = i * SAMPLE
+        dets[f] = [_det(800.0, 500.0)]
+        tiempos[f] = f / FPS
+    marcas = encontrar_marcas_estaticas(dets, tiempos)
+    assert marcas == set(), "ha confundido un balón parado en una falta con una marca"
+
+
+def test_pocas_detecciones_repetidas_no_bastan():
+    """El umbral de recuento existe porque el balón pasa por todas partes."""
+    dets, tiempos = _marca_fija(n=40)  # pocas, aunque duren mucho
+    assert encontrar_marcas_estaticas(dets, tiempos) == set()
+
+
+# ───────────── la guarda de distancia: ahora PUEDE dispararse ─────────────
+
+
+def test_la_guarda_de_distancia_puede_dispararse():
+    """La que estaba en 25 m NO podía: el máximo observado en la parte
+    entera fue 25,7 m y el p99, 17,2. Existía sin poder actuar nunca.
+
+    Este test es el que faltaba: no comprueba el valor, comprueba que con
+    datos plausibles la guarda LLEGA a descartar algo."""
+    params = ParametrosBalon()
+    assert params.dist_max_jugadores <= 17.0, (
+        f"dist_max_jugadores = {params.dist_max_jugadores} m está por encima "
+        f"del p99 medido (17,2 m): la guarda no podrá dispararse"
+    )
+
+    # un balón quieto en una esquina, con los jugadores en la otra punta
+    dets, jugadores = {}, {}
+    for i in range(30):
+        f = i * SAMPLE
+        dets[f] = [_det(100.0, 100.0, mx=2.0, my=2.0)]
+        jugadores[f] = [(40.0, 20.0), (42.0, 22.0), (38.0, 18.0)]
+
+    activo = seleccionar_balon_activo(dets, jugadores, params_frame_a_frame(params))
+    assert activo == {}, "la guarda no ha descartado un balón quieto y lejísimos"
+
+
+def test_la_guarda_no_descarta_un_balon_quieto_JUNTO_a_un_jugador():
+    """La segunda condición existe para esto: un saque de banda."""
+    dets, jugadores = {}, {}
+    for i in range(30):
+        f = i * SAMPLE
+        dets[f] = [_det(100.0, 100.0, mx=30.0, my=20.0)]
+        jugadores[f] = [(30.5, 20.5), (35.0, 25.0)]
+
+    activo = seleccionar_balon_activo(dets, jugadores, FRAME_A_FRAME)
+    assert len(activo) == len(dets), "ha matado un balón parado en un saque"
+
+
+@pytest.mark.parametrize("ancho,esperado", [(40.0, 10.0), (64.0, 16.0)])
+def test_la_fraccion_del_campo_da_el_umbral_de_cada_campo(ancho, esperado):
+    """Lo que hace que el número viaje a otro partido."""
+    p = ParametrosBalon()
+    assert p.fraccion_ancho_campo * ancho == pytest.approx(esperado)
+
+
+# ───────── el desempate cuando sobreviven varios candidatos ──────────
+
+
+def _candidato(px_m, py_m, primer_frame, n=10, conf=0.6, mueve=0.3):
+    """n detecciones de un candidato que avanza `mueve` metros por paso."""
+    out = {}
+    for i in range(n):
+        f = primer_frame + i * SAMPLE
+        out[f] = (px_m + i * mueve, py_m, 100.0, 100.0, 110.0, 110.0, conf)
+    return out
+
+
+def test_el_desempate_elige_por_CERCANIA_no_por_confianza():
+    """Medido sobre los 2.374 desempates de la parte entera: cercanía
+    acierta el 77,5 % y confianza el 71,5 %. Una marca pintada es tan
+    'balón' como un balón para el detector; lo que las separa es que el
+    balón del partido vive entre los pies de alguien."""
+    lejos = _candidato(2.0, 2.0, 0, conf=0.95)  # impostor, MUY seguro
+    cerca = _candidato(30.0, 20.0, 0, conf=0.50)  # el bueno, poco seguro
+    dets = {f: [lejos[f], cerca[f]] for f in lejos}
+    jugadores = {f: [(30.2, 20.1), (34.0, 24.0)] for f in dets}
+
+    activo = seleccionar_balon_activo(dets, jugadores, FRAME_A_FRAME)
+
+    assert activo, "no ha elegido ningún balón"
+    for f, det in activo.items():
+        assert det[0] > 25.0, (
+            "ha elegido el candidato lejano por tener más confianza: el "
+            "desempate ha vuelto a ser de apariencia"
+        )
+
+
+def test_sin_posiciones_de_jugadores_el_desempate_cae_a_la_confianza():
+    """Degradación limpia: sin con qué medir cercanía, queda la confianza."""
+    a = _candidato(2.0, 2.0, 0, conf=0.95)
+    b = _candidato(30.0, 20.0, 0, conf=0.50)
+    dets = {f: [a[f], b[f]] for f in a}
+
+    activo = seleccionar_balon_activo(dets, {}, FRAME_A_FRAME)
+
+    assert activo
+    for det in activo.values():
+        assert det[6] == pytest.approx(0.95)
+
+
+def test_dos_visitas_sueltas_de_un_balon_parado_NO_son_una_marca():
+    """El fallo del 1-oct-2026: el saque de centro (minuto 0 y minuto 19)
+    sumaba 19 minutos de "presencia" midiendo último menos primero. Un balón
+    parado en dos momentos del partido no es una marca: no está repartido
+    por los minutos. Debajo, un partido de 20 min con un balón en juego."""
+    dets, tiempos = _balon_en_juego(n=1200, paso=30)  # ~20 min
+    for i in range(80):  # 80 detecciones en el minuto 0 y 80 en el 19, mismo píxel
+        for base in (2, 34200):
+            f = base + 2 * i * 3 + 1
+            dets.setdefault(f, []).append(_det(700.0, 500.0))
+            tiempos[f] = f / FPS
+    assert encontrar_marcas_estaticas(dets, tiempos) == set()
+    # y con el criterio viejo (sin exigir minutos repartidos) sí lo era
+    assert encontrar_marcas_estaticas(dets, tiempos, min_fraccion_minutos=0.0)
+
+
+def test_una_marca_partida_entre_dos_celdas_cuenta_sus_minutos_juntos():
+    """La marca sobre el borde de la rejilla: cada celda por separado tiene
+    la mitad de los minutos; el grupo, todos."""
+    dets, tiempos = _balon_en_juego(n=1200, paso=30)
+    for i in range(600):
+        f = 2 + i * 60
+        px = (
+            359.0 if (i // 60) % 2 == 0 else 361.0
+        )  # minutos alternos a cada lado de 360
+        dets.setdefault(f, []).append(_det(px, 500.0))
+        tiempos[f] = f / FPS
+    assert {c[0] for c in encontrar_marcas_estaticas(dets, tiempos)} == {29, 30}

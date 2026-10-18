@@ -1,0 +1,115 @@
+# UNA PARTE ENTERA del benjamín (F7), DE UNA SOLA PASADA.
+#
+# Es processor_benja.yaml sin el bloque `tramo` y con rutas de salida
+# propias. Existe como fichero aparte a propósito: así el config del
+# tramo de 60 s —sobre el que están medidas TODAS las métricas del
+# banco— no se toca, y las dos cosas se pueden comparar.
+#
+# ── POR QUÉ DE UNA PASADA Y NO POR TRAMOS ────────────────────────────
+#
+# Por el FIT DE COLOR. Cinco tramos de 4 min son cinco ajustes distintos
+# de los dos prototipos, y el fit es la pieza frágil del sistema
+# (docs/suelo_de_ruido.md: en Villaviciosa el umbral de fusión salta de
+# 0,90 a 0,75 en 2 de cada 10 perturbaciones y con él cambia la
+# partición A/B entera). Un solo fit para la parte entera es además cómo
+# va a funcionar el producto. De regalo: sin `tramo` no se llama a
+# `posicionar_en_frame`, así que desaparece el salto de lector que ya
+# falló una vez.
+#
+# ── CÓMO CORRERLO EN COLAB ───────────────────────────────────────────
+#
+#   Las celdas, con las comprobaciones previas y los avisos de escalado,
+#   están en docs/colab_parte_entera_benja.md. No lo lances a pelo:
+#   la celda 3 mide el ritmo real antes de gastar la sesión entera.
+#
+# ────────────────────────────────────────────────────────────────────
+
+pipeline: nuevo
+modo: full # vídeo → cachés → CSV. En local: --modo desde_cache.
+
+# ── Detección (GPU) ──────────────────────────────────────────────────
+deteccion:
+  modelo: models/weights/best_v4pre.pt
+  confianza: 0.3
+  max_area_caja: 0.05
+  sahi:
+    filas: 2
+    columnas: 4
+    solape: 0.2
+  device: cuda
+
+# ── Distorsión: NINGUNA ──────────────────────────────────────────────
+# La cámara del benja es normal (no gran angular). Con k1=k2=0 el
+# procesador se salta `cv2.undistort` entero (es la identidad): 27,8 ms
+# por frame a 1080p, o 5,6 min de CPU sobre los 11.988 frames de esta
+# pasada. Ver `_corregir_distorsion` en src/tracking_data/processor.py.
+distorsion:
+  k1: 0.0
+  k2: 0.0
+
+# ── Muestreo ─────────────────────────────────────────────────────────
+muestreo:
+  sample_every: 3 # 1 de cada 3 frames (a 29,97 fps → dt=0.10 s)
+  # `tramo: null` = el VÍDEO ENTERO. Explícito y no comentado a
+  # propósito: comentar el bloque deja `min_ini:` suelto con demasiada
+  # facilidad, y un tramo mal escrito no falla, procesa otra cosa.
+  # Medido: 35.966 frames / 29,970 fps = 1200,1 s = 20,0 min exactos,
+  # y con sample_every 3 se procesan 11.988.
+  tramo: null
+
+# ── Checkpoint ───────────────────────────────────────────────────────
+# El caché se vuelca cada N frames procesados (atómicamente) y la pasada
+# se reanuda sola si la sesión se cae: al arrancar, si hay un caché a
+# medias hecho con ESTA MISMA configuración de detección, sigue donde lo
+# dejó. Con otro modelo o otro tramo se niega a reanudar y lo rehace —
+# mezclar dos detectores en un caché es peor que perder la pasada.
+# Coste medido sobre el caché REAL de esta parte (418 MB, 209.705
+# features): 3,0 s el volcado final, ~0,5 min los 23 checkpoints juntos.
+# Cada volcado imprime además el progreso y lo que falta.
+#
+# ⚠️ Escala MAL con el tamaño del caché: cada checkpoint re-serializa el
+# diccionario entero, así que el coste crece más que linealmente. Con un
+# caché de 1 GB (por ejemplo con la feature v2, de 336 valores) el
+# volcado final pasa de 3 s a decenas, y ahí sí habría que subir
+# `cada_frames` o volcar los colores de forma incremental.
+checkpoint:
+  cada_frames: 500 # 0 = desactivado
+  reanudar: true
+
+# ── Tracking ─────────────────────────────────────────────────────────
+tracking:
+  perfil: bytetrack
+config_tracking: configs/tracking_benja.yaml
+
+# ── Clasificación de equipos ─────────────────────────────────────────
+equipos:
+  activo: true
+config_equipos: configs/team_classification_benja.yaml
+
+# ── Campo ────────────────────────────────────────────────────────────
+campo_m:
+  largo: 62.0
+  ancho: 40.0
+  margen: 5.0
+
+# ── Rutas: NINGUNA pisa las del tramo de 60 s ────────────────────────
+rutas:
+  video: data/raw/benja_gredos_p1_20min.mp4
+  cache: data/tracking_benja/cache_detecciones_benja_p1.pkl
+  cache_colores: data/tracking_benja/cache_colores_benja_p1.pkl
+  homografia: data/calibracion_benja/homografia_benja.npy
+  salida_csv: data/tracking_benja/posiciones_benja_p1.csv
+  salida_meta: data/tracking_benja/posiciones_benja_p1_meta.json
+# ─────────────── QUÉ VA A CAMBIAR AL PASAR DE 60 s A 20 min ──────────
+#
+# No es una extrapolación a ojo: está medido comparando el tramo de 60 s
+# con el piloto de 5 min del MISMO partido (docs/colab_parte_entera_benja.md).
+#
+#   - El portero se corona por CONJUNTO de fragmentos (arreglado el
+#     26-ago-2026). A 60 s era 1 por lado; a 5 min son 5 y 2, todos la
+#     misma persona. Sobre 20 min serán más: lo que hay que mirar en el
+#     log es que NO salga "SIN PORTERO".
+#   - Las identidades se multiplican (67 → 254 al pasar de 1 a 5 min) y
+#     la mediana de observaciones BAJA (54 → 40,5): los tramos largos no
+#     dan identidades más largas, dan más trozos.
+#   - El caché de colores pesa ~467 MB (116,7 MB por cada 5 min).

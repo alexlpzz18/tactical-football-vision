@@ -5,9 +5,13 @@ por recortes), los trackea, clasifica equipos y proyecta posiciones a metros
 con la homografía. Produce una tabla de posiciones (CSV) + metadatos (JSON).
 """
 
+import hashlib
 import json
 import logging
+import os
 import pickle
+import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -167,7 +171,7 @@ def process_video(
             continue
 
         # 1. Corregir distorsión
-        frame = cv2.undistort(frame, K, dist)
+        frame = _corregir_distorsion(frame, K, dist)
 
         # 2. Detectar con SAHI
         from sahi.predict import get_sliced_prediction
@@ -342,6 +346,155 @@ def validar_config(cfg: dict, claves_obligatorias: tuple) -> None:
         )
 
 
+def _corregir_distorsion(frame, K, dist):
+    """Corrige la distorsión de lente, SALTÁNDOSE el trabajo si no hay.
+
+    Con k1=k2=0 el mapa de `cv2.undistort` es la identidad y devuelve el
+    frame bit a bit igual (comprobado sobre 10 frames reales del vídeo del
+    benjamín), pero el remap se hace igual: 27,8 ms por frame a 1080p en
+    este Mac. Sobre los 11.988 frames de una parte entera son **5,6
+    minutos de CPU tirados**, y en Colab la CPU es la que alimenta a la
+    GPU. La cámara del benjamín no es gran angular y su config tiene
+    k1=k2=0 a propósito, así que este atajo es todo el ahorro y ningún
+    cambio de resultado. Villaviciosa sí distorsiona y no entra por aquí.
+    """
+    if float(dist[0]) == 0.0 and float(dist[1]) == 0.0:
+        return frame
+    return cv2.undistort(frame, K, dist)
+
+
+def _firma_de_deteccion(cfg: dict) -> dict:
+    """Lo que tiene que coincidir para poder REANUDAR un caché a medias.
+
+    Reanudar sobre un caché hecho con otro modelo, otra confianza u otro
+    tramo mezclaría dos detectores en el mismo fichero, y los umbrales de
+    asociación van pegados al detector (CLAUDE.md). Antes que arriesgar
+    eso se rehace la pasada.
+    """
+    # La homografía va por CONTENIDO, no por ruta: recalibrar no cambia el
+    # nombre del fichero, y es lo que produce (mx, my). Medido: reanudar
+    # con una H desplazada 3 px mete un salto de 12,23 m entre la parte
+    # vieja y la nueva del MISMO caché — indistinguible de un fallo de
+    # asociación.
+    huella_h = None
+    try:
+        huella_h = hashlib.sha256(
+            np.load(cfg["rutas"]["homografia"]).tobytes()
+        ).hexdigest()
+    except (OSError, ValueError, KeyError):
+        huella_h = str(cfg["rutas"].get("homografia"))
+    return {
+        "video": cfg["rutas"]["video"],
+        "homografia": huella_h,
+        # Cambiar la versión de la feature cambia su LONGITUD (256 vs
+        # 336): reanudar mezclaría vectores de dos tamaños bajo las
+        # mismas claves.
+        "version_color": cfg["deteccion"].get("version_color"),
+        "modelo": cfg["deteccion"]["modelo"],
+        "confianza": cfg["deteccion"]["confianza"],
+        "max_area_caja": cfg["deteccion"]["max_area_caja"],
+        "sahi": dict(cfg["deteccion"]["sahi"]),
+        "k1": cfg["distorsion"]["k1"],
+        "k2": cfg["distorsion"]["k2"],
+        "sample_every": cfg["muestreo"]["sample_every"],
+        "tramo": dict(cfg["muestreo"].get("tramo") or {}),
+        "max_frames": cfg["muestreo"].get("max_frames"),
+    }
+
+
+def _volcar(ruta: str, objeto) -> None:
+    """Escribe un pickle de forma ATÓMICA (temporal + rename).
+
+    Un checkpoint que se corta a medias es peor que no tener checkpoint:
+    dejaría un .pkl truncado donde antes había uno bueno. Con el rename
+    del final, o está el anterior o está el nuevo, nunca medio fichero.
+    """
+    ruta = Path(ruta)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    # Nombre ÚNICO por escritor: con un `.tmp` fijo, dos procesos sobre la
+    # misma config abren el mismo fichero en modo "wb" e intercalan bytes
+    # en el mismo inodo. El resultado carga sin error y mezcla contenido
+    # de los dos (medido: 1 de cada 12 intentos con 4 procesos).
+    descriptor, tmp = tempfile.mkstemp(dir=str(ruta.parent), suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "wb") as f:
+            pickle.dump(objeto, f)
+        os.replace(tmp, ruta)
+    except BaseException:
+        # Un volcado a medias no deja basura: el fichero bueno anterior
+        # sigue en su sitio y el temporal se borra.
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _guardar_caches(cfg, cache, colores, fps, sample, wh, completo, firma) -> None:
+    """Vuelca los dos cachés. `completo` distingue final de checkpoint.
+
+    ⚠️ EL ORDEN NO ES INDIFERENTE: los colores PRIMERO y las detecciones
+    AL FINAL. El ancla de la reanudación es el caché de detecciones (es
+    el que lleva la firma y el último `frame_idx`), así que tiene que ser
+    lo último que toca el disco.
+
+    Al revés —detecciones primero— una muerte de sesión entre los dos
+    volcados deja las detecciones POR DELANTE de los colores, `_reanudar`
+    acepta el checkpoint porque firma y `completo` están bien, y la
+    pasada termina con un caché que se marca `completo: True` y tiene
+    AGUJEROS: frames con detecciones y sin feature de color. Nadie se
+    queja aguas abajo —`pipeline_equipos`, `arbitro` y `puerta_reentrada`
+    descartan en silencio la observación sin feature— así que esas
+    detecciones simplemente no reciben etiqueta de equipo.
+
+    Y la ventana no es estrecha: el caché de colores pesa más de 20× el
+    de detecciones, así que era la mayor parte de cada volcado. Con este
+    orden, una muerte a mitad deja los COLORES por delante, que es
+    inocuo: se reprocesan y se sobrescriben.
+    """
+    _volcar(cfg["rutas"]["cache_colores"], colores)
+    _volcar(
+        cfg["rutas"]["cache"],
+        {
+            "cache": cache,
+            "fps": fps,
+            "sample": sample,
+            "wh": wh,
+            "completo": completo,
+            "firma": firma,
+        },
+    )
+
+
+def _reanudar(cfg, firma):
+    """Recupera un checkpoint compatible, o (None, None) si no lo hay."""
+    ruta = Path(cfg["rutas"]["cache"])
+    if not ruta.exists():
+        return None, None
+    try:
+        with open(ruta, "rb") as f:
+            previo = pickle.load(f)
+        with open(cfg["rutas"]["cache_colores"], "rb") as f:
+            colores = pickle.load(f)
+    except (OSError, pickle.UnpicklingError, EOFError) as err:
+        logger.warning("No se pudo leer el caché previo (%s); se rehace.", err)
+        return None, None
+    if previo.get("firma") != firma:
+        logger.warning(
+            "Hay un caché en %s hecho con OTRA configuración de detección: "
+            "se ignora y se SOBRESCRIBE. (Si lo querías, muévelo antes.)",
+            ruta,
+        )
+        return None, None
+    if previo.get("completo"):
+        logger.warning(
+            "Hay un caché COMPLETO en %s con esta misma configuración: se "
+            "sobrescribe. (Si lo querías, muévelo antes.)",
+            ruta,
+        )
+        return None, None
+    if not previo.get("cache"):
+        return None, None
+    return previo["cache"], colores
+
+
 def _rango_de_frames(cfg_muestreo: dict, fps: float) -> tuple[int, int | None]:
     """Rango [frame_ini, frame_fin) de frames ORIGINALES a procesar.
 
@@ -501,8 +654,60 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
             f", hasta el {frame_fin}" if frame_fin is not None else "",
         )
 
+    # ── Checkpoint y progreso ────────────────────────────────────────
+    #
+    # Antes de esto el caché se escribía UNA vez, al final del bucle, y no
+    # se imprimía nada mientras corría. Sobre una parte entera son 45-60
+    # min de GPU en los que una caída de sesión lo perdía todo y en los
+    # que no se distinguía "va bien" de "colgado".
+    cfg_ck = cfg.get("checkpoint") or {}
+    cada = int(cfg_ck.get("cada_frames", 500) or 0)
+    firma = _firma_de_deteccion(cfg)
+
     cache, colores = [], {}
     frame_idx = frame_ini
+    if cada and cfg_ck.get("reanudar", True):
+        previo, colores_previos = _reanudar(cfg, firma)
+        if previo:
+            cache, colores = previo, colores_previos
+            frame_idx = cache[-1]["frame_idx"] + 1
+            # Si el checkpoint cayó justo en el último frame no queda nada
+            # que hacer. Sin esto, `posicionar_en_frame` lanza culpando al
+            # `tramo`, que no tiene nada que ver, y encima en la pasada que
+            # ya estaba terminada.
+            total_video = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            fin_previsto = frame_fin if frame_fin is not None else total_video
+            if fin_previsto and frame_idx >= fin_previsto:
+                cap.release()
+                logger.info(
+                    "El checkpoint ya llegaba al final (%d frames): se cierra "
+                    "sin reprocesar nada.",
+                    len(cache),
+                )
+                _guardar_caches(cfg, cache, colores, fps, sample, (w, h), True, firma)
+                return (
+                    {"cache": cache, "fps": fps, "sample": sample, "wh": (w, h)},
+                    colores,
+                )
+            posicionar_en_frame(cap, frame_idx)
+            logger.info(
+                "REANUDANDO: %d frames ya cacheados, se sigue desde el %d "
+                "(t=%.1f s)",
+                len(cache),
+                frame_idx,
+                frame_idx / fps,
+            )
+
+    # Cuántos frames se van a procesar en total, para el porcentaje y la
+    # estimación. Si no hay tope, manda la longitud del vídeo.
+    fin_real = frame_fin
+    if fin_real is None:
+        total_video = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        fin_real = total_video if total_video > 0 else None
+    a_procesar = (fin_real - frame_ini) // sample if fin_real else None
+    t_arranque = time.time()
+    hechos_esta_sesion = 0
+
     while True:
         if frame_fin is not None and frame_idx >= frame_fin:
             break
@@ -512,7 +717,7 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
         if frame_idx % sample != 0:
             frame_idx += 1
             continue
-        frame = cv2.undistort(frame, K, dist_lente)
+        frame = _corregir_distorsion(frame, K, dist_lente)
         resultado = get_sliced_prediction(
             frame,
             modelo,
@@ -543,14 +748,31 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
                     colores[(frame_idx, det_idx)] = feat
         cache.append({"frame_idx": frame_idx, "t": frame_idx / fps, "dets": dets})
         frame_idx += 1
+        hechos_esta_sesion += 1
+        if cada and hechos_esta_sesion % cada == 0:
+            _guardar_caches(cfg, cache, colores, fps, sample, (w, h), False, firma)
+            ritmo = (time.time() - t_arranque) / hechos_esta_sesion
+            if a_procesar:
+                faltan = max(a_procesar - len(cache), 0) * ritmo
+                logger.info(
+                    "%d/%d frames (%.0f %%) · %.0f ms/frame · faltan ~%.0f min "
+                    "· checkpoint guardado",
+                    len(cache),
+                    a_procesar,
+                    100 * len(cache) / a_procesar,
+                    1000 * ritmo,
+                    faltan / 60,
+                )
+            else:
+                logger.info(
+                    "%d frames · %.0f ms/frame · checkpoint guardado",
+                    len(cache),
+                    1000 * ritmo,
+                )
     cap.release()
 
+    _guardar_caches(cfg, cache, colores, fps, sample, (w, h), True, firma)
     datos = {"cache": cache, "fps": fps, "sample": sample, "wh": (w, h)}
-    Path(cfg["rutas"]["cache"]).parent.mkdir(parents=True, exist_ok=True)
-    with open(cfg["rutas"]["cache"], "wb") as f:
-        pickle.dump(datos, f)
-    with open(cfg["rutas"]["cache_colores"], "wb") as f:
-        pickle.dump(colores, f)
     logger.info(
         "Detección cacheada: %d frames, %d features de color", len(cache), len(colores)
     )
@@ -563,9 +785,11 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         cargar_config_equipos,
         clasificar_identidades,
         entrenar_clasificador,
+        etiquetar_por_observacion,
     )
     from src.tracking.cache_io import cargar_cache
     from src.tracking.filtro_confianza import filtrar_por_confianza
+    from src.tracking.plausibilidad_fisica import filtrar_por_plausibilidad
     from src.tracking.perfiles import correr_perfil
 
     validar_config(cfg, _CLAVES_DESDE_CACHE)
@@ -586,6 +810,21 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     if conf_min > 0:
         datos["cache"], colores = filtrar_por_confianza(
             datos["cache"], colores, conf_min
+        )
+
+    # Filtro de PLAUSIBILIDAD FÍSICA, en el mismo sitio y por la misma
+    # razón. Usa la escala del suelo que da la homografía para preguntar
+    # cuánto mide en metros lo que hay dentro de cada caja: una línea del
+    # campo mide 0,22 m de ancho y la persona real más estrecha 0,39, así
+    # que hay hueco. Ver src/tracking/plausibilidad_fisica.py.
+    cfg_fisica = cfg_tracking.get("plausibilidad_fisica", {}) or {}
+    if cfg_fisica.get("activo", False):
+        homografia_f = np.load(cfg["rutas"]["homografia"])
+        datos["cache"], colores, _n = filtrar_por_plausibilidad(
+            datos["cache"],
+            colores,
+            homografia_f,
+            **{k: v for k, v in cfg_fisica.items() if k != "activo"},
         )
 
     # Caché de embeddings de apariencia (opcional). Se filtra con el
@@ -669,6 +908,25 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             datos["sample"] / datos["fps"] if datos["fps"] else 0.12
         )
 
+    # Etiqueta por OBSERVACIÓN, si el config de este partido la pide. Se
+    # calcula ANTES del post-proceso porque necesita los recortes, y el
+    # post-proceso ya trabaja con trayectorias interpoladas.
+    ocluidas_obs = None
+    cfg_por_obs = (cfg_equipos or {}).get("agregacion", {}).get("por_observacion", {})
+    if cfg_por_obs.get("excluir_ocluidas", False):
+        from src.team_classification.oclusion import detecciones_ocluidas
+
+        ocluidas_obs = detecciones_ocluidas(
+            datos["cache"], iou_max=float(cfg_por_obs.get("ocluidas_iou", 0.10))
+        )
+    etiquetas_por_obs = (
+        etiquetar_por_observacion(
+            identidades, equipos, colores, clasificador, cfg_equipos, ocluidas_obs
+        )
+        if clasificador is not None
+        else {}
+    )
+
     trayectorias, equipos = postprocesar(
         identidades,
         equipos,
@@ -689,6 +947,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         cfg,
         trayectorias=trayectorias,
         colores_equipo=colores_equipo,
+        etiquetas_por_obs=etiquetas_por_obs,
     )
 
 
@@ -699,6 +958,7 @@ def exportar_posiciones(
     cfg: dict,
     trayectorias=None,
     colores_equipo: dict | None = None,
+    etiquetas_por_obs: dict | None = None,
 ) -> pd.DataFrame:
     """Escribe el CSV de posiciones y el meta JSON (formato compatible).
 
@@ -730,9 +990,15 @@ def exportar_posiciones(
 
     filas = []
     for id_identidad, obs_identidad in enumerate(observaciones, start=1):
-        etiqueta = equipos.get(id_identidad, "otro")
-        entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
+        etiqueta_ident = equipos.get(id_identidad, "otro")
         for frame_idx, pos, es_real in obs_identidad:
+            # La etiqueta por observación, si la hay, manda sobre la de la
+            # identidad. Las posiciones INTERPOLADAS no tienen recorte, así
+            # que se quedan con la de su identidad.
+            etiqueta = (etiquetas_por_obs or {}).get(
+                (id_identidad, frame_idx)
+            ) or etiqueta_ident
+            entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
             mx, my = float(pos[0]), float(pos[1])
             if not (-margen <= mx <= largo + margen):
                 continue

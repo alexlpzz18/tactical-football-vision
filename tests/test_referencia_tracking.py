@@ -45,6 +45,27 @@ def resultado_pipeline():
     return tracklets, identidades
 
 
+# ⚠️ QUÉ SON ESTOS NÚMEROS, Y QUÉ NO SON (28-ago-2026)
+#
+# 309 y 89 son lo que el sistema HACE sobre este caché, no lo que
+# DEBERÍA hacer. En ese tramo el GT anota **23 personas**: 89 identidades
+# son 3,9× de fragmentación, así que el número correcto no es 89 — es
+# 23, y el día que se acerque habrá que actualizarlo hacia abajo.
+#
+# Son DETECTORES DE CAMBIO: sirven para enterarse de que algo se movió,
+# no para afirmar que el resultado es bueno. Leerlos como contrato es
+# exactamente lo que pasó con el pin de "58 identidades" del perfil
+# candidato, que llevaba semanas defendiendo el resultado de un
+# interruptor que no se leía (el número bueno era 114).
+#
+# > Un test de regresión que fija un número sin comprobar que ese número
+# > es CORRECTO convierte un bug en contrato.
+#
+# Si uno de estos falla: no lo "arregles" poniendo el número nuevo.
+# Averigua QUÉ cambió y si el cambio es bueno; solo entonces se actualiza,
+# con la razón escrita al lado.
+
+
 def test_etapa_a_reproduce_309_tracklets(resultado_pipeline):
     tracklets, _ = resultado_pipeline
     assert len(tracklets) == 309, f"Esperados 309 tracklets, hay {len(tracklets)}"

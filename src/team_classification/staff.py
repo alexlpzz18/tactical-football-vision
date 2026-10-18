@@ -39,10 +39,71 @@ class ReglaStaff:
     # Mínimo de observaciones para juzgar: con 2-3 posiciones la mediana no
     # significa nada (y los artefactos de proyección son cortos).
     min_observaciones: int = 5
+    # ── Tolerancia SEGUNDA, para quien además se mueve poco ──────────
+    #
+    # Por qué hace falta (medido en el benjamín, 25-ago-2026): el
+    # entrenador del chándal vive a 0,23 m fuera de la banda y mete la
+    # mitad de las fugas del sistema. Bajar `tolerancia_m` para cogerlo
+    # NO se puede: un jugador real tiene su mediana a 0,22 m fuera de la
+    # banda contraria. **Un centímetro.** Ninguna tolerancia los separa
+    # mirando solo la posición.
+    #
+    # Y la velocidad sola tampoco: el más lento del partido no es el
+    # entrenador (0,67 m/s) sino EL PORTERO (0,60 m/s), así que una regla
+    # de "se mueve poco" a secas se lleva al portero por delante.
+    #
+    # Las dos juntas sí, porque el portero está DENTRO y el entrenador
+    # FUERA. Es la doctrina de siempre: no aplicar un criterio ruidoso a
+    # todo el mundo, solo decidir mejor donde ya hay riesgo. La velocidad
+    # solo se mira en quien ya está fuera de las líneas.
+    #
+    # Margen medido: la identidad-persona más lenta después del portero va
+    # a 2,06 m/s, así que 1,5 m/s cae en un hueco ancho.
+    # ⚠️ Margen de proyección: 0,15 m, no 0. Con 0 exacto, un portero cuya
+    # mediana caiga UN CENTÍMETRO por detrás de la línea de fondo —cosa
+    # normalísima, ahí es donde vive— se marcaría staff, y eso cuesta más
+    # de lo que la regla gana. Medido: 0,15 m sigue cogiendo al entrenador
+    # (0,23 m fuera) y no cambia ninguna cifra.
+    # Distancia a partir de la cual NO se exige `min_observaciones`. Una
+    # identidad de 3 detecciones a 17 m fuera del campo es basura aunque
+    # su mediana esté hecha con tres puntos: no hay error de proyección
+    # que explique eso. Medido en las dos patas: **ninguna persona real
+    # tiene su mediana fuera del campo** (máximo 0,0 m), y la identidad
+    # corta más cercana al borde está a 0,8 m — así que 6 m deja un margen
+    # de sobra. Sin esto, un señor jugando con sus hijos en el campo de al
+    # lado (4 observaciones, 17 m fuera) se colaba como jugador.
+    min_obs_lejos_m: float = 6.0
+    # ⚠️ Puede ser NEGATIVA, y aquí sí significa algo: "hasta X metros
+    # DENTRO de la línea". Se compara contra `_distancia_con_signo`, no
+    # contra `_distancia_fuera`. Sin esto la rama lenta no puede alcanzar
+    # al entrenador, que vive 80 cm dentro del campo.
+    tolerancia_lento_m: float = 0.15
+    vel_max_lento: float = 0.0  # 0 = desactivado
+    # Observaciones mínimas para juzgar una VELOCIDAD, que no es lo mismo
+    # que juzgar una mediana de posición: `min_observaciones` (5) se eligió
+    # para lo segundo. Con 5 muestras en medio segundo, "se mueve poco" no
+    # significa nada — le pasaba a la identidad 53 del benjamín, de 6
+    # observaciones.
+    min_obs_lento: int = 25
 
     @classmethod
     def desde_dict(cls, d: dict) -> "ReglaStaff":
-        return cls(**d)
+        regla = cls(**d)
+        # `_distancia_fuera` está acotada con max(0, ...), así que una
+        # tolerancia NEGATIVA no significa "dentro por ese margen": la
+        # comparación `0 > -1` es cierta para todo el mundo y marcaría
+        # staff al campo entero. Ya pasó en un barrido. Se rechaza en vez
+        # de dejar la trampa abierta en el YAML.
+        # `tolerancia_lento_m` SÍ puede ser negativa: usa la distancia con
+        # signo (ver arriba). La otra no, que va contra la acotada.
+        for nombre in ("tolerancia_m",):
+            if getattr(regla, nombre) < 0:
+                raise ValueError(
+                    f"{nombre} no puede ser negativa ({getattr(regla, nombre)}): "
+                    "la distancia al campo está acotada a 0 y una tolerancia "
+                    "negativa marcaría staff a TODAS las identidades."
+                )
+        return regla
 
 
 def _distancia_fuera(mx: float, my: float, largo: float, ancho: float) -> float:
@@ -50,6 +111,50 @@ def _distancia_fuera(mx: float, my: float, largo: float, ancho: float) -> float:
     fuera_x = max(0.0, -mx, mx - largo)
     fuera_y = max(0.0, -my, my - ancho)
     return max(fuera_x, fuera_y)
+
+
+def _distancia_con_signo(mx: float, my: float, largo: float, ancho: float) -> float:
+    """Distancia al borde del campo, NEGATIVA si está DENTRO.
+
+    `_distancia_fuera` está acotada con max(0, ...), lo que impide
+    expresar "a menos de X metros de la línea, por dentro". Y hace falta:
+    el entrenador del benjamín vive a 0,04 y 0,84 m **dentro** de la
+    banda, así que ninguna tolerancia positiva puede alcanzarlo.
+
+    Medido en las dos patas: las personas reales nunca acercan su mediana
+    a menos de **3,05 m** (benjamín) ni **6,27 m** (Villaviciosa) de la
+    línea, y las que más se acercan van a 4-7 m/s. Hay hueco de sobra.
+    """
+    return max(-mx, mx - largo, -my, my - ancho)
+
+
+def velocidad_media(identidad: list[Tracklet]) -> float | None:
+    """Metros por segundo a lo largo de la identidad, o None si no se sabe.
+
+    Se divide por el tiempo REAL transcurrido y no por el número de
+    observaciones: una identidad con huecos no debe parecer más lenta solo
+    por tenerlos.
+
+    ⚠️ Devuelve **None**, no 0.0, cuando no hay con qué calcularla (una
+    sola observación, o todas con la misma marca de tiempo). Codificar
+    "no lo sé" como 0 la mandaba justo al lado que DISPARA la regla: una
+    identidad de 5 muestras con el mismo instante y 12 m recorridos salía
+    a 0 m/s y se marcaba staff.
+    """
+    obs = sorted(
+        ((t, p) for tr in identidad for t, p in zip(tr.ts, tr.pos)),
+        key=lambda o: o[0],
+    )
+    if len(obs) < 2:
+        return None
+    duracion = obs[-1][0] - obs[0][0]
+    if duracion <= 0:
+        return None
+    recorrido = sum(
+        float(np.linalg.norm(np.asarray(obs[i][1]) - np.asarray(obs[i - 1][1])))
+        for i in range(1, len(obs))
+    )
+    return recorrido / duracion
 
 
 def aplicar_regla_staff(
@@ -72,16 +177,39 @@ def aplicar_regla_staff(
     n_staff = 0
     for id_identidad, identidad in enumerate(identidades, start=1):
         posiciones = np.array([pos for tracklet in identidad for pos in tracklet.pos])
-        if len(posiciones) < regla.min_observaciones:
-            continue
         mx, my = float(np.median(posiciones[:, 0])), float(np.median(posiciones[:, 1]))
         fuera = _distancia_fuera(mx, my, regla.largo, regla.ancho)
+        # El mínimo de observaciones existe porque con 2-3 posiciones la
+        # mediana no significa nada. Pero eso vale cerca de la línea, no a
+        # 17 m fuera: ahí no hay error de proyección que lo explique.
+        if len(posiciones) < regla.min_observaciones and fuera <= regla.min_obs_lejos_m:
+            continue
+        motivo = None
         if fuera > regla.tolerancia_m:
+            motivo = "fuera del campo"
+        elif (
+            regla.vel_max_lento > 0
+            and _distancia_con_signo(mx, my, regla.largo, regla.ancho)
+            > regla.tolerancia_lento_m
+            and len(posiciones) >= regla.min_obs_lento
+            # ⚠️ La rama lenta NO puede sobrescribir a un portero. Es el
+            # único jugador del campo que puede estar quieto Y sobre la
+            # línea de fondo a la vez, y la etiqueta de portero la ha
+            # puesto la regla de área, que sabe más que esta. Sin esta
+            # guarda, un portero un centímetro por detrás de su línea sale
+            # de staff y el centroide del benjamín se va de 1,27 a 2,04 m.
+            and not str(equipos.get(id_identidad, "")).startswith("portero")
+        ):
+            velocidad = velocidad_media(identidad)
+            if velocidad is not None and velocidad < regla.vel_max_lento:
+                motivo = "fuera de la línea y casi quieto"
+        if motivo:
             resultado[id_identidad] = ETIQUETA_STAFF
             n_staff += 1
             logger.debug(
-                "Identidad %d marcada staff: mediana (%.1f, %.1f), %.1f m fuera",
+                "Identidad %d marcada staff (%s): mediana (%.1f, %.1f), %.1f m fuera",
                 id_identidad,
+                motivo,
                 mx,
                 my,
                 fuera,

@@ -5,15 +5,15 @@
 # mAP50 0.90 del v4pre por un objeto que aparece 1 vez por frame frente a
 # 20 jugadores, mide 5-12 px y se desenfoca al moverse.
 #
-# NO EJECUTADO: faltan las etiquetas. Esto es la receta lista para lanzar
-# en Colab en cuanto lleguen.
+# v1 ENTRENADO el 11-ago-2026 (best_balon_v1.pt, mAP50 0,789; 799 frames del
+# benjamín: 502 con balón + 297 negativos). docs/plan_deteccion_balon.md.
 
 modelo:
-  # 'n' y no 's': el balón es un objeto de una sola clase y forma simple;
-  # lo que le falta es RESOLUCIÓN, no capacidad. Con el modelo pequeño
-  # cabe una imagen de entrada mayor en la misma GPU, que es el cambio
-  # que de verdad mueve la aguja con objetos diminutos.
-  base: yolov8n.pt
+  # ⚠️ CORREGIDO el 3-oct-2026: v1 se entrenó con yolov8s, NO con la 'n' que
+  # decía aquí. El plan original razonaba 'n' (al balón le falta resolución,
+  # no capacidad), pero lo que existe y está en producción es una 's', y un
+  # reentreno que parta de v1 tiene que usar su misma arquitectura.
+  base: yolov8s.pt
   clases: [balon]
 
 entrenamiento:
@@ -63,3 +63,49 @@ evaluacion:
   # centro de juego) serían ficción.
   recall_min: 0.60
   precision_min: 0.80
+
+# ── REENTRENO del balón pegado al pie (docs/plan_reentreno_balon.md) ──
+# Plan aprobado, NO lanzado. Ajuste fino desde v1, junto con el dataset original
+# para que no olvide el balón normal.
+reentreno:
+  partir_de: best_balon_v1.pt # no desde cero: se ajusta lo que ya sabe
+  # ⚠️ CORREGIDO el 5-oct-2026. v1 se entrenó con `optimizer` automático, y en ese modo
+  # ultralytics IGNORA lr0: con 640 imágenes de train, 100 épocas y 1 clase (menos de
+  # 10.000 iteraciones) elige AdamW con lr = 0,002 × 5 / (4 + 1) = 0,002. Para que el
+  # "diez veces menor" del plan tenga efecto hay que FIJAR el optimizador. Se fija el mismo
+  # de v1, con lr diez veces menor que el que usó de verdad. Si se conserva el
+  # args.yaml de la corrida de v1, compruébalo ahí (optimizer y lr0 efectivos).
+  optimizer: AdamW
+  lr0: 0.0002
+  batch: -1 # como v1 (auto); el `batch: 8` de arriba no se usó nunca
+  epochs: 40
+  patience: 15
+  seed: 20261003
+  repeticion_pool: 3 # el pool pesa x3 frente al dataset original
+  # Parada temprana: la validación del dataset original + la del pool (minutos
+  # 13 y 19 enteros, 15 imágenes). Sin la del pool, best.pt saldría de las
+  # primeras épocas sin haber aprendido lo nuevo. El TEST (minutos 0, 9, 10 y
+  # 17) no entra en ningún paso del entrenamiento.
+  validacion_pool_minutos: [13, 19]
+  test_pool_minutos: [0, 9, 10, 17]
+  # Augmentation del reentreno: lo que v1 usó DE VERDAD (notebooks/entrenamiento_balon_v1.ipynb),
+  # NO el bloque `augmentation` de arriba. Diferían los tres hsv: v1 usó 0,15 / 0,7 / 0,5, y
+  # arriba decía 0,015 / 0,5 / 0,4. scale y translate son los valores por defecto de
+  # ultralytics, que v1 no tocó.
+  # ⚠️ scale y translate quedan PENDIENTES de la medida fina de Colab (sin mosaico, 502
+  # imágenes, 3 semillas; docs/colab_reentreno_balon.md). Si la de v1 no llega al 95 %, aquí
+  # irá el ajuste más suave que sí llegue, y YA NO SERÁN LOS AJUSTES DE v1.
+  # La celda de entrenamiento LEE esto y no entrena mientras sea false.
+  augmentation_medida: true # medida el 5-oct-2026 (docs/plan_reentreno_balon.md)
+  augmentation:
+    mosaic: 1.0
+    scale: 0.2 # YA NO es la de v1 (0,5): el par más estricto, el del pool
+    translate: 0.05 # YA NO es la de v1 (0,1)
+    fliplr: 0.5
+    flipud: 0.0
+    hsv_h: 0.15
+    hsv_s: 0.7
+    hsv_v: 0.5
+    mixup: 0.0
+    copy_paste: 0.0
+    erasing: 0.0

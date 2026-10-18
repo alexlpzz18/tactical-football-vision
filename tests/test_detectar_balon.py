@@ -78,3 +78,117 @@ def test_el_muestreo_impar_no_pierde_el_primer_frame():
     siguiente, no ninguno."""
     frames = list(iter_frames(CapFalso(200), 101, 110, 2))
     assert [i for i, _f in frames] == [102, 104, 106, 108]
+
+
+# ── Checkpoint del detector de balón (28-ago-2026) ───────────────────
+#
+# Este script dio dos sustos: procesar 0 frames en silencio y un
+# "✓ Caché de balón" sobre un archivo vacío. Quedaba el peor: el volcado
+# estaba solo al final, así que una caída en el minuto 35 de 40 lo perdía
+# todo. Sobre la parte entera son 17.983 frames de GPU.
+
+
+def _firma():
+    return {
+        "video": "v.mp4",
+        "modelo": "m.pt",
+        "confianza": 0.35,
+        "imgsz": 1280,
+        "sample_every": 2,
+        "sahi": {},
+        "k1": 0.0,
+        "k2": 0.0,
+        "tramo": {},
+    }
+
+
+def _guardar(ruta, firma, completo, n=10):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from detectar_balon import _volcar
+
+    _volcar(
+        ruta,
+        {
+            "cache": [
+                {"frame_idx": i * 2, "t": i * 0.066, "dets": []} for i in range(n)
+            ],
+            "fps": 29.97,
+            "sample": 2,
+            "wh": (1920, 1080),
+            "modelo": "m.pt",
+            "confianza": 0.35,
+            "completo": completo,
+            "firma": firma,
+        },
+    )
+
+
+def test_el_balon_reanuda_un_checkpoint_compatible(tmp_path):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from detectar_balon import _reanudar_balon
+
+    ruta = tmp_path / "b.pkl"
+    _guardar(ruta, _firma(), completo=False)
+    assert len(_reanudar_balon(ruta, _firma()) or []) == 10
+
+
+def test_el_balon_NO_reanuda_con_otra_confianza(tmp_path):
+    """La confianza cambia qué se detecta: mezclarlas sería un caché falso."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from detectar_balon import _reanudar_balon
+
+    ruta = tmp_path / "b.pkl"
+    _guardar(ruta, _firma(), completo=False)
+    otra = {**_firma(), "confianza": 0.50}
+    assert _reanudar_balon(ruta, otra) is None
+
+
+def test_el_balon_NO_reanuda_un_cache_completo(tmp_path):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from detectar_balon import _reanudar_balon
+
+    ruta = tmp_path / "b.pkl"
+    _guardar(ruta, _firma(), completo=True)
+    assert _reanudar_balon(ruta, _firma()) is None
+
+
+def test_un_volcado_de_balon_fallido_no_pierde_el_cache_bueno(tmp_path):
+    import pickle
+    import sys
+    from pathlib import Path
+
+    import pytest as _pytest
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from detectar_balon import _volcar
+
+    ruta = tmp_path / "b.pkl"
+    _guardar(ruta, _firma(), completo=False, n=7)
+    with _pytest.raises(Exception):
+        _volcar(ruta, lambda x: x)  # no serializable
+    assert list(tmp_path.glob("*.tmp")) == [], "quedó un temporal colgado"
+    with open(ruta, "rb") as f:
+        assert len(pickle.load(f)["cache"]) == 7
+
+
+def test_el_balon_RELEE_el_fichero_antes_del_visto_bueno():
+    """Contar lo enviado al disco no prueba que esté en el disco."""
+    from pathlib import Path
+
+    codigo = (
+        Path(__file__).resolve().parent.parent / "scripts" / "detectar_balon.py"
+    ).read_text()
+    assert "releido = pickle.load(f)" in codigo
+    assert "salió INCOMPLETO" in codigo
