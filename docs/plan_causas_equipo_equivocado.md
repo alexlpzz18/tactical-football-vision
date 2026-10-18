@@ -101,9 +101,10 @@ frames de la ventana (pedía ≥ 55). Hoy hay **739 cambios A↔B** (566 continu
 **Lo que se ve en los 9 casos con GT** (`E_casos.csv`, uno a uno):
 - **7 de los 9 están a y ≥ 34 m, junto a la banda de y = 40**, frente al 30 % de los aciertos
   (Fisher p = 0,005).
-- Dos son el mismo instante: 327,3 s de archivo (6:52,3 del reproductor), un A y un B en el mismo
+- Dos son el mismo instante: 5:27,3 de archivo (7:00,3 del reproductor), un A y un B en el mismo
   sitio, los dos equivocados. Es un cruce con las etiquetas intercambiadas.
-- Concentrados además entre 341 y 355 s: es el «tercio 3» ya conocido de la ventana.
+- Concentrados además entre 5:41 y 5:55 de archivo (7:14-7:28 del reproductor): es el «tercio 3»
+  ya conocido de la ventana.
 - ⚠️ Con 9 casos en 30 s esto no dice nada del partido (`EL GT DE UNA VENTANA NO REPRESENTA EL
   PARTIDO`); dice dónde mirar en la hoja.
 
