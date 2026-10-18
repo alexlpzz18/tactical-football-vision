@@ -70,3 +70,86 @@ En cada imagen, TODAS las cajas del caché que entran al tracking, con un númer
 identidad y la etiqueta DEL INSTANTE (la de esa observación, no la moda de la identidad: la guarda
 de `tests/test_renderizadores_no_colapsan.py`). Las cajas sin identidad, en gris. Arriba, los dos
 relojes. Se sacan con `posicionar_en_frame()` y lectura secuencial, nunca con `cap.set`.
+
+## Resultado (18-oct-2026)
+
+`scripts/causas_equipo_equivocado.py pasada` y `medir`, sobre la producción de hoy (parte entera).
+
+**Controles: pasan.** La clasificación es exhaustiva. El proxy del árbitro lo encuentra en **56 de 60**
+frames de la ventana (pedía ≥ 55). Hoy hay **739 cambios A↔B** (566 continuos; en septiembre eran
+741 y 567). Ninguna fila real queda sin caja.
+
+### (a) Las causas
+
+| población | n | árbitro | staff | portero | caja con dos personas | recorte limpio |
+|---|---|---|---|---|---|---|
+| **E: equipo equivocado con GT** (ventana) | **9** | 0 | 0 | 0 | 4 | 5 |
+| E: cubiertas por `otro`/`staff` | 0 | — | — | — | — | — |
+| *base E: casadas con su equipo bien* | 714 | 0 | 0 | 107 (15 %) | 198 (28 %) | 409 (57 %) |
+| **C: cambios A↔B** (partido) | **739** | 15 (2 %) | 0 | 12 (2 %) | **540 (73 %)** | 172 (23 %) |
+| C: solo los continuos | 566 | 8 | 0 | 8 | 407 (72 %) | 143 (25 %) |
+| *base del partido: 5.000 filas A/B al azar* | 5.000 | 152 (3 %) | 9 | 259 (5 %) | 1.474 (29 %) | 3.106 (62 %) |
+
+**Exceso sobre la base** (lo único que se atribuye):
+- **C, cambios A↔B: la caja con dos personas explica 322 de los 739** (240 de los 566 continuos).
+  Ninguna otra causa supera su tasa de base: el árbitro (2 % frente a 3 %) y el portero (2 % frente a
+  5 %) están POR DEBAJO. Confirma `docs/arbitro_y_baile_de_colores.md` con cajas exactas.
+- **E, con GT: la caja con dos personas explica 1,5 de los 9** (4 de 9 frente al 28 % de los aciertos).
+  Los otros 5 son recortes limpios, a la misma tasa que los aciertos (56 % frente a 57 %).
+  **n = 9: es una descripción de esta ventana, no una tasa.**
+
+**Lo que se ve en los 9 casos con GT** (`E_casos.csv`, uno a uno):
+- **7 de los 9 están a y ≥ 34 m, junto a la banda de y = 40**, frente al 30 % de los aciertos
+  (Fisher p = 0,005).
+- Dos son el mismo instante: 327,3 s de archivo (6:52,3 del reproductor), un A y un B en el mismo
+  sitio, los dos equivocados. Es un cruce con las etiquetas intercambiadas.
+- Concentrados además entre 341 y 355 s: es el «tercio 3» ya conocido de la ventana.
+- ⚠️ Con 9 casos en 30 s esto no dice nada del partido (`EL GT DE UNA VENTANA NO REPRESENTA EL
+  PARTIDO`); dice dónde mirar en la hoja.
+
+### El árbitro: la mayor fuente de equipo equivocado, y el GT no la ve
+
+Etiqueta de las filas que el proxy de píxeles marca como árbitro:
+
+| | `otro` (bien) | **B** | A | `staff` | `portero_A` |
+|---|---|---|---|---|---|
+| partido entero | 6.098 (59 %) | **3.955 (38 %)** | 80 | 289 | 29 |
+| ventana del GT | 28 | **27** | 1 | — | — |
+
+- **En la ventana del GT hay 28 filas de árbitro contadas en un equipo, contra 9 errores de jugador
+  verificados.** El casado contra el GT no puede verlas, porque el GT no anota al árbitro: por eso el
+  «1,2 % de equipo equivocado» de CLAUDE.md las deja fuera.
+- **En el partido son 4.035 filas** (el 3,0 % de las 134.163 filas reales A/B), casi siempre en el B.
+  Como estimación, y no como medida: si la tasa de 1,24 % de los jugadores valiera para todo el
+  partido, serían ~1.660 filas, así que **el árbitro pesaría unas 2,4 veces más que todos los errores
+  de jugador**. Es coherente con `docs/desglose_del_error.md` (el árbitro es la mitad de los sobrantes).
+
+### (b) La hoja de revisión
+
+`python scripts/hoja_revision_equipos.py --trabajo DIR --salida outputs/hoja_equipos` (no se versiona,
+71 MB). 180 imágenes, 3.084 cajas (17 por imagen de media):
+
+| ventana | archivo | reproductor |
+|---|---|---|
+| `gt` | 5:10-6:10 | 6:43-7:43 |
+| `minuto_malo` | 8:00-9:00 (10,2 filas A/B/portero en el campo por frame, frente a 12,9 de mediana) | 9:33-10:33 |
+| `azar` (semilla 0) | 16:04-17:04 | 17:37-18:37 |
+
+Ya en la primera mirada: en la imagen 21 de `gt` (5:30 de archivo, 7:03 del reproductor), **el árbitro
+(caja 8, #292) sale como B**. En la 30 de `minuto_malo` (8:29 de archivo, 10:02 del reproductor), **un
+jugador blanco (caja 7, #431) sale como portero_A** en el centro del campo, y un naranja (caja 11,
+#436) como `otro`.
+
+**Formato** (`outputs/hoja_equipos/revision.csv`; una fila por CAJA MAL, no por imagen):
+
+    ventana,imagen,caja,equipo_correcto,causa,nota
+    gt,20_5-30.0.jpg,8,arbitro,arbitro,chaleco verde
+    minuto_malo,29_8-29.0.jpg,7,A,portero,el 4 blanco en el centro
+
+- `equipo_correcto`: A · B · portero_A · portero_B · arbitro · staff · no_es_persona · dudoso
+- `causa`: caja_dos_personas · arbitro · portero · staff · color_limpio · otra · no_se
+- `cajas.csv` dice qué es cada número de caja (frame, los dos relojes, identidad, etiqueta, caja en
+  píxeles y posición en metros).
+
+**Tiempo estimado: 75-90 min** (unos 25-30 min por ventana; ~25 s por imagen para recorrer 17 cajas,
+más ~15 s por cada caja que se apunte). Se puede hacer por ventanas.
