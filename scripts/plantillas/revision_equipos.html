@@ -1,0 +1,108 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Revisión de equipos</title>
+<style>
+:root{--fondo:#111;--panel:#1c1c1c;--texto:#eee;--suave:#999;--sel:#ffd400;--mal:#ff3b6b}
+body{margin:0;background:var(--fondo);color:var(--texto);font:14px system-ui,sans-serif;display:flex;height:100vh}
+#vista{flex:1;position:relative;overflow:auto}
+#marco{position:relative;display:inline-block}
+#marco img{display:block;max-width:100%}
+.caja{position:absolute;border:2px solid transparent;cursor:pointer;box-sizing:border-box}
+.caja:hover{border-color:#fff8}
+.caja.sel{border-color:var(--sel);box-shadow:0 0 0 2px #000}
+.caja.mal{border-color:var(--mal)}
+#panel{width:330px;background:var(--panel);padding:10px;overflow:auto;box-sizing:border-box}
+h3{margin:8px 0 4px;font-size:13px;color:var(--suave);font-weight:600}
+button{background:#333;color:var(--texto);border:1px solid #555;border-radius:4px;padding:5px 7px;margin:2px;cursor:pointer;font-size:13px}
+button.on{background:var(--sel);color:#000;border-color:var(--sel)}
+#lista div{padding:2px 4px;cursor:pointer;border-radius:3px}
+#lista div:hover{background:#333}#lista div.sel{background:#554a00}#lista div.mal{color:var(--mal)}
+input{width:100%;box-sizing:border-box;background:#222;color:var(--texto);border:1px solid #555;padding:4px}
+.k{color:var(--suave);font-size:12px}
+</style></head><body>
+<div id="vista"><div id="marco"><img id="img"></div></div>
+<div id="panel">
+ <div><b id="titulo"></b><div class="k" id="reloj"></div><div class="k" id="progreso"></div></div>
+ <div><button id="ant">← anterior</button><button id="sig">siguiente →</button></div>
+ <h3>Caja seleccionada</h3><div id="info" class="k">clic en una caja (o en la lista)</div>
+ <h3>1. Equipo correcto (teclas 1-8)</h3><div id="equipos"></div>
+ <h3>2. Causa (teclas q w e r t y u)</h3><div id="causas"></div>
+ <h3>Nota (opcional)</h3><input id="nota" placeholder="texto libre">
+ <div><button id="borrar">quitar la marca de esta caja</button></div>
+ <h3>Guardar</h3>
+ <div><button id="exportar">exportar revision.csv</button><button id="importar">continuar desde un CSV</button>
+ <input type="file" id="fichero" accept=".csv" style="display:none"></div>
+ <div class="k" id="estado"></div>
+ <h3>Cajas de esta imagen</h3><div id="lista"></div>
+ <p class="k">Se guarda solo en este navegador a cada marca (localStorage). Exporta el CSV al terminar.
+ Una fila por caja MAL; las que estén bien no se marcan.</p>
+</div>
+<script>
+const VENTANA=__VENTANA__, IMAGENES=__IMAGENES__, CAJAS=__CAJAS__;
+const EQUIPOS=__EQUIPOS__, CAUSAS=__CAUSAS__, TECLAS_CAUSA="qwertyu";
+const CLAVE="revision_equipos_"+VENTANA;
+let i=0, sel=null, marcas={};
+try{marcas=JSON.parse(localStorage.getItem(CLAVE)||"{}")}catch(e){marcas={}}
+const $=id=>document.getElementById(id);
+function guardar(){try{localStorage.setItem(CLAVE,JSON.stringify(marcas))}catch(e){$("estado").textContent="⚠ no se pudo guardar en el navegador: exporta el CSV"}
+ $("estado").textContent=Object.keys(marcas).length+" cajas marcadas"; }
+function clave(img,c){return img+"|"+c}
+function pintar(){
+ const im=IMAGENES[i]; $("img").src="data:image/jpeg;base64,"+im.b64;
+ $("titulo").textContent=im.nombre; $("reloj").textContent="archivo "+im.archivo+" · reproductor "+im.reproductor;
+ $("progreso").textContent="imagen "+(i+1)+" de "+IMAGENES.length;
+ sel=null; dibujarCajas(); panel();
+}
+function dibujarCajas(){
+ document.querySelectorAll(".caja").forEach(e=>e.remove());
+ const img=$("img"), esc=img.clientWidth/1920, lista=$("lista"); lista.innerHTML="";
+ for(const c of CAJAS[IMAGENES[i].nombre]){
+  const d=document.createElement("div"); d.className="caja";
+  Object.assign(d.style,{left:(c.x1*esc-3)+"px",top:(c.y1*esc-3)+"px",width:((c.x2-c.x1)*esc+6)+"px",height:((c.y2-c.y1)*esc+6)+"px"});
+  const m=marcas[clave(IMAGENES[i].nombre,c.caja)]; if(m) d.classList.add("mal"); if(sel===c.caja) d.classList.add("sel");
+  d.title=c.caja+" "+c.etiqueta+(c.id!==""?" #"+c.id:""); d.onclick=()=>{sel=c.caja;dibujarCajas();panel()};
+  $("marco").appendChild(d);
+  const l=document.createElement("div"); l.textContent=c.caja+" · "+c.etiqueta+(c.id!==""?" #"+c.id:"")+(m?"  → "+m.equipo_correcto+" / "+m.causa:"");
+  if(m) l.classList.add("mal"); if(sel===c.caja) l.classList.add("sel"); l.onclick=d.onclick; lista.appendChild(l);
+ }
+}
+function panel(){
+ const im=IMAGENES[i].nombre, m=sel===null?null:marcas[clave(im,sel)];
+ const c=sel===null?null:CAJAS[im].find(x=>x.caja===sel);
+ $("info").textContent=c?("caja "+c.caja+" · pintada como "+c.etiqueta+(c.id!==""?" · id "+c.id:"")):"clic en una caja (o en la lista)";
+ const p=m||{}; $("nota").value=p.nota||"";
+ $("equipos").innerHTML=""; EQUIPOS.forEach((e,k)=>{const b=document.createElement("button");b.textContent=(k+1)+" "+e;if(p.equipo_correcto===e)b.className="on";b.onclick=()=>marcar("equipo_correcto",e);$("equipos").appendChild(b)});
+ $("causas").innerHTML=""; CAUSAS.forEach((e,k)=>{const b=document.createElement("button");b.textContent=TECLAS_CAUSA[k]+" "+e;if(p.causa===e)b.className="on";b.onclick=()=>marcar("causa",e);$("causas").appendChild(b)});
+}
+function marcar(campo,valor){
+ if(sel===null){$("estado").textContent="primero elige una caja";return}
+ const k=clave(IMAGENES[i].nombre,sel); const m=marcas[k]||{ventana:VENTANA,imagen:IMAGENES[i].nombre,caja:sel,equipo_correcto:"",causa:"",nota:""};
+ m[campo]=valor; m.nota=$("nota").value; marcas[k]=m; guardar(); dibujarCajas(); panel();
+}
+$("nota").oninput=()=>{if(sel===null)return;const k=clave(IMAGENES[i].nombre,sel);if(marcas[k]){marcas[k].nota=$("nota").value;guardar()}};
+$("borrar").onclick=()=>{if(sel===null)return;delete marcas[clave(IMAGENES[i].nombre,sel)];guardar();dibujarCajas();panel()};
+$("ant").onclick=()=>{if(i>0){i--;pintar()}}; $("sig").onclick=()=>{if(i<IMAGENES.length-1){i++;pintar()}};
+function csvCampo(v){v=String(v??"");return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+$("exportar").onclick=()=>{
+ const incompletas=Object.values(marcas).filter(m=>!m.equipo_correcto||!m.causa).length;
+ if(incompletas&&!confirm(incompletas+" marca(s) sin equipo o sin causa. ¿Exportar igualmente?"))return;
+ const filas=[["ventana","imagen","caja","equipo_correcto","causa","nota"]].concat(
+  Object.values(marcas).sort((a,b)=>a.imagen.localeCompare(b.imagen)||a.caja-b.caja).map(m=>[m.ventana,m.imagen,m.caja,m.equipo_correcto,m.causa,m.nota]));
+ const blob=new Blob([filas.map(f=>f.map(csvCampo).join(",")).join("\n")+"\n"],{type:"text/csv"});
+ const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="revision.csv";a.click();
+};
+$("importar").onclick=()=>$("fichero").click();
+$("fichero").onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{
+ const ls=t.trim().split(/\r?\n/).slice(1);let n=0;
+ for(const l of ls){const v=l.split(",");if(v.length<5||v[0]!==VENTANA)continue;
+  marcas[clave(v[1],+v[2])]={ventana:v[0],imagen:v[1],caja:+v[2],equipo_correcto:v[3],causa:v[4],nota:v.slice(5).join(",")};n++}
+ guardar();dibujarCajas();panel();$("estado").textContent+=" · "+n+" filas cargadas del CSV"})};
+document.addEventListener("keydown",e=>{
+ if(e.target.tagName==="INPUT")return;
+ if(e.key==="ArrowRight"||e.key===" "){e.preventDefault();$("sig").onclick()} else if(e.key==="ArrowLeft"){$("ant").onclick()}
+ else if(/^[1-8]$/.test(e.key)){marcar("equipo_correcto",EQUIPOS[+e.key-1])}
+ else{const k=TECLAS_CAUSA.indexOf(e.key.toLowerCase());if(k>=0)marcar("causa",CAUSAS[k])}
+});
+window.addEventListener("resize",dibujarCajas); $("img").onload=dibujarCajas;
+guardar(); pintar();
+</script></body></html>
