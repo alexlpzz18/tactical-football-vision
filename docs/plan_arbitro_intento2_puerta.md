@@ -46,3 +46,44 @@ decide en (S, V), como se acordó.
 La señal sobre el centro del torso, con el portero excluido por posición (dentro de su área), y el mismo
 criterio que el intento 1: como mucho 1 jugador o portero convertido en árbitro en la ventana del GT, y las
 20 cajas de más fracción que no son árbitro, miradas a ojo.
+
+## Resultado (19-oct-2026): la puerta es NO CONCLUYENTE — no se construye el paso 3
+
+`python scripts/puerta_chaleco_cesped.py --trabajo outputs/arbitro_obs` (fuera de git). 20 minutos, 20
+frames por minuto, centro del torso.
+
+**Veredicto del criterio: NO CONCLUYENTE (no hay ningún minuto de S baja).** Por el plan, el paso 3 solo
+se hace si la puerta pasa: **no se construye la señal**.
+
+**La premisa de la que salía la puerta no se cumple en PÍXELES.** La mediana de S del chaleco está
+entre 171 y 178 en TODOS los minutos (17 «S alta», 3 «mixtos» entre 162 y 168, ninguno ≤ 120). La
+alternancia S ≈ 248 / S ≈ 72-104 de CLAUDE.md se midió sobre el HISTOGRAMA del caché de color (los bins
+de la feature del catálogo), no sobre los píxeles del vídeo: es una propiedad de esa representación, no
+del chaleco.
+
+**Solape (S, V) con el césped del mismo minuto: entre el 0,1 % y el 4,6 %** en los minutos de S alta, y
+hasta el 8,4 % en el peor minuto mixto (el 15). Nunca pasa del 10 %.
+
+| | H (p25-p50-p75) | S | V |
+|---|---|---|---|
+| chaleco | 45 · **46** · 47 | 160 · 175 · 185 | 231 · **247** · 255 |
+| césped x 0-20 m | 55 · **55** · 57 | 72 · 78 · 86 | 106 · **113** · 119 |
+| césped x 20-40 m | 54 · 54 · 56 | 74 · 81 · 87 | 117 · 122 · 127 |
+| césped x 40-62 m | 36 · 53 · 55 | 68 · 79 · 90 | 120 · 128 · 147 |
+| portero de B | 39 · 50 · 54 | 79 · 112 · 138 | 127 · 160 · 185 |
+
+**Lo que dicen los datos, sin construir nada:**
+- **El chaleco es H ≈ 46, no H ≈ 62**, y el césped es H ≈ 54-55. La banda del intento 1 (H 55-75)
+  estaba justo encima del césped y por encima del chaleco: por eso medía césped y casi nunca veía al
+  árbitro.
+- Lo que más separa al chaleco del césped es el **brillo (V ≈ 247 contra 113-128)**, y también del
+  portero de B (V ≈ 160).
+- ⚠️ **Sesgo de selección**: los píxeles de chaleco salen de las filas que marca el proxy, que pide
+  masa en la región flúor del histograma con S ≥ 80. Si hay minutos en que el chaleco no llega a eso,
+  el proxy no los ve y esta medida tampoco. «Ningún minuto de S baja» vale para el árbitro que el proxy
+  encuentra.
+
+**Este era el segundo y último intento.** Por la regla de los dos intentos, la vía del árbitro por
+observación con un umbral de color queda **cerrada como está planteada**. Si se quisiera retomar con lo
+que se ha aprendido (H ≈ 46 y V alto), sería un experimento NUEVO, con su plan y su criterio, y con la
+validación fuera de ventana que espera a las marcas de Alex en la hoja de revisión.
