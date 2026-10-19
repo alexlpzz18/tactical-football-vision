@@ -70,3 +70,34 @@ Aunque pase, no va a producción sin el OK de Alex.
   asociación, y se contará aparte.
 - **El árbitro con poca luz** (nubes, sombra del graderío): V más bajo de 247, por debajo del umbral.
   Eso no es un falso positivo: le baja la recuperación.
+
+## Resultado (19-oct-2026): NO SE ADOPTA — la derivación de umbrales DEGENERA
+
+`scripts/medir_arbitro_tono_brillo.py --pasada outputs/arbitro_obs --revisadas 0-30` (fuera de git).
+Validación sobre las **31 imágenes revisadas de `azar`** (00-30; la 21 está revisada y sin marcas),
+no sobre las 60 del plan: Alex revisó la mitad. Las 3 marcas sin equipo (cajas con dos personas)
+quedan fuera de las cuentas. Calibración con 312 cajas de chaleco, 2.751 de césped y 241 del portero
+de B, sin los minutos 16-17.
+
+**Verdad**: 29 cajas de árbitro, todas marcadas por Alex (**0 cajas `otro` sin marcar** contadas como
+árbitro), 418 de jugador o portero y 120 fuera de las cuentas.
+
+**Umbrales derivados con la regla fijada:** H 43-59, S ≥ 105, **V ≥ 247**, **fracción mínima 0,0**.
+- **El aviso de V saltó**: V ≥ 247 deja fuera el **48,7 %** del chaleco (el plan avisaba a partir del
+  25 %). El límite lo pone el p95 del V del portero de B. El chaleco está saturado de brillo (mediana
+  247, techo 255), así que el «brillo por encima del portero» deja muy poco margen. ⚠️ Según el plan,
+  esto había que decirlo ANTES de seguir; el script no se detuvo y midió igual. Queda anotado.
+- **La fracción mínima salió 0**: el p99 de la fracción «chaleco» en cajas de césped y del portero de
+  B es 0 (con V ≥ 247 casi ningún píxel pasa), y la regla «fracción ≥ mínimo» con mínimo 0 **se
+  dispara en TODAS las cajas elegibles**.
+
+**Lo que da, por eso:** recuperación del 100 % (29 de 29) y **311 falsos positivos** de 418 cajas de
+jugador. Por el criterio: **NO SE ADOPTA** (hay jugadores entre las 20 de más fracción y los falsos
+positivos superan con mucho el máximo de 1).
+
+**Lectura honesta:** esto no dice si el tono y el brillo separan al árbitro. Dice que **la regla de
+derivación fijada antes era defectuosa**: un umbral de fracción sacado del p99 de dos clases donde la
+señal vale casi siempre 0 da 0, y una comparación «≥ 0» no es un detector. Faltaba exigir que la
+fracción mínima fuera > 0 (o derivarla del lado del chaleco, por ejemplo de su p5 por caja), y faltaba
+que el script se parara con el aviso de V. Cualquier corrección sería un SEGUNDO intento, con su
+criterio escrito antes; no se hace sin el OK de Alex.
