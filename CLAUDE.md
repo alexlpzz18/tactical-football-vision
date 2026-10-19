@@ -314,12 +314,21 @@ Todo lo demás acaba desembocando aquí:
   descarta un patrón — solo señala dónde mirar (`docs/mas_episodios_como_tercio3.md`).
   ⇒ Cuando no hay GT para validar un proxy nuevo, comprobarlo contra el ÚNICO caso
   conocido antes de usarlo para buscar más casos.
-- **UN UMBRAL DE SATURACIÓN QUE FALLA NO SE ARREGLA BAJÁNDOLO.** El chaleco
-  del árbitro alterna entre S≈248 y S≈72-104 según el minuto (el catálogo
-  pide S≥170: acierta el 3 % o el 98 % de los minutos). Bajar el umbral con
-  la regla del bin dominante recupera el 93 % del árbitro y captura además
-  el 6,4 % de todas las ventanas A/B. Lo que separa es otra medida (la MASA
-  en la región), no otro número.
+- **UN UMBRAL DE SATURACIÓN QUE FALLA NO SE ARREGLA BAJÁNDOLO.** El catálogo
+  arbitral (bin dominante con S≥170) acierta el 3 % o el 98 % de los minutos según
+  el minuto. Bajar el umbral con la regla del bin dominante recupera el 93 % del
+  árbitro y captura además el 6,4 % de todas las ventanas A/B. Lo que separa es otra
+  medida (la MASA en la región), no otro número.
+  ⚠️ **Corregido el 19-oct** (`docs/plan_arbitro_intento2_puerta.md`): la
+  «alternancia S≈248 / S≈72-104 del chaleco» es una propiedad del HISTOGRAMA del
+  caché de color, **no de los píxeles**. En píxeles, la S del chaleco está en
+  171-178 en los 20 minutos (y H≈46, V≈247). La explicación probable: la feature
+  lleva una máscara anti-verde (H 35-85, S≥40, V≥40 se borra como césped,
+  `docs/recortes_sueltos.md`), y el chaleco cae ENTERO dentro de ella. El
+  histograma solo ve los restos que sobreviven a la máscara, y esos restos son lo
+  que «alterna». ⇒ **Una propiedad medida en una REPRESENTACIÓN no es una
+  propiedad del OBJETO**: antes de usarla como premisa sobre el mundo, medirla en
+  los píxeles.
 - **COMPROBAR LA PREMISA ANTES DE CONSTRUIR** (tercera vez: el Kalman, excluir ocluidos en 3a y otra vez el 21-sep). Antes de excluir ocluidos bastaba una tabla de 2 filas: acierto por recorte de limpios (93,6 %) contra ocluidos (91,4 %). Si la diferencia no existe, no hay nada que arreglar por ahí.
 - **UN CAMBIO DE ETIQUETA NO ES SIEMPRE UN FALLO.** En la ventana del GT, 8 de
   los 18 cambios A↔B corrigen una etiqueta y 10 la rompen: casi la mitad es
