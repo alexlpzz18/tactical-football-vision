@@ -49,3 +49,40 @@ Umbrales en una rejilla fija: **0,05 · 0,10 · 0,15 · 0,20 · 0,30**.
    20 cajas de más fracción: si alguna de esas tres cosas aparece ahí, se dice.
 
 Nada pasa a producción: el resultado es un detector medido y una lista.
+
+## Resultado (19-oct-2026): NO SE ADOPTA — intento 1 negativo
+
+`causas_equipo_equivocado.py pasada`, `arbitro_por_observacion.py senal` y `medir` (en
+`outputs/arbitro_obs/`, fuera de git). 158.765 cajas medidas; 10.045 filas de árbitro según el proxy
+fuera de la ventana del GT.
+
+| umbral | jugadores/porteros convertidos en la ventana del GT (máx. 1) | recuperación del proxy fuera de la ventana | se dispara sin proxy (fuera) |
+|---|---|---|---|
+| 0,05 | 47 (18 portero_B, 16 portero_A, 7 A, 6 B) | 3,2 % | 10.930 |
+| 0,10 | 21 | 1,1 % | 5.497 |
+| 0,15 | 12 | 0,4 % | 3.060 |
+| 0,20 | 7 | 0,2 % | 1.770 |
+| 0,30 | 3 (2 portero_B, 1 portero_A) | 0,02 % | 568 |
+
+**Criterio 1: ningún umbral convierte ≤ 1** → no se elige ninguno. Y la recuperación es casi nula a
+todos los umbrales.
+
+**Las 20 cajas de más fracción que el proxy NO marca** (`outputs/arbitro_obs/top20_no_arbitro.jpg`;
+relojes de archivo y reproductor en `resultado_arbitro.json`):
+- **6 son una marca del campo** (un trozo de línea en x ≈ 57, y ≈ 13,6, detectado como persona y
+  etiquetado A/B): la franja del torso es casi todo CÉSPED.
+- **6 son el portero de B** (viste verde) **DENTRO de su área**, no tras la línea.
+- **8 son jugadores reales**: 4 cajas en melés de varios jugadores (A/B) y 4 jugadores sueltos (3
+  naranjas y el portero de A agachado) cuya franja de torso coge césped. **Salen jugadores reales: el
+  detector no se adopta** (la regla de Alex).
+- Ni conos ni botas lima: los excluyen la regla del campo y el torso, como se quería.
+
+**Por qué falla (la premisa que no se comprobó):** el plan suponía que el césped cae por debajo de
+H = 50. **No es así**: el césped de este campo entra en la banda H 55-75 con S ≥ 70, así que la señal
+mide CÉSPED, no chaleco. Por eso se dispara donde la caja coge césped (marcas, cajas grandes,
+melés) y casi nunca en el árbitro, cuyo chaleco el proxy encuentra en otra banda (H 20-90 en bins,
+`arbitro_medicion.py`). Era la lección de CLAUDE.md: **comprobar la premisa antes de construir**;
+bastaba medir el tono del césped en diez cajas vacías.
+
+Un segundo intento (el último) sería otro experimento: la banda de color medida antes sobre recortes
+de chaleco y de césped, y el criterio fijado otra vez antes de medir. Queda a decisión de Alex.
