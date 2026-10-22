@@ -221,3 +221,66 @@ Lo que ya se sabe de «hoy» en Villaviciosa, que es la línea base contra la qu
 - Para leer el resultado de Colab sirven los criterios ya escritos (equipo equivocado ≤ hoy + 0,3;
   árbitro no sube; simultaneidad ≤ 3 % y ≤ hoy + 1). Tras el bloque 1, v3 ya no es candidata en el
   benjamín, así que esta celda solo sirve para cerrar la pata que faltaba.
+
+---
+
+## Resultado del bloque 3 — balón: 3c NO se implementa (3b no llega al 80/80)
+
+**3a. «Balón en el aire» SÍ usa la posición proyectada, y el 604/604 del 22-oct (c) es por
+construcción.**
+- `detectar_fases_aereas` tiene dos señales y las dos salen de la proyección:
+  - la velocidad entre posiciones proyectadas (> `v_max_raso`, 20 m/s, o > 40 m/s «indefendible»);
+  - el tamaño de la caja contra la distancia proyectada.
+- Además, y es lo que decide aquí: la plausibilidad (`filtrar_balon_plausible`, margen **3 m**)
+  quita de entrada toda detección a más de 3 m fuera del campo. Solo puede volver como «vuelo
+  readmitido» (`readmitir_vuelos`), y `marcar_vuelos_readmitidos` marca AÉREA toda fila que no esté
+  entre las detecciones de suelo.
+- **Medido** (`scripts/diag22d_balon_paneles.py`): de los 604 frames con el elegido a > 3 m fuera,
+  **0** están entre las detecciones de suelo, los **604** son vuelos readmitidos y los 604 están
+  marcados aéreos.
+- ⇒ «Aéreo» en esos frames no es una observación: es la definición de «estar a más de 3 m». La
+  frase del 22-oct (c), «los 604 son TODOS aéreos», no aportaba información.
+
+**3b. 24 paneles** (`outputs/diagnostico_22oct_d/paneles_balon/`: fotograma entero, zoom y
+pizarra), clasificados a ojo. Semilla 0, sobre 429 traseros (x > 65) y 291 laterales (y < −3 o
+y > 43). Los dos estratos se solapan: un balón lejos en diagonal cumple las dos condiciones, y
+429 + 291 > 604.
+
+| | balón real del partido | campo de al lado | otro / dudoso |
+|---|---|---|---|
+| **traseros** (12) | **7** claros, en el aire (f3120, f3142, f4530, f10558, f11682, f17930, f18294) + 2 probables (f3350, f26960: despeje por encima de la grada) | **2** (f9738, f27048: detrás de la grada, junto a la portería del otro campo) | 1 (f27630: un niño con un balón en la mano detrás del fondo) |
+| **laterales** (12) | **9**: 3 saques de banda con el balón SOBRE LA CABEZA o recién lanzado (f1380, f1392, f26892), 3 balones en el aire saliendo por banda o córner (f3822, f22776, f26962), 2 en manos o junto a la grada (f9870, f28858) y 1 despeje alto (f28812/f28814, el mismo instante) | **0** | 2 (f3348 dudoso; f12400, un balón quieto en el escalón de la grada) |
+
+Relojes (archivo / reproductor) de los que importan:
+
+| frame | archivo | reproductor | qué es |
+|---|---|---|---|
+| f1380 | 0:46.0 | 2:19.0 | saque de banda |
+| f9738 | 5:24.9 | 6:57.9 | campo de al lado |
+| f26892 | 14:57.3 | 16:30.3 | saque de banda |
+| f27048 | 15:02.5 | 16:35.5 | campo de al lado |
+
+**Condición de 3c: traseros reales ≥ 80 % y laterales del campo de al lado ≥ 80%.**
+- Traseros: 7/12 = 58 % estricto, 9/12 = 75 % contando los probables. **No llega.**
+- Laterales: 0/12. **Lejísimos.**
+
+⇒ **3c no se implementa** (ni el corte lateral ni el flag de aire).
+
+**Lo que enseña 3b, y corrige lo del 22-oct (c):**
+1. **El campo de al lado NO está a un lado en coordenadas proyectadas.** Está detrás de la grada
+   de la izquierda, más lejos y más alto que el campo. Su balón proyecta detrás del fondo o en
+   diagonal (f9738: x 81, y 59), no en la banda. Un corte «solo lateral» no lo habría tocado y sí
+   habría borrado los balones reales de la banda.
+2. **Los saques de banda NO están siempre a < 3 m.** Con el balón sobre la cabeza del que saca,
+   la caja está en el aire y su base proyecta a 4-8 m fuera (f1380: y −7,7). El supuesto del
+   22-oct (b) y (c), «los saques de banda están a menos de 3 m», era falso para el instante del
+   saque. El corte duro los habría borrado.
+3. **Lo que distingue al balón del campo de al lado es DÓNDE está en la IMAGEN** (detrás de la
+   grada, sobre la superficie oscura del otro campo), no en metros: en metros, la homografía de
+   suelo lo mezcla con cualquier balón alto. Si se intenta otra vez, la región tiene que ser de
+   píxeles. Sería un plan nuevo, con su criterio.
+
+**¿Qué podría estar inventando la clasificación?** Es a ojo, de un fotograma suelto y por una
+persona (yo). Los «probables» (despejes por encima de la grada) podrían ser el balón del otro
+campo cayendo. Aun contándolos todos como campo de al lado, los laterales siguen muy por debajo del
+80 %, y la decisión no cambia.
