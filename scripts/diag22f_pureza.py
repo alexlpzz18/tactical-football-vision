@@ -111,8 +111,8 @@ def bordes_teselas(w: int, h: int) -> tuple[list[float], list[float]]:
     return xs, ys
 
 
-def medir_etapa(etapa, idents, trays, gt, dets_de, fps, bordes, origen_bt, rng) -> dict:
-    """Pureza, cambios de persona y sus marcas; y el control al azar."""
+def casar_etapa(etapa, idents, trays, gt):
+    """(observaciones por identidad en frames del GT, {(identidad, frame): persona del GT})."""
     from scipy.optimize import linear_sum_assignment
 
     # observaciones por frame del GT
@@ -136,6 +136,12 @@ def medir_etapa(etapa, idents, trays, gt, dets_de, fps, bordes, origen_bt, rng) 
         for a, b in zip(*linear_sum_assignment(coste)):
             if coste[a, b] < 1e6:
                 persona[(filas[b][0], f)] = int(obs[a].obj_id)
+    return obs_de, persona
+
+
+def medir_etapa(etapa, idents, trays, gt, dets_de, fps, bordes, origen_bt, rng) -> dict:
+    """Pureza, cambios de persona y sus marcas; y el control al azar."""
+    obs_de, persona = casar_etapa(etapa, idents, trays, gt)
 
     def pureza(asig: dict) -> tuple[float, int]:
         por_id: dict[int, list] = {}

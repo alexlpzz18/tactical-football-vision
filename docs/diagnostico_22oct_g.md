@@ -106,3 +106,54 @@ Lo mismo para las personas 6 y 0 de Villaviciosa (las del offset sistemático de
 - Donde ponga «SAHI 2×4»: con filas 2, columnas 4 y solape 0,2, `get_slice_bboxes` produce **15
   teselas (5 × 3)**, y `get_sliced_prediction` añade además una pasada de imagen completa
   (`perform_standard_pred=True` por defecto en SAHI 0.12.1). Son **16 inferencias por frame**, no 8.
+
+---
+
+## Resultado del bloque A — en los cruces, la mezcla es sobre todo entre RIVALES
+
+`scripts/diag22g_cruces.py`, sobre la captura de etapas del 22-oct (f) (`diag22f_pureza.py`, cuyo
+casado se sacó a `casar_etapa` y reproduce exactamente su JSON).
+
+| | cambios de persona en cruce: rivales / compañeros / árbitro | **% rivales** | impureza: rivales / compañeros / árbitro (puntos) | **% de la impureza entre rivales** |
+|---|---|---|---|---|
+| benjamín, ByteTrack | 24 / 4 / — | **85,7 %** | 12,64 / 5,43 / — (de 18,07) | **69,9 %** |
+| benjamín, CSV final | 15 / 8 / — | 65,2 % | 12,01 / 10,78 / — (de 22,78) | 52,7 % |
+| Villaviciosa, ByteTrack | 60 / 2 / 2 | **93,8 %** | 10,82 / 1,63 / 0,13 (de 12,57) | **86,1 %** |
+| Villaviciosa, CSV final | 76 / 3 / 6 | 89,4 % | 12,46 / 2,89 / 0,41 (de 15,76) | 79,0 % |
+
+**El error de equipo por identidad**, fila por fila, según la persona mayoritaria de su identidad:
+
+| | benjamín (16,0 %, sin voto por observación: 116 de 723) | Villaviciosa (23,6 %: 358 de 1.518) |
+|---|---|---|
+| la identidad sigue a un RIVAL (la fila es la minoría arrastrada) | 68 (59 %) | 110 (31 %) |
+| identidad de su equipo con rivales DENTRO (el color medio movido) | 48 (41 %) | 192 (54 %) |
+| identidad pura, mal coloreada (sin rivales dentro) | **0 (0 %)** | 56 (16 %) |
+
+**Lectura y techo de una solución de color:**
+- **En ByteTrack, donde actuaría un término de color en la asociación, los cambios en cruce son
+  entre rivales en el 86 % (benjamín) y el 94 % (Villaviciosa): por encima del 70 %.** Esa es la
+  parte que el color distingue.
+- **En impureza, el benjamín se queda justo en el borde: 69,9 %.** Hay que decirlo: con la otra
+  lectura del umbral, el benjamín no pasa por una décima.
+- Tras el cosido, el benjamín baja al 52,7 %: **el cosido por pureza une trozos de COMPAÑEROS**
+  (la impureza entre compañeros se duplica, de 5,4 a 10,8 puntos). Eso el color no lo arreglaría
+  nunca: los compañeros visten igual.
+- **El 16,0 % del benjamín es 100 % mezcla con rivales**: ninguna fila mal etiquetada está en una
+  identidad pura. **Arreglar la asociación entre rivales ataca TODO ese error.** En Villaviciosa, un
+  16 % es error de color puro, sin mezcla (el de la persona 21, bloque C).
+
+⇒ **Techo**: una asociación con color puede atacar como mucho:
+- en el benjamín, el ~70 % de la impureza de ByteTrack (12,6 puntos) pero no los ~11 puntos de
+  mezcla entre compañeros que deja el CSV;
+- en Villaviciosa, el ~80-86 %.
+
+**Para la condición de B2** («el bloque A da ≥ 70 % entre rivales») se toma la fracción de los
+CAMBIOS EN CRUCE en ByteTrack (86 y 94 %), que es lo que B1 y B2 tocan. Se deja escrito que, por
+impureza, el benjamín está en el 69,9 %.
+
+**¿Qué podría estar inventando?**
+- **Son pocos cambios**: 28 en cruce en el benjamín. Un 85,7 % de 28 tiene un intervalo ancho
+  (IC 95 % de Wilson ≈ 68-94 %).
+- La impureza «entre rivales» clasifica a la minoría contra la persona MAYORITARIA: en una identidad
+  con tres personas, una minoría compañera de la mayoritaria cuenta como compañero aunque haya
+  entrado por un cruce con un rival.
