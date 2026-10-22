@@ -39,8 +39,11 @@ PATAS = {
 ETAPAS = ["bytetrack", "puerta", "cosido", "postproceso"]
 
 
-def capturar(config: Path, salida_csv: Path) -> tuple[dict, dict]:
-    """Corre producción `desde_cache` y devuelve {etapa: identidades} y el caché."""
+def capturar(config: Path, salida_csv: Path, ajustar=None) -> tuple[dict, dict]:
+    """Corre producción `desde_cache` y devuelve {etapa: identidades} y el caché.
+
+    `ajustar(cfg)`, opcional, modifica el config en memoria antes de correr (variantes).
+    """
     import yaml
 
     import src.tracking.perfiles as perfiles
@@ -72,6 +75,8 @@ def capturar(config: Path, salida_csv: Path) -> tuple[dict, dict]:
         cfg["modo"] = "desde_cache"
         cfg["rutas"]["salida_csv"] = str(salida_csv)
         cfg["rutas"]["salida_meta"] = str(salida_csv.with_suffix(".meta.json"))
+        if ajustar is not None:
+            ajustar(cfg)
         procesar_desde_cache(cfg)
     finally:
         for nombre, f in originales.items():

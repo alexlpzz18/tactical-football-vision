@@ -209,6 +209,17 @@ cosido:
 # quedarían cortos en el fondo del campo. El escalado por resolución de
 # `escalado_resolucion` ya los relaja donde toca (lo inyecta el
 # processor), y encima se parte de umbrales algo más holgados.
+# Término de COLOR en la asociación de ByteTrack (docs/diagnostico_22oct_g.md, bloque B).
+# APAGADO. lambda_rel y umbral_rel van RELATIVOS a la separación de los prototipos A y B
+# del partido; umbral_rel es el p99 de d/sep entre una pista y una detección limpia de la
+# MISMA persona (benjamín, 22-oct g). En frames con solape (IoU > iou_solape) no se usa.
+coste_color:
+  activo: false
+  lambda_rel: 0.5
+  umbral_rel: 0.973
+  alfa: 0.2
+  iou_solape: 0.1
+
 bytetrack:
   umbral_activacion: 0.10
   buffer_perdido_s: 2.0

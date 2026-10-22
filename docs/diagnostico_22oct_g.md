@@ -157,3 +157,38 @@ impureza, el benjamín está en el 69,9 %.
 - La impureza «entre rivales» clasifica a la minoría contra la persona MAYORITARIA: en una identidad
   con tres personas, una minoría compañera de la mayoritaria cuenta como compañero aunque haya
   entrado por un cruce con un rival.
+
+---
+
+## Bloque B — calibración del umbral y predicción, escritas ANTES de medir los criterios
+
+**Implementación (tras flag; apagado = CSV idéntico byte a byte al de hoy, comprobado en las dos
+patas).**
+- `ParametrosCosteColor` y `asociar_con_bytetrack(..., colores, separacion, params_color)` en
+  `src/tracking/asociacion_bytetrack.py`.
+- El término entra envolviendo `matching.iou_distance` de `supervision` SOLO mientras dura cada
+  `update` y solo entre pistas y detecciones del frame (no entre dos pistas).
+- `perfiles._perfil_bytetrack` le pasa los colores y ‖A − B‖ del clasificador ya entrenado.
+- Flag `coste_color` en `configs/tracking_benja.yaml` y `configs/tracking.yaml` (`activo: false`).
+- 4 tests, entre ellos la guarda de comportamiento: con una puerta imposible las pistas se rompen.
+
+**Calibración** (`scripts/diag22g_color.py calibrar`, salida de ByteTrack de hoy, benjamín, GT de
+30 s; modelo de la pista con α = 0,2 y solo recortes limpios):
+
+| | pares | d / sep |
+|---|---|---|
+| pista ↔ detección de la MISMA persona | 591 | p50 0,369 · p90 0,616 · **p99 0,973** |
+| pista ↔ detección de OTRA persona (tras un cambio) | 31 | p10 0,346 · p50 0,676 |
+
+- sep = ‖A − B‖ = 0,978.
+- **umbral_rel = 0,973** (p99 de la misma persona); **λ_rel = 0,5** (fijado en los criterios).
+
+**Predicción, antes de medir: el efecto será PEQUEÑO.** Las dos distribuciones se solapan mucho:
+el p10 de «otra persona» (0,35) cae por debajo de la mediana de «misma persona» (0,37).
+- La puerta en 0,973 solo puede cortar los cambios de persona con d / sep > 0,97, que según esta
+  muestra son menos de la mitad.
+- El término λ · d / sep (≤ 0,49 de coste IoU) solo decide cuando dos candidatas tienen IoU
+  parecido.
+- Es lo de CLAUDE.md: el color de UN recorte es ruido; el del árbitro solo aparece al promediar
+  ~40.
+- **Espero que la impureza baje poco, lejos de ≤ 14 / ≤ 11.**

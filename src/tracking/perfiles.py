@@ -29,6 +29,7 @@ import numpy as np
 
 from src.tracking.asociacion_bytetrack import (
     ParametrosByteTrack,
+    ParametrosCosteColor,
     asociar_con_bytetrack,
 )
 from src.tracking.cosido_pureza import ParametrosCosidoPureza, coser_por_pureza
@@ -100,7 +101,9 @@ def correr_perfil(
         raise ValueError(f"Perfil desconocido: {perfil!r} (usa uno de {PERFILES})")
 
     if perfil == "bytetrack":
-        return _perfil_bytetrack(cache, fps, sample, cfg_tracking, colores, embeddings)
+        return _perfil_bytetrack(
+            cache, fps, sample, cfg_tracking, colores, embeddings, clasificador
+        )
 
     params_a = dict(cfg_tracking["etapa_a"])
     params_cosido = dict(cfg_tracking["cosido"])
@@ -164,6 +167,7 @@ def _perfil_bytetrack(
     cfg_tracking: dict,
     colores: dict | None,
     embeddings: dict | None = None,
+    clasificador=None,
 ) -> list[list[Tracklet]]:
     """Asociación con ByteTrack + cosido por pureza (sin cota de plantilla).
 
@@ -174,11 +178,26 @@ def _perfil_bytetrack(
     post-proceso completo bajaba la cobertura de ByteTrack de 0.516 a
     0.441).
     """
+    # Término de COLOR en la asociación (flag `coste_color`, apagado por defecto;
+    # docs/diagnostico_22oct_g.md, bloque B). Sus umbrales van relativos a ‖A − B‖, la separación
+    # de los prototipos del clasificador ya entrenado.
+    params_color = ParametrosCosteColor.desde_dict(cfg_tracking.get("coste_color"))
+    separacion = None
+    if params_color.activo:
+        if clasificador is None or getattr(clasificador, "_prototipos", None) is None:
+            raise ValueError(
+                "coste_color necesita el clasificador de equipos entrenado"
+            )
+        pr = clasificador._prototipos
+        separacion = float(np.linalg.norm(pr.a - pr.b))
     identidades = asociar_con_bytetrack(
         cache,
         fps,
         sample,
         ParametrosByteTrack.desde_dict(cfg_tracking.get("bytetrack")),
+        colores=colores,
+        separacion=separacion,
+        params_color=params_color,
     )
     dt = sample / fps if fps else 0.12
     # Puerta de apariencia en la RE-ENTRADA, ANTES del cosido: aquí se

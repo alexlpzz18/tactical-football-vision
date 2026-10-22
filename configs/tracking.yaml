@@ -140,6 +140,17 @@ cosido:
 #   candidato     244  0.551   34   0.259  0.301   23/43     0.661
 #   bytetrack     142  0.558   23   0.443  0.147    5/40     0.714
 #   (GT)           23  1.000   22
+# Término de COLOR en la asociación de ByteTrack (docs/diagnostico_22oct_g.md, bloque B).
+# APAGADO. lambda_rel y umbral_rel van RELATIVOS a la separación de los prototipos A y B
+# del partido; umbral_rel es el p99 de d/sep entre una pista y una detección limpia de la
+# MISMA persona (benjamín, 22-oct g). En frames con solape (IoU > iou_solape) no se usa.
+coste_color:
+  activo: false
+  lambda_rel: 0.5
+  umbral_rel: 0.973
+  alfa: 0.2
+  iou_solape: 0.1
+
 bytetrack:
   # Ver el docstring de ParametrosByteTrack: `umbral_emparejamiento` NO
   # es un IoU mínimo sino una distancia (1-IoU), así que 0.98 es MUY
