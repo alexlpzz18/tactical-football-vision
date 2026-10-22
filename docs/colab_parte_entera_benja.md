@@ -18,7 +18,11 @@ sonda que mide el ritmo real antes de comprometer la sesión entera.
 | fps · frames · duración | 29,970 · 35.966 · **1200,1 s = 20,0 min exactos** |
 | resolución | 1920×1080 |
 | frames a procesar (`sample_every: 3`) | **11.988** |
-| inferencias SAHI (2×4 = 8 recortes) | ~95.900 |
+| inferencias SAHI (15 teselas + 1 imagen completa = 16 por frame) | ~191.800 |
+
+> ⚠️ Corregido el 22-oct (g): aquí ponía «2×4 = 8 recortes, ~95.900». Con `filas: 2`, `columnas: 4` y
+> solape 0,2, `get_slice_bboxes` de SAHI produce 15 teselas (5 × 3), y `get_sliced_prediction` añade una
+> pasada de imagen completa (`perform_standard_pred=True` por defecto).
 
 El piloto de 5 min ya procesado tiene **2997 frames**, así que esta
 pasada es exactamente **×4,00**. Todo lo de abajo sale de comparar tres

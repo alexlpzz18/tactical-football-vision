@@ -32,7 +32,7 @@ pueda divergir.
 GT seguidos) de personas distintas. Cada cambio se localiza (un cambio puede tener varias marcas):
 - **cerca**: las dos personas están a < 2 m en el frame del cambio o en el anterior;
 - **borde de tesela SAHI**: el centro de la caja de la observación del cambio está a ≤ 20 px de
-  un borde interior de tesela (2 × 4 teselas, solape 0,2, la geometría de `get_slice_bboxes` de
+  un borde interior de tesela (2 × 4 teselas [⚠️ son 15, 5 × 3: ver el resultado], solape 0,2, la geometría de `get_slice_bboxes` de
   SAHI);
 - **unión de cosido**: las dos observaciones son de tracklets distintos de la identidad (etapas
   3-4), o de identidades distintas de ByteTrack que el cosido unió;

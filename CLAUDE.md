@@ -398,6 +398,10 @@ Todo lo demás acaba desembocando aquí:
   en el índice. **Y mirar el REMOTO antes de decir que algo está
   subido**: la rama llegó a acumular 27 commits sin pushear, y el
   síntoma le llegó a Alex como "el fichero no existe".
+- **SOLO SE COMMITEA SI PYTEST SALE CON CÓDIGO 0, comprobado sobre el CÓDIGO DE SALIDA y sin
+  pipes.** `pytest -q | tail -1 && git commit` commitea aunque falle: el código de salida que
+  ve `&&` es el de `tail`. Pasó el 22-oct (f): un test en rojo llegó a un commit. La forma:
+  `pytest -q > log; rc=$?; [ $rc -eq 0 ] && git commit ...` (y la suite ENTERA, no un `-k`).
 - **Documentar los negativos.** Media semana se ahorra leyendo por qué
   algo ya se descartó.
 
