@@ -192,3 +192,89 @@ el p10 de «otra persona» (0,35) cae por debajo de la mediana de «misma person
 - Es lo de CLAUDE.md: el color de UN recorte es ruido; el del árbitro solo aparece al promediar
   ~40.
 - **Espero que la impureza baje poco, lejos de ≤ 14 / ≤ 11.**
+
+---
+
+## Resultado del bloque C — la persona 21 NO es un portero; la regla de portero no falla
+
+`scripts/diag22g_persona21.py`, con el GT de Villaviciosa (100 frames). Áreas del modelo F11
+(100 × 64).
+
+| persona | equipo GT | posición media (x, y) | rango de x | frames en un área (margen 0 / 2 m) | último hombre de su equipo hacia x=100 | etiqueta del sistema en sus filas |
+|---|---|---|---|---|---|---|
+| **21** | A | (45,7, 36,0) | 31,0-50,9 | **0 % / 0 %** | 0 % | **B 90**, otro 1 |
+| 6 | A | (67,4, 38,8) | 50,0-76,2 | 0 % / 0 % | 0 % | A 63, B 1, otro 1 |
+| 0 | portero_A | (90,8, 36,1) | 85,1-95,5 | **100 % (área alta)** | **100 %** | **portero_A 99** |
+
+**La 21 no pasa ni un frame en un área: juega en el medio campo.** No es un portero con la camiseta
+del rival.
+- Por eso la regla de portero no la toca, y hace bien. La regla (`ultimo_hombre`) busca al jugador
+  de cada equipo más cercano a su PROPIA portería (la de A es la de x = 100: su portero, la persona
+  0, lo es en el 100 % de los frames). La 21 no lo es nunca.
+- (El 76 % de los frames es la de A más cercana a x = 0, la portería contraria: si su etiqueta del
+  GT fuera correcta, sería el delantero más adelantado de A.)
+- ⇒ **El fallo no es de la regla de portero.** Las dos explicaciones que quedan:
+  - un error de equipo en el GT (un jugador amarillo de B anotado como A), que encaja con su color
+    medio amarillo y con las 11,6 personas de A por frame del GT (22-oct f);
+  - o un jugador de A cuya caja, en esos 100 frames, toma siempre a un rival.
+  - Solo el vídeo lo decide; no está en local.
+
+**La 6 y la 0** (las del offset sistemático del 22-oct d):
+- la 0 es el portero de A, y la regla lo etiqueta bien (99 de 99);
+- la 6 es un jugador de campo de A, bien etiquetado (63 de 65).
+
+Sus offsets de ~1,2 m no tienen que ver con la etiqueta. En la 0, que vive en el fondo del F11, es
+del orden de la resolución de esa zona.
+
+**¿Qué podría estar inventando?** El «último hombre» se calcula con las personas del GT, no con las
+identidades del sistema. Que la 21 no lo sea en el GT dice que la regla no tiene motivo para
+elegirla, no que el sistema la vea igual.
+
+---
+
+## Resultado de B1 — término de color en la asociación: NO CUMPLE (fragmenta), y la predicción falló
+
+`scripts/diag22g_color.py medir`, umbral 0,973 y λ 0,5 (fijados antes).
+
+| | hoy | **con color** | color PERMUTADO (control i) | criterio |
+|---|---|---|---|---|
+| impureza del CSV, benjamín | 22,78 | **8,58** | 12,30 | ≤ 14 → sí |
+| impureza del CSV, Villaviciosa | 15,76 | **9,60** | — | ≤ 11 → sí |
+| equipo equivocado por identidad, sin voto por obs. (benjamín) | 16,0 % | **3,6 %** | 11,9 % | ≤ 6 → sí |
+| identidades finales, benjamín | 900 | **2.029 (+125 %)** | 14.093 | ≤ 1.080 → **NO** |
+| identidades finales, Villaviciosa | 115 | **482 (+319 %)** | — | ≤ 138 → **NO** |
+| identidades de ByteTrack, benjamín | 1.126 | 3.466 | 28.891 | (informativo) |
+| asignación, benjamín (medida del script) | 95,8 % | 93,6 % | 65,3 % | ≥ 97 → **NO** |
+| asignación, Villaviciosa | 93,5 % | 84,0 % | — | ≥ 93 → **NO** |
+| otro ≥ 2, partido entero (benjamín) | 12,2 % | **4,3 %** | 14,2 % | ≤ 8 → sí |
+| B > 7, partido entero | 28,5 % | **30,3 %** | 4,8 % | ≤ 20 → **NO** |
+
+*Asignación*: el criterio daba «hoy 98 %», el número del log de ByteTrack, cuyo denominador son
+las detecciones que llegan al tracker tras los filtros. El script divide por todas las de la caché
+y da 95,8 % hoy. Con cualquiera de las dos lecturas el color baja ~2 puntos en el benjamín y ~10 en
+Villaviciosa: no cumple.
+
+**Controles:**
+- **(i) NO pasa**: con el color permutado entre detecciones del mismo frame, la impureza también
+  baja (22,8 → 12,3, más de 1 punto).
+- (ii) sí: en las dos cachés de 60 s la impureza baja con el mismo signo (v3 −14,6; v4 −10,0).
+
+**¿Qué podría estar inventando el 8,6 %?** **La FRAGMENTACIÓN.** Ya se avisó en el 22-oct (f): la
+pureza premia partir. La puerta de color (d / sep > 0,973) corta pistas que ByteTrack mantenía, y
+cada trozo es más puro por construcción.
+- El control permutado lo demuestra: sin información de color, solo con cortes al azar, la
+  impureza baja a 12,3 a costa de 14.093 identidades.
+- El color real consigue 8,6 con 2.029. Lleva señal (más pureza con 7 veces menos trozos), pero no
+  se puede separar del efecto de partir: la comparación justa sería a igual fragmentación, y no
+  estaba en el criterio.
+- Lo mismo para el 3,6 % de error por identidad: identidades más cortas votan un color más puro.
+- Y B > 7 EMPEORA (30,3 %): con más trozos, el recuento por frame no mejora.
+
+**La predicción escrita antes («efecto pequeño») falló.** Esperaba poco efecto porque las
+distribuciones de color se solapan. Lo que no vi es que la puerta, aunque solo corte el 1 % de los
+pares de la misma persona, se aplica en CADA frame: con miles de frames por pista, ese 1 % basta
+para partirla. Un umbral p99 por par no es un 99 % de pistas intactas.
+
+**Decisión**: B1 no cumple (identidades, asignación, B > 7 y el control i). El flag queda
+**apagado**. Como B1 falla y el bloque A dio ≥ 70 % de cambios en cruce entre rivales (86 y 94 %),
+**se hace B2** (intento 2).

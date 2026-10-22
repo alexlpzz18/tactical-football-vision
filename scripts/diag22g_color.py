@@ -259,8 +259,10 @@ def main() -> None:
     else:
         res = medir(salida, args.umbral)
         nombre = "bloqueB.json"
-    (salida / nombre).write_text(json.dumps(res, indent=1, ensure_ascii=False))
-    print(json.dumps(res, indent=1, ensure_ascii=False))
+    # los criterios salen como numpy.bool_ / numpy.float64: se pasan a tipos de Python
+    texto = json.dumps(res, indent=1, ensure_ascii=False, default=lambda o: o.item())
+    (salida / nombre).write_text(texto)
+    print(texto)
 
 
 if __name__ == "__main__":
