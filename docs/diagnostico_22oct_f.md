@@ -245,3 +245,89 @@ que llevan a dos personas, aquí al árbitro y a un jugador, mezcladas en los cr
   pueden ser las dos.
 - La 26 (0 % árbitro, 1.095 filas) no está identificada: su mediana (16, 19) está en la mitad
   cercana, lejos del área del portero de A.
+
+---
+
+## Resultado del bloque C — Villaviciosa: el 23,6 % está CONCENTRADO, y el propio GT incumple «≤ 11 por equipo»
+
+`scripts/diag22f_villa.py`, solo con la caché. *Control*: el desglose reproduce el 23,6 %
+(358 de 1.519) y la pasada de hoy repetida da las mismas cifras.
+
+**C1. Por persona y por prototipo.**
+- **17 de 22 personas tienen algún error, pero 4 suman el 50 % y 8 el 80 %.**
+
+| persona GT | equipo GT | casadas | mal | color dominante (caché) | dist. a A / a B |
+|---|---|---|---|---|---|
+| **21** | A | 90 | **90 (100 %)** | **amarillo** (235, 227, 110) | 0,73 / **0,38** |
+| 13 | B | 69 | 41 (59 %) | azul claro (169, 200, 235) | 0,48 / 0,67 |
+| 14 | B | 39 | 38 (97 %) | azul claro (183, 207, 235) | 0,46 / 0,81 |
+| 15 | B | 59 | 34 (58 %) | amarillo pálido | 0,58 / 0,65 |
+| 16 | B | 30 | 28 (93 %) | amarillo pálido | 0,67 / 0,70 |
+| 1 | portero_B | 99 | 23 (23 %) | turquesa | 0,60 / 0,88 |
+| 7 | A | 59 | 22 (37 %) | azul claro | 0,44 / 0,94 |
+
+- **La premisa del bloque, corregida: el prototipo amarillo (#ebe36e) es el B de este clasificador,
+  no el A.** El A es azul claro (#c6e5eb). Cada uno coincide con el color de su equipo del GT (A:
+  (198, 229, 235), B: (235, 228, 124)).
+- **¿Lo contamina el árbitro? No.** Recortes casados con el GT, por su prototipo más cercano:
+
+  | prototipo | equipo A del GT | equipo B del GT | árbitro |
+  |---|---|---|---|
+  | B, amarillo | 20 % | 80 % | **0 %** |
+  | A, azul claro | 72 % | **25 %** | 3 % |
+  | `otro` | — | 9 % | **91 %** |
+
+  El amarillo es el color REAL del equipo B; el prototipo `otro` es el árbitro. El que absorbe al
+  equipo contrario es el **azul claro** (A), con un cuarto de recortes de B.
+- **El césped**: la feature v1 lo enmascara; con la caché no se puede separar más.
+- **El color real en píxeles con ffmpeg: NO MEDIDO.** El vídeo de Villaviciosa no está en local.
+
+**⚠️ ¿Qué podría estar inventando el 23,6 %? El GT.**
+- La persona 21 está etiquetada en el GT como equipo **A** (azul claro), pero su color en la caché
+  es **amarillo** y el sistema la llama B en 90 de 90 casadas.
+- Juega en el medio campo (x 31-51), así que no es un portero con otra equipación.
+- Sola aporta **el 25 % de los errores**.
+- C3 refuerza la sospecha: el GT tiene 11,6 personas de A por frame, más de las 11 del reglamento.
+- Si la 21 fuera un error de anotación, el equipo equivocado bajaría a ~17,8 % (268 de 1.519);
+  con las 14 y 16 también (azul claro etiquetadas B), a ~13,3 %.
+- **No está verificado**: hace falta mirar sus recortes en el vídeo (en Colab, o Alex en CVAT).
+
+**C2.**
+- **Tope por identidad** (intento 1 del 22-oct e) con 5 semillas de control:
+  - real **18,5 %**;
+  - permutados 38,3 · 49,9 · 42,6 · 49,1 · 42,3 %, siempre ≥ 19,8 puntos peor; el árbitro en un
+    equipo sale al 100 % con todas.
+  - **La mejora de Villaviciosa con el tope es robusta y depende del color.** Pero el tope no se
+    adopta: rompía el benjamín (22-oct e).
+- **Etiqueta por observación en Villaviciosa: sí se probó** (`docs/foto_de_estado.md`). Re-medida
+  hoy con el protocolo de `comparar_escalas.py`:
+
+  | | equipo equivocado | árbitro en un equipo | cobertura |
+  |---|---|---|---|
+  | hoy | 23,6 % | 5,3 % | 75,0 % |
+  | por observación (ventana A/B) | 22,3 % | 5,3 % | 75,0 % |
+  | por observación + catálogo | 21,1 % | 5,3 % | 71,5 % |
+
+  Coincide con lo de entonces (22,3 / 21,1). Allí gana poco, y con el catálogo pierde 3,5 puntos de
+  cobertura. Es el «espejismo» que ya documenta `foto_de_estado.md`.
+
+**C3. Por qué A > 11 en el 54,6 % de los frames.** En la ventana del GT (100 frames), filas reales
+dentro del campo:
+
+| | por frame |
+|---|---|
+| filas A del sistema | 11,50 |
+| personas del GT del equipo A (porteros incluidos) | **11,62** |
+| personas del GT del equipo B | 9,56 |
+| filas A que son jugadores de A | 6,91 |
+| filas A que son jugadores de B (equipo equivocado) | 2,12 |
+| filas A que son el árbitro | 0,05 |
+| filas A sin casar (desplazadas, duplicados, fuera) | 2,42 |
+
+- **El sistema no cuenta más A que el GT: es el GT el que tiene más de 11 personas de A por
+  frame.** En 53 de los 100 frames, A pasa de 11 en las filas del sistema.
+- La aritmética del dominio dice que algo sobra en el GT, y la persona 21 (amarillo, etiquetada A)
+  es la candidata obvia.
+- Por el lado del sistema, las filas A de más son 2,1 jugadores de B mal etiquetados (el 23,6 %) y
+  2,4 filas sin casar. Las compensan las personas de A que no se casan (faltantes).
+- Es el principio de CLAUDE.md: «antes de culpar al sistema, comprobar la aritmética del dominio».
