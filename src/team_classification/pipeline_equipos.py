@@ -658,52 +658,120 @@ def etiquetar_por_observacion(
         if not activos:
             catalogo = False
 
-    salida: dict[tuple[int, int], str] = {}
-    n_cambios = 0
-    n_arbitro = 0
+    # ── El catálogo REQUIERE IDENTIDAD (flag `arbitro.catalogo_requiere_identidad`) ──
+    # docs/diagnostico_22oct_f.md, bloque B. APAGADO por defecto. Medido el 22-oct (e): de los
+    # frames con ≥ 2 «otro», el 94 % son el árbitro + un JUGADOR, y dos tercios los crea este
+    # catálogo al sacar observaciones sueltas de identidades de jugador. Con el flag, el catálogo
+    # solo manda una observación a `otro` si su identidad lo dispara en ≥ `frac_identidad` de sus
+    # observaciones, o su trozo (el tracklet) en ≥ `frac_trozo`. Si no, se etiqueta A/B.
+    cfg_req = (cfg_equipos.get("arbitro", {}) or {}).get(
+        "catalogo_requiere_identidad"
+    ) or {}
+    requiere = catalogo and bool(cfg_req.get("activo", False))
+
+    # Fase 1: por cada observación de una identidad A/B, ¿dispara el catálogo? y su A/B.
+    por_identidad: dict[int, list[tuple]] = {}
     for id_identidad, identidad in enumerate(identidades, start=1):
         etiqueta = str(equipos.get(id_identidad, "otro"))
         if etiqueta not in ("A", "B"):
             continue  # portero, staff y 'otro' los decide la posición
         obs = sorted(
             (
-                (t, tuple(par))
-                for tracklet in identidad
+                (t, tuple(par), k)
+                for k, tracklet in enumerate(identidad)
                 for t, par in zip(tracklet.ts, tracklet.det_idxs)
             ),
             key=lambda o: o[0],
         )
-        for t_actual, par in obs:
+        pares = [(t, p) for t, p, _k in obs]
+        decididas = []
+        for t_actual, par, k_trozo in obs:
             cerca = [
                 (p, colores[p])
-                for t2, p in obs
+                for t2, p in pares
                 if abs(t2 - t_actual) <= ventana / 2 and p in colores
             ]
             if not cerca:
                 continue
             if excluir_ocluidas:
                 cerca = _recortes_para_votar(
-                    cerca, obs, t_actual, colores, ocluidas, ampliar_s
+                    cerca, pares, t_actual, colores, ocluidas, ampliar_s
                 )
             media = color_medio_limpio(cerca, None)
             if media is None:
                 continue
-            # Primero: ¿esta ventana viste de árbitro? Si sí, la
-            # observación sale del cómputo de equipos (va al tercer
-            # grupo) y NO se le pregunta a qué equipo se parece más.
+            # ¿Esta ventana viste de árbitro? (si sí, la observación sale del cómputo de
+            # equipos y NO se le pregunta a qué equipo se parece más)
+            dispara = False
             if catalogo:
                 tono = tono_dominante(media)
                 if tono is not None:
                     brillo = brillo_medio(media)
-                    if any(a.contiene(tono[0], tono[1], brillo) for a in activos):
-                        salida[(id_identidad, par[0])] = "otro"
-                        n_arbitro += 1
-                        continue
+                    dispara = any(a.contiene(tono[0], tono[1], brillo) for a in activos)
+            nueva = (
+                None
+                if (dispara and not requiere) or solo_catalogo
+                else clasificador.predict_color(media, solo_equipos=forzar)
+            )
+            decididas.append((par, k_trozo, dispara, nueva))
+        por_identidad[id_identidad] = (etiqueta, decididas)
+
+    # Fase 2 (solo con el flag): fracción que dispara por identidad y por trozo.
+    permitido = None
+    if requiere:
+        frac_id = {
+            i: float(np.mean([d[2] for d in dec])) if dec else 0.0
+            for i, (_e, dec) in por_identidad.items()
+        }
+        frac_trozo: dict[tuple[int, int], float] = {}
+        for i, (_e, dec) in por_identidad.items():
+            por_k: dict[int, list[bool]] = {}
+            for _par, k, disp, _n in dec:
+                por_k.setdefault(k, []).append(disp)
+            for k, v in por_k.items():
+                frac_trozo[(i, k)] = float(np.mean(v))
+        semilla = cfg_req.get("control_permutar_semilla")
+        if semilla is not None:
+            # CONTROL del diagnóstico: las fracciones se permutan entre identidades y entre
+            # trozos; si la regla depende de verdad de la identidad, esto tiene que empeorarla.
+            rng = np.random.default_rng(int(semilla))
+            ids, vals = list(frac_id), list(frac_id.values())
+            frac_id = dict(zip(ids, rng.permutation(vals)))
+            ks, vals = list(frac_trozo), list(frac_trozo.values())
+            frac_trozo = dict(zip(ks, rng.permutation(vals)))
+        min_id = float(cfg_req.get("frac_identidad", 0.5))
+        min_trozo = float(cfg_req.get("frac_trozo", 1.0))
+
+        def _permite(i, k):
+            return frac_id[i] >= min_id or frac_trozo[(i, k)] >= min_trozo
+
+        permitido = _permite
+
+    # Fase 3: la decisión (con el flag apagado, exactamente la de siempre).
+    salida: dict[tuple[int, int], str] = {}
+    n_cambios = 0
+    n_arbitro = 0
+    n_vetadas = 0
+    for id_identidad, (etiqueta, decididas) in por_identidad.items():
+        for par, k_trozo, dispara, nueva in decididas:
+            if dispara and (permitido is None or permitido(id_identidad, k_trozo)):
+                salida[(id_identidad, par[0])] = "otro"
+                n_arbitro += 1
+                continue
+            if dispara:
+                n_vetadas += 1
             if solo_catalogo:
                 continue  # el A/B lo sigue decidiendo el voto de la identidad
-            nueva = clasificador.predict_color(media, solo_equipos=forzar)
             salida[(id_identidad, par[0])] = nueva
             n_cambios += nueva != etiqueta
+    if requiere:
+        logger.info(
+            "Catálogo que requiere identidad: %d observaciones que disparaban se quedan en A/B "
+            "(identidad ≥ %.2f o trozo ≥ %.2f)",
+            n_vetadas,
+            float(cfg_req.get("frac_identidad", 0.5)),
+            float(cfg_req.get("frac_trozo", 1.0)),
+        )
     if salida:
         logger.info(
             "Etiqueta por observación (ventana %.1f s): %d observaciones "

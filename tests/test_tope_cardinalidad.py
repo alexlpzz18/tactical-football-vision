@@ -58,3 +58,9 @@ def test_trozos_de_cortan_cada_1_5_s():
         tr.anadir(i * 0.1, np.array([10.0, 10.0]), 0, i)
     trozos = trozos_de([[tr]], [1], 1.5)
     assert [len(obs) for _i, obs in trozos] == [15, 15, 10]
+
+
+def test_catalogo_requiere_identidad_apagado_en_produccion():
+    """docs/diagnostico_22oct_f.md, bloque B: el flag existe y está apagado."""
+    cfg = yaml.safe_load(open(R / "configs/team_classification_benja.yaml"))
+    assert cfg["arbitro"]["catalogo_requiere_identidad"]["activo"] is False

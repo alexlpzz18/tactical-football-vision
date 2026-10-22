@@ -177,3 +177,71 @@ observaciones consecutivas de la misma identidad):
   2-5 m no se casa y no suma impureza.
 - **La «cercanía» es de las personas del GT**: un cruce que el GT no anota (el árbitro en el
   benjamín) no cuenta como «cerca».
+
+---
+
+## Resultado del bloque B — el segundo «otro» es un jugador DENTRO de una identidad de árbitro; el flag NO cumple
+
+`scripts/diag22f_catalogo.py`.
+- *Control*: el recuento de los disparos del catálogo hecho por el script (3.413) coincide exacto
+  con el log de producción («3413 sacadas de los equipos por el catálogo arbitral»).
+- *Flag apagado*: el CSV es idéntico byte a byte al de hoy.
+
+**B1. En la ventana del GT no hay ningún frame con otro ≥ 2** (filas reales). En el partido entero,
+en los 1.462 frames con otro ≥ 2, las 1.519 filas `otro` que NO son del árbitro (proxy):
+
+| origen | filas |
+|---|---|
+| **una identidad entera del tercer grupo** (436, 129, 155, 26, 658, 814, 865) | **1.268 (83 %)** |
+| catálogo por observación: `azul_electrico` | 142 |
+| catálogo por observación: `verde_fluor` | 50 |
+| `otro` sin que dispare el catálogo / otra identidad `otro` | 59 |
+
+- **Concentrado, no difuso**: 3 identidades suman el 50 % y 5 el 80 % (436: 366 filas, 129: 335,
+  155: 324, 26: 129, 468: 94).
+- **Y esas identidades son QUIMERAS de árbitro**:
+  - 436, 129 y 155 son árbitro en el 47 %, 52 % y 45 % de sus detecciones (proxy);
+  - cuando son el «otro» extra, el árbitro de verdad está en ese mismo frame en OTRA identidad
+    (292, o 129 y 155 alternándose), a una mediana de 5-10 m;
+  - la 26 no es árbitro nunca (0 %): es una identidad de jugador o portero mandada entera a `otro`.
+- `azul_electrico` (142) es el arquetipo que ya se sabía que caza al portero de A (camiseta negra).
+
+⚠️ **Esto corrige la lectura del bloque 0 del 22-oct (e)**, donde «dos tercios de la simultaneidad
+la crea el catálogo POR OBSERVACIÓN».
+- Lo que aquel recuento contaba como «observación suelta» era, en la mayoría de esos frames, el
+  ÁRBITRO sacado correctamente de una identidad de jugador.
+- El `otro` sobrante era la otra fila: un jugador dentro de una identidad del tercer grupo.
+- **El catálogo por observación acierta; lo que sobra es la mezcla de identidades.**
+
+**X** (fijado antes de medir B3):
+- de los tracklets con ≥ 10 observaciones, 6 son del árbitro y 371 de los demás;
+- la fracción que dispara: p10 del árbitro 0,169 contra p90 de los demás 0,0. No se solapan, así
+  que X = **0,084** (punto medio);
+- 17 identidades A/B disparan en mayoría.
+
+**B3** (benjamín, partido entero):
+
+| | hoy | con la regla (X = 0,084) | control permutado | criterio |
+|---|---|---|---|---|
+| frames con otro ≥ 2 (filas reales) | 12,19 % | **11,60 %** | 4,53 % | ≤ 6 % → **NO** |
+| equipo equivocado (ventana del GT) | 1,2 % | 1,2 % | 1,2 % | ≤ 1,5 % → sí |
+| árbitro dentro de un equipo (ventana del GT) | 53,5 % | 53,5 % | **100 %** | ≤ 53,5 % → sí |
+| observaciones que la regla deja en A/B | — | 117 | 2.966 | |
+
+- **El control pasa**: con las fracciones permutadas el árbitro dentro de un equipo empeora 46,5
+  puntos. La regla usa de verdad la identidad.
+- Y el control enseña algo: su 4,5 % de otro ≥ 2 se consigue mandando al árbitro entero a los
+  equipos (100 %). **Bajar el otro ≥ 2 no es evidencia si el árbitro se cuela.**
+- **No cumple**: la regla solo toca 117 observaciones, porque el catálogo por observación no era la
+  causa (B1).
+
+**Decisión**: el flag queda **apagado** (`configs/team_classification_benja.yaml`,
+`activo: false`, con X = 0,084 anotado). La causa del segundo `otro` es la del bloque A: identidades
+que llevan a dos personas, aquí al árbitro y a un jugador, mezcladas en los cruces.
+
+**¿Qué podría estar inventando?**
+- «No es árbitro» es el proxy: si el proxy pierde detecciones del árbitro, parte de las 1.268 filas
+  podrían ser él. Pero en esos frames el proxy SÍ marca al árbitro en otra identidad, a 5-10 m: no
+  pueden ser las dos.
+- La 26 (0 % árbitro, 1.095 filas) no está identificada: su mediana (16, 19) está en la mitad
+  cercana, lejos del área del portero de A.
