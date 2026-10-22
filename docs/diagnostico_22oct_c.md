@@ -167,3 +167,101 @@ p1 de S del chaleco baja de 51 a 42. Ninguna conclusión del 19 ni del 22-oct de
 
 **0e.** Añadido a CLAUDE.md (principios, «Sobre el método») el texto pedido, con la guarda y una
 línea con el resultado de 0c.
+
+---
+
+## Resultado del bloque 1 — corte duro del balón (flag `balon.descartar_fuera_m`): NO CUMPLE
+
+**Implementación (tras flag; apagado = `null` en `configs/campo_benja.yaml`).**
+- `ParametrosBalon.descartar_fuera_m` (por defecto `None`).
+- `descartar_balon_fuera()` quita el balón ELEGIDO de los frames en que cae a más de esos metros
+  fuera del campo y devuelve esos frames aparte.
+- `preparar_balon(..., vetados=...)` no los cruza con nada: ni el suavizado, ni la recta de un
+  vuelo, ni el relleno (recta con futuro o mantener). El balón de después abre un tramo nuevo, para
+  que el replay no lo una con el de antes.
+- Los dos consumidores leen los parámetros de la misma función
+  (`src.balon.carga.parametros_balon_de_campo`, bloque `balon:` del config de campo, que da error
+  con una clave que no exista) y llaman al mismo corte: el vídeo (`generar_video_detecciones.py`)
+  y la pizarra (`procesar_balon.py`).
+- 6 tests en `tests/test_corte_duro_balon.py`. Uno es la guarda de comportamiento: encenderlo
+  cambia el resultado. Otro comprueba con un control que, sin veto, el suavizado SÍ cruza el
+  salto.
+
+**Flag apagado = main**: el CSV del balón (`procesar_balon.py`, parte entera) es idéntico byte a
+byte al de `main`. En el vídeo, con `null` el corte devuelve el mismo dict, como comprueba el test.
+
+**Mismo balón en el vídeo y en la pizarra** (flag encendido, `scripts/diag22c_balon.py`):
+- la selección del vídeo es la de antes menos los 604 frames, con las mismas detecciones;
+- no queda ninguna fila de la pizarra (real ni rellena) en un frame descartado;
+- toda fila real de la pizarra está en la selección del vídeo.
+
+**Cuánto se descarta**: **604 frames** de 8.607 con balón (los mismos 604 del 2a del 22-oct b).
+De la selección sin corte:
+
+| distancia fuera del campo | frames |
+|---|---|
+| 0-3 m (saques de banda, no se tocan) | 501 |
+| 3-6 m (zona ambigua) | 179 |
+| > 6 m | 425 |
+
+**Criterio 1b:**
+
+| | resultado | ¿cumple? |
+|---|---|---|
+| 1. paneles «campo de al lado» que siguen mal (de 7) | **0** (en los 6 frames el balón desaparece del vídeo y de la pizarra) | sí |
+| 2. otros paneles que pierden el balón | **9 de 21** | **NO** |
+| 3. filas a 0-3 m fuera idénticas a main fila a fila | **534 de 947** | **NO** |
+
+Los 9 paneles que pierden el balón:
+
+| panel | archivo | reproductor | balón del vídeo, fuera del campo |
+|---|---|---|---|
+| alto_9896 | 5:30.2 | 7:03.2 | 3,8 m |
+| lejos_10514 | 5:50.8 | 7:23.8 | 9 m |
+| alto_10516 | 5:50.9 | 7:23.9 | 10 m |
+| alto_10518 | 5:51.0 | 7:24.0 | 9 m |
+| lejos_10526 | 5:51.2 | 7:24.2 | 1,5 m, pero la pizarra lo pierde: su hueco tenía un veto |
+| alto_10550 y lejos_10550 | 5:52.0 | 7:25.0 | 10 m |
+| alto_10554 | 5:52.2 | 7:25.2 | 37 m |
+| lejos_10624 | 5:54.5 | 7:27.5 | 71 m |
+
+Son, sobre todo, paneles de **balón en el aire**: en el 22-oct, «alto» tenía 2 ok y 4 en el aire,
+y aquí pierden el balón 5 «alto», así que al menos un «ok» cae.
+
+**Por qué: el corte no separa el balón del campo de al lado del balón EN EL AIRE.**
+- **Los 604 descartados son, todos, frames que el sistema ya marca como aéreos.**
+- 432 caen **detrás de la portería del fondo** (x mediana 90 m, y 15 m). Es un balón por el aire
+  proyectado con la homografía de SUELO, que lo lanza decenas de metros más allá. En el vídeo esa
+  caja ES el balón del partido, y el corte la borra.
+- 156 caen por las bandas (y > 43 o y < -3, con x 33-57 m) y 16 detrás de la portería cercana.
+- El 22-oct (b) ya daba la mediana de los de fuera en x ≈ 74 m; entonces se leyó como «el campo de
+  al lado» y no lo era: el campo de al lado está a un LADO (x 28-31 m, y 41-42 m, 22-oct 1d).
+
+**Las filas de banda que cambian** (413 de 947):
+- **403 son filas NO reales** (`es_real=0`: rectas de vuelo y rellenos) en huecos que contenían un
+  frame descartado. Desaparecen (356) o se mueven, que es exactamente lo que el flag pide: no
+  interpolar a través. El criterio, escrito antes, pedía también que fueran idénticas, y las dos
+  cosas no pueden cumplirse a la vez cuando un saque de banda linda con un vuelo descartado.
+- **10 son reales**:
+  - 7 se mueven 0,15-0,74 m, porque el suavizado ya no cruza el veto;
+  - 3 desaparecen: f22134 (12:18.5 de archivo, 13:51.5 del reproductor), f27404 (15:14.4 /
+    16:47.4) y f35256 (19:36.4 / 21:09.4). Probablemente pasan a aéreas al recalcular las fases
+    con vecinos distintos y caen por el veto; no está verificado.
+- Además, 523 de las idénticas solo cambian de id de tramo, que es lo esperado.
+
+**¿Qué podría estar inventando?**
+- El «0 de 7» es real, pero lo consigue borrando una CLASE entera (balón aéreo lejos del campo),
+  de la que el campo de al lado es una parte pequeña.
+- En la pizarra de `main` ninguna fila de balón cae a más de 3 m fuera: el balón malo se pintaba
+  como una fila AÉREA interpolada dentro del campo (f9306: 16,8 m, 32,4 m, `es_real=0`). Lo que la
+  pizarra pierde con el corte son esas filas inventadas. Lo que pierde el vídeo, en cambio, son
+  cajas REALES del balón en el aire.
+
+**Decisión de los datos: el flag se queda APAGADO** (segundo intento de la vía «prior de campo»;
+con el del 22-oct b son dos, y la vía se abandona tal como está planteada).
+
+Lo que separaría las dos clases, como dato para un plan futuro y no como tercer intento:
+- el **lado** por el que sale: el campo de al lado está detrás de la grada, por la banda de
+  y ≈ 41-42 m; el balón aéreo, detrás de la portería del fondo;
+- y que el balón aéreo VUELVE al suelo dentro del campo y por continuidad, que es la forma de
+  `readmitir_vuelos`.

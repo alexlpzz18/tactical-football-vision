@@ -120,6 +120,31 @@ def cargar_homografia_de_campo(ruta_config_campo):
     return np.load(ruta if ruta.is_absolute() or ruta.exists() else raiz / ruta)
 
 
+def parametros_balon_de_campo(ruta_config_campo):
+    """`ParametrosBalon` con lo que fije el bloque `balon:` del config de campo.
+
+    Es el config que comparten el vídeo (`generar_video_detecciones.py`) y la pizarra
+    (`procesar_balon.py`): leer los parámetros de aquí es lo que garantiza que los dos elijan
+    el mismo balón. Sin bloque `balon:`, los valores por defecto de siempre.
+
+    Raises:
+        ValueError: con una clave que `ParametrosBalon` no tiene. Un interruptor mal escrito
+            no puede quedarse apagado sin avisar (CLAUDE.md, «un interruptor que nadie lee»).
+    """
+    import yaml
+
+    from src.balon.tracking_balon import ParametrosBalon
+
+    with open(ruta_config_campo) as fh:
+        bloque = (yaml.safe_load(fh) or {}).get("balon") or {}
+    desconocidas = set(bloque) - set(ParametrosBalon.__dataclass_fields__)
+    if desconocidas:
+        raise ValueError(
+            f"Claves del bloque balon: que ParametrosBalon no tiene: {sorted(desconocidas)}"
+        )
+    return ParametrosBalon.desde_dict(bloque)
+
+
 def contexto_del_selector(
     ruta_csv_jugadores,
     tiempos: dict,

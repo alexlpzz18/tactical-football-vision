@@ -199,6 +199,13 @@ class ParametrosBalon:
     prior_campo_activo: bool = False
     prior_campo_margen_m: float = 3.0
     prior_campo_v_max_m_s: float = 35.0
+    # ── CORTE DURO: sin balón si el elegido cae lejos del campo (docs/diagnostico_22oct_c.md) ──
+    # None = APAGADO (el comportamiento de siempre). Con un número, se descarta el balón ELEGIDO
+    # si cae a más de esos metros fuera del campo, sin buscar alternativa (casi nunca la hay: el
+    # 11 %, 22-oct b) y SIN rellenar a través de esos frames: ni recta, ni mantener, ni vuelo, y
+    # el balón de después abre un tramo nuevo. Es el balón del campo de al lado, detrás de la
+    # grada. Los saques de banda están a menos de 3 m: no se tocan.
+    descartar_fuera_m: float | None = None
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -379,6 +386,42 @@ def seleccionar_balon_activo(
         )
         return _solo_vuelos_de_ida_y_vuelta(elegido, no_abren, tiempos, params)
     return {f: lista[0] for f, lista in ordenados.items()}
+
+
+def descartar_balon_fuera(
+    activo: dict, dimensiones_campo: tuple[float, float], params: ParametrosBalon
+) -> tuple[dict, set[int]]:
+    """Quita el balón elegido de los frames en que cae lejos del campo (corte duro).
+
+    Va DESPUÉS de `seleccionar_balon_activo` y la llaman el vídeo y la pizarra, para que los dos
+    pinten la misma selección. Los frames quitados se devuelven aparte: `preparar_balon` los
+    necesita (`vetados`) para no rellenar ni unir a través de ellos.
+
+    Returns:
+        (selección sin esos frames, frames descartados). Con `params.descartar_fuera_m` en None
+        devuelve la selección intacta y un conjunto vacío.
+    """
+    if params.descartar_fuera_m is None:
+        return activo, set()
+    descartados = {
+        f
+        for f, det in activo.items()
+        if _fuera_del_campo_m(det[0], det[1], dimensiones_campo)
+        > params.descartar_fuera_m
+    }
+    if descartados:
+        logger.info(
+            "Corte duro del balón: %d frames con el elegido a > %.1f m fuera del campo, sin balón",
+            len(descartados),
+            params.descartar_fuera_m,
+        )
+    return {f: d for f, d in activo.items() if f not in descartados}, descartados
+
+
+def _hay_veto(vetados_ordenados: list[int], frame_a: int, frame_b: int) -> bool:
+    """¿Hay algún frame vetado ESTRICTAMENTE entre frame_a y frame_b?"""
+    i = bisect.bisect_right(vetados_ordenados, frame_a)
+    return i < len(vetados_ordenados) and vetados_ordenados[i] < frame_b
 
 
 def _fuera_del_campo_m(x: float, y: float, dimensiones: tuple[float, float]) -> float:
@@ -940,8 +983,12 @@ def _rellenar_huecos_parados(
     tiempos: dict,
     params: ParametrosBalon,
     cortes: set[int] | frozenset = frozenset(),
+    vetados: set[int] | frozenset = frozenset(),
 ) -> list[tuple]:
     """Rellena huecos SIN detección manteniendo la última posición.
+
+    `vetados`: frames cuyo balón se descartó a propósito (`descartar_balon_fuera`). Un hueco que
+    contenga uno NO se rellena de ninguna forma: no hay balón ahí y no se inventa.
 
     Idea de Alex, y sale de una etiqueta suya del GT de huecos: en el caso
     4 escribió *"el balón está quieto exactamente en el mismo sitio que en
@@ -991,6 +1038,8 @@ def _rellenar_huecos_parados(
         j = bisect.bisect_left(muestreados, frame_b)
         faltan = muestreados[i:j]
         if not faltan:
+            continue
+        if vetados and any(f in vetados for f in faltan):
             continue
         # Con futuro primero: la recta entre las dos anclas es mejor que mantener
         # (y contiene a mantener como caso particular: extremos iguales). Si las
@@ -1117,6 +1166,7 @@ def preparar_balon(
     tiempos: dict,
     params: ParametrosBalon,
     centros_px: dict | None = None,
+    vetados: set[int] | frozenset = frozenset(),
 ) -> tuple[list[tuple], set[int]]:
     """Deja el balón listo para pintarse sin inventar coordenadas.
 
@@ -1164,9 +1214,14 @@ def preparar_balon(
        CORTE): el suavizado y el relleno no lo cruzan, y el CSV le da otra
        identidad (`id_de_tramo`). Lo mismo entre dos filas de suelo contiguas.
 
+    5. **Frames VETADOS** (corte duro, `descartar_balon_fuera`): ningún tratamiento los cruza.
+       Ni el suavizado, ni la recta de un vuelo, ni el relleno de huecos; y la primera fila
+       después de uno abre un tramo nuevo (otra identidad), para que el replay no los una.
+
     Args:
         centros_px: {frame: (cx, cy)} del centro de la caja en píxeles. Sin
             él la puerta no actúa.
+        vetados: frames sin balón a propósito. Vacío = el comportamiento de siempre.
 
     Returns:
         ([(frame_idx, pos, es_aereo, es_real)], cortes) — las filas para el
@@ -1199,6 +1254,21 @@ def preparar_balon(
             if float(np.hypot(dx, dy)) / dt > params.vel_max_px_s:
                 cortes_idx.add(i2)
 
+    # ── frames vetados: la primera fila tras uno abre tramo (como un corte) ──
+    vetos = sorted(vetados)
+    tras_veto_idx: set[int] = set()
+    if vetos:
+        for i in range(1, len(trayectoria)):
+            if _hay_veto(vetos, trayectoria[i - 1][0], trayectoria[i][0]):
+                tras_veto_idx.add(i)
+    # Para el suavizado: un tramo de suelo se corta en un veto aunque el veto caiga entre dos
+    # filas de suelo no contiguas en la trayectoria.
+    cortes_suelo = set(cortes_idx)
+    if vetos:
+        for (i1, _t1), (i2, _t2) in zip(suelo, suelo[1:]):
+            if _hay_veto(vetos, trayectoria[i1][0], trayectoria[i2][0]):
+                cortes_suelo.add(i2)
+
     # 1. suavizado de las posiciones de suelo, POR TRAMOS CONTINUOS.
     #
     # ⚠️ Antes se promediaba la lista de suelo entera como si fuera una serie
@@ -1216,7 +1286,7 @@ def preparar_balon(
         [i for i, _t in suelo],
         tiempos,
         params.max_hueco_suavizado_s,
-        cortes_idx,
+        cortes_suelo,
     ):
         puntos = np.array([trayectoria[i][1] for i in tramo], dtype=float)
         if len(puntos) >= ventana:
@@ -1241,11 +1311,15 @@ def preparar_balon(
         if not previos:
             continue  # aún no hay ninguna posición fiable de la que partir
         a = posicion_suelo[previos[-1]]
+        if vetos and _hay_veto(vetos, trayectoria[previos[-1]][0], frame):
+            continue  # entre el despegue y aquí hubo un frame sin balón a propósito
         if not siguientes:
             salida.append((frame, a, True, False))  # no volvió al suelo
             continue
         if siguientes[0] in cortes_idx:
             continue  # los extremos no son el mismo balón: no hay vuelo que dibujar
+        if vetos and _hay_veto(vetos, frame, trayectoria[siguientes[0]][0]):
+            continue  # la recta cruzaría un frame vetado
         b = posicion_suelo[siguientes[0]]
         # Recta entre despegue y bote: los dos extremos son medidas, y lo
         # de en medio va marcado como no real.
@@ -1261,8 +1335,11 @@ def preparar_balon(
             else (i - previos[-1]) / (siguientes[0] - previos[-1])
         )
         salida.append((frame, a + alfa * (b - a), True, False))
-    cortes = {trayectoria[i][0] for i in cortes_idx}
-    return _rellenar_huecos_parados(salida, tiempos, params, cortes), cortes
+    cortes = {trayectoria[i][0] for i in cortes_idx | tras_veto_idx}
+    return (
+        _rellenar_huecos_parados(salida, tiempos, params, cortes, set(vetados)),
+        cortes,
+    )
 
 
 def detectar_contactos_por_velocidad(

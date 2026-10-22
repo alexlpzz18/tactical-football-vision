@@ -208,9 +208,13 @@ def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
         )
     import numpy as np
 
-    from src.balon.carga import cargar_detecciones_limpias, contexto_del_selector
+    from src.balon.carga import (
+        cargar_detecciones_limpias,
+        contexto_del_selector,
+        parametros_balon_de_campo,
+    )
     from src.balon.tracking_balon import (
-        ParametrosBalon,
+        descartar_balon_fuera,
         detectar_fases_aereas,
         marcar_vuelos_readmitidos,
         seleccionar_balon_activo,
@@ -222,12 +226,17 @@ def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
     jug, ctx = contexto_del_selector(
         ruta_csv, tiempos, dets, ruta_campo, modelo, meta["fuera_de_campo"]
     )
-    params = ParametrosBalon()
+    # Mismos parámetros y mismo corte que la pizarra (`procesar_balon.py`): bloque `balon:` del
+    # config de campo y `descartar_balon_fuera` (flag apagado por defecto).
+    params = parametros_balon_de_campo(ruta_campo)
     activo = seleccionar_balon_activo(
         dets,
         {f: [(j[0], j[1]) for j in v] for f, v in jug.items()},
         params,
         **ctx,
+    )
+    activo, _descartados = descartar_balon_fuera(
+        activo, ctx["dimensiones_campo"], params
     )
     orden = sorted(activo)
     trayectoria = [

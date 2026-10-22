@@ -25,7 +25,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.balon.tracking_balon import (  # noqa: E402
-    ParametrosBalon,
+    descartar_balon_fuera,
     id_de_tramo,
     preparar_balon,
     detectar_contactos,
@@ -94,7 +94,7 @@ def main() -> None:
     )
     n_frames_cache = meta["n_frames"]
 
-    from src.balon.carga import contexto_del_selector
+    from src.balon.carga import contexto_del_selector, parametros_balon_de_campo
 
     jug = pd.read_csv(args.csv_jugadores)
     equipo_de = {
@@ -113,9 +113,15 @@ def main() -> None:
     def jugadores_en(frame):
         return jug_de_frame.get(frame, [])
 
-    params = ParametrosBalon()
+    # Los parámetros salen del bloque `balon:` del config de campo, el MISMO que lee el vídeo.
+    params = parametros_balon_de_campo(args.campo)
     pos_jug = {f: [(j[0], j[1]) for j in jugadores_en(f)] for f in detecciones}
     activo = seleccionar_balon_activo(detecciones, pos_jug, params, **ctx_selector)
+    # Corte duro (flag `balon.descartar_fuera_m`, apagado por defecto): sin balón donde el
+    # elegido cae lejos del campo, y sin rellenar a través de esos frames.
+    activo, descartados = descartar_balon_fuera(
+        activo, ctx_selector["dimensiones_campo"], params
+    )
     logger.info(
         "Balón activo: %d frames de %d con detección (%d frames en total)",
         len(activo),
@@ -161,7 +167,9 @@ def main() -> None:
     centros_px = {
         f: ((d[2] + d[4]) / 2.0, (d[3] + d[5]) / 2.0) for f, d in activo.items()
     }
-    preparadas, cortes = preparar_balon(trayectoria, aereo, tiempos, params, centros_px)
+    preparadas, cortes = preparar_balon(
+        trayectoria, aereo, tiempos, params, centros_px, vetados=descartados
+    )
     cortes_ordenados = sorted(cortes)
     logger.info(
         "Puerta de píxeles (> %.0f px/s): %d cortes; el balón se reparte en %d tramos",
