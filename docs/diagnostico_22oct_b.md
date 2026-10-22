@@ -129,3 +129,17 @@ Salida de producción de hoy (benjamín: `outputs/arbitro_obs/posiciones.csv`; V
   (el GT del benjamín no anota al árbitro, y en el benjamín se aparta con el proxy).
 - En 1b, «filas por frame» incluye las interpoladas; el desequilibrio se mantiene en la ventana del
   GT, que se compara con personas reales.
+
+## Bloque 2 — 2a medido, y una predicción escrita ANTES de implementar 2b
+
+**2a** (partido entero, balón ACTIVO de `generar_video_detecciones.balon_activo`): de 8.607 frames
+con balón activo, **604 (7,0 %) lo tienen a > 3 m fuera del campo**, con la mediana en x ≈ 74 m,
+y ≈ 16 m (detrás de la portería del fondo, x > 62). **Solo en 65 de esos 604 (11 %) había otro
+candidato dentro del campo**, con una confianza mediana de 0,74 respecto al elegido (p10-p90:
+0,57-1,08).
+
+**Predicción, antes de implementar:** el flag pedido descarta los candidatos fuera y, si no queda
+ninguno, conserva el comportamiento actual (para no borrar los saques de banda). En el 89 % de los
+frames con el balón fuera NO hay alternativa dentro, así que el flag se quedará con el balón de fuera.
+**Espero que el criterio 2c («campo de al lado» de 7 a ≤ 1) NO se cumpla.** Se implementa y se mide
+igualmente, tal como está escrito.
