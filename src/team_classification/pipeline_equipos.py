@@ -183,6 +183,27 @@ def entrenar_clasificador(
     return clasificador
 
 
+def color_de_identidad(
+    identidad, colores, modelo, profundidad, umbral, solo_cercanos, ocluidas=None
+):
+    """(color medio, recortes que lo forman) de una identidad, como la vota el clasificador.
+
+    Con `solo_cercanos`, solo los recortes a menos de `umbral` de profundidad (los lejanos son
+    ruido de pocos píxeles), salvo que no haya ninguno. La usan `clasificar_identidades` y el
+    tope de cardinalidad (`tope_cardinalidad.py`), para que los dos vean el MISMO color.
+    """
+    todos, cercanos = [], []
+    for tracklet in identidad:
+        for pos, par in zip(tracklet.pos, tracklet.det_idxs):
+            if par not in colores:
+                continue
+            todos.append((par, colores[par]))
+            if profundidad.de(pos, modelo) < umbral:
+                cercanos.append((par, colores[par]))
+    feats = cercanos if (solo_cercanos and cercanos) else todos
+    return color_medio_limpio(feats, ocluidas), feats
+
+
 def clasificar_identidades(
     identidades: list[list[Tracklet]],
     colores: dict,
@@ -207,16 +228,9 @@ def clasificar_identidades(
 
     equipos: dict[int, str] = {}
     for id_identidad, identidad in enumerate(identidades, start=1):
-        todos, cercanos = [], []
-        for tracklet in identidad:
-            for pos, par in zip(tracklet.pos, tracklet.det_idxs):
-                if par not in colores:
-                    continue
-                todos.append((par, colores[par]))
-                if profundidad.de(pos, modelo) < umbral:
-                    cercanos.append((par, colores[par]))
-        feats = cercanos if (solo_cercanos and cercanos) else todos
-        media = color_medio_limpio(feats, ocluidas)
+        media, feats = color_de_identidad(
+            identidad, colores, modelo, profundidad, umbral, solo_cercanos, ocluidas
+        )
         if media is not None:
             etiqueta = clasificador.predict_color(
                 media, dist_max=cfg_agg.get("dist_max_prototipo")

@@ -47,12 +47,10 @@ def reloj(segundos: float) -> str:
 
 
 def main() -> None:
-    import cv2
     import pandas as pd
     import yaml
 
     from src.tracking.cache_io import cargar_cache
-    from src.utils.video_ffmpeg import leer_frames_ffmpeg
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pasadas", required=True)
@@ -86,13 +84,43 @@ def main() -> None:
         n=min(N_RECORTES, len(resto)), random_state=SEMILLA
     ).sort_values("frame")
 
-    carpeta = HOJA / VENTANA
+    n = escribir_hoja(
+        VENTANA,
+        elegidas,
+        dets,
+        R / cfg["rutas"]["video"],
+        lambda r: {
+            "id_hoy": int(r.id_jugador),
+            "etiqueta_hoy": r.etiqueta,
+            "id_v3": int(r.id_jugador_v3),
+            "clase": r.clase,
+            "mecanismo": r.mecanismo,
+        },
+    )
+    print(
+        f"✓ {n} recortes en {HOJA / VENTANA}; cajas en cajas_{VENTANA}.csv; clave aparte"
+    )
+
+
+def escribir_hoja(ventana: str, elegidas, dets, video: Path, clave_de) -> int:
+    """Escribe una hoja de recortes con identidad y etiqueta OCULTAS (formato de revision_equipos).
+
+    `elegidas`: filas con `frame`, `k` (detección cruda), `x_m`, `y_m`. `clave_de(fila)` devuelve
+    lo que se guarda APARTE, en `clave_<ventana>.csv`, para cruzarlo con las marcas. La usa también
+    la hoja del tope de cardinalidad (`scripts/diag22e_tope.py`).
+    """
+    import cv2
+    import pandas as pd
+
+    from src.utils.video_ffmpeg import leer_frames_ffmpeg
+
+    carpeta = HOJA / ventana
     carpeta.mkdir(parents=True, exist_ok=True)
     por_frame = {}
     for r in elegidas.itertuples():
         por_frame.setdefault(int(r.frame), []).append(r)
     cajas, clave, n = [], [], 0
-    for f, img in leer_frames_ffmpeg(R / cfg["rutas"]["video"], por_frame):
+    for f, img in leer_frames_ffmpeg(video, por_frame):
         alto_img, ancho_img = img.shape[:2]
         for r in por_frame[f]:
             x1, y1, x2, y2 = (float(v) for v in dets[f][int(r.k)][2:6])
@@ -108,39 +136,29 @@ def main() -> None:
             t = f / FPS
             nombre = f"{n:02d}_{reloj(t).replace(':', '-')}.jpg"
             cv2.imwrite(str(carpeta / nombre), rec, [cv2.IMWRITE_JPEG_QUALITY, 95])
-            caja = {
-                "ventana": VENTANA,
-                "imagen": nombre,
-                "frame": f,
-                "reloj_archivo": reloj(t),
-                "reloj_reproductor": reloj(t + DESFASE_REPRODUCTOR_S),
-                "caja": 0,
-                "id_jugador": "",  # OCULTA a propósito
-                "etiqueta": "?",  # OCULTA a propósito
-                "x1": int((x1 - ox) * ESCALA),
-                "y1": int((y1 - oy) * ESCALA),
-                "x2": int((x2 - ox) * ESCALA),
-                "y2": int((y2 - oy) * ESCALA),
-                "x_m": round(float(r.x_m), 2),
-                "y_m": round(float(r.y_m), 2),
-            }
-            cajas.append(caja)
-            clave.append(
+            cajas.append(
                 {
+                    "ventana": ventana,
                     "imagen": nombre,
                     "frame": f,
-                    "k": int(r.k),
-                    "id_hoy": int(r.id_jugador),
-                    "etiqueta_hoy": r.etiqueta,
-                    "id_v3": int(r.id_jugador_v3),
-                    "clase": r.clase,
-                    "mecanismo": r.mecanismo,
+                    "reloj_archivo": reloj(t),
+                    "reloj_reproductor": reloj(t + DESFASE_REPRODUCTOR_S),
+                    "caja": 0,
+                    "id_jugador": "",  # OCULTA a propósito
+                    "etiqueta": "?",  # OCULTA a propósito
+                    "x1": int((x1 - ox) * ESCALA),
+                    "y1": int((y1 - oy) * ESCALA),
+                    "x2": int((x2 - ox) * ESCALA),
+                    "y2": int((y2 - oy) * ESCALA),
+                    "x_m": round(float(r.x_m), 2),
+                    "y_m": round(float(r.y_m), 2),
                 }
             )
+            clave.append({"imagen": nombre, "frame": f, "k": int(r.k), **clave_de(r)})
             n += 1
-    pd.DataFrame(cajas).to_csv(HOJA / f"cajas_{VENTANA}.csv", index=False)
-    pd.DataFrame(clave).to_csv(HOJA / f"clave_{VENTANA}.csv", index=False)
-    print(f"✓ {n} recortes en {carpeta}; cajas en cajas_{VENTANA}.csv; clave aparte")
+    pd.DataFrame(cajas).to_csv(HOJA / f"cajas_{ventana}.csv", index=False)
+    pd.DataFrame(clave).to_csv(HOJA / f"clave_{ventana}.csv", index=False)
+    return n
 
 
 if __name__ == "__main__":

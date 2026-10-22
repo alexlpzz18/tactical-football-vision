@@ -172,3 +172,86 @@ jugador y 6 con nadie. Allí `otro` es casi siempre el árbitro.
   fila y que haya otra distinta: esa otra no es él, salvo duplicado de caja (los 28 «árbitro +
   árbitro» dicen que eso pasa poco).
 - «Borde» a 2 m incluiría a un jugador en la banda: aun así son solo 5 frames.
+
+---
+
+## Resultado del bloque 1 — tope de cardinalidad: NO CUMPLE en dos intentos; la ruta se cierra
+
+**Implementación** (tras flag; apagado = salida idéntica byte a byte a la de `main`, comprobado en
+las DOS patas):
+- `src/team_classification/tope_cardinalidad.py`, con un MILP (`scipy.optimize.milp`, HiGHS);
+- flag `equipos.tope_cardinalidad` en los dos configs del processor, con `activo: false`;
+- `clasificar_identidades` saca a una función (`color_de_identidad`) el color medio que vota, para
+  que el solver use exactamente el mismo; el CSV de hoy no cambia;
+- con el flag encendido no corre el voto por observación; en el intento 2 lo sustituye la etiqueta
+  por trozo.
+
+`scripts/diag22e_tope.py`, desde caché, sin vídeo: las dos patas (incluida Villaviciosa, que aquí SÍ
+se puede medir) × costes reales y permutados.
+
+| | hoy | **intento 1** (identidad) | permutado | **intento 2** (trozo 1,5 s) | permutado | criterio |
+|---|---|---|---|---|---|---|
+| **(a)** benjamín, equipo equivocado | 1,2 % | **23,0 %** | 34,4 % | **1,8 %** | 46,2 % | ≤ 1,5 % → **NO / NO** |
+| (a) benjamín, cobertura | 90,05 % | 90,05 % | 90,05 % | 90,05 % | 85,0 % | ≥ 89,55 → sí / sí |
+| **(b)** benjamín, árbitro en un equipo (ventana GT) | 53,5 % | **2,5 %** | 2,5 % | **13,1 %** | 94,7 % | ≤ 20 % → sí / sí |
+| **(c)** Villaviciosa, equipo equivocado | 23,6 % | **18,5 %** | 38,3 % | **18,3 %** | 42,5 % | ≤ 23,6 → sí / sí |
+| **(c)** Villaviciosa, árbitro en un equipo (GT) | 5,3 % | **1,1 %** | 100 % | **42,1 %** | 97,9 % | ≤ 5,3 → sí / **NO** |
+| **(d)** etiquetas por (identidad, minuto), benjamín | 1,45 | 1,00 | 1,00 | **1,51** | 2,06 | ≤ hoy → sí / **NO** |
+| (d) tiempo del solver, benjamín 20 min | — | 7,9 s | 7,9 s | 6,7 s | 7,8 s | < 60 s → sí / sí |
+| control: permutado ≥ real + 5 puntos | | | 34,4 ≥ 28,0 ✓ | | 46,2 ≥ 6,8 ✓ | |
+| *invariantes (por construcción, no son evidencia)*: frames con B > 7 / otro ≥ 2 | 28,5 / 12,2 % | 7,1 / 1,4 % | | 2,3 / 1,4 % | | |
+| filas reales que cambian de etiqueta (benjamín) | | 43.964 (25 %) | | 12.776 (7,3 %) | | |
+
+**El control pasa en los dos intentos**: con los costes permutados todo empeora mucho. El resultado
+depende del color, así que se puede leer.
+
+**Intento 1 (por identidad): falla solo por (a), que es lo que permitía el intento 2.**
+- *De dónde sale el 23 %* (diagnóstico, no intento):
+  - el mismo solver con topes que nunca muerden da **16,0 %**;
+  - el sistema de HOY sin el voto por observación da también **16,0 %**: el coste reproduce
+    exactamente el voto por identidad;
+  - ⇒ **el voto por observación vale 16,0 → 1,2 % en la ventana del GT**, y etiquetar por
+    identidad lo pierde;
+  - los topes, encima, suman ~7 puntos: con identidades quimera (una persona es N identidades, y
+    una identidad son a veces dos personas), «cumplir el 7» se consigue mandando la identidad
+    entera al otro equipo.
+- **En Villaviciosa, en cambio, mejora las dos cosas**: equipo equivocado 23,6 → 18,5 % y árbitro
+  5,3 → 1,1 %. Allí no hay voto por observación que perder, y A pasaba de 11 en el 55 % de los
+  frames.
+
+**Intento 2 (por trozos de 1,5 s): falla por (a) por poco, por (c) y por (d).**
+- Benjamín: 1,8 %, unos 4 fallos más de ~723.
+- Villaviciosa: el árbitro dentro de un equipo **sube de 5,3 a 42,1 %**. Es el principio de
+  CLAUDE.md: «el árbitro en un recorte suelto NO EXISTE; su color solo aparece al promediar ~40
+  recortes». Un trozo de 1,5 s son ~12 recortes en Villaviciosa: su color medio no distingue al
+  árbitro, y el tope «otro ≤ 1» lo reparte. Por identidad (intento 1) sí lo veía.
+
+**Decisión: no se adopta, y la ruta se cierra (dos intentos). El bloque 2 no se ejecuta** (era solo
+si el 1 pasaba).
+
+Como dato para un plan futuro, no como tercer intento:
+- **los topes ayudan donde la etiqueta ya es por identidad** (Villaviciosa, intento 1, mejora todo);
+- **estorban donde manda el voto por observación** (benjamín);
+- y la unidad que serviría a los dos sitios no es la identidad ni el trozo fijo: hacen falta
+  identidades PURAS. Otra vez, la asociación.
+
+**¿Qué podría estar inventando?**
+- **El 2,5 % de árbitro en un equipo del intento 1 (benjamín)** es real, pero sale junto a un 23 %
+  de equipo equivocado: una métrica que solo mira al árbitro no ve que se rompieron los jugadores
+  (la lección de las marcas del campo).
+- **El 18,5 % de Villaviciosa** está medido en 60 s y una sola ventana del GT de 100 frames.
+- **Los invariantes** (B > 7 de 28,5 a 2,3 %) son por construcción: no dicen que las etiquetas
+  estén bien, solo que respetan el tope.
+
+**Filas que cambian y hojas de revisión** (60 recortes cada una, semilla 0, identidad y etiqueta
+ocultas, ffmpeg CLI):
+- `tope_cardinalidad` (intento 1). Cambios A→B 14.321, B→A 19.738, a/desde `otro` ~9.900.
+- `tope_trozo` (intento 2). Cambios B→otro 4.896, B→A 3.123, otro→A/B 3.511, A→otro 358, A→B 888.
+
+Se abren con `python scripts/revision_equipos.py html --ventana tope_trozo` (o `tope_cardinalidad`).
+Si se marca alguna, la del intento 2 es la más informativa: es la que está a 0,6 puntos del criterio
+en el benjamín, y la hoja diría si sus 12.776 cambios fuera de la ventana del GT aciertan.
+
+## Bloque 2 — NO ejecutado
+
+Era «solo si el 1 pasa». No pasa.

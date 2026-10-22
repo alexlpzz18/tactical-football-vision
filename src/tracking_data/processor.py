@@ -907,6 +907,18 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         equipos = clasificar_identidades(
             identidades, colores, clasificador, cfg_equipos
         )
+    # TOPE DE CARDINALIDAD (docs/diagnostico_22oct_e.md, bloque 1), APAGADO por defecto: las
+    # identidades se etiquetan juntas respetando «≤ 7 por equipo y ≤ 1 árbitro» en cada frame.
+    # Porteros y staff se quedan como los decidieron sus reglas. Con él encendido, la etiqueta es
+    # por identidad y no se corre el voto por observación (rompería los topes).
+    cfg_tope = (cfg.get("equipos") or {}).get("tope_cardinalidad") or {}
+    tope_activo = clasificador is not None and bool(cfg_tope.get("activo", False))
+    if tope_activo:
+        from src.team_classification.tope_cardinalidad import etiquetar_con_tope
+
+        equipos, etiquetas_tope = etiquetar_con_tope(
+            identidades, equipos, colores, clasificador, cfg_equipos, cfg_tope
+        )
 
     # Fase post-clasificación (consolidación + interpolación), compartida
     # con el banco: src/tracking/perfiles.py::postprocesar.
@@ -942,13 +954,16 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         ocluidas_obs = detecciones_ocluidas(
             datos["cache"], iou_max=float(cfg_por_obs.get("ocluidas_iou", 0.10))
         )
-    etiquetas_por_obs = (
-        etiquetar_por_observacion(
-            identidades, equipos, colores, clasificador, cfg_equipos, ocluidas_obs
+    if tope_activo:
+        etiquetas_por_obs = etiquetas_tope  # vacío con `unidad: identidad`
+    else:
+        etiquetas_por_obs = (
+            etiquetar_por_observacion(
+                identidades, equipos, colores, clasificador, cfg_equipos, ocluidas_obs
+            )
+            if clasificador is not None
+            else {}
         )
-        if clasificador is not None
-        else {}
-    )
 
     trayectorias, equipos = postprocesar(
         identidades,
