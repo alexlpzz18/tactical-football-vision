@@ -119,3 +119,56 @@ Flag apagado: CSV idéntico byte a byte a `main`.
 
 Se documenta que es **cosmético**: la posición recortada no es más precisa; solo deja de pintarse
 fuera.
+
+---
+
+## Resultado del bloque 0 — invariantes de hoy
+
+`scripts/diag22e_invariantes.py`. Filas reales dentro del campo; porteros en su equipo.
+
+| | frames | media A / B / otro | A > tope | **B > tope** | otro ≥ 2 |
+|---|---|---|---|---|---|
+| benjamín (tope 7) | 11.989 | 5,60 / 6,85 / 0,85 | 1,1 % | **28,5 %** | 12,2 % |
+| Villaviciosa (tope 11) | 500 | **11,65** / 7,62 / 1,02 | **54,6 %** | 0,0 % | 4,2 % |
+
+**El invariante que más se rompe no es el del árbitro: es el recuento de UN equipo.**
+- En el benjamín, B pasa de 7 en el 28,5 % de los frames; en Villaviciosa, A pasa de 11 en más de
+  la mitad.
+- Es el desequilibrio de etiqueta del 22-oct (b), ahora contado contra el reglamento.
+- En Villaviciosa casa con su 23,6 % de equipo equivocado.
+
+**Reconciliación del 12,6 % con el 4,3 % de la guarda (benjamín):**
+- 12,56 % con todas las filas → **12,19 %** solo con las reales (1.462 frames).
+- De esos 1.462 frames con ≥ 2 `otro` reales:
+  - **520 (4,3 % del partido)** tienen ≥ 2 identidades de la guarda. Es su cifra.
+  - **930** tienen una fila `otro` SUELTA de una identidad A/B: el catálogo arbitral por
+    observación. La guarda mira identidades enteras y no puede verlas.
+  - 12 tienen una identidad `otro` que la guarda no cuenta (< 25 obs o mediana fuera del campo).
+- ⇒ Las dos cifras son correctas y miden cosas distintas. Dos tercios de la simultaneidad la crea el
+  catálogo POR OBSERVACIÓN, que actúa dentro de identidades de jugador.
+
+**¿Quiénes son los ≥ 2 `otro`?** El árbitro es la detección del proxy; el borde, ≤ 2 m de una línea.
+
+| tipo de frame | frames |
+|---|---|
+| **árbitro + alguien en el interior** | **1.372 (94 %)** |
+| sin árbitro (interior) | 57 |
+| árbitro + árbitro (dos filas suyas) | 28 |
+| árbitro + borde (staff en la línea) | 5 |
+
+⇒ **No es árbitro + staff dentro de la línea: es árbitro + JUGADORES.** El segundo `otro` está en el
+interior, y casi siempre es una observación suelta que el catálogo saca de una identidad de jugador.
+
+**Árbitro dentro de un equipo, ventana del GT (benjamín)**, la línea base de 1(b):
+- **53,5 %** de los frames (151 de 282 con fila del árbitro);
+- como referencia, el 53,0 % de los frames de la ventana no tiene ningún `otro` en el campo.
+
+**Villaviciosa, ventana del GT**, filas `otro` reales casadas con el GT: 90 con el árbitro, 7 con un
+jugador y 6 con nadie. Allí `otro` es casi siempre el árbitro.
+
+**¿Qué podría estar inventando?**
+- «Árbitro» es el proxy por detección. Si no lo marca, una fila del árbitro cuenta como «interior»
+  y un frame «sin árbitro» puede tenerlo. Pero «árbitro + interior» exige que el proxy SÍ marque una
+  fila y que haya otra distinta: esa otra no es él, salvo duplicado de caja (los 28 «árbitro +
+  árbitro» dicen que eso pasa poco).
+- «Borde» a 2 m incluiría a un jugador en la banda: aun así son solo 5 frames.
