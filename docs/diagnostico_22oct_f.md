@@ -118,3 +118,62 @@ se casa y no cuenta, así que la impureza medida es la de las filas BIEN COLOCAD
 - flag apagado: CSV y HTML de la pizarra idénticos a `main`;
 - encendido: posiciones del CSV idénticas, una columna más; en la pizarra, ninguna fila de balón
   desaparece por estar fuera y todas caen dentro del rectángulo; los jugadores, idénticos.
+
+---
+
+## Resultado del bloque A — ByteTrack genera ~80 % de la mezcla; se mezcla en los CRUCES
+
+`scripts/diag22f_pureza.py`. *Control del montaje*: las posiciones de la etapa de post-proceso
+reproducen el **100 %** de las filas del CSV de producción, en las dos patas.
+
+| etapa | identidades | casadas | **impureza** | añade | pureza al AZAR (control) | cambios de persona |
+|---|---|---|---|---|---|---|
+| **benjamín** — ByteTrack | 1.126 | 736 | **18,07 %** | 18,07 | 16,4 % | 41 |
+| + puerta de re-entrada | 1.126 | 736 | 18,07 % | 0,00 | 16,0 % | 41 |
+| + cosido por pureza | 900 | 736 | 24,05 % | **+5,98** | 15,0 % | 46 |
+| + post-proceso (CSV) | 900 | 733 | **22,78 %** | −1,27 | 15,3 % | 41 |
+| **Villaviciosa** — ByteTrack | 147 | 1.599 | **12,57 %** | 12,57 | 15,4 % | 116 |
+| + puerta | 147 | 1.599 | 12,57 % | 0,00 | 15,2 % | 116 |
+| + cosido | 115 | 1.599 | 13,95 % | +1,38 | 14,6 % | 126 |
+| + post-proceso (CSV) | 115 | 1.694 | **15,76 %** | +1,81 | 14,1 % | 147 |
+
+- **La mayor parte de la impureza final la genera ByteTrack**: 18,1 de 22,8 en el benjamín (79 %)
+  y 12,6 de 15,8 en Villaviciosa (80 %).
+- El cosido añade el resto en el benjamín (+6,0) y poco en Villaviciosa (+1,4).
+- La puerta de re-entrada no cambia nada en la ventana del GT.
+- El control al azar da ~15 % de pureza: la medida (76-87 %) está muy por encima del suelo.
+
+**Dónde cambian de persona** (% de los cambios con la marca, contra la tasa en TODOS los pares de
+observaciones consecutivas de la misma identidad):
+
+| marca | benjamín, ByteTrack | benjamín, CSV | Villaviciosa, ByteTrack | Villaviciosa, CSV |
+|---|---|---|---|---|
+| **otra persona a < 2 m** | **80,5 % vs 24,0** (×3,4) | 80,5 vs 25,3 | **62,1 vs 22,4** (×2,8) | 65,3 vs 24,5 |
+| borde de tesela SAHI (≤ 20 px) | 22,0 vs 15,4 (×1,4) | 17,1 vs 15,4 | 94,0 vs **83,4** (×1,1) | 74,1 vs 79,2 |
+| unión de cosido | — | 7,3 vs 0,6 | — | 2,0 vs 0,3 |
+| tras hueco > 1 s | 2,4 vs 0,4 | 12,2 vs 0,8 | 6,9 vs 0,9 | 15,0 vs 3,1 |
+| sin ninguna marca | 5 de 41 | 6 de 41 | 3 de 116 | 12 de 147 |
+
+**Lectura:**
+1. **El cambio de persona es un problema de CRUCES.** 4 de cada 5 cambios ocurren con otra persona
+   a menos de 2 m, cuando eso solo pasa en 1 de cada 4 pares. Es lo de CLAUDE.md, «el 16 % se
+   contamina dentro del seguimiento continuo, en los cruces», ahora localizado en la etapa:
+   **ByteTrack**.
+2. **Las teselas de SAHI no explican la mezcla.** En el benjamín la marca sale poco por encima de
+   su tasa base (×1,4, 9 de 41 cambios). En Villaviciosa la geometría de SAHI (15 teselas sobre
+   2.560 px) deja el 83 % de las cajas a ≤ 20 px de un borde: la marca no discrimina, y su 94 % no
+   significa nada. ⚠️ La geometría real son **15 teselas (5 × 3)**, no 2 × 4: con solape 0,2,
+   `get_slice_bboxes` añade columnas y filas.
+3. **El cosido mezcla poco, pero mezcla en sus uniones**: en el benjamín, de sus 5 cambios nuevos,
+   las uniones están 12× sobrerrepresentadas (7,3 % contra 0,6 %).
+
+**¿Qué podría estar inventando?**
+- **La pureza premia la fragmentación.** ByteTrack deja 1.126 identidades en el benjamín y el cosido
+  900: una identidad partida en trozos es más pura por construcción. Parte del +6 del cosido es
+  mezcla real (sus uniones están sobrerrepresentadas en los cambios) y parte es que al unir se mide
+  sobre identidades más largas. El orden de magnitud (ByteTrack ~80 %) aguanta con cualquier
+  reparto de esa parte.
+- **Solo cuentan las filas casadas a ≤ 2 m**: una identidad que se va a una posición desplazada
+  2-5 m no se casa y no suma impureza.
+- **La «cercanía» es de las personas del GT**: un cruce que el GT no anota (el árbitro en el
+  benjamín) no cuenta como «cerca».
