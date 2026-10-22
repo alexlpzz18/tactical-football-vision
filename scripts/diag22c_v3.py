@@ -61,6 +61,13 @@ def tercer_grupo(mensajes: list[str]) -> int | None:
             n = 0
         elif (g := re.match(r"TERCER GRUPO CON (\d+) IDENTIDADES", m)) is not None:
             n = int(g.group(1))
+        # mensajes de la guarda por SIMULTANEIDAD (22-oct d, bloque 1c)
+        elif (g := re.match(r"Tercer grupo: (\d+) identidades", m)) is not None:
+            n = int(g.group(1))
+        elif (
+            g := re.match(r"TERCER GRUPO SIMULTÁNEO: (\d+) identidades", m)
+        ) is not None:
+            n = int(g.group(1))
     return n
 
 
@@ -151,8 +158,12 @@ def recuento(filas) -> dict:
     }
 
 
-def desglose_movidas(base, v3, dets, det_arbitro, gt, b3) -> dict:
-    """Las filas no-árbitro que pasan de A/B (hoy) a `otro` (v3): qué son y por qué."""
+def filas_movidas(base, v3, dets, det_arbitro, b3):
+    """Las filas no-árbitro que pasan de A/B (hoy) a `otro` (v3), con su clase y mecanismo.
+
+    Returns:
+        (DataFrame de las movidas, filas reales de v3 preparadas).
+    """
 
     def prep(d):
         r = d[d.es_real == 1].copy()
@@ -194,6 +205,12 @@ def desglose_movidas(base, v3, dets, det_arbitro, gt, b3) -> dict:
         "identidad_entera_en_otro",
         "observacion_suelta_de_identidad_AB",
     )
+    return mov, nv
+
+
+def desglose_movidas(base, v3, dets, det_arbitro, gt, b3) -> dict:
+    """Las filas no-árbitro que pasan de A/B (hoy) a `otro` (v3): qué son y por qué."""
+    mov, _nv = filas_movidas(base, v3, dets, det_arbitro, b3)
     # ventana del GT: ¿la fila de hoy estaba casada con un jugador del GT?
     en_gt = mov[mov.frame.isin(set(gt))]
     cas = casados(base, gt)

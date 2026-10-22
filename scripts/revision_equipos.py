@@ -20,7 +20,9 @@ from pathlib import Path
 R = Path(__file__).resolve().parent.parent
 HOJA = R / "outputs/hoja_equipos"
 CABECERA = ["ventana", "imagen", "caja", "equipo_correcto", "causa", "nota"]
-VENTANAS = ["gt", "minuto_malo", "azar"]
+# `otro_v3`: recortes de las filas que la feature v3 manda a `otro` (docs/diagnostico_22oct_d.md,
+# bloque 1b). Sus cajas viven en `cajas_otro_v3.csv`, con la identidad y la etiqueta OCULTAS.
+VENTANAS = ["gt", "minuto_malo", "azar", "otro_v3"]
 EQUIPOS = [
     "A",
     "B",
@@ -28,6 +30,7 @@ EQUIPOS = [
     "portero_B",
     "arbitro",
     "staff",
+    "jugador",  # para `otro_v3`: jugador de campo sin decir de qué equipo
     "no_es_persona",
     "dudoso",
 ]
@@ -87,10 +90,17 @@ def validar(filas: list[dict], cajas: dict[tuple[str, str], set]) -> list[str]:
     return avisos
 
 
-def leer(ruta_revision: Path, ruta_cajas: Path) -> tuple[list[dict], list[str]]:
+def cajas_de_la_hoja(ruta_cajas: Path):
+    """`cajas.csv` más los `cajas_<ventana>.csv` de las ventanas que llevan fichero propio."""
     import pandas as pd
 
-    c = pd.read_csv(ruta_cajas)
+    partes = [pd.read_csv(ruta_cajas)] if ruta_cajas.exists() else []
+    partes += [pd.read_csv(p) for p in sorted(ruta_cajas.parent.glob("cajas_*.csv"))]
+    return pd.concat(partes, ignore_index=True)
+
+
+def leer(ruta_revision: Path, ruta_cajas: Path) -> tuple[list[dict], list[str]]:
+    c = cajas_de_la_hoja(ruta_cajas)
     cajas = {k: set(g.caja) for k, g in c.groupby(["ventana", "imagen"])}
     with open(ruta_revision, newline="") as fh:
         lector = csv.DictReader(fh)
@@ -110,7 +120,7 @@ PLANTILLA_HTML = (
 def generar_html(ventana: str, salida: Path) -> Path:
     import pandas as pd
 
-    c = pd.read_csv(HOJA / "cajas.csv")
+    c = cajas_de_la_hoja(HOJA / "cajas.csv")
     c = c[c.ventana == ventana]
     imagenes, cajas = [], {}
     for nombre, g in c.groupby("imagen", sort=True):

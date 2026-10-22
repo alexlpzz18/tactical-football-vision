@@ -396,31 +396,50 @@ def clasificar_identidades(
     logger.info(
         "Equipos por identidad: %d/%d clasificadas", len(equipos), len(identidades)
     )
-    avisar_tercer_grupo(equipos, identidades, modelo)
+    avisar_tercer_grupo(
+        equipos,
+        identidades,
+        modelo,
+        max_pct_simultaneos=cfg_equipos.get("arbitro", {}).get(
+            "guarda_pct_simultaneos", 3.0
+        ),
+    )
     return equipos
 
 
-def avisar_tercer_grupo(equipos: dict[int, str], identidades, modelo) -> int:
-    """Comprueba que en el TERCER GRUPO quede exactamente una persona.
+def avisar_tercer_grupo(
+    equipos: dict[int, str],
+    identidades,
+    modelo,
+    max_pct_simultaneos: float = 3.0,
+) -> int:
+    """Comprueba que el TERCER GRUPO sea UNA persona: cuenta SIMULTANEIDAD, no identidades.
 
     La guarda que pidió Alex, y protege de un umbral frágil. El árbitro no
     se identifica con ninguna señal de comportamiento —los cinco medidos
     fallan (docs/arbitro.md)— sino **por eliminación**: dentro del campo,
     quitando los dos equipos, los dos porteros y el staff, debería quedar
-    él y nadie más. Medido: queda exactamente 1 en las dos patas.
+    él y nadie más.
 
-    Pero eso depende de `arbitro.margen_equipo`, cuya ventana en el
-    benjamín es de solo 0,62-0,75, con acantilado en 0,78. En otro campo
-    puede caerse, y el síntoma sería silencioso: o el árbitro se cuela en
-    un equipo (0 en el tercer grupo) o el catálogo roba jugadores (2 o
-    más). Las dos cosas salen por el log.
+    ⚠️ Antes contaba IDENTIDADES y exigía exactamente una. Pero UNA PERSONA ES
+    N IDENTIDADES: el árbitro se parte en ~10 trozos en 20 min, así que «7» o
+    «14» identidades puede ser una sola persona en trozos SECUENCIALES (bien) o
+    varias personas a la vez (mal), y el recuento no los distingue
+    (docs/diagnostico_22oct_d.md, bloque 1c). Una persona no está en dos sitios
+    a la vez: lo que delata un robo es que haya ≥ 2 identidades del tercer grupo
+    DENTRO del campo en el mismo frame. Se avisa si eso pasa en más del
+    `max_pct_simultaneos` % de los frames (config `arbitro.guarda_pct_simultaneos`).
+
+    Los dos síntomas silenciosos siguen saliendo por el log: el árbitro colado en
+    un equipo (tercer grupo vacío) y el catálogo o el color robando jugadores
+    (simultaneidad).
 
     No corrige nada a propósito: solo avisa. Corregir a ciegas con una
     señal que no separa es exactamente lo que este proyecto lleva
     aprendiendo a no hacer.
 
     Returns:
-        Cuántas identidades quedan en el tercer grupo.
+        Cuántas identidades quedan en el tercer grupo (dato; ya no es el criterio).
     """
     quedan = []
     for indice, identidad in enumerate(identidades, start=1):
@@ -438,28 +457,54 @@ def avisar_tercer_grupo(equipos: dict[int, str], identidades, modelo) -> int:
             continue
         quedan.append((indice, len(posiciones), mx, my))
 
-    if len(quedan) == 1:
-        logger.info(
-            "Tercer grupo: 1 identidad (la %d, %d obs en (%.1f, %.1f)) — "
-            "el árbitro sale por eliminación",
-            *quedan[0],
-        )
-    elif not quedan:
+    if not quedan:
         logger.warning(
             "TERCER GRUPO VACÍO: no queda nadie dentro del campo que no sea "
             "jugador, portero o staff. Si hay árbitro en este partido, está "
             "contando para un equipo. Revisa arbitro.margen_equipo (ventana "
             "medida: 0,62-0,75)."
         )
+        return 0
+
+    # Frames del tramo (todos los que tiene alguna identidad) y, en cada uno,
+    # cuántas identidades del tercer grupo están DENTRO del campo a la vez.
+    todos_los_frames = {
+        par[0] for identidad in identidades for tr in identidad for par in tr.det_idxs
+    }
+    presentes: dict[int, int] = {}
+    for indice, *_resto in quedan:
+        frames_dentro = {
+            par[0]
+            for tr in identidades[indice - 1]
+            for pos, par in zip(tr.pos, tr.det_idxs)
+            if 0.0 <= pos[0] <= modelo.largo and 0.0 <= pos[1] <= modelo.ancho
+        }
+        for f in frames_dentro:
+            presentes[f] = presentes.get(f, 0) + 1
+    con_dos = sum(1 for n in presentes.values() if n >= 2)
+    pct = 100.0 * con_dos / max(len(todos_los_frames), 1)
+
+    if pct <= max_pct_simultaneos:
+        logger.info(
+            "Tercer grupo: %d identidades, con ≥ 2 a la vez dentro del campo en el "
+            "%.1f %% de los frames (umbral %.1f %%): trozos de una sola persona, el "
+            "árbitro sale por eliminación",
+            len(quedan),
+            pct,
+            max_pct_simultaneos,
+        )
     else:
         detalle = ", ".join(
             f"{i} ({n} obs en {mx:.0f},{my:.0f})" for i, n, mx, my in quedan
         )
         logger.warning(
-            "TERCER GRUPO CON %d IDENTIDADES: debería quedar solo el árbitro. "
-            "Puede que el catálogo esté robando jugadores. Candidatas: %s. "
-            "Revisa arbitro.margen_equipo (ventana medida: 0,62-0,75).",
+            "TERCER GRUPO SIMULTÁNEO: %d identidades y ≥ 2 a la vez dentro del campo "
+            "en el %.1f %% de los frames (umbral %.1f %%). Debería ser UNA persona (el "
+            "árbitro, aunque esté en varios trozos): el catálogo o el color está "
+            "robando jugadores. Candidatas: %s.",
             len(quedan),
+            pct,
+            max_pct_simultaneos,
             detalle,
         )
     return len(quedan)
