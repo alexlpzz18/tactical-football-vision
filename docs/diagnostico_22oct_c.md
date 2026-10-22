@@ -265,3 +265,86 @@ Lo que separaría las dos clases, como dato para un plan futuro y no como tercer
   y ≈ 41-42 m; el balón aéreo, detrás de la portería del fondo;
 - y que el balón aéreo VUELVE al suelo dentro del campo y por continuidad, que es la forma de
   `readmitir_vuelos`.
+
+---
+
+## Resultado del bloque 2 — v3, intento 2 (v3 + un solo árbitro + devolver): NO CUMPLE
+
+`scripts/diag22c_v3.py`: tres pasadas `desde_cache` de la parte entera. Solo cambian la caché de
+color y, en la tercera, `arbitro.devolver_por_color: true` (una clave que ya existe, pasada por un
+YAML temporal). Producción no se toca.
+- *Control*: la pasada «hoy» reproduce byte a byte el CSV con el que se midió el 22-oct (b).
+- El árbitro son las mismas 10.414 detecciones fijadas que el 22-oct (b).
+
+| | hoy | v3 | v3 + devolver | criterio (v3 + devolver) |
+|---|---|---|---|---|
+| **cobertura** (personas-jugador del GT casadas con una fila de equipo) | 90,05 % (733/814) | 90,05 % | 90,05 % | ≥ hoy − 0,5 → **sí** |
+| equipo equivocado (jugadores) | 1,2 % | 1,1 % | 1,1 % | ≤ hoy + 0,3 → **sí** |
+| detecciones del árbitro dentro de un equipo | 39,5 % | 16,2 % | **36,6 %** | ≤ 20 % → **NO** |
+| tercer grupo (aviso del log) | **7** | 14 | 1 | ≤ 3 → sí |
+| identidades de árbitro | 9 | 9 | 9 | (informativo) |
+| filas A / B por frame | 5,83 / 7,12 | 6,15 / 6,24 | 6,52 / 6,42 | |
+| frames con > 7 en A / en B | 501 / 4.747 | 1.761 / 793 | **3.072 / 1.427** | (se reporta) |
+| detecciones del árbitro etiquetadas A / B / otro | 130 / 4.075 / 6.118 | 1.461 / 264 / 8.598 | 3.409 / 486 / 6.428 | |
+
+Villaviciosa: **no medido** (no está su vídeo en local). Por la regla de las dos patas, no se
+adopta aunque cumpliera.
+
+**Por qué falla `devolver`: el árbitro es N identidades, y la regla supone una.**
+- `un_solo_arbitro` corona a UNA identidad y devuelve las demás «a su equipo por color». Pero el
+  árbitro está partido en ~9-10 identidades: las no coronadas son sobre todo OTROS TROZOS DEL
+  ÁRBITRO.
+- Con v3 el color ya ve el chaleco, y lo que se parece a él es el prototipo A: el árbitro va al
+  equipo A (3.409 detecciones).
+- El tercer grupo baja a 1 justamente porque se vacía de árbitro, no porque se limpie de jugadores.
+- Es el principio de CLAUDE.md «UNA PERSONA ES N IDENTIDADES»: la exclusividad que funciona con
+  una identidad por persona rompe cuando hay muchas.
+
+**2a — la cobertura no ve nada.** Las tres pasadas dan EXACTAMENTE 733 de 814: la ventana del GT
+(30 s del minuto 5) no contiene los instantes que cambian, que se concentran en los minutos 10-12.
+⇒ «Cobertura igual» no es «no rompe nada»: aquí es «el GT no llega». Es el aviso de siempre de
+que el GT de una ventana no representa el partido.
+
+**2a — desglose de las 3.889 filas no-árbitro que v3 manda a `otro`** (hoy A/B → v3 `otro`;
+«no-árbitro» = la detección no es del proxy):
+
+| | filas |
+|---|---|
+| de una identidad que HOY es árbitro en > 50 % (árbitro por identidad) | **2.917 (75 %)** |
+| resto (jugador probable) | 969 (25 %) |
+| staff (> 2 m fuera del campo) | 3 |
+| *por mecanismo*: la identidad entera va a `otro` (voto de identidad) | 3.592 |
+| *por mecanismo*: observación suelta de una identidad A/B (catálogo por observación) | 297 (todas en «resto») |
+| en la ventana del GT | 4, y ninguna casada con un jugador del GT |
+
+Salen de 21 identidades de hoy distintas.
+
+⚠️ **Esto corrige la lectura del 22-oct (b).** Allí se dijo que el 58 % de lo que entra en `otro`
+«no es el árbitro», con el proxy POR DETECCIÓN. Por IDENTIDAD, el 75 % es de identidades que hoy ya
+son mayoritariamente árbitro: son detecciones del árbitro que el proxy (calculado con la feature
+v1, ciega al chaleco) no marca. Los jugadores probables son como mucho 969 filas, y de ellas 297
+las mueve el catálogo por observación. El argumento de los «≥ 2 `otro` en el mismo frame» del
+22-oct (b) era débil por la misma razón: dos trozos del árbitro a la vez son un duplicado, no dos
+personas.
+
+**¿Qué podría estar inventando el 75 %?** Que una identidad sea «árbitro en > 50 %» no hace árbitro
+a cada fila suya: una identidad mezclada (CLAUDE.md: el id 292 mezcla árbitro y jugadores) aporta
+filas de jugador a este grupo. El 75 % es una cota SUPERIOR de lo que es árbitro, y el 25 % una cota
+INFERIOR de lo que son jugadores.
+
+**2b — en qué etapa está cada cifra del 22-oct (b).** Las dos salen de la MISMA etapa y la MISMA
+población: la etiqueta FINAL del CSV, después de todas las reglas (incluido el voto por
+observación), sobre las 10.646 filas reales que caen en una detección del árbitro fijada.
+- (ii) = (A + B) / 10.646: hoy (130 + 4.075) = 39,5 %; v3 (1.461 + 264) = 16,2 %.
+- «A pasa de 130 a 1.461» es un SUMANDO de ese mismo numerador. A sube 1.331, pero B baja 3.811, y
+  el neto es la caída de (ii).
+- No se contradicen: el árbitro sale de B en bloque y una parte cae en A.
+
+**Decisión: la ruta v3 se cierra** (segundo y último intento).
+- v3 sola: cumple (i) y (ii), pero no (iii); sin Villaviciosa.
+- v3 + devolver: no cumple el árbitro (36,6 %).
+- El flag `deteccion.mascara_color` se queda en `verde`.
+
+Lo que deja como dato: el sensor v3 SÍ ve el chaleco (detecciones del árbitro en B: de 4.075 a
+264). El obstáculo es el de siempre, la ASOCIACIÓN: con el árbitro en ~10 identidades, cualquier
+regla que decide por identidad lo reparte.
