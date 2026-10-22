@@ -255,3 +255,39 @@ en el benjamín, y la hoja diría si sus 12.776 cambios fuera de la ventana del 
 ## Bloque 2 — NO ejecutado
 
 Era «solo si el 1 pasa». No pasa.
+
+---
+
+## Resultado del bloque 3 — balón recortado al campo (flag `balon.recortar_a_campo`): CUMPLE (cosmético)
+
+**Implementación.**
+- `ParametrosBalon.recortar_a_campo` (por defecto `False`), en el bloque `balon:` de
+  `configs/campo_benja.yaml` (`false`).
+- `recortar_al_campo()` lleva el punto al más cercano del rectángulo [0, 62] × [0, 40].
+- Se aplica en `procesar_balon.py` al EXPORTAR, sobre las filas `balon` y `balon_aereo`: contactos,
+  posesión, fases aéreas y tramos se calculan antes y no cambian.
+- Test nuevo en `tests/test_corte_duro_balon.py`.
+
+**Flag apagado**: el CSV conjunto es idéntico byte a byte a `main`.
+
+**Flag encendido** (parte entera):
+
+| | resultado | criterio |
+|---|---|---|
+| filas de balón fuera del campo | 947 → **0** | 0 → sí |
+| filas que ya estaban dentro | **idénticas** a `main` (todas las columnas) | sí |
+| filas a 0-3 m fuera (saques) | **947 de 947 sobre la línea** | sí |
+| jugadores y resto de columnas | idénticos; solo cambian `x_m` e `y_m` | — |
+| desplazamiento de las recortadas | mediana 1,29 m, máximo 2,96 m | (informativo) |
+
+El máximo no pasa de 3 m porque en la pizarra de `main` no hay ninguna fila de balón a más de 3 m
+fuera: la plausibilidad las quita antes (bloque 3 del 22-oct d).
+
+⚠️ **Es COSMÉTICO, no precisión.** El punto recortado no es donde estaba el balón:
+- en un saque, es la línea por la que salió, y es lo esperable;
+- en un balón aéreo interpolado o en un relleno, es simplemente el borde más cercano a una
+  posición que ya era aproximada.
+- No debe usarse para medir: las distancias o velocidades calculadas sobre filas recortadas
+  subestiman el recorrido real, hasta 2,96 m por fila.
+
+Queda **apagado**: encenderlo es una decisión de presentación de Alex, no de medida.

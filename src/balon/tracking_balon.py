@@ -206,6 +206,11 @@ class ParametrosBalon:
     # el balón de después abre un tramo nuevo. Es el balón del campo de al lado, detrás de la
     # grada. Los saques de banda están a menos de 3 m: no se tocan.
     descartar_fuera_m: float | None = None
+    # ── SOLO COSMÉTICO: balón recortado al campo en la pizarra (docs/diagnostico_22oct_e.md) ──
+    # False = APAGADO. Con True, al EXPORTAR, toda fila de balón fuera del rectángulo del campo se
+    # lleva al punto más cercano del rectángulo. No es más precisa: solo deja de pintarse fuera.
+    # Contactos, posesión y fases aéreas se calculan antes y no cambian.
+    recortar_a_campo: bool = False
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -416,6 +421,12 @@ def descartar_balon_fuera(
             params.descartar_fuera_m,
         )
     return {f: d for f, d in activo.items() if f not in descartados}, descartados
+
+
+def recortar_al_campo(x, y, dimensiones_campo: tuple[float, float]):
+    """El punto más cercano del rectángulo [0, largo] × [0, ancho] (cosmético, ver arriba)."""
+    largo, ancho = dimensiones_campo
+    return np.clip(x, 0.0, largo), np.clip(y, 0.0, ancho)
 
 
 def _hay_veto(vetados_ordenados: list[int], frame_a: int, frame_b: int) -> bool:

@@ -69,3 +69,7 @@ balon:
   # campo (el balón del campo de al lado). null = APAGADO, como hasta ahora.
   # docs/diagnostico_22oct_c.md, bloque 1.
   descartar_fuera_m: null
+  # SOLO COSMÉTICO: las filas de balón fuera del campo se pintan en el punto
+  # más cercano del rectángulo (no es una posición más precisa). false =
+  # APAGADO. docs/diagnostico_22oct_e.md, bloque 3.
+  recortar_a_campo: false

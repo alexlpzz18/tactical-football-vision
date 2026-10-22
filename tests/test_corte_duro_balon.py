@@ -91,3 +91,17 @@ def test_el_suavizado_no_cruza_un_veto():
     )
     pos = {f: p for f, p, _a, _r in filas}
     assert pos[10][0] == pytest.approx(30.0) and pos[12][0] == pytest.approx(35.0)
+
+
+def test_recortar_al_campo_es_el_punto_mas_cercano_y_no_toca_lo_de_dentro():
+    from src.balon.tracking_balon import recortar_al_campo
+
+    x, y = recortar_al_campo(
+        np.array([30.0, -2.0, 70.0, 30.0]), np.array([20.0, 10.0, 45.0, -1.5]), CAMPO
+    )
+    assert x.tolist() == [30.0, 0.0, 62.0, 30.0]
+    assert y.tolist() == [20.0, 10.0, 40.0, 0.0]
+    assert (
+        parametros_balon_de_campo(R / "configs/campo_benja.yaml").recortar_a_campo
+        is False
+    )

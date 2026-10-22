@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.balon.tracking_balon import (  # noqa: E402
     descartar_balon_fuera,
     id_de_tramo,
+    recortar_al_campo,
     preparar_balon,
     detectar_contactos,
     detectar_contactos_por_velocidad,
@@ -219,6 +220,14 @@ def main() -> None:
                 }
             )
     balon = pd.DataFrame(filas)
+    # Recorte al campo (flag `balon.recortar_a_campo`, apagado): SOLO cosmético, al final, para
+    # que la pizarra no pinte balones fuera; no es una posición más precisa.
+    if params.recortar_a_campo and len(balon):
+        balon["x_m"], balon["y_m"] = recortar_al_campo(
+            balon.x_m.to_numpy(),
+            balon.y_m.to_numpy(),
+            ctx_selector["dimensiones_campo"],
+        )
     conjunto = pd.concat([jug, balon], ignore_index=True).sort_values(
         ["tiempo_s", "id_jugador"]
     )
