@@ -50,7 +50,8 @@ def bin_dist(d: float) -> str:
     return "fuera"
 
 
-def medir_pata(nombre: str, cfg: dict, b1) -> dict:
+def filas_desplazadas(nombre: str, cfg: dict, b1):
+    """DataFrame con una fila por «desplazada» (causa, zona, identidad y error en píxeles)."""
     import pandas as pd
 
     from src.evaluation.desglose_error import casar_frame
@@ -58,9 +59,9 @@ def medir_pata(nombre: str, cfg: dict, b1) -> dict:
 
     filas = pd.read_csv(R / cfg["csv"])
     capt = pickle.load(open(R / cfg["cajas"], "rb"))
-    gt = gt_a_por_frame(
-        parsear_cvat(R / cfg["gt"]), np.load(R / cfg["H"]), cfg["offset"], cfg["paso"]
-    )
+    H = np.load(R / cfg["H"])
+    H_inv = np.linalg.inv(H)
+    gt = gt_a_por_frame(parsear_cvat(R / cfg["gt"]), H, cfg["offset"], cfg["paso"])
     proxy = set()
     if nombre == "benja":
         import yaml
@@ -131,6 +132,7 @@ def medir_pata(nombre: str, cfg: dict, b1) -> dict:
             ip = int(np.argmin(dists))
             persona = jug[ip]
             # causa
+            d_det = err_px = None
             if r.es_real == 0:
                 causa = "interpolada"
             else:
@@ -143,6 +145,14 @@ def medir_pata(nombre: str, cfg: dict, b1) -> dict:
                         np.hypot(det[0] - persona.pos[0], det[1] - persona.pos[1])
                     )
                     causa = "punto_del_pie" if d_det > R_DET else "post_proceso"
+                    # el mismo error en PÍXELES: pie de la caja contra la persona del GT
+                    # devuelta a la imagen con la homografía inversa
+                    q = H_inv @ np.array([persona.pos[0], persona.pos[1], 1.0])
+                    err_px = float(
+                        np.hypot(
+                            (det[2] + det[4]) / 2 - q[0] / q[2], det[5] - q[1] / q[2]
+                        )
+                    )
             # cambio de identidad: ¿con quién se casa esta identidad 15 frames antes / después?
             vecinos = []
             for df in (-cfg["paso"], cfg["paso"]):
@@ -172,9 +182,15 @@ def medir_pata(nombre: str, cfg: dict, b1) -> dict:
                     ),
                     "causa": causa,
                     "identidad": cambio,
+                    "dist_deteccion_m": d_det,
+                    "error_px": err_px,
                 }
             )
-    D = pd.DataFrame(out)
+    return pd.DataFrame(out)
+
+
+def medir_pata(nombre: str, cfg: dict, b1) -> dict:
+    D = filas_desplazadas(nombre, cfg, b1)
 
     def tabla(col):
         return {

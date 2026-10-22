@@ -129,7 +129,10 @@ def metricas(csv: Path, gt, largo: float, ancho: float) -> dict:
 
     ce, c3 = _mod("comparar_escalas"), _mod("diag22c_v3")
     filas = pd.read_csv(csv)
-    resumen = ce.informar(csv.stem, ce.casar(filas, gt))
+    # MISMO protocolo que `comparar_escalas.py`: solo filas reales y frames comunes con el GT.
+    reales = filas[filas.es_real == 1]
+    comunes = sorted(set(reales.frame) & set(gt))
+    resumen = ce.informar(csv.stem, ce.casar(reales, {f: gt[f] for f in comunes}))
     return {
         "equipo_equivocado_pct": 100 * resumen["mal"] / max(resumen["en_equipo"], 1),
         "casado": resumen,

@@ -204,12 +204,16 @@ Coste estimado: sin GPU; unos 2-4 min de CPU para la feature (60 s de vídeo) y 
   (3.629 cajas, diferencia 0,0).
 - **La parte de las métricas** (`--sin-v3`, sin vídeo), sobre Villaviciosa con la caché de hoy: la
   pasada reproduce byte a byte el CSV de Villaviciosa del 22-oct.
+- ⚠️ *Corregido en el bloque 4*: la primera versión de la celda casaba con TODAS las filas y daba
+  25,2 %. `comparar_escalas.py` usa solo las reales (`es_real=1`) y los frames comunes con el GT, y
+  da 23,6 %. La celda usa ya ese protocolo, comprobado contra `comparar_escalas.py` sobre el mismo
+  CSV. La cobertura, el árbitro y la simultaneidad siguen con todas las filas, como en el 22-oct (c).
 
 Lo que ya se sabe de «hoy» en Villaviciosa, que es la línea base contra la que se leerá v3:
 
 | hoy, Villaviciosa (60 s) | |
 |---|---|
-| equipo equivocado (jugadores) | **25,2 %** (400 de 1.589); `docs/diagnostico_villaviciosa.md` daba 23,6 % |
+| equipo equivocado (jugadores) | **23,6 %** (358 de 1.518), igual que `docs/diagnostico_villaviciosa.md` |
 | cobertura | 75,0 % (1.589 de 2.118) |
 | árbitro dentro de un equipo (GT) | **5,3 %** (5 de 95 apariciones casadas) |
 | frames con ≥ 2 `otro` en el campo | 6,6 % en el tramo; 7,0 % en la ventana del GT |
@@ -284,3 +288,73 @@ Relojes (archivo / reproductor) de los que importan:
 persona (yo). Los «probables» (despejes por encima de la grada) podrían ser el balón del otro
 campo cayendo. Aun contándolos todos como campo de al lado, los laterales siguen muy por debajo del
 80 %, y la decisión no cambia.
+
+---
+
+## Resultado del bloque 4 — filas desplazadas y sesgo del GT (solo medición)
+
+`scripts/diag22d_sesgo_gt.py`. `diag22c_desplazadas.py` se partió en `filas_desplazadas` (por
+fila) + agregado, y reproduce exactamente el JSON del 22-oct (c).
+
+**4a. Desplazadas con la caja a > 2 m, por zona, y su error en píxeles.** El error en píxeles es
+la distancia entre el pie de la caja y la persona del GT devuelta a la imagen con la homografía
+inversa.
+
+| | desplazadas | caja a > 2 m | fracción | error px: mediana (p90) | error m: mediana | personas |
+|---|---|---|---|---|---|---|
+| benjamín, cerca (x 0-20) | 11 | 10 | 0,91 | **75 (90)** | 2,4 | **1** |
+| benjamín, media (x 20-40) | 25 | 15 | 0,60 | **42 (99)** | 4,9 | 10 |
+| benjamín, lejos (x 40-62) | 24 | 17 | 0,71 | **22 (95)** | 3,5 | 8 |
+| Villaviciosa, x 0-33 | 3 | 2 | 0,67 | 10 (15) | 5,2 | 2 |
+| Villaviciosa, x 33-67 | 227 | 105 | 0,46 | **6 (29)** | 2,5 | 16 |
+| Villaviciosa, x 67-100 | 214 | 139 | 0,65 | **5 (28)** | 2,7 | 12 |
+
+**4b. Personas del GT con offset sistemático.** La pareja es la detección cruda más cercana a ≤ 5 m
+en cada frame del GT, sin pasar por el casado. Sistemático = ≥ 10 muestras, offset mediano ≥ 1 m y
+todo el intercuartil del mismo lado.
+
+| pata | persona | n | offset mediano (det − GT) | p25 sobre su dirección |
+|---|---|---|---|---|
+| benjamín | **6** (el portero cercano) | 57 | (−1,42, −0,34) m → 1,47 m | 1,31 m |
+| Villaviciosa | **6** | 98 | (0,32, 1,15) m → 1,19 m | 0,24 m |
+| Villaviciosa | **0** | 100 | (0,71, 0,93) m → 1,17 m | 0,66 m |
+
+- En el benjamín, la siguiente persona ya baja a 0,48 m. Ninguna otra lo es.
+- En Villaviciosa, la persona 10 tiene el offset mediano más grande (1,63 m) pero **no** es
+  sistemática: su p25 es −0,09, ruido grande pero sin dueño.
+
+**4c. Benjamín con y sin la persona 6** (protocolo de `comparar_escalas.py`; CONTROL con todas:
+**9 de 723**, cumple):
+
+| | con todas | sin la persona 6 |
+|---|---|---|
+| equipo equivocado | 9 de 723 (1,24 %) | 9 de 676 (1,33 %) |
+| personas del GT / casadas | 814 / 88,8 % | 755 / 89,5 % |
+| cobertura | 90,05 % | 90,73 % |
+| desplazadas / con la caja a > 2 m | 60 / 42 | **49 / 32** |
+
+**Lectura:**
+1. **Benjamín: el desplazamiento de la zona media y lejana es REAL, no del GT.**
+   - Una mediana de 22-42 px es del orden del ALTO de un jugador (15-40 px): la caja está sobre
+     OTRA persona o es una caja fundida, no un pie mal clicado.
+   - Contra la física: 4,9 m en 42 px son ~12 cm/px, coherente con la profundidad media.
+   - La zona cercana es UNA persona, el portero (75 px, el clic en el pecho).
+2. **El único sesgo sistemático del benjamín es el portero cercano**, ya documentado. Quitarlo
+   apenas mueve las métricas de producto: el equipo equivocado sigue en 9 fallos, porque ninguno
+   era suyo. Sí quita 11 de las 60 desplazadas.
+3. **Villaviciosa: el «punto del pie» es casi todo RESOLUCIÓN.** Una mediana de 5-6 px a 2,5 m es
+   ~0,45 m/px, que es lo que vale un píxel en el fondo de un F11 panorámico. Con jugadores de 26 px
+   y un GT de plantilla, 5 px es el ruido del clic y de la caja. **El 55 % «antes del tracking» del
+   22-oct (c) es, en Villaviciosa, un artefacto de medir en metros donde un píxel vale medio
+   metro.** Solo la cola (p90 ~28 px) es un fallo de caja de verdad.
+
+**¿Qué podría estar inventando?**
+- La pareja «detección más cercana a ≤ 5 m» se va a la caja de un vecino cuando la persona no está
+  detectada. Eso ensancha el ruido, pero no crea un sesgo de un solo lado: para eso está la
+  condición del p25.
+- El sistemático de Villaviciosa (personas 6 y 0, ~1,2 m casi todo en +y) puede ser del GT o de una
+  caja cortada siempre igual. La medida no lo separa, como se dijo en el criterio: harían falta sus
+  recortes.
+- La homografía inversa de Villaviciosa devuelve el clic al espacio de píxeles del GT. Si el GT se
+  anotó sobre el vídeo SIN corregir la distorsión y las cajas están corregidas, los píxeles no son
+  del mismo espacio. Con 5 px de mediana no cambia la lectura, pero no está comprobado.
