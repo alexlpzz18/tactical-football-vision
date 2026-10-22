@@ -348,3 +348,60 @@ observación), sobre las 10.646 filas reales que caen en una detección del árb
 Lo que deja como dato: el sensor v3 SÍ ve el chaleco (detecciones del árbitro en B: de 4.075 a
 264). El obstáculo es el de siempre, la ASOCIACIÓN: con el árbitro en ~10 identidades, cualquier
 regla que decide por identidad lo reparte.
+
+---
+
+## Resultado del bloque 3 — filas «desplazadas» (solo medición)
+
+`scripts/diag22c_desplazadas.py`. La definición es la del bloque 1 del 22-oct (b), recalculada
+(salen los mismos 60 y 444).
+
+| | benjamín | Villaviciosa |
+|---|---|---|
+| filas desplazadas | 60 | 444 |
+| personas del GT distintas / identidades del sistema | 12 / 14 | 21 / 68 |
+| **distancia** a la persona más cercana: 1,5-2 · 2-3 · 3-4 · 4-5 m | 8 · **34** · 12 · 6 | 42 · **273** · 100 · 29 |
+| **¿de quién?** la persona más cercana no tiene fila (la suya, mal puesta) | 36 (60 %) | 255 (57 %) |
+| **¿de quién?** la persona ya tiene otra fila (una de más) | 24 | 189 |
+| **causa**: punto del pie (la DETECCIÓN ya está a > 2 m de la persona) | **42 (70 %)** | **246 (55 %)** |
+| **causa**: post-proceso (la detección está a ≤ 2 m; la fila no) | 12 (20 %) | 74 (17 %) |
+| **causa**: interpolada (`es_real=0`) | 6 (10 %) | 124 (28 %) |
+| **identidad** ±15 frames: casada con OTRA persona | 19 (32 %) | 86 (19 %) |
+| **identidad** ±15 frames: casada con la misma | 18 | 151 |
+| **identidad** ±15 frames: sin casar ni antes ni después | 23 | 207 |
+
+**Por zona, y quién la sostiene:**
+- **Benjamín.** x 0-20: 11 filas de **UNA sola persona**, la 6, el portero cercano: 10 por «punto
+  del pie». x 20-40: 25 filas de 10 personas. x 40-62: 24 filas de 8.
+- **Villaviciosa** (tercios del largo; ahí la profundidad va en y, así que la zona por x no es
+  óptica): 3 · 227 · 214 filas. La persona 10 aporta 41 filas, todas en el tercio del fondo y 36
+  por punto del pie.
+
+**Lectura:**
+1. **El grueso del desplazamiento está ANTES del tracking.** En el 70 % (benjamín) y el 55 %
+   (Villaviciosa) la propia caja de la fila ya cae a > 2 m de la persona. Ni el suavizado ni la
+   asociación lo crean.
+   - El post-proceso aporta un 17-20 %, en línea con lo medido el 9-oct: el suavizado es de ~2 s y
+     mueve filas.
+   - En Villaviciosa la interpolación pesa más (28 %).
+2. **Una de cada cinco o tres es un cambio de identidad** (19 % y 32 %): la misma identidad se casa
+   con otra persona 0,5 s antes o después. En el benjamín, 15 de esas 19 son además «punto del
+   pie»: es la firma de una caja fundida de dos personas cercanas (`docs/proximidad_deteccion.md`),
+   cuyo pie no es el de ninguna y cuya identidad salta de una a otra.
+3. **En su mayoría son la fila de la persona, mal puesta** (60 % y 57 %), no filas de más. Es el
+   «falta + sobra» de la misma persona a 2-5 m de `docs/desglose_del_error.md`.
+
+**¿Qué podría estar inventando?**
+- **La zona cercana del benjamín es un artefacto del GT, no del sistema.** Sus 11 filas son todas de
+  la persona 6, el portero cercano. CLAUDE.md ya documenta que su GT está en el PECHO (el dorsal),
+  no en los pies, y que está cortado por el borde inferior. Su «punto del pie» desplazado es el clic
+  del GT. Sin él quedan 49 filas: punto del pie 32 (65 %), post-proceso 12 y interpoladas 5. La
+  conclusión 1 aguanta.
+- «Punto del pie» mezcla tres cosas que este bloque no separa:
+  - la caja fundida (dos personas en una);
+  - una caja cortada o un fragmento;
+  - el sesgo del GT de plantilla fija (40×18 px).
+  Separarlas pediría mirar las cajas, y eso no estaba en el criterio.
+- La columna de identidad solo mira ±15 frames y solo los frames del GT; «sin casar ni antes ni
+  después» (38 % y 47 %) es la persona que no tiene fila en ningún vecino, que no aporta información
+  sobre identidad.

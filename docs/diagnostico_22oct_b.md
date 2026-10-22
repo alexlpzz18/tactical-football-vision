@@ -273,3 +273,8 @@ color: los prototipos A/B se mueven, no solo el árbitro.
   100 % de las cajas.
 - El modo `desde_cache` no pasa por este código, y ningún YAML cambia (`git diff main -- configs`
   vacío).
+
+> ⚠️ **Corregido en `docs/diagnostico_22oct_c.md` (bloque 2):** el «58 % de lo que entra en `otro`
+> no es el árbitro» de arriba usaba el proxy POR DETECCIÓN, que con la feature v1 no ve el chaleco.
+> Por IDENTIDAD, el 75 % de esas filas es de identidades que hoy ya son mayoritariamente árbitro.
+> Los jugadores probables son como mucho 969 filas (25 %).
