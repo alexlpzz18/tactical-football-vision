@@ -173,3 +173,51 @@ observación y las identidades de < 25 obs. Miden cosas distintas a propósito.)
 faltado igualmente: Villaviciosa (bloque 2) y la hoja de 1b. Si la hoja dijera que esos recortes
 son árbitro, la simultaneidad seguiría ahí: el 44 % de frames con dos personas distintas en `otro`
 no se explica con un solo árbitro.
+
+---
+
+## Resultado del bloque 2 — Villaviciosa: celda de Colab preparada, NO ejecutada
+
+**`scripts/colab_v3_villa.py`.** En Colab, desde la raíz del repo con `data/` montado:
+
+```
+!python scripts/colab_v3_villa.py --salida outputs/v3_villa
+```
+
+1. **Recalcula v1 y v3 desde el vídeo**, con el ffmpeg CLI y la misma corrección de distorsión del
+   modo `full` (`_build_camera_matrix` + `_corregir_distorsion`, k1 = −1,5, k2 = 0,5).
+   - `diag22b_feature_v3.py` se generalizó por config (`calcular_v1_v3`) para esto.
+   - **Para si la v1 no reproduce ≥ 99 % de la caché de producción.**
+2. Corre `desde_cache` con la caché de hoy y con la v3.
+3. Mide para las dos:
+   - equipo equivocado y casadas (`comparar_escalas.casar`, 1-a-1 a 2 m);
+   - cobertura;
+   - **árbitro dentro de un equipo con el GT**: Villaviciosa SÍ anota al árbitro, así que aquí no
+     hace falta proxy;
+   - simultaneidad de `otro` en el campo (100 × 64) y en la ventana del GT.
+
+Coste estimado: sin GPU; unos 2-4 min de CPU para la feature (60 s de vídeo) y ~1 min por pasada.
+
+**Probado en local para no mandar a Colab algo roto:**
+- **La parte de la feature**, sobre los primeros 200 frames del benjamín: la v1 reproduce la caché
+  de producción en el 100 % (3.592 cajas), y la v3 sale idéntica a la caché v3 del 22-oct (b)
+  (3.629 cajas, diferencia 0,0).
+- **La parte de las métricas** (`--sin-v3`, sin vídeo), sobre Villaviciosa con la caché de hoy: la
+  pasada reproduce byte a byte el CSV de Villaviciosa del 22-oct.
+
+Lo que ya se sabe de «hoy» en Villaviciosa, que es la línea base contra la que se leerá v3:
+
+| hoy, Villaviciosa (60 s) | |
+|---|---|
+| equipo equivocado (jugadores) | **25,2 %** (400 de 1.589); `docs/diagnostico_villaviciosa.md` daba 23,6 % |
+| cobertura | 75,0 % (1.589 de 2.118) |
+| árbitro dentro de un equipo (GT) | **5,3 %** (5 de 95 apariciones casadas) |
+| frames con ≥ 2 `otro` en el campo | 6,6 % en el tramo; 7,0 % en la ventana del GT |
+
+**Lectura previa:**
+- **El árbitro de Villaviciosa ya está fuera de los equipos hoy** (5,3 %): v3 tiene poco que ganar
+  ahí y mucho que perder, porque su amarillo ya escapaba a la máscara.
+- Con la guarda nueva (1c), Villaviciosa también avisará: 6,6 % > 3 %.
+- Para leer el resultado de Colab sirven los criterios ya escritos (equipo equivocado ≤ hoy + 0,3;
+  árbitro no sube; simultaneidad ≤ 3 % y ≤ hoy + 1). Tras el bloque 1, v3 ya no es candidata en el
+  benjamín, así que esta celda solo sirve para cerrar la pata que faltaba.
