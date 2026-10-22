@@ -75,3 +75,57 @@ Salida de producción de hoy (benjamín: `outputs/arbitro_obs/posiciones.csv`; V
 - **3c.** Si las vías de color cerradas merecen reabrirse con este sensor, sin reabrirlas.
 - Si hiciera falta el detector sobre más de 2 min de vídeo, se para y se documenta el coste (no hace
   falta: ver arriba).
+
+---
+
+## Resultado del bloque 1 — filas de más (22-oct-2026)
+
+`scripts/diag22b_filas.py` (un fallo propio corregido: una columna `eq` chocaba con el método
+`DataFrame.eq`).
+
+**1a — filas sin casar en los frames del GT (2 m, húngaro)**
+
+| | filas | sin casar | staff/árbitro | **duplicado** | fantasma | desplazada (1,5-5 m) |
+|---|---|---|---|---|---|---|
+| benjamín (60 frames) | 873 | 140 (16 %) | 58 (todas reales) | **8** (6 reales + 2 interp.) | 14 (13 + 1) | 60 (54 + 6) |
+| Villaviciosa (100 frames) | 2.429 | 822 (34 %) | 219 (199 + 20) | **113** (77 + 36) | 46 (11 + 35) | 444 (320 + 124) |
+
+**1b — ¿exceso total o desequilibrio?** **Desequilibrio, en las dos patas.**
+
+| | filas A por frame | filas B | frames A > cabe | frames B > cabe | los dos a la vez | ventana del GT: filas − personas (A, B) |
+|---|---|---|---|---|---|---|
+| benjamín (cabe 7) | 5,83 | **7,12** | 501 | **4.747** | 136 | −0,17 · **+0,65** |
+| Villaviciosa (cabe 11) | **13,86** | 8,19 | **437** | 0 | 0 | **+2,21** · −1,38 |
+
+**1c — pares a < 1,5 m durante ≥ 1 s (filas reales)**
+
+| | pares del mismo equipo | pares de equipos contrarios (control) | tasa por par posible: mismo / contrario |
+|---|---|---|---|
+| benjamín | 32 | 147 | 0,0018 / **0,0108** |
+| Villaviciosa | 2 | 10 | 0,0005 / **0,0097** |
+
+**1d — cajas con IoU > 0,5 en el mismo frame, antes del tracker**: benjamín 940 pares, 1.876 cajas
+(**0,9 %** de 206.812); Villaviciosa 46 pares, 92 cajas (0,8 %).
+
+**Lectura**
+- **Las filas de más NO son duplicados de identidad.** En el benjamín los duplicados son 8 de 140
+  sobrantes. Y el control lo confirma por otro lado: estar pegados ≥ 1 s es **6 veces MENOS frecuente
+  entre compañeros que entre rivales**, que es lo que hace el juego (los marcajes). Si hubiera una
+  persona en dos identidades, la tasa del mismo equipo superaría la del contrario.
+- **El exceso es un DESEQUILIBRIO de etiqueta**:
+  - en el benjamín, el B se pasa y el A se queda corto (frente al GT: +0,65 / −0,17 por frame); el
+    árbitro, que va al B en el 38 % de sus filas, explica una parte;
+  - en Villaviciosa es el A, y mucho más (+2,2 / −1,4): es el 23,6 % de equipo equivocado de esa
+    pata, no presencia.
+- Los sobrantes del benjamín son sobre todo **staff o árbitro (41 %)** y **filas desplazadas 1,5-5 m
+  (43 %)**. Esas filas son el DES conocido: caja del detector en proximidad
+  (`docs/traza_por_etapas.md`).
+- **Las teselas de SAHI no duplican cajas**: el 0,9 % de las cajas tiene IoU > 0,5 con otra.
+
+**¿Qué podría estar inventando?**
+- Una «desplazada» puede ser la fila BUENA de una persona cuyo clic del GT está 2-5 m más lejos (el
+  sesgo de la caja en proximidad ya medido): no es una fila de más, es localización.
+- Un «duplicado» a < 1,5 m de una persona casada puede ser OTRA persona real que el GT no anotó
+  (el GT del benjamín no anota al árbitro, y en el benjamín se aparta con el proxy).
+- En 1b, «filas por frame» incluye las interpoladas; el desequilibrio se mantiene en la ventana del
+  GT, que se compara con personas reales.
