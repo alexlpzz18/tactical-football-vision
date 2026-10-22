@@ -93,7 +93,9 @@ class _Prototipos:
 
 
 def extraer_color_torso(
-    crop: np.ndarray, params: ParametrosClasificadorColor | None = None
+    crop: np.ndarray,
+    params: ParametrosClasificadorColor | None = None,
+    rango_cesped: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> np.ndarray:
     """Feature de color del torso de un recorte BGR de jugador.
 
@@ -124,12 +126,21 @@ def extraer_color_torso(
 
     hsv = cv2.cvtColor(banda, cv2.COLOR_BGR2HSV)
     h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
-    es_verde = (
-        (h >= p.verde_h[0])
-        & (h <= p.verde_h[1])
-        & (s >= p.verde_s_min)
-        & (v >= p.verde_v_min)
-    )
+    if rango_cesped is None:
+        # La máscara de siempre: borra todo lo que esté en la banda del césped.
+        es_verde = (
+            (h >= p.verde_h[0])
+            & (h <= p.verde_h[1])
+            & (s >= p.verde_s_min)
+            & (v >= p.verde_v_min)
+        )
+    else:
+        # Máscara POR POSICIÓN (flag `deteccion.mascara_color: posicion`,
+        # docs/diagnostico_22oct_b.md, bloque 3): se borra solo lo que se parece
+        # al césped de ESTE frame (su rectángulo HSV p1-p99), no una banda fija.
+        # La fija borraba el chaleco del árbitro entero (verde flúor, H≈46).
+        lo, hi = rango_cesped
+        es_verde = np.all((hsv >= lo) & (hsv <= hi), axis=-1)
     validos = hsv[~es_verde]
     if len(validos) == 0:
         return np.zeros(p.bins_h * p.bins_s)

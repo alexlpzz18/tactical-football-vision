@@ -617,6 +617,15 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     version_color = int(cfg.get("deteccion", {}).get("version_color", 1))
     extractor = extraer_color_torso_v2 if version_color >= 2 else extraer_color_torso
     logger.info("Feature de color v%d (la v2 añade V y pantalón)", version_color)
+    # Máscara de la feature: «verde» (la de siempre, por defecto) o «posicion»
+    # (el césped medido en cada frame; docs/diagnostico_22oct_b.md, bloque 3).
+    mascara_color = str(cfg.get("deteccion", {}).get("mascara_color", "verde"))
+    if mascara_color not in ("verde", "posicion"):
+        raise ValueError(f"deteccion.mascara_color desconocida: {mascara_color!r}")
+    if mascara_color == "posicion" and version_color >= 2:
+        raise ValueError(
+            "La máscara por posición solo está implementada para la feature v1"
+        )
 
     validar_config(cfg, _CLAVES_FULL)
     cfg_det = cfg["deteccion"]
@@ -736,6 +745,16 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
             dets, cfg_det["confianza"], cfg_det["max_area_caja"], w * h
         )
         # Feature de color de cada recorte (misma feature que el caché de Colab)
+        rango = None
+        if mascara_color == "posicion":
+            from src.team_classification.mascara_posicion import rango_cesped_del_frame
+
+            rango = rango_cesped_del_frame(
+                frame,
+                [d[2:6] for d in dets],
+                lambda u, v: project_point(u, v, H),
+                (cfg["campo_m"]["largo"], cfg["campo_m"]["ancho"]),
+            )
         for det_idx, d in enumerate(dets):
             x1, y1, x2, y2 = (int(v) for v in d[2:6])
             y1, x1 = max(y1, 0), max(x1, 0)
@@ -743,7 +762,11 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
             if crop.size > 0:
                 # ÚNICA función de extracción del repo (normalización L2,
                 # la escala en la que están calibrados todos los umbrales)
-                feat = extractor(crop)
+                feat = (
+                    extractor(crop)
+                    if rango is None
+                    else extractor(crop, rango_cesped=rango)
+                )
                 if feat.sum() > 0:
                     colores[(frame_idx, det_idx)] = feat
         cache.append({"frame_idx": frame_idx, "t": frame_idx / fps, "dets": dets})

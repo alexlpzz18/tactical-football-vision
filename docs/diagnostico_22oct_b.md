@@ -181,3 +181,95 @@ es elegir entre candidatos (casi nunca hay alternativa), sino **no tener balón*
 el cambio que la regla prohibía, para proteger los saques de banda. Y el control dice que los saques de
 banda están a menos de 3 m: un prior que DESCARTE (en vez de buscar alternativa) los candidatos a más
 de 3 m no los tocaría. Eso sería otro intento, con su criterio.
+
+## Resultado del bloque 3 — feature de color con máscara por posición (flag `deteccion.mascara_color`): NO CUMPLE
+
+**Implementación (detrás de flag, por defecto `verde` = lo de hoy).** `extraer_color_torso` acepta un
+`rango_cesped` opcional. `src/team_classification/mascara_posicion.py` lo calcula POR FRAME: el
+rango HSV (p1-p99) del césped en cajas vacías desplazadas a los lados de las detecciones (sin
+persona encima, comprobado en metros). En lugar de «todo lo verde es césped», borra «lo que se
+parece al césped DE ESTE FRAME». El chaleco (H≈46, S≈175, V≈247) queda fuera de ese rango. En
+`processor.py` (modo `full`) se lee `deteccion.mascara_color: verde | posicion`; con `posicion`
+y la feature v2 da error. Ningún YAML cambia, y 4 tests en `tests/test_mascara_posicion.py`.
+
+**Coste.** No hay que re-ejecutar el detector: las cajas son las de la caché de producción, y solo
+se relee el vídeo para recortar (`scripts/diag22b_feature_v3.py`, CPU, una pasada de 20 min).
+
+**Intento 1 de la caché v3: control FALLIDO.** La v1 recalculada en local tenía que reproducir la
+caché de producción. Solo era idéntica en el 0,27 % de las cajas (p99 de distancia 1,08). Ningún
+desfase de frame (±3) lo explicaba. **Causa: en macOS, `cv2.VideoCapture` decodifica con
+AVFoundation, que da píxeles distintos de los de FFmpeg (Colab)**; `cv2.CAP_FFMPEG` no abre el
+vídeo.
+**Intento 2: control CORRECTO.** Con el vídeo decodificado por el CLI de `ffmpeg` (tubería
+`rawvideo bgr24`), la v1 reproduce la caché de producción en el **100 %** de 209.705 cajas (p99 0,0).
+De 11.989 frames, 24 no tienen rango de césped y en ellos se usa la v1.
+
+⚠️ **Lo que ese hallazgo pone en duda (no se re-mide aquí).** Todas las medidas de color en PÍXELES
+hechas en local con `cv2.VideoCapture` usaban píxeles de AVFoundation, no los de producción:
+- la puerta del chaleco sobre césped;
+- `tono_brillo`;
+- el «la máscara ve el 7 % del torso del árbitro» del diagnóstico del 22-oct;
+- los H/S del chaleco citados en CLAUDE.md.
+
+Las cachés de producción y todo lo medido sobre ellas siguen siendo válidos. La DIRECCIÓN de esas
+medidas probablemente aguanta (la máscara borra el chaleco: lo reproducen los tests con píxeles
+sintéticos), pero sus NÚMEROS exactos no están comprobados.
+
+**3b** (`scripts/diag22b_bloque3_medir.py`, benjamín, parte entera, producción `desde_cache`
+cambiando SOLO la caché de color). El árbitro se fija ANTES: son las 10.414 detecciones (frame,
+caja cruda) que marca hoy el proxy de masa. Ese proxy se calcula con la feature v1, así que no
+puede juzgar a la v3 con sus propios ojos.
+
+| criterio | hoy (v1) | v3 | ¿cumple? |
+|---|---|---|---|
+| (i) equipo equivocado, jugadores (GT, 1-a-1, 2 m) | 1,2 % | 1,1 % | **sí** (≤ +0,3) |
+| (ii) detecciones del árbitro dentro de un equipo | 39,5 % | **16,2 %** | **sí** (≤ 20 %) |
+| (iii) identidades de árbitro (≥ 40 obs, > 50 % árbitro) | 9 | 9 | **NO** (no baja) |
+| (iv) Villaviciosa no cambia | — | — | **NO MEDIDO**: no está su vídeo en local, y la v3 necesita píxeles |
+
+**El criterio (iii) no se cumple, y (iv) no se puede medir ⇒ el flag se queda APAGADO.**
+
+**¿Qué podría estar inventando el 16,2 %?** Dos cosas, y las dos están:
+1. **El árbitro no sale de los equipos: cambia de equipo.** Sus detecciones etiquetadas B pasan de
+   4.075 a 264, y las etiquetadas A de 130 a **1.461**. Una parte del (ii) es el árbitro mudándose
+   de B a A, no saliendo.
+2. **El cajón `otro` se llena de jugadores** (la segunda medida de todo criterio que mueve filas a
+   un cajón).
+   - Pasan a `otro` 6.749 filas; **3.889 (58 %) NO son detecciones del árbitro según el proxy**.
+   - Podrían ser árbitro que el proxy v1 no ve, pero en el 71 % de sus frames (2.591 de 3.636) ya
+     hay ≥ 2 filas `otro`: con un solo árbitro, al menos una es otra persona.
+   - Se concentran en los minutos 10-12 y 1, en la mitad del fondo (x p10-p90 34-54 m).
+   - Las identidades con mayoría `otro` pasan de 8 a **16**. La pasada v3 avisa de «TERCER GRUPO
+     CON 14 IDENTIDADES … el catálogo puede estar robando jugadores». En la de hoy no hay log para
+     comparar el aviso.
+
+**Lo que sí mejora, y cómo puede mentir.** El desequilibrio del bloque 1 casi desaparece:
+- filas A/B por frame: de 5,83/7,12 a 6,15/6,24;
+- frames con B > 7: de 4.747 a 793;
+- frames con A > 7: de 501 a 1.761.
+
+3.804 filas no-árbitro pasan de B a A. Contra el GT de 30 s el error no sube (1,2 → 1,1 %), pero esa
+ventana es el 2,5 % del partido y no incluye los minutos 10-12, donde se concentra el cambio. Sin GT
+allí, **no se sabe si esas 3.804 filas corrigen etiquetas o las rompen**. La v3 cambia el FIT de
+color: los prototipos A/B se mueven, no solo el árbitro.
+
+**3c — ¿merecen reabrirse las vías de color cerradas con este sensor? (sin reabrirlas)**
+- **Tercer grupo por color** (3 intentos) y **puerta de distancia al prototipo**: se cerraron
+  porque «el árbitro no está lejos de los prototipos en un histograma HS». Ese histograma tenía el
+  chaleco BORRADO por la máscara, así que la premisa se midió con un sensor ciego a lo que
+  buscaba. **Merecen reabrirse**, pero el aviso de los 14 candidatos dice que el riesgo de siempre
+  (robar jugadores, 8 por árbitro) sigue: el criterio tendría que llevar la segunda medida desde el
+  principio.
+- **Umbral de saturación** (S≈248 / S≈72-104 según el minuto): esos S se midieron con píxeles de
+  AVFoundation. Antes de reabrirlo hay que re-medir con `ffmpeg`.
+- **Árbitro por observación / catálogo**: el sensor nuevo ve el chaleco, pero el resultado de hoy
+  (la mitad de lo que entra en `otro` no es el árbitro) repite el patrón que lo cerró. No merece
+  reabrirse sin una señal NO de color al lado (las «dos señales débiles»).
+- **No reabre** «detección como palanca» ni el reentreno: la v3 no toca el detector.
+
+**Flag apagado = main.**
+- Con `verde`, `rango` es `None` y se llama a `extractor(crop)` como antes.
+- El control del intento 2 usa esa misma llamada sin rango y reproduce la caché de producción en el
+  100 % de las cajas.
+- El modo `desde_cache` no pasa por este código, y ningún YAML cambia (`git diff main -- configs`
+  vacío).
