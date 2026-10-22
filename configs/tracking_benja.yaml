@@ -213,6 +213,16 @@ cosido:
 # APAGADO. lambda_rel y umbral_rel van RELATIVOS a la separación de los prototipos A y B
 # del partido; umbral_rel es el p99 de d/sep entre una pista y una detección limpia de la
 # MISMA persona (benjamín, 22-oct g). En frames con solape (IoU > iou_solape) no se usa.
+# Cortar las pistas en los CRUCES y reenlazar los trozos por movimiento + color
+# (docs/diagnostico_22oct_g.md, B2). APAGADO.
+corte_cruces:
+  activo: false
+  iou_solape: 0.1
+  dist_max_m: 1.5
+  hueco_max_s: 1.0
+  lambda_rel: 0.5
+  umbral_rel: 0.973
+  alfa: 0.2
 coste_color:
   activo: false
   lambda_rel: 0.5

@@ -32,6 +32,7 @@ from src.tracking.asociacion_bytetrack import (
     ParametrosCosteColor,
     asociar_con_bytetrack,
 )
+from src.tracking.corte_en_cruces import ParametrosCorteCruces, cortar_y_reenlazar
 from src.tracking.cosido_pureza import ParametrosCosidoPureza, coser_por_pureza
 from src.tracking.cota_plantilla import fusionar_hasta_cota
 from src.tracking.exclusion_espacial import fusionar_identidades_duplicadas
@@ -182,11 +183,12 @@ def _perfil_bytetrack(
     # docs/diagnostico_22oct_g.md, bloque B). Sus umbrales van relativos a ‖A − B‖, la separación
     # de los prototipos del clasificador ya entrenado.
     params_color = ParametrosCosteColor.desde_dict(cfg_tracking.get("coste_color"))
+    params_cruces = ParametrosCorteCruces.desde_dict(cfg_tracking.get("corte_cruces"))
     separacion = None
-    if params_color.activo:
+    if params_color.activo or params_cruces.activo:
         if clasificador is None or getattr(clasificador, "_prototipos", None) is None:
             raise ValueError(
-                "coste_color necesita el clasificador de equipos entrenado"
+                "coste_color y corte_cruces necesitan el clasificador de equipos entrenado"
             )
         pr = clasificador._prototipos
         separacion = float(np.linalg.norm(pr.a - pr.b))
@@ -199,6 +201,13 @@ def _perfil_bytetrack(
         separacion=separacion,
         params_color=params_color,
     )
+    # CORTAR EN LOS CRUCES Y REENLAZAR (flag `corte_cruces`, apagado; docs/diagnostico_22oct_g.md,
+    # B2): se parte cada pista donde su caja se solapa con otra y se reúne lo que sale del cruce
+    # con lo que entró, por movimiento en metros y color de los frames limpios.
+    if params_cruces.activo:
+        identidades = cortar_y_reenlazar(
+            identidades, cache, colores, separacion, params_cruces
+        )
     dt = sample / fps if fps else 0.12
     # Puerta de apariencia en la RE-ENTRADA, ANTES del cosido: aquí se
     # parte lo que ByteTrack recuperó sobre la persona equivocada, y el

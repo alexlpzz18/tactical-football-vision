@@ -278,3 +278,32 @@ para partirla. Un umbral p99 por par no es un 99 % de pistas intactas.
 **Decisión**: B1 no cumple (identidades, asignación, B > 7 y el control i). El flag queda
 **apagado**. Como B1 falla y el bloque A dio ≥ 70 % de cambios en cruce entre rivales (86 y 94 %),
 **se hace B2** (intento 2).
+
+---
+
+## B2 — implementación y parámetros, fijados ANTES de medir
+
+`src/tracking/corte_en_cruces.py` (`cortar_y_reenlazar`), tras el flag `corte_cruces` de los YAML de
+tracking (`activo: false`); corre justo después de ByteTrack y antes de la puerta de re-entrada.
+- Cada pista se parte en rachas: «limpia» o «en cruce» (la detección tiene IoU > 0,1 con otra caja
+  del frame).
+- Cada racha limpia es un trozo; el cruce que la sigue se le pega detrás. Los frames del cruce se
+  quedan con la cadena que ENTRA: son ambiguos y así no crean identidades.
+- Los trozos que ENTRAN en un cruce se reenlazan con los que SALEN de uno (asignación húngara por
+  componentes conexas) si:
+  - el hueco es ≤ **1,0 s**;
+  - la posición predicha (a la velocidad de sus últimas 5 observaciones limpias, tope 10 m/s) cae
+    a ≤ **1,5 m** de la primera del que sale;
+  - la distancia de color entre sus frames limpios (media móvil α = 0,2: los últimos del que entra,
+    los primeros 10 del que sale) cumple d / sep ≤ **0,973**.
+- Coste = distancia / 1,5 + **0,5** · d / sep.
+
+Criterios y controles: los mismos que B1. El control (i) permuta el color entre detecciones del
+mismo frame.
+- Test sintético: dos jugadores de colores distintos se cruzan y ByteTrack los intercambia; el
+  reenlace devuelve dos identidades, cada una de UNA persona.
+- Flags apagados: CSV idéntico byte a byte en las dos patas.
+
+**Predicción (antes de medir)**: como B2 corta SOLO en los cruces y reúne lo que puede, debería
+fragmentar mucho menos que B1. El riesgo es el contrario: que en los cruces largos o múltiples (3+
+personas) los reenlaces fallen y queden trozos sueltos.
