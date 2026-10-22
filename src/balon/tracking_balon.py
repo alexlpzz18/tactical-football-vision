@@ -206,10 +206,11 @@ class ParametrosBalon:
     # el balón de después abre un tramo nuevo. Es el balón del campo de al lado, detrás de la
     # grada. Los saques de banda están a menos de 3 m: no se tocan.
     descartar_fuera_m: float | None = None
-    # ── SOLO COSMÉTICO: balón recortado al campo en la pizarra (docs/diagnostico_22oct_e.md) ──
-    # False = APAGADO. Con True, al EXPORTAR, toda fila de balón fuera del rectángulo del campo se
-    # lleva al punto más cercano del rectángulo. No es más precisa: solo deja de pintarse fuera.
-    # Contactos, posesión y fases aéreas se calculan antes y no cambian.
+    # ── SOLO COSMÉTICO: balón recortado al campo EN LA PIZARRA (docs/diagnostico_22oct_f.md, D) ──
+    # False = APAGADO. Con True: la pizarra (`replay_tactico`) dibuja las filas de balón fuera del
+    # rectángulo en su punto más cercano, en vez de borrarlas; el CSV NO cambia de posición y gana
+    # la columna `calidad_balon` (medida / aerea / rellena / fuera_del_campo). No es más preciso:
+    # solo deja de desaparecer el balón cuando sale.
     recortar_a_campo: bool = False
 
     @classmethod
@@ -424,9 +425,33 @@ def descartar_balon_fuera(
 
 
 def recortar_al_campo(x, y, dimensiones_campo: tuple[float, float]):
-    """El punto más cercano del rectángulo [0, largo] × [0, ancho] (cosmético, ver arriba)."""
+    """El punto más cercano del rectángulo [0, largo] × [0, ancho] (lo usa la PIZARRA)."""
     largo, ancho = dimensiones_campo
     return np.clip(x, 0.0, largo), np.clip(y, 0.0, ancho)
+
+
+def calidad_del_balon(balon, preparadas, dimensiones_campo) -> list[str]:
+    """Calidad de cada fila de balón del CSV: fuera_del_campo / aerea / rellena / medida.
+
+    `preparadas` es la salida de `preparar_balon` ((frame, pos, es_aereo, es_real)); una fila
+    `balon_aereo` es siempre aérea. Fuera del campo manda sobre todo lo demás: es lo que la
+    pizarra dibuja recortado.
+    """
+    largo, ancho = dimensiones_campo
+    aereo_de = {int(f): bool(a) for f, _p, a, _r in preparadas}
+    out = []
+    for f, etq, x, y, real in zip(
+        balon.frame, balon.etiqueta, balon.x_m, balon.y_m, balon.es_real
+    ):
+        if not (0.0 <= x <= largo and 0.0 <= y <= ancho):
+            out.append("fuera_del_campo")
+        elif etq == "balon_aereo" or aereo_de.get(int(f), False):
+            out.append("aerea")
+        elif not real:
+            out.append("rellena")
+        else:
+            out.append("medida")
+    return out
 
 
 def _hay_veto(vetados_ordenados: list[int], frame_a: int, frame_b: int) -> bool:

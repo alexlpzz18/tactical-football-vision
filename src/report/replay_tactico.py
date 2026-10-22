@@ -150,6 +150,27 @@ def _leyenda(paleta: dict, presentes: set | None = None) -> str:
     )
 
 
+def _recortar_balon(df, largo, ancho):
+    """Las filas de balón fuera del campo, al punto más cercano del rectángulo (solo el dibujo)."""
+    es_balon = df["etiqueta"].astype(str).str.startswith("balon")
+    fuera = es_balon & ~(df.x_m.between(0, largo) & df.y_m.between(0, ancho))
+    if fuera.any():
+        from src.balon.tracking_balon import recortar_al_campo
+
+        df = df.copy()
+        x, y = recortar_al_campo(
+            df.loc[es_balon, "x_m"].to_numpy(),
+            df.loc[es_balon, "y_m"].to_numpy(),
+            (largo, ancho),
+        )
+        df.loc[es_balon, "x_m"], df.loc[es_balon, "y_m"] = x, y
+        logger.info(
+            "Replay: %d posiciones de balón fuera del campo se dibujan en la línea",
+            int(fuera.sum()),
+        )
+    return df
+
+
 def _filtrar_fuera_del_campo(df, largo, ancho, margen=0.0):
     """Fuera del rectángulo del campo, fuera del replay.
 
@@ -289,6 +310,7 @@ def generar_replay(
     colores_equipo: dict | None = None,
     etiqueta_por_identidad: bool = False,
     suavizado_visual_ventana: int = 3,
+    recortar_balon_a_campo: bool = False,
 ) -> Path:
     """Genera el HTML del replay desde el CSV de posiciones.
 
@@ -320,6 +342,10 @@ def generar_replay(
             y las métricas no se tocan.
         colores_equipo: {'A': '#rrggbb', 'B': '#rrggbb'} del meta del
             processor. Sin ellos, azul y rojo por convenio.
+        recortar_balon_a_campo: flag `balon.recortar_a_campo` del config del campo. Con él, las
+            filas de BALÓN fuera del rectángulo se dibujan en su punto más cercano en vez de
+            borrarse (un balón que sale por la banda se ve sobre la línea, no desaparece). Solo
+            el dibujo: el CSV no se toca. Los jugadores no cambian.
         suavizado_visual_ventana: ventana (impar) de la mediana categórica
             que decide qué color se PINTA por frame (ver
             `_suavizar_parpadeo_visual`). No toca el dato ni las métricas.
@@ -347,6 +373,8 @@ def generar_replay(
     if len(df) == 0:
         raise ValueError(f"El CSV {csv_path} está vacío.")
 
+    if recortar_balon_a_campo:
+        df = _recortar_balon(df, largo, ancho)
     df = _filtrar_fuera_del_campo(df, largo, ancho)
     df = _filtrar_creible(df, max_edad_interp_s, min_vida_s)
 

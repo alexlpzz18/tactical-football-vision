@@ -101,7 +101,28 @@ def test_recortar_al_campo_es_el_punto_mas_cercano_y_no_toca_lo_de_dentro():
     )
     assert x.tolist() == [30.0, 0.0, 62.0, 30.0]
     assert y.tolist() == [20.0, 10.0, 40.0, 0.0]
+    # activado en el benjamín (22-oct f, bloque D): solo cambia el dibujo de la pizarra
     assert (
         parametros_balon_de_campo(R / "configs/campo_benja.yaml").recortar_a_campo
-        is False
+        is True
     )
+
+
+def test_la_pizarra_dibuja_el_balon_de_fuera_en_la_linea_y_no_toca_jugadores():
+    import pandas as pd
+
+    from src.report.replay_tactico import _filtrar_fuera_del_campo, _recortar_balon
+
+    df = pd.DataFrame(
+        {
+            "etiqueta": ["balon", "balon", "A", "A"],
+            "x_m": [30.0, 63.5, 30.0, 63.5],
+            "y_m": [-2.0, 20.0, 10.0, 20.0],
+        }
+    )
+    sin = _filtrar_fuera_del_campo(df, 62.0, 40.0)
+    con = _filtrar_fuera_del_campo(_recortar_balon(df, 62.0, 40.0), 62.0, 40.0)
+    assert len(sin) == 1  # hoy: el balón de fuera DESAPARECE
+    assert con.etiqueta.tolist() == ["balon", "balon", "A"]  # con el flag, se dibuja
+    assert con.iloc[0].y_m == 0.0 and con.iloc[1].x_m == 62.0
+    assert sin[sin.etiqueta == "A"].equals(con[con.etiqueta == "A"])  # jugadores igual

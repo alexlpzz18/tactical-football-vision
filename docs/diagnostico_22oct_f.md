@@ -331,3 +331,55 @@ dentro del campo:
 - Por el lado del sistema, las filas A de más son 2,1 jugadores de B mal etiquetados (el 23,6 %) y
   2,4 filas sin casar. Las compensan las personas de A que no se casan (faltantes).
 - Es el principio de CLAUDE.md: «antes de culpar al sistema, comprobar la aritmética del dominio».
+
+---
+
+## Resultado del bloque D — el recorte del balón pasa a la pizarra; ACTIVADO
+
+**Implementación.**
+- `procesar_balon.py` **ya no toca las posiciones**: el recorte del bloque 3 del 22-oct (e), que
+  movía `x_m`/`y_m` en el CSV, se retira.
+- Con el flag, el CSV gana la columna `calidad_balon` en las filas de balón (`calidad_del_balon`):
+  `medida` / `aerea` / `rellena` / `fuera_del_campo`. En los jugadores va vacía.
+- La pizarra (`replay_tactico.generar_replay(..., recortar_balon_a_campo=...)`, leído por
+  `generar_replay.py` del bloque `balon:` del config del campo) dibuja las filas de balón fuera del
+  rectángulo en su punto más cercano (`recortar_al_campo`) ANTES del filtro que hoy las borraba.
+- Tests: la pizarra dibuja el balón de fuera en la línea y deja a los jugadores igual; el flag está
+  encendido en el benjamín.
+
+**«Conserva las columnas _raw»**: como el CSV ya no se recorta, sus `x_m`/`y_m` SON las medidas
+originales. No se añaden `x_m_raw`/`y_m_raw` porque duplicarían exactamente las mismas columnas. Si
+se prefiere tenerlas con ese nombre, es un cambio de una línea.
+
+**Criterio:**
+
+| | resultado | ¿cumple? |
+|---|---|---|
+| flag apagado: CSV del balón | idéntico byte a byte a `main` | sí |
+| flag apagado: HTML de la pizarra | idéntico byte a byte al que genera el código de `main` con la misma entrada | sí |
+| flag encendido: posiciones del CSV | idénticas a `main`; solo una columna más (`calidad_balon`) | sí |
+| calidad de las 11.326 filas de balón | medida 6.788 · aérea 2.450 · rellena 1.141 · fuera del campo 947 | — |
+| pizarra: filas de balón dibujadas | **11.326 de 11.326** (hoy 10.379: las 947 de fuera se borraban) | sí |
+| pizarra: balón dentro del rectángulo | 100 % | sí |
+| pizarra: jugadores | idénticos | sí |
+
+(Nota del montaje: una primera comparación del HTML salió distinta en la línea 71 porque la pizarra
+lee los colores de equipo del meta JSON que encuentra junto al CSV, y los dos CSV tenían nombres
+distintos. Con la misma entrada, el código de `main` y el nuevo dan el mismo HTML.)
+
+**Activado** en `configs/campo_benja.yaml` (`balon.recortar_a_campo: true`), a petición de Alex. Es
+**cosmético**: la ficha sobre la línea no es la posición del balón, y para medir hay que usar el CSV
+y su columna `calidad_balon`. Las 947 filas `fuera_del_campo` están a 0-3 m (las de más de 3 m ya
+las quita la plausibilidad).
+
+---
+
+## Nota de proceso
+
+- **Un commit con la suite en rojo** (bloque B): la clave del YAML no llegó al fichero porque el
+  ancla del reemplazo no casaba, un test falló, y la cadena de comandos commiteó igual porque un
+  `tail` se comía el código de salida de pytest. Se arregló en el commit siguiente (b28221d).
+- **El bloque C se commiteó sin pasar la suite entera**, y `scripts/diag22f_villa.py` disparaba la
+  guarda de renderizadores (`test_renderizadores_no_colapsan.py`). Se clasificó en
+  `NO_PINTAN_POR_OBSERVACION` en este commit.
+- Desde entonces, cada commit se condiciona al código de salida de pytest, no a su salida impresa.

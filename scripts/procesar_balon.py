@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.balon.tracking_balon import (  # noqa: E402
     descartar_balon_fuera,
+    calidad_del_balon,
     id_de_tramo,
-    recortar_al_campo,
     preparar_balon,
     detectar_contactos,
     detectar_contactos_por_velocidad,
@@ -220,13 +220,13 @@ def main() -> None:
                 }
             )
     balon = pd.DataFrame(filas)
-    # Recorte al campo (flag `balon.recortar_a_campo`, apagado): SOLO cosmético, al final, para
-    # que la pizarra no pinte balones fuera; no es una posición más precisa.
+    # Con el flag `balon.recortar_a_campo`, el recorte se hace en la PIZARRA (al dibujar), NO aquí:
+    # el CSV conserva las posiciones medidas tal cual y gana una columna de CALIDAD para que
+    # quien lo use sepa qué filas son medida, vuelo, relleno o caen fuera del campo
+    # (docs/diagnostico_22oct_f.md, bloque D).
     if params.recortar_a_campo and len(balon):
-        balon["x_m"], balon["y_m"] = recortar_al_campo(
-            balon.x_m.to_numpy(),
-            balon.y_m.to_numpy(),
-            ctx_selector["dimensiones_campo"],
+        balon["calidad_balon"] = calidad_del_balon(
+            balon, preparadas, ctx_selector["dimensiones_campo"]
         )
     conjunto = pd.concat([jug, balon], ignore_index=True).sort_values(
         ["tiempo_s", "id_jugador"]

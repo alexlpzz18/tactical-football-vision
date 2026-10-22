@@ -69,7 +69,8 @@ balon:
   # campo (el balón del campo de al lado). null = APAGADO, como hasta ahora.
   # docs/diagnostico_22oct_c.md, bloque 1.
   descartar_fuera_m: null
-  # SOLO COSMÉTICO: las filas de balón fuera del campo se pintan en el punto
-  # más cercano del rectángulo (no es una posición más precisa). false =
-  # APAGADO. docs/diagnostico_22oct_e.md, bloque 3.
-  recortar_a_campo: false
+  # SOLO COSMÉTICO, y solo en la PIZARRA: el balón fuera del campo se dibuja
+  # en el punto más cercano del rectángulo en vez de desaparecer. El CSV no
+  # cambia de posición; gana la columna `calidad_balon`. ACTIVADO a petición
+  # de Alex (docs/diagnostico_22oct_f.md, bloque D).
+  recortar_a_campo: true
