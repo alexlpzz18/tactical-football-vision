@@ -188,6 +188,17 @@ class ParametrosBalon:
     # es_real=0 y fuera de contactos y posesión. Solo evitan cortar la pista.
     readmitir_vuelos: bool = True
     vuelo_max_s: float = 2.5
+    # ── prior de CAMPO en el selector (docs/diagnostico_22oct_b.md, bloque 2) ──
+    # APAGADO por defecto: con False, el selector hace exactamente lo de antes.
+    # Encendido, en cada frame se descartan los candidatos a más de
+    # `prior_campo_margen_m` fuera del campo y los que exigirían más de
+    # `prior_campo_v_max_m_s` desde el último candidato válido. Si en un frame no
+    # queda ninguno, se conserva la lista de siempre (para no borrar los saques de
+    # banda). Medido el 22-oct: solo el 11 % de los frames con el balón fuera
+    # tiene una alternativa dentro, así que su alcance es pequeño.
+    prior_campo_activo: bool = False
+    prior_campo_margen_m: float = 3.0
+    prior_campo_v_max_m_s: float = 35.0
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -350,6 +361,12 @@ def seleccionar_balon_activo(
         f: [det for _d, det in sorted(lista, key=lambda x: (x[0], -x[1][6]))]
         for f, lista in por_frame.items()
     }
+    if params.prior_campo_activo:
+        if dimensiones_campo is None or tiempos is None:
+            raise ValueError(
+                "El prior de campo necesita las dimensiones del campo y los tiempos"
+            )
+        ordenados = _prior_de_campo(ordenados, tiempos, dimensiones_campo, params)
     if params.continuidad_activa:
         if tiempos is None:
             raise ValueError(
@@ -362,6 +379,46 @@ def seleccionar_balon_activo(
         )
         return _solo_vuelos_de_ida_y_vuelta(elegido, no_abren, tiempos, params)
     return {f: lista[0] for f, lista in ordenados.items()}
+
+
+def _fuera_del_campo_m(x: float, y: float, dimensiones: tuple[float, float]) -> float:
+    """Cuántos metros cae (x, y) fuera del rectángulo del campo (0 si está dentro)."""
+    largo, ancho = dimensiones
+    return float(max(0.0, -x, x - largo, -y, y - ancho))
+
+
+def _prior_de_campo(ordenados: dict, tiempos: dict, dimensiones, params) -> dict:
+    """Deja en cada frame solo los candidatos dentro del campo (con margen) y alcanzables.
+
+    Alcanzable = a ≤ `prior_campo_v_max_m_s` del último candidato válido. Si en un
+    frame no queda ninguno, ese frame se deja COMO ESTABA: el prior solo elige
+    mejor donde hay con qué, nunca borra un balón.
+    """
+    salida, ultimo = {}, None  # (t, posición) del último candidato válido
+    for f in sorted(ordenados):
+        lista = ordenados[f]
+        t = tiempos.get(f)
+        validos = []
+        for det in lista:
+            if (
+                _fuera_del_campo_m(det[0], det[1], dimensiones)
+                > params.prior_campo_margen_m
+            ):
+                continue
+            if ultimo is not None and t is not None and t > ultimo[0]:
+                v = float(np.linalg.norm(np.array(det[:2]) - ultimo[1])) / (
+                    t - ultimo[0]
+                )
+                if v > params.prior_campo_v_max_m_s:
+                    continue
+            validos.append(det)
+        if validos:
+            salida[f] = validos
+            if t is not None:
+                ultimo = (t, np.array(validos[0][:2], dtype=float))
+        else:
+            salida[f] = lista
+    return salida
 
 
 def quitar_balones_de_staff(

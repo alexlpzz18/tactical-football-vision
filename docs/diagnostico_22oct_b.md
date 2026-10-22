@@ -143,3 +143,41 @@ ninguno, conserva el comportamiento actual (para no borrar los saques de banda).
 frames con el balón fuera NO hay alternativa dentro, así que el flag se quedará con el balón de fuera.
 **Espero que el criterio 2c («campo de al lado» de 7 a ≤ 1) NO se cumpla.** Se implementa y se mide
 igualmente, tal como está escrito.
+
+## Resultado del bloque 2 — selector de balón (flag `prior_campo_activo`): NO CUMPLE
+
+Implementado en `src/balon/tracking_balon.py` (`ParametrosBalon.prior_campo_activo`, **False por
+defecto**; `_prior_de_campo`), con 4 tests. Antes de la selección por continuidad, en cada frame quita
+los candidatos a > 3 m fuera del campo y los que exigirían > 35 m/s desde el último candidato válido.
+Si no queda ninguno, el frame se queda como estaba.
+
+**Flag apagado: el CSV del balón sale IDÉNTICO byte a byte al de `main`** (`cmp` sobre la salida de
+`procesar_balon.py` en la parte entera).
+
+**2c, con el flag encendido:**
+
+| | sin flag | con flag | criterio |
+|---|---|---|---|
+| paneles «campo de al lado» (7, uno repetido) | 7 | **6**: solo cambia f10166 (5:39,2 de archivo, 7:12,2 del reproductor), y se queda SIN balón | ≤ 1 → **NO** |
+| paneles «ok» que empeoran | — | 0 (ninguno cambia) | 0 → sí |
+| frames del tramo sin balón | 51,6 % | 49,4 % | no suben > 2 puntos → sí |
+| frames del partido con el balón > 3 m fuera | 604 | **649** | (lo que inventa) |
+
+- **Control del saque de banda**: de 369 frames con el balón a 0,5-3 m fuera, el flag cambia 12 y deja
+  5 sin balón. Lo que debía conservar, lo conserva casi entero.
+- **Lo que inventa**: **101 frames NUEVOS con el balón a > 3 m fuera** (100 de ellos no tenían balón
+  antes). Al cambiar las listas de candidatos, la selección por continuidad rellena con un balón de
+  fuera frames que antes dejaba vacíos. El prior quita fuera en un sitio y lo mete en otro.
+- **Por qué no puede funcionar así** (predicho en 2a antes de implementar): en el 89 % de los frames
+  con el balón fuera NO hay otro candidato dentro, y la regla «sin candidato válido, conserva lo de
+  siempre» se queda con el de fuera.
+
+**¿Qué podría estar inventando?** «Campo de al lado» es mi clase a ojo en 30 paneles: los 6 que siguen
+igual tienen el balón activo a 19-38 m fuera, sin ambigüedad. El 2a es de todo el partido; los paneles
+son de un minuto.
+
+**Decisión de los datos**: el flag se queda APAGADO. Lo que separaría el balón del campo de al lado no
+es elegir entre candidatos (casi nunca hay alternativa), sino **no tener balón** en esos frames. Eso es
+el cambio que la regla prohibía, para proteger los saques de banda. Y el control dice que los saques de
+banda están a menos de 3 m: un prior que DESCARTE (en vez de buscar alternativa) los candidatos a más
+de 3 m no los tocaría. Eso sería otro intento, con su criterio.
