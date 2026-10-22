@@ -85,16 +85,35 @@ def _solapan(a, b) -> bool:
     return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
 
 
+def _modulo_diag22():
+    """El lector de frames compartido vive en diag22_mascara_arbitro (`_frames`)."""
+    spec = importlib.util.spec_from_file_location(
+        "diag22_mascara_arbitro", R / "scripts/diag22_mascara_arbitro.py"
+    )
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
 def main() -> None:
-    import cv2
     import pandas as pd
     import yaml
 
     from src.tracking.cache_io import cargar_cache
-    from src.tracking_data.processor import posicionar_en_frame
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--trabajo", required=True)
+    ap.add_argument(
+        "--decodificador",
+        choices=["ffmpeg", "cv2"],
+        default="ffmpeg",
+        help="ffmpeg de línea de comandos = los píxeles de producción. 'cv2' solo para "
+        "reproducir la medida del 19-oct, que en el Mac salió de AVFoundation "
+        "(docs/diagnostico_22oct_c.md, bloque 0)",
+    )
+    ap.add_argument(
+        "--salida-json", default=None, help="por defecto, <trabajo>/puerta.json"
+    )
     args = ap.parse_args()
     trabajo = Path(args.trabajo)
     cfg = yaml.safe_load(open(CONFIG))
@@ -143,16 +162,8 @@ def main() -> None:
             hsv = hsv[rng.choice(len(hsv), CRITERIO["max_px_por_caja"], replace=False)]
         px[pob].setdefault((m, franja), []).append(hsv)
 
-    cap = cv2.VideoCapture(str(R / cfg["rutas"]["video"]))
-    actual = posicionar_en_frame(cap, 0)
-    for f in sorted(objetivo):
-        while actual < f:
-            cap.grab()
-            actual += 1
-        ok, img = cap.read()
-        actual += 1
-        if not ok:
-            raise RuntimeError(f"no se pudo leer el frame {f}")
+    dm = _modulo_diag22()
+    for f, img in dm._frames(R / cfg["rutas"]["video"], objetivo, args.decodificador):
         m = objetivo[f]
         dets = capt["cache_filtrado"].get(f, [])
         cajas = [tuple(d[2:6]) for d in dets]
@@ -188,7 +199,6 @@ def main() -> None:
                 guardar(
                     "cesped", m, recorte_centro(img, [int(round(v)) for v in c]), fr
                 )
-    cap.release()
 
     def junta(pob, m=None, franja="todas"):
         trozos = [
@@ -239,6 +249,7 @@ def main() -> None:
         }
 
     res = {
+        "decodificador": args.decodificador,
         "criterio": CRITERIO,
         "por_minuto": por_minuto,
         "minutos_por_clase": pd.Series([x["clase"] for x in por_minuto])
@@ -274,7 +285,9 @@ def main() -> None:
             "portero_B": resumen(junta("portero_B")),
         },
     }
-    (trabajo / "puerta.json").write_text(json.dumps(res, indent=1, ensure_ascii=False))
+    destino = Path(args.salida_json) if args.salida_json else trabajo / "puerta.json"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text(json.dumps(res, indent=1, ensure_ascii=False))
     print(json.dumps(res, indent=1, ensure_ascii=False))
 
 

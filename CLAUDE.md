@@ -329,6 +329,17 @@ Todo lo demás acaba desembocando aquí:
   que «alterna». ⇒ **Una propiedad medida en una REPRESENTACIÓN no es una
   propiedad del OBJETO**: antes de usarla como premisa sobre el mundo, medirla en
   los píxeles.
+- **Medir color: decodificar siempre con el ffmpeg de línea de comandos, nunca con
+  cv2.VideoCapture.** En macOS cv2 usa AVFoundation y no coincide con producción (una feature
+  recalculada así coincidió el 0,27 % con la caché; con ffmpeg CLI, el 100 %). Las cifras de píxel
+  medidas con cv2 en el Mac (H/S/V del chaleco, 'la máscara ve el 7,3 % del torso', vest-on-grass
+  gate, tono_brillo) valen como dirección, no como número. Guarda: antes de medir color, reproducir
+  ≥ 99 % de la caché de producción en 50 frames fijos (`tests/test_decodificador_produccion.py`;
+  lector en `src/utils/video_ffmpeg.py`).
+  Re-medido con ffmpeg el 22-oct (`docs/diagnostico_22oct_c.md`, bloque 0): las ESTADÍSTICAS de
+  píxel apenas se mueven (chaleco H 46, S 163-178, V 244-249 por minuto, ±2 unidades; «7,3 %» →
+  7,7 %); lo que no aguanta es la feature EXACTA (un histograma de 256 bins de un recorte de 15-40 px
+  cambia con desplazamientos de 1-2 unidades). tono_brillo no se ha re-medido.
 - **COMPROBAR LA PREMISA ANTES DE CONSTRUIR** (tercera vez: el Kalman, excluir ocluidos en 3a y otra vez el 21-sep). Antes de excluir ocluidos bastaba una tabla de 2 filas: acierto por recorte de limpios (93,6 %) contra ocluidos (91,4 %). Si la diferencia no existe, no hay nada que arreglar por ahí.
 - **UN CAMBIO DE ETIQUETA NO ES SIEMPRE UN FALLO.** En la ventana del GT, 8 de
   los 18 cambios A↔B corrigen una etiqueta y 10 la rompen: casi la mitad es

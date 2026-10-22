@@ -108,3 +108,62 @@ contienen los minutos 10-12 donde se concentra el cambio.
 ¿Qué podría estar inventando? El GT del benjamín es una plantilla fija de 40×18 px con el «pie» en el
 pecho para el portero cercano: una «desplazada» puede ser un clic del GT, no un fallo del sistema. Se
 reporta cuántas personas DISTINTAS sostienen cada celda (una persona puede llenar una zona).
+
+---
+
+## Resultado del bloque 0 — decodificador
+
+**0a. La tabla del bloque 3 del 22-oct (b) NO estaba confundida.**
+- **«hoy»** sale de la caché de producción, calculada en Colab (FFmpeg).
+- **«v3»** sale de `cache_colores_v3.pkl`, calculada con el ffmpeg de línea de comandos (intento 2;
+  el intento 1 con cv2/AVFoundation se descartó por su control).
+- Comprobado por las marcas de tiempo:
+  - la caché v3 y su control (100 % idénticas, p99 0,0) se escribieron a las 10:37:23;
+  - el CSV v3 (`posiciones_v3.csv`), a las 10:38:55, después;
+  - el script de medida no regenera el CSV si ya existe, así que el CSV no podía venir del intento 1.
+
+No hace falta rehacer v3 ni la tabla (i)-(iv).
+
+**0b. Guarda** en `tests/test_decodificador_produccion.py`, con el lector compartido en
+`src/utils/video_ffmpeg.py`:
+- toma 50 frames fijos del primer minuto (unas 1.000 cajas) y exige que ≥ 99 % de las features
+  coincidan con la caché;
+- pasa (14 s);
+- **mutación comprobada**: cambiando el lector por `cv2.VideoCapture`, coinciden 1 de 907 y el test
+  FALLA, que es lo que tiene que hacer.
+
+**0c. Re-medidas con ffmpeg** (mismos scripts y criterios; solo cambia el decodificador, ahora
+`--decodificador`, que por defecto es ffmpeg):
+
+| cifra | cv2 (vieja) | ffmpeg (nueva) |
+|---|---|---|
+| torso del árbitro que sobrevive a la máscara actual | 7,3 % | **7,7 %** |
+| césped que sobrevive a la máscara actual | 4,6 % | 4,8 % |
+| torso del árbitro que sobrevive a la máscara por posición | 98,5 % | 98,7 % |
+| césped que sobrevive a la máscara por posición | 8,4 % | 8,4 % |
+| chaleco: mediana de S por minuto | 162-178 | 163-178 |
+| chaleco: mediana de H / V por minuto | 45-46 / 244-250 | 45-46 / 244-249 |
+| chaleco, p1-p99 de S (minutos de S alta) | 51-255 | 42-255 |
+| césped x 0-20 / 20-40 / 40-62: mediana de H | 55 / 54 / 53 | 55 / 55 / 53 |
+| césped x 0-20 / 20-40 / 40-62: mediana de V | 113 / 122 / 128 | 111 / 120 / 126 |
+| minutos «S alta» / «mixto» (umbral S ≥ 170) | 17 / 3 | 18 / 2 |
+
+Los mismos píxeles: 60.820 de árbitro y 759.024 de césped, con las mismas cajas.
+
+**Lectura.** Las ESTADÍSTICAS de píxel aguantan como número, no solo como dirección: se mueven ≤ 2
+unidades. Lo que no aguanta es la FEATURE exacta: un histograma HS de 256 bins sobre un recorte de
+15-40 px cambia de bin con desplazamientos de 1-2 unidades, y por eso el intento 1 de v3 solo
+coincidía en el 0,27 %. El único cambio de clase es el minuto 15 (S mediana 168 → 170), que cruza
+el umbral de 170 justo en el borde: es un artefacto del umbral, no del decodificador.
+`tono_brillo` no se ha re-medido (no lo pedía el bloque).
+
+**¿Qué podría estar inventando?** Que coincidan las medianas no prueba que coincidan las colas: el
+p1 de S del chaleco baja de 51 a 42. Ninguna conclusión del 19 ni del 22-oct depende de ese p1.
+
+**0d. Coste estimado ANTES de lanzar.**
+- ffmpeg decodifica 30 s de 1080p en 3,4 s (medido), así que leer hasta el minuto 19 cuesta unos
+  2,3 min por script; los dos, unos 5-6 min. Se lanzó.
+- Nada más del diagnóstico lee > 5 min de vídeo: el bloque 2 usa la caché v3 ya calculada.
+
+**0e.** Añadido a CLAUDE.md (principios, «Sobre el método») el texto pedido, con la guarda y una
+línea con el resultado de 0c.

@@ -44,6 +44,31 @@ def sobrevive_posicion(px: np.ndarray, cesped_frame: np.ndarray) -> np.ndarray:
     return ~dentro
 
 
+def _frames(video, objetivo, decodificador):
+    """(frame, imagen BGR) de los frames pedidos, con el decodificador elegido."""
+    if decodificador == "ffmpeg":
+        from src.utils.video_ffmpeg import leer_frames_ffmpeg
+
+        yield from leer_frames_ffmpeg(video, objetivo)
+        return
+    import cv2
+
+    from src.tracking_data.processor import posicionar_en_frame
+
+    cap = cv2.VideoCapture(str(video))
+    actual = posicionar_en_frame(cap, 0)
+    for f in sorted(objetivo):
+        while actual < f:
+            cap.grab()
+            actual += 1
+        ok, img = cap.read()
+        actual += 1
+        if not ok:
+            raise RuntimeError(f"no se pudo leer el frame {f}")
+        yield f, img
+    cap.release()
+
+
 def _mod(nombre):
     spec = importlib.util.spec_from_file_location(nombre, R / f"scripts/{nombre}.py")
     m = importlib.util.module_from_spec(spec)
@@ -52,16 +77,22 @@ def _mod(nombre):
 
 
 def main() -> None:
-    import cv2
     import pandas as pd
     import yaml
 
     from src.tracking.cache_io import cargar_cache
-    from src.tracking_data.processor import posicionar_en_frame
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pasada", required=True)
     ap.add_argument("--salida", required=True)
+    ap.add_argument(
+        "--decodificador",
+        choices=["ffmpeg", "cv2"],
+        default="ffmpeg",
+        help="ffmpeg de línea de comandos = los píxeles de producción. 'cv2' solo para "
+        "reproducir la medida del 22-oct, que en el Mac salió de AVFoundation "
+        "(docs/diagnostico_22oct_c.md, bloque 0)",
+    )
     args = ap.parse_args()
     pasada, salida = Path(args.pasada), Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
@@ -96,14 +127,7 @@ def main() -> None:
         return p[0] / p[2], p[1] / p[2]
 
     tot = {"arb_feat": [0, 0], "ces_feat": [0, 0], "arb_pos": [0, 0], "ces_pos": [0, 0]}
-    cap = cv2.VideoCapture(str(R / cfg["rutas"]["video"]))
-    actual = posicionar_en_frame(cap, 0)
-    for f in objetivo:
-        while actual < f:
-            cap.grab()
-            actual += 1
-        ok, img = cap.read()
-        actual += 1
+    for f, img in _frames(R / cfg["rutas"]["video"], objetivo, args.decodificador):
         dets = [tuple(d[2:6]) for d in capt["cache_filtrado"].get(f, [])]
         cesped = []
         for x1, y1, x2, y2 in dets[:4]:
@@ -148,9 +172,9 @@ def main() -> None:
             tot["arb_feat"][1] += len(a)
             tot["arb_pos"][0] += int(sobrevive_posicion(a, ces).sum())
             tot["arb_pos"][1] += len(a)
-    cap.release()
     frac = {k: (v[0] / v[1] if v[1] else None) for k, v in tot.items()}
     res = {
+        "decodificador": args.decodificador,
         "pixeles": {k: v[1] for k, v in tot.items()},
         "fraccion_que_sobrevive": frac,
         "criterio": CRITERIO,
