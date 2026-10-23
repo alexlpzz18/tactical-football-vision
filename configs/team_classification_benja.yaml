@@ -314,10 +314,10 @@ arbitro:
   # APAGADO: no cumple (docs/diagnostico_22oct_f.md, bloque B).
   # El árbitro como seguimiento de UN objeto (Viterbi sobre el chaleco visto en píxeles y la
   # continuidad de movimiento). Necesita rutas.cache_chaleco (scripts/cache_chaleco.py).
-  # APAGADO. docs/diagnostico_23oct_c.md.
+  # Sin `activo`: lo decide el FORMATO (F7 → encendido; src/campo_modelo.py::DEFECTOS_POR_FORMATO).
+  # `activo: false` lo apaga (= main). Adopción preparada, SIN fusionar: docs/diagnostico_23oct_e.md.
   viterbi:
-    activo: false
-    variante: sustituye  # o «anade»
+    variante: anade  # la variante 2 del 23-oct (c); «sustituye» es la 1
     modelo_emision: configs/arbitro_viterbi_benja.json
   catalogo_requiere_identidad:
     activo: false

@@ -147,7 +147,9 @@ def test_los_caches_REALES_del_repo_siguen_cargando():
     reales = [
         p
         for p in sorted(glob.glob("data/tracking*/cache_*.pkl"))
-        if "colores" not in p and "emb" not in p
+        # colores, embeddings y chaleco (scripts/cache_chaleco.py) son cachés POR DETECCIÓN, no de
+        # detecciones: tienen otro formato y su propio lector
+        if "colores" not in p and "emb" not in p and "chaleco" not in p
     ]
     if not reales:
         pytest.skip("no hay cachés reales en este entorno")

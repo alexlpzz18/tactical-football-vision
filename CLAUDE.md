@@ -485,6 +485,25 @@ Todo lo demás acaba desembocando aquí:
 
 ---
 
+## Rutas cerradas (una línea por ruta: qué se probó, cuándo, por qué falló)
+
+Para no reabrirlas por inercia. Reabrir una exige un plan NUEVO con su criterio, no «un intento más».
+
+- **Grupo tercero por color** (3 intentos, ago-2026): buscar al árbitro como un tercer prototipo en el histograma HS de 15-40 px. En un recorte suelto el árbitro está tan cerca de su prototipo como un jugador (0,884 frente a 0,936); su verde solo aparece al promediar ~40 recortes (`docs/arbitro.md`).
+- **`devolver_por_color`** (2 mediciones, la última el 1-oct-2026): devolver por color a los `otro` que no gana la exclusividad. Empeora Villaviciosa (3,55 → 3,65 m), baja el trío portero-árbitro-portero del benjamín (24 → 20 %), y con v3 deja al árbitro en un equipo el 36,6 % (`docs/arbitro.md`, `docs/diagnostico_22oct_c.md`).
+- **`arbitro.margen_equipo`** (27-ago-2026): adoptado a 0,68-0,70 y revertido el mismo día; la ventana útil se mueve con el detector (0,62-0,75 en v3, ≤ 0,50 en v4). Hoy en 0,0 (`docs/arbitro.md`).
+- **Puerta por observación** (distancia al prototipo, 27-ago; umbral de color en píxeles, 18-19 oct, 2 intentos): por observación pierde 8 jugadores por cada árbitro cazado; el umbral en píxeles mide CÉSPED y la «alternancia de S» del chaleco era del histograma, no de los píxeles (`docs/arbitro.md`, `docs/plan_arbitro_intento2_puerta.md`).
+- **Tono/brillo antiguo, el sensor ciego** (19-22 oct): la máscara anti-verde de la feature borra el chaleco entero (ve el 7,3 % del torso del árbitro, como del césped), y sus números se midieron con `cv2.VideoCapture` (AVFoundation), que coincide un 0,27 % con producción. Lo sustituye la banda del chaleco medida con el ffmpeg CLI y sin máscara (`docs/diagnostico_22oct.md`, `_22oct_b.md`, `_23oct_a.md`).
+- **v3 de máscara** (`deteccion.mascara_color: posicion`, 22-oct b/c, 2 intentos): el sensor SÍ ve el chaleco (árbitro en B 4.075 → 264 detecciones), pero v3 sola no cumple el criterio (iii) y v3 + un solo árbitro + devolver deja al árbitro en un equipo el 36,6 %. El obstáculo es la asociación (`docs/diagnostico_22oct_c.md`).
+- **Tope de cardinalidad** (MILP «≤ 7 por equipo, ≤ 1 árbitro», 22-oct e, 2 intentos): por identidad pierde el voto por observación (equipo equivocado 1,2 → ~23 %); por trozos de 1,5 s, el árbitro de Villaviciosa en un equipo sube 5,3 → 42,1 % (`docs/diagnostico_22oct_e.md`).
+- **Asociación con color, B1/B2** (22-oct g y 23-oct a/b): B1 (término de color en la asociación) fragmenta y no pasa el control permutado; B2 (cortar en cruces y reenlazar con color) mejoraba el benjamín por FRAGMENTACIÓN, empeora Villaviciosa (A > 11, centroide), deja al árbitro en B en 14 de 20 frames del partido y Alex lo ve peor en el vídeo (`docs/diagnostico_22oct_g.md`, `_23oct_a.md`, `_23oct_b.md`).
+- **Corte en cruces sin color** (23-oct b): árbitro en un equipo 53,5 → 53,4 %, equipo equivocado 1,2 → 3,2 %, centroide 0,86 → 1,30 m, Villaviciosa peor (`docs/diagnostico_23oct_b.md`).
+- **Dedupe de identidades por IoU** (23-oct d): no existe umbral. Entre personas DISTINTAS del GT el IoU llega a 0,156 (una detrás de otra en profundidad), y por encima solo se cubren 4 de los 8 casos. Además, los «duplicados» eran sobre todo filas DESPLAZADAS 2,5-9,4 m de su caja (`docs/diagnostico_23oct_d.md`, bloque 5).
+- **Relleno de huecos de la pista del árbitro** (velocidad mediana de 3 pasos, 23-oct d, un intento): cubre 17 de 56 casos. Los huecos son saltos mayores que la puerta (mediana 1,62 m), no temblor. `arbitro.viterbi.velocidad_pasos` queda en 1 (`docs/diagnostico_23oct_d.md`, bloque 6).
+- **Balón con prior de campo y corte duro** (22-oct b/c/d): el prior (quitar candidatas > 3 m fuera o > 35 m/s) deja el «campo de al lado» en 6 de 7 e inventa 101 frames nuevos con balón fuera; en el 89 % de esos frames no hay otra candidata. El corte duro hace perder el balón a 9 de 21 paneles buenos y borra saques de banda con el balón sobre la cabeza, que proyectan 4-8 m fuera. El campo de al lado no está «a un lado» en metros: si se reintenta, la región tiene que ser de PÍXELES (`docs/diagnostico_22oct_b.md`, `_c.md`, `_d.md`).
+
+---
+
 ## Convenciones
 - Comentarios y docstrings en **español**. Nombres descriptivos.
 - Formato: Black + Flake8 `--max-line-length=100` (pre-commit hooks).

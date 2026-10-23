@@ -66,6 +66,12 @@ def _profundidad_configurada(cfg_equipos: dict):
     return modelo, EjeProfundidad.desde_dict(cfg_equipos.get("profundidad"))
 
 
+def formato_del_partido(cfg_equipos: dict | None) -> str:
+    """'f7' o 'f11', del modelo de campo del config de equipos (la ÚNICA fuente del formato)."""
+    modelo, _eje = _profundidad_configurada(cfg_equipos or {})
+    return modelo.formato
+
+
 def entrenar_clasificador(
     colores: dict,
     cfg_equipos: dict | None = None,

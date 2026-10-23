@@ -968,8 +968,11 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     # EL ÁRBITRO COMO SEGUIMIENTO DE UN ÚNICO OBJETO (flag `arbitro.viterbi` del YAML de
     # equipos, apagado; docs/diagnostico_23oct_c.md): una sola pista por partido, por el chaleco
     # visto en píxeles (caché de chaleco) y la continuidad de movimiento. Sus filas pasan a 'otro'.
+    # ADOPCIÓN PREPARADA (rama `adopcion-viterbi`, docs/diagnostico_23oct_e.md): si el YAML no dice
+    # `activo`, lo decide el FORMATO del partido (src/campo_modelo.py::DEFECTOS_POR_FORMATO):
+    # encendido en F7, apagado en F11. Una clave `activo` explícita manda.
     cfg_vit = ((cfg_equipos or {}).get("arbitro") or {}).get("viterbi") or {}
-    if clasificador is not None and cfg_vit.get("activo", False):
+    if clasificador is not None and viterbi_activo(cfg_equipos):
         from src.team_classification.arbitro_viterbi import (
             ParametrosArbitroViterbi,
             aplicar_pista,
@@ -981,9 +984,11 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         ruta_chaleco = cfg["rutas"].get("cache_chaleco")
         if not ruta_chaleco:
             raise ValueError(
-                "arbitro.viterbi necesita rutas.cache_chaleco (scripts/cache_chaleco.py)"
+                "arbitro.viterbi está ENCENDIDO (por el formato del partido o por el YAML) y "
+                "necesita rutas.cache_chaleco. Genérala con scripts/cache_chaleco.py (el modo full "
+                "no la crea) o apaga la pista con `arbitro.viterbi.activo: false`."
             )
-        params_vit = ParametrosArbitroViterbi.desde_dict(cfg_vit)
+        params_vit = ParametrosArbitroViterbi.desde_dict({**cfg_vit, "activo": True})
         with open(ruta_chaleco, "rb") as fh:
             chaleco = reindexar_chaleco(
                 pickle.load(fh),
@@ -1029,6 +1034,21 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         colores_equipo=colores_equipo,
         etiquetas_por_obs=etiquetas_por_obs,
     )
+
+
+def viterbi_activo(cfg_equipos: dict | None) -> bool:
+    """¿Corre la pista del árbitro? La clave `arbitro.viterbi.activo` si está; si no, el FORMATO.
+
+    El formato sale del modelo de campo del config de equipos (`formato_del_partido`) y su valor
+    por defecto, de `src/campo_modelo.py::DEFECTOS_POR_FORMATO` (F7 encendido, F11 apagado).
+    """
+    from src.campo_modelo import defecto_de_formato
+    from src.team_classification.pipeline_equipos import formato_del_partido
+
+    cfg_vit = ((cfg_equipos or {}).get("arbitro") or {}).get("viterbi") or {}
+    if cfg_vit.get("activo") is not None:
+        return bool(cfg_vit["activo"])
+    return bool(defecto_de_formato(formato_del_partido(cfg_equipos), "arbitro_viterbi"))
 
 
 def exportar_posiciones(

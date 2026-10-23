@@ -106,6 +106,9 @@ rutas:
   cache: data/tracking_benja/cache_detecciones_benja_p1.pkl
   cache_colores: data/tracking_benja/cache_colores_benja_p1.pkl
   homografia: data/calibracion_benja/homografia_benja.npy
+  # Chaleco del árbitro por detección (scripts/cache_chaleco.py; el modo full NO la crea). La
+  # usa arbitro.viterbi, encendido por defecto en F7 (docs/diagnostico_23oct_e.md).
+  cache_chaleco: data/tracking_benja/cache_chaleco_benja_p1.pkl
   salida_csv: data/tracking_benja/posiciones_benja_p1.csv
   salida_meta: data/tracking_benja/posiciones_benja_p1_meta.json
 # ─────────────── QUÉ VA A CAMBIAR AL PASAR DE 60 s A 20 min ──────────
