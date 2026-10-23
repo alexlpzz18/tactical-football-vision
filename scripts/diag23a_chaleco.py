@@ -22,7 +22,8 @@ import numpy as np
 
 R = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(R))
-TORSO_FILAS, TORSO_COLS = (0.12, 0.45), (0.15, 0.85)
+from src.team_classification.chaleco import TORSO_COLS, TORSO_FILAS  # noqa: E402,F401
+
 MAX_FP = 0.005
 PATAS = {
     "benja": dict(
@@ -49,24 +50,8 @@ def _mod(nombre):
     return m
 
 
-def torso_hsv(img, caja) -> np.ndarray:
-    """Píxeles HSV (N × 3) del torso de la caja, SIN máscara."""
-    import cv2
-
-    x1, y1, x2, y2 = caja
-    h, w = y2 - y1, x2 - x1
-    ya, yb = int(y1 + TORSO_FILAS[0] * h), int(y1 + TORSO_FILAS[1] * h)
-    xa, xb = int(x1 + TORSO_COLS[0] * w), int(x1 + TORSO_COLS[1] * w)
-    ya, xa = max(ya, 0), max(xa, 0)
-    rec = img[slice(ya, max(yb, ya + 1)), slice(xa, max(xb, xa + 1))]
-    if rec.size == 0:
-        return np.zeros((0, 3))
-    return cv2.cvtColor(rec, cv2.COLOR_BGR2HSV).reshape(-1, 3).astype(float)
-
-
-def en_banda(px, banda) -> np.ndarray:
-    h0, h1, s0, v0 = banda
-    return (px[:, 0] >= h0) & (px[:, 0] <= h1) & (px[:, 1] >= s0) & (px[:, 2] >= v0)
+# Una sola implementación en src/ (docs/diagnostico_23oct_f.md, bloque 1)
+from src.team_classification.chaleco import en_banda, torso_hsv  # noqa: E402,F401
 
 
 def puntuaciones(px, banda) -> dict:

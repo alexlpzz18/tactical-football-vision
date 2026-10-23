@@ -383,7 +383,7 @@ def _firma_de_deteccion(cfg: dict) -> dict:
         ).hexdigest()
     except (OSError, ValueError, KeyError):
         huella_h = str(cfg["rutas"].get("homografia"))
-    return {
+    firma = {
         "video": cfg["rutas"]["video"],
         "homografia": huella_h,
         # Cambiar la versión de la feature cambia su LONGITUD (256 vs
@@ -400,6 +400,12 @@ def _firma_de_deteccion(cfg: dict) -> dict:
         "tramo": dict(cfg["muestreo"].get("tramo") or {}),
         "max_frames": cfg["muestreo"].get("max_frames"),
     }
+    # La banda del chaleco entra en la firma SOLO si está puesta: así una caché sin chaleco (F11)
+    # conserva su firma y su reanudación, y no se reanuda una pasada con chaleco sobre otra que no
+    # lo tenía (quedaría a medias).
+    if banda_chaleco(cfg) is not None:
+        firma["chaleco_banda"] = list(banda_chaleco(cfg))
+    return firma
 
 
 def _volcar(ruta: str, objeto) -> None:
@@ -427,7 +433,9 @@ def _volcar(ruta: str, objeto) -> None:
         raise
 
 
-def _guardar_caches(cfg, cache, colores, fps, sample, wh, completo, firma) -> None:
+def _guardar_caches(
+    cfg, cache, colores, fps, sample, wh, completo, firma, chaleco=None
+) -> None:
     """Vuelca los dos cachés. `completo` distingue final de checkpoint.
 
     ⚠️ EL ORDEN NO ES INDIFERENTE: los colores PRIMERO y las detecciones
@@ -450,17 +458,28 @@ def _guardar_caches(cfg, cache, colores, fps, sample, wh, completo, firma) -> No
     inocuo: se reprocesan y se sobrescriben.
     """
     _volcar(cfg["rutas"]["cache_colores"], colores)
-    _volcar(
-        cfg["rutas"]["cache"],
-        {
-            "cache": cache,
-            "fps": fps,
-            "sample": sample,
-            "wh": wh,
-            "completo": completo,
-            "firma": firma,
-        },
-    )
+    datos = {
+        "cache": cache,
+        "fps": fps,
+        "sample": sample,
+        "wh": wh,
+        "completo": completo,
+        "firma": firma,
+    }
+    # La puntuación de chaleco va DENTRO de la caché de detección (es pequeña: ~3 MB en una
+    # parte entera), así que llega a disco en el mismo volcado que su ancla.
+    if chaleco is not None and banda_chaleco(cfg) is not None:
+        datos["chaleco"] = chaleco
+    _volcar(cfg["rutas"]["cache"], datos)
+
+
+def _chaleco_previo(cfg) -> dict:
+    """La puntuación de chaleco del checkpoint (o {} si no la tenía)."""
+    try:
+        with open(cfg["rutas"]["cache"], "rb") as f:
+            return dict(pickle.load(f).get("chaleco") or {})
+    except (OSError, pickle.UnpicklingError, EOFError):
+        return {}
 
 
 def _reanudar(cfg, firma):
@@ -593,6 +612,54 @@ def posicionar_en_frame(cap, objetivo: int) -> int:
     return pos
 
 
+def banda_chaleco(cfg: dict):
+    """La banda HSV del chaleco del árbitro (`deteccion.chaleco_banda`) o None si no está puesta."""
+    banda = (cfg.get("deteccion") or {}).get("chaleco_banda")
+    if banda is None:
+        return None
+    if len(banda) != 4:
+        raise ValueError(
+            f"deteccion.chaleco_banda tiene que ser [H0, H1, S0, V0]: {banda!r}"
+        )
+    return tuple(float(v) for v in banda)
+
+
+def features_del_frame(frame, frame_idx, dets, extractor, rango=None, banda=None):
+    """Lo que se calcula de cada detección DESPUÉS de SAHI, sobre el mismo fotograma corregido.
+
+    - la feature de color (la ÚNICA función de extracción del repo);
+    - con `banda`, la puntuación de chaleco del árbitro (src/team_classification/chaleco.py).
+
+    Está aparte del bucle para poder probarlo sin GPU: con las cajas de una caché y los fotogramas
+    del decodificador de producción tiene que dar lo mismo que la pasada original
+    (docs/diagnostico_23oct_f.md, bloque 1).
+
+    Returns:
+        (colores {(frame, det): feature}, chaleco {(frame, det): fracción} o {} sin banda)
+    """
+    colores = {}
+    for det_idx, d in enumerate(dets):
+        x1, y1, x2, y2 = (int(v) for v in d[2:6])
+        y1, x1 = max(y1, 0), max(x1, 0)
+        crop = frame[y1:y2, x1:x2]
+        if crop.size > 0:
+            # ÚNICA función de extracción del repo (normalización L2,
+            # la escala en la que están calibrados todos los umbrales)
+            feat = (
+                extractor(crop)
+                if rango is None
+                else extractor(crop, rango_cesped=rango)
+            )
+            if feat.sum() > 0:
+                colores[(frame_idx, det_idx)] = feat
+    chaleco = {}
+    if banda is not None:
+        from src.team_classification.chaleco import puntuaciones_del_frame
+
+        chaleco = puntuaciones_del_frame(frame, frame_idx, dets, banda)
+    return colores, chaleco
+
+
 def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     """Modo FULL (Colab GPU): vídeo → detección SAHI → cachés en disco.
 
@@ -673,12 +740,15 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     cada = int(cfg_ck.get("cada_frames", 500) or 0)
     firma = _firma_de_deteccion(cfg)
 
-    cache, colores = [], {}
+    # Puntuación de chaleco del árbitro (F7; en F11 no hay banda medida y no se calcula)
+    banda = banda_chaleco(cfg)
+    cache, colores, chaleco = [], {}, {}
     frame_idx = frame_ini
     if cada and cfg_ck.get("reanudar", True):
         previo, colores_previos = _reanudar(cfg, firma)
         if previo:
             cache, colores = previo, colores_previos
+            chaleco = _chaleco_previo(cfg)
             frame_idx = cache[-1]["frame_idx"] + 1
             # Si el checkpoint cayó justo en el último frame no queda nada
             # que hacer. Sin esto, `posicionar_en_frame` lanza culpando al
@@ -693,7 +763,9 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
                     "sin reprocesar nada.",
                     len(cache),
                 )
-                _guardar_caches(cfg, cache, colores, fps, sample, (w, h), True, firma)
+                _guardar_caches(
+                    cfg, cache, colores, fps, sample, (w, h), True, firma, chaleco
+                )
                 return (
                     {"cache": cache, "fps": fps, "sample": sample, "wh": (w, h)},
                     colores,
@@ -755,25 +827,18 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
                 lambda u, v: project_point(u, v, H),
                 (cfg["campo_m"]["largo"], cfg["campo_m"]["ancho"]),
             )
-        for det_idx, d in enumerate(dets):
-            x1, y1, x2, y2 = (int(v) for v in d[2:6])
-            y1, x1 = max(y1, 0), max(x1, 0)
-            crop = frame[y1:y2, x1:x2]
-            if crop.size > 0:
-                # ÚNICA función de extracción del repo (normalización L2,
-                # la escala en la que están calibrados todos los umbrales)
-                feat = (
-                    extractor(crop)
-                    if rango is None
-                    else extractor(crop, rango_cesped=rango)
-                )
-                if feat.sum() > 0:
-                    colores[(frame_idx, det_idx)] = feat
+        colores_f, chaleco_f = features_del_frame(
+            frame, frame_idx, dets, extractor, rango, banda
+        )
+        colores.update(colores_f)
+        chaleco.update(chaleco_f)
         cache.append({"frame_idx": frame_idx, "t": frame_idx / fps, "dets": dets})
         frame_idx += 1
         hechos_esta_sesion += 1
         if cada and hechos_esta_sesion % cada == 0:
-            _guardar_caches(cfg, cache, colores, fps, sample, (w, h), False, firma)
+            _guardar_caches(
+                cfg, cache, colores, fps, sample, (w, h), False, firma, chaleco
+            )
             ritmo = (time.time() - t_arranque) / hechos_esta_sesion
             if a_procesar:
                 faltan = max(a_procesar - len(cache), 0) * ritmo
@@ -794,8 +859,10 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
                 )
     cap.release()
 
-    _guardar_caches(cfg, cache, colores, fps, sample, (w, h), True, firma)
+    _guardar_caches(cfg, cache, colores, fps, sample, (w, h), True, firma, chaleco)
     datos = {"cache": cache, "fps": fps, "sample": sample, "wh": (w, h)}
+    if banda is not None:
+        datos["chaleco"] = chaleco
     logger.info(
         "Detección cacheada: %d frames, %d features de color", len(cache), len(colores)
     )
@@ -981,20 +1048,11 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             reindexar_chaleco,
         )
 
-        ruta_chaleco = cfg["rutas"].get("cache_chaleco")
-        if not ruta_chaleco:
-            raise ValueError(
-                "arbitro.viterbi está ENCENDIDO (por el formato del partido o por el YAML) y "
-                "necesita rutas.cache_chaleco. Genérala con scripts/cache_chaleco.py (el modo full "
-                "no la crea) o apaga la pista con `arbitro.viterbi.activo: false`."
-            )
         params_vit = ParametrosArbitroViterbi.desde_dict({**cfg_vit, "activo": True})
-        with open(ruta_chaleco, "rb") as fh:
-            chaleco = reindexar_chaleco(
-                pickle.load(fh),
-                cargar_cache(cfg["rutas"]["cache"])["cache"],
-                datos["cache"],
-            )
+        crudo = cargar_cache(cfg["rutas"]["cache"])
+        chaleco = reindexar_chaleco(
+            puntuacion_chaleco(cfg, crudo), crudo["cache"], datos["cache"]
+        )
         pista = pista_del_arbitro(
             datos["cache"],
             chaleco,
@@ -1033,6 +1091,31 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         trayectorias=trayectorias,
         colores_equipo=colores_equipo,
         etiquetas_por_obs=etiquetas_por_obs,
+    )
+
+
+def puntuacion_chaleco(cfg: dict, datos_crudos: dict) -> dict:
+    """La puntuación de chaleco por detección, de la caché aparte o de la de detección.
+
+    Por orden: `rutas.cache_chaleco` (la pasada aparte de CPU, `scripts/cache_chaleco.py`) y, si no
+    está, la clave `chaleco` de la caché de detección (la escribe el modo `full` cuando el config
+    tiene `deteccion.chaleco_banda`). Las dos están indexadas sobre la caché CRUDA.
+
+    Raises:
+        ValueError: si no hay ninguna de las dos (la pista está encendida y no puede correr).
+    """
+    ruta = cfg["rutas"].get("cache_chaleco")
+    if ruta:
+        with open(ruta, "rb") as fh:
+            return pickle.load(fh)
+    if datos_crudos.get("chaleco"):
+        return datos_crudos["chaleco"]
+    raise ValueError(
+        "arbitro.viterbi está ENCENDIDO (por el formato del partido o por el YAML) y no hay "
+        "puntuación de chaleco: ni rutas.cache_chaleco ni la clave `chaleco` en la caché de "
+        "detección. Dos formas de arreglarlo: (1) correr el modo full con "
+        "`deteccion.chaleco_banda` en el config, o (2) generar la caché aparte con "
+        "scripts/cache_chaleco.py. O apagar la pista con `arbitro.viterbi.activo: false`."
     )
 
 

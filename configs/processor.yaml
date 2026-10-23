@@ -7,6 +7,9 @@ modo: desde_cache        # full (vídeo→cachés→informe, Colab GPU) | desde_
 
 # ── Detección (solo modo full; requiere GPU/Colab) ──
 deteccion:
+  # Puntuación de chaleco del árbitro: SIN banda en F11. No se ha medido la del amarillo flúor de
+  # Villaviciosa (la mide scripts/colab_arbitro_villa.py) y la del benjamín sería otro chaleco.
+  chaleco_banda: null
   modelo: models/weights/best_v3.pt
   confianza: 0.3         # filtro validado
   max_area_caja: 0.05    # filtro validado: cajas >5% del área del frame → fuera

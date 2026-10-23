@@ -105,3 +105,58 @@ volver a marcarla, igual que la homografía.
   - Guarda sola en el navegador y descarga un CSV.
 - **Salida**: `gt_balon_por_frame.csv` (frame, respuesta, x_px, y_px) y un `leer` que lo pasa a
   `data/`.
+
+---
+
+## Resultado del bloque 1 — chaleco en la pasada de detección: PASA en local; la validación con GPU, preparada y SIN ejecutar
+
+**Implementado:**
+- `src/team_classification/chaleco.py`: la ÚNICA implementación de la puntuación. La usan la pasada
+  aparte (`scripts/cache_chaleco.py`, `scripts/diag23a_chaleco.py`) y el modo `full`.
+- `processor.features_del_frame`: lo que se calcula después de SAHI (feature de color + chaleco),
+  sacado del bucle para poder probarlo sin GPU.
+- `deteccion.chaleco_banda`: `[38, 48, 112, 173]` en los configs F7 y `null` en F11.
+- La banda entra en la firma solo si está puesta, y se recupera del checkpoint al reanudar.
+- `desde_cache` toma la puntuación de `rutas.cache_chaleco` o, si no está, de la clave `chaleco`
+  de la caché de detección. Si no hay ninguna de las dos y la pista está encendida: error, que dice
+  las dos formas de arreglarlo.
+- Tests nuevos: `tests/test_chaleco_en_deteccion.py`, 5.
+
+**Probado en local** (`scripts/diag23f_chaleco.py`, `outputs/diagnostico_23oct_f/bloque1_chaleco.json`).
+La parte del bucle posterior a SAHI se reprodujo sobre los 11.989 frames, con las cajas de la caché
+de producción y el ffmpeg CLI:
+
+| criterio | resultado |
+|---|---|
+| 1. puntuación igual a la pasada aparte (± 0,005), ≥ 99 % | **100 %** de 211.282 (diferencia máxima 0,0) |
+| control: la feature de color sale igual que la caché de producción (el fotograma es el mismo) | **100 %** de 209.705 |
+| 2. pista Viterbi desde la caché de detección «con chaleco» (sin `rutas.cache_chaleco`), ≥ 99,9 % | **100 %** de 11.642 frames; el CSV, **idéntico byte a byte** al de la variante 2 |
+| 3. coste < 5 % | chaleco **0,34 ms/frame** en CPU contra 95 ms/frame de la pasada en una T4 = **0,36 %**; +3,4 MB en la caché |
+
+Además, sin cambios:
+- Villaviciosa (`desde_cache`): **idéntica byte a byte a `main`**.
+- El benjamín por defecto: **idéntico** al CSV de la adopción.
+
+**NO probado en local** (no hay GPU, y el decodificador del Mac no es el de producción):
+- El bucle real con SAHI, y que `cv2.VideoCapture` en Linux dé los mismos píxeles que el ffmpeg
+  CLI.
+- **Celda preparada, SIN ejecutar**:
+
+  ```
+  !python scripts/colab_chaleco_full.py --salida /content/chaleco_full
+  ```
+
+  - Pasa el modo `full` dos veces sobre el tramo de 60 s del minuto 5, sin banda y con banda.
+  - Comprueba que las cajas son las mismas.
+  - Calcula la pasada aparte con el ffmpeg CLI sobre esas cajas.
+  - Mide los tres criterios y el tiempo del chaleco dentro del bucle.
+
+¿Qué podría estar inventando?
+- **El 100 % de local es casi una tautología**: es la misma función sobre los mismos píxeles. Lo
+  único que prueba es que el índice de cada detección y la corrección de distorsión casan. El
+  número que importa es el de Colab.
+- **El coste se midió como la diferencia entre dos cronómetros de CPU**, no en GPU. En la pasada
+  real, el chaleco corre en CPU mientras la GPU ya ha acabado, así que se SUMA. Aun multiplicado
+  por 10 seguiría por debajo del 5 %.
+- **F11 no guarda la puntuación** (no hay banda medida). El criterio decía «si es barato»: es
+  barato, pero sería otro chaleco bajo el mismo nombre.

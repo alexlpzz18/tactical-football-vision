@@ -29,6 +29,10 @@ modo: full # vídeo → cachés → CSV. En local: --modo desde_cache.
 
 # ── Detección (GPU) ──────────────────────────────────────────────────
 deteccion:
+  # Puntuación de CHALECO del árbitro en la misma pasada (H0, H1, S0, V0), medida el 23-oct (a)
+  # sobre el árbitro del benjamín. Se guarda en la caché de detección (clave `chaleco`) y la usa
+  # arbitro.viterbi (docs/diagnostico_23oct_f.md, bloque 1).
+  chaleco_banda: [38, 48, 112, 173]
   modelo: models/weights/best_v4pre.pt
   confianza: 0.3
   max_area_caja: 0.05

@@ -42,15 +42,15 @@ def calcular(config: Path, banda=BANDA_BENJA) -> dict:
     """{(frame, det): fracción de píxeles del torso en la banda} para todo el caché."""
     from src.tracking.cache_io import cargar_cache
 
+    from src.team_classification.chaleco import puntuaciones_del_frame
+
     ch = _mod("diag23a_chaleco")
     cfg = yaml.safe_load(open(config))
     cache = cargar_cache(R / cfg["rutas"]["cache"])["cache"]
     dets = {e["frame_idx"]: e["dets"] for e in cache}
     out = {}
     for f, img in ch.leer(R / cfg["rutas"]["video"], [f for f in dets if dets[f]], cfg):
-        for j, d in enumerate(dets[f]):
-            px = ch.torso_hsv(img, [int(round(v)) for v in d[2:6]])
-            out[(f, j)] = float(ch.en_banda(px, banda).mean()) if len(px) else 0.0
+        out.update(puntuaciones_del_frame(img, f, dets[f], banda))
     return out
 
 
@@ -58,9 +58,20 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", required=True)
     ap.add_argument("--salida", required=True)
-    ap.add_argument("--banda", nargs=4, type=float, default=list(BANDA_BENJA))
+    ap.add_argument(
+        "--banda",
+        nargs=4,
+        type=float,
+        default=None,
+        help="por defecto, deteccion.chaleco_banda del config (o la del benjamín)",
+    )
     args = ap.parse_args()
-    res = calcular(Path(args.config), tuple(args.banda))
+    banda = args.banda
+    if banda is None:
+        from src.tracking_data.processor import banda_chaleco
+
+        banda = banda_chaleco(yaml.safe_load(open(args.config))) or BANDA_BENJA
+    res = calcular(Path(args.config), tuple(banda))
     Path(args.salida).parent.mkdir(parents=True, exist_ok=True)
     pickle.dump(res, open(args.salida, "wb"))
     v = np.array(list(res.values()))
