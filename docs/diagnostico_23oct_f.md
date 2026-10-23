@@ -197,3 +197,30 @@ Además, sin cambios:
 - ⚠️ **Una precisión del criterio 2.** Los paneles del 22-oct no guardaron QUÉ frames eran «ok»
   (13 de 30), solo cuántos por estrato. Se mide de forma más ESTRICTA: ninguno de los 23 paneles que
   no son del campo de al lado puede cambiar de detección elegida. Si alguno cambia, se mira a ojo.
+
+## Resultado del bloque 3 — hoja rápida de GT del balón: lista para Alex (no se mide nada)
+
+```
+open outputs/gt_balon_rapido/index.html
+```
+
+- **200 frames del benjamín**, separados ≥ 3 s:
+  - 60 cerca, 60 media y 60 lejos (terciles de metros por píxel en la candidata elegida por el
+    selector de producción: ≤ 0,0246 · ≤ 0,0327 · más);
+  - 20 sin ninguna candidata.
+- Van barajados: la zona no se ve al marcar. Pesan 74 MB, en `outputs/` (no van al repo).
+- **Villaviciosa no entra**: no existe caché de balón de Villaviciosa.
+- **En la página**:
+  - círculo rojo en la candidata elegida; recuadros amarillos tenues en las demás;
+  - lupa ×4 que sigue al ratón;
+  - `A` es el balón · `R` no lo es y no se ve · **clic** el balón está ahí · `N` no se sabe ·
+    `←` `→` para moverse;
+  - guarda sola en el navegador; «Descargar CSV» al final.
+- **Después**:
+
+  ```
+  python scripts/gt_balon_rapido.py leer ~/Downloads/respuestas_gt_balon.csv
+  ```
+
+  Lo deja en `data/annotations/gt_balon_benja/gt_balon_por_frame.csv` (frame, zona, respuesta,
+  x_px, y_px).
