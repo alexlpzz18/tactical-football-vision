@@ -180,3 +180,33 @@ ese criterio queda **NO MEDIDO**, y todo lo que sigue son proxies.
 - El ojo de Alex dijo que con B2 el árbitro se veía peor.
 - La auditoría lo confirma en la otra dirección: con la pista, en 16-19 de cada 20 frames con B > 7 la fila de más **ya no es el árbitro**. Con B2 lo era en 14 de 20 (23-oct b).
 - Para la pizarra, eso significa que el árbitro deja de pintarse como un naranja más.
+
+## Resultado del bloque 2 — Villaviciosa: celda de Colab preparada, NO ejecutada
+
+`scripts/colab_arbitro_villa.py`. En Colab, desde la raíz del repo con `data/` montado:
+
+```
+!python scripts/colab_arbitro_villa.py --salida outputs/arbitro_villa
+```
+
+1. Mide la banda del amarillo flúor sobre el árbitro del GT (`diag23a_chaleco.py --pata villa`).
+2. Calcula la caché de chaleco con esa banda (`cache_chaleco.py --banda ...`).
+3. Estima el modelo de emisión con el árbitro del GT.
+4. Corre hoy y las dos variantes.
+5. Mide: pista a < 1,5 m del árbitro del GT, filas de equipo a < 1,5 m de él, y equipo equivocado.
+
+**Probada en local la parte que no necesita vídeo** (pasos 3-5), con una caché de chaleco FALSA:
+0,06 en la detección del árbitro del GT y 0 en el resto, es decir, un sensor perfecto.
+
+| | pista a < 1,5 m del árbitro | fila de equipo a < 1,5 m del árbitro | equipo equivocado |
+|---|---|---|---|
+| hoy | — | 8,0 % | 23,58 % |
+| variante 1, con el sensor PERFECTO | 88,0 % | 7,0 % | 23,68 % |
+
+- Sirve para dos cosas: comprobar que la celda corre de punta a punta, y dar el TECHO del modelo de
+  movimiento. Con una emisión perfecta, la pista está con el árbitro el 88 % del tiempo (el resto
+  son frames sin detección del árbitro o saltos que la puerta no permite).
+- **No es un resultado**: la emisión es trampa.
+- *Nota*: «fila de equipo a < 1,5 m del árbitro» da 8,0 % hoy, no el 5,3 % de «árbitro dentro de
+  un equipo»: cuenta también a un jugador que pasa a su lado. Para leer la celda, la comparación
+  es contra el 8,0.
