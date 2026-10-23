@@ -210,3 +210,42 @@ cerca. Es el «una persona es N identidades» al revés: N personas, una identid
 **Decisión**: no se adopta; el flag queda apagado. La ruta «cortar en cruces y reenlazar» llega
 aquí a su tercer planteamiento (B2 con color, este sin color). El cuello de botella no es dónde
 cortar sino cómo REUNIR sin mezclar, y eso el movimiento solo no lo distingue en los cruces.
+
+---
+
+## Resultado del bloque 3 — auditoría visual: la fila de más de B es, sobre todo, el ÁRBITRO
+
+**Variante**: B2 (23-oct a). Cumple 4 de los 6 criterios del benjamín del bloque 2 (árbitro, error,
+centroide, B > 7), contra 1 de la variante sin color.
+
+**20 frames con B > 7** de B2 (`scripts/diag23b_auditoria.py paneles`, semilla 0;
+`outputs/diagnostico_23oct_b/auditoria/paneles_B_mas_de_7/`), clasificados a ojo:
+
+| qué es la fila de más de B | frames | cuáles |
+|---|---|---|
+| **el árbitro (camiseta verde flúor) etiquetado B** | **14** | f1572, f1824, f2970, f13464, f13494, f13755, f17301, f19200, f22689, f22980, f32736, f33189, f35703, f35889 |
+| caja fantasma (un recuadro diminuto, un trozo de persona) | 2 | f912, f7644 |
+| jugador de B DUPLICADO (dos cajas sobre la misma persona) | 2 | f10791, f29253 |
+| jugador de A (blanco) etiquetado B | 1 | f34785 (B = 9) |
+| no se distingue (montón delante de la portería) | 1 | f27315 |
+
+Algunos de los frames del árbitro llevan además un duplicado o una caja fundida (f1824, f2970).
+
+**Lectura:**
+- **Incluso con B2, la fila de más de B es el árbitro en 7 de cada 10 frames.** En la ventana del
+  GT, B2 lo dejaba en el 4,3 %, pero en el partido entero sigue dentro de B en muchos momentos.
+- Es otra vez el aviso de CLAUDE.md: **el GT de 30 s no representa el partido**. Sus 30 s caen en
+  un tramo donde B2 acierta.
+- Los relojes (archivo / reproductor de Alex, +1:33) van en cada panel.
+
+**¿Qué podría estar inventando?** La clasificación es a ojo, sobre fotogramas sueltos, y en f13755
+y f19200 la etiqueta del árbitro se lee mal por el tamaño. Contándolos como dudosos, siguen siendo
+12 de 20.
+
+**Vídeo + pizarra, 10:00-10:45 del archivo (11:33-12:18 del reproductor)**, en
+`outputs/diagnostico_23oct_b/auditoria/` (`scripts/diag23b_auditoria.py render`):
+- `video_10m_hoy.mp4` y `video_10m_variante.mp4`: el vídeo con la caja, la identidad y la etiqueta
+  de cada fila;
+- `pizarra_10m_hoy.html` y `pizarra_10m_variante.html`: la pizarra del mismo tramo.
+- Comprobado sobre un fotograma del vídeo: t = 618 s, frame 18522, con las etiquetas pintadas.
+- El vídeo se pinta con `cv2` y es solo para MIRAR, no para medir color.
