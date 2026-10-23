@@ -268,7 +268,11 @@ def medir(salida: Path) -> dict:
     # control (ii): las dos cachés de 60 s
     for pata in ("benja60_v3", "benja60_v4"):
         res[pata] = {}
-        for nombre, vit in (("hoy", None), ("v1_sustituye", {"variante": "sustituye"})):
+        for nombre, vit in (
+            ("hoy", None),
+            ("v1_sustituye", {"variante": "sustituye"}),
+            ("v2_anade", {"variante": "anade"}),
+        ):
             csv, captura = pasada(nombre, pata, salida, vit)
             filas = pd.read_csv(csv)
             res[pata][nombre] = {

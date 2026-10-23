@@ -87,3 +87,96 @@ La celda mide:
 - equipo equivocado.
 
 Línea base de hoy: árbitro dentro de un equipo 5,3 %; equipo equivocado 23,6 %.
+
+---
+
+## Resultado del bloque 1 — benjamín, parte entera (20 min)
+
+`python scripts/diag23c_viterbi.py medir --salida outputs/diagnostico_23oct_c`
+(`bloque1_medir.json`). La verdad del árbitro de Alex en CVAT **no existe** (`data/gt_arbitro/`):
+ese criterio queda **NO MEDIDO**, y todo lo que sigue son proxies.
+
+| | B > 7 | equipo equivocado | centroide | filas A/B → `otro` | cobertura | pasos > 9 m/s | pista con chaleco (log LR > 0) |
+|---|---|---|---|---|---|---|---|
+| hoy | 28,5 % | 1,2 % | 0,863 m | — | — | — | — |
+| **v1 sustituye** | **11,21 %** | 1,2 % | **0,47 m** | 5.238 | 97,1 % | 1,03 % | 100 % |
+| **v2 añade** | **8,45 %** | 1,2 % | **0,47 m** | 5.238 | 97,1 % | 1,03 % | 100 % |
+| control (i), emisión permutada (v1) | 39,74 % | 1,3 % | 0,967 m | 3.405 | 32,1 % | 22,14 % | 8,5 % |
+
+### Criterios, uno a uno
+
+| criterio | v1 sustituye | v2 añade |
+|---|---|---|
+| B > 7 ≤ 20 % | ✓ 11,21 | ✓ 8,45 |
+| auditoría de 20 frames con B > 7: la fila de más NO es el árbitro en ≥ 17 | **✗ 16** (17 si se descuenta un caso dudoso) | **✓ 19** |
+| pasos de la pista > 9 m/s ≤ 1 % | **✗ 1,03** | **✗ 1,03** |
+| cobertura ≥ 80 % | ✓ 97,1 | ✓ 97,1 |
+| equipo equivocado ≤ 1,5 % | ✓ 1,2 | ✓ 1,2 |
+| centroide ≤ hoy | ✓ 0,47 | ✓ 0,47 |
+| jugadores sacados de los equipos ≤ 10 % (hoja `viterbi_a_otro`) | ✓ 1 de 60 (1,7 %), a ojo, PROVISIONAL | igual: las mismas 5.238 filas |
+| control (i): la pista permutada pierde al árbitro | ✓ 8,5 % contra 100 % | (misma pista) |
+| control (ii): las cachés de 60 s van en el mismo signo | **✗ B > 7 empeora** | = (no mueve nada) |
+
+**Veredicto formal: NINGUNA variante pasa todos los criterios.**
+- Las dos fallan la velocidad por 0,03 puntos (1,03 % contra 1 %).
+- v1 falla además la auditoría y el control (ii).
+- v2 es la que se queda más cerca. Le falla la velocidad y, en las cachés de 60 s, no mueve nada (ni mejora ni empeora).
+
+**No se adopta**: el flag sigue apagado por defecto. Decide Alex.
+
+### Precisión de la pista (hoja `arbitro_viterbi`, 60 recortes)
+- Lectura a ojo PROVISIONAL: **60 de 60 son el árbitro** (chaleco verde flúor).
+- Con el control permutado, solo el 8,5 % de la pista tiene chaleco y la cobertura cae al 32 %.
+- La pista sigue a la persona del chaleco porque la emisión lo dice, no porque el modelo de movimiento invente continuidad.
+
+### Hoja `viterbi_a_otro` (60 filas que pasan de A/B a `otro`)
+- 59 son el árbitro.
+- 1 es un jugador naranja (dorsal 23).
+- Total: 1,7 % de jugadores sacados, a ojo y PROVISIONAL hasta que Alex la marque.
+
+### Auditoría de 20 frames con B > 7 (semilla 0), a ojo
+
+**v1 sustituye**:
+- **El árbitro dentro de B en 3**: f2925, f10551 y f27288.
+- **Un caso dudoso**: f27384, una caja pequeña marcada B sobre la parte de arriba del árbitro, que ya es `otro`. Puede ser un duplicado de él.
+- **En los otros 16**, la fila de más es (recuentos por categoría aproximados: un frame puede tener dos):
+  - el **portero de B (verde) etiquetado como jugador de B**, mientras `portero_B` va a un jugador blanco de A (9 frames);
+  - el **portero de A cortado por el borde inferior** (camiseta negra), etiquetado B (3 frames);
+  - una caja diminuta: balón o fantasma (2 frames);
+  - un duplicado en un cruce (2 frames).
+
+**v2 añade**:
+- **El árbitro dentro de B en 1**: f23553, donde la pista no lo cogió.
+- **En los otros 19**, la misma lista:
+  - el portero verde de B como jugador de B (10 frames);
+  - el portero de A cortado (2 frames);
+  - fantasma o balón (2 frames);
+  - duplicados y un jugador de A etiquetado B (5 frames).
+
+**Lo nuevo**: con el árbitro fuera, **la fila de más que queda es casi siempre un PORTERO** con el rol equivocado. Es el siguiente frente, y no es de color: es la regla de portero.
+
+### Control (ii): las dos cachés de 60 s
+
+| | v3 hoy | v3 v1 | v3 v2 | v4 hoy | v4 v1 | v4 v2 |
+|---|---|---|---|---|---|---|
+| B > 7 | 7,33 % | 8,67 % | 7,33 % | 11,5 % | **18,67 %** | 11,5 % |
+| equipo equivocado | 1,2 % | 1,2 % | 1,2 % | 3,6 % | 3,6 % | 3,6 % |
+| filas B | 3.465 | 3.517 | 3.463 | 3.457 | 3.618 | 3.430 |
+| filas `otro` | 702 | 597 | 704 | 800 | 597 | 828 |
+
+- En esos 60 s (minuto 5), **HOY ya manda al árbitro a `otro`**: la ventana del GT cae en el minuto bueno.
+- Así que v2 no tiene nada que quitar.
+- Lo único que hace v1 es **devolver a A/B** filas que hoy son `otro` (+52 y +161 filas de B). Entre ellas hay árbitro y staff que la pista no cubre, así que el B > 7 sube.
+- Es el mismo mecanismo que hace perder a v1 la auditoría frente a v2: **devolver el tercer grupo al voto mete filas en B**.
+
+### ¿Qué podría estar inventando este número?
+- **El centroide de 0,863 → 0,47 m** se mide en la ventana del GT. Allí el error de hoy era, en buena parte, el árbitro contado en B, que el GT no anota. Quitarlo es justo lo que el oráculo de «sobran» decía que pesaba. Pero es UNA ventana de 30 s; en el partido entero solo hay proxies.
+- **El B > 7 a 8-11 %** puede bajar también porque se quitan filas que NO son el árbitro. La hoja de 60 dice que es raro (1 de 60), pero la lectura es mía y provisional.
+- **La emisión se estimó con 71 filas de árbitro** sacadas por eliminación, en la misma ventana donde se mide el error de equipo. El modelo no se ajustó para mejorar el error de equipo (no cambia: 1,2 % antes y después), pero no hay una ventana independiente.
+- **«Pista con chaleco 100 %»** es la emisión mirándose a sí misma. La prueba de que la pista sigue al árbitro está en la hoja de recortes (60/60) y en el control permutado, no en ese 100 %.
+- **La velocidad (1,03 %)**: probablemente son saltos de la pista entre dos detecciones del árbitro, una de ellas una caja partida. No se ha mirado cuáles son. El criterio se fijó en 1 % y se cumple el veredicto: no pasa.
+
+### Lo que dice la observación de Alex
+- El ojo de Alex dijo que con B2 el árbitro se veía peor.
+- La auditoría lo confirma en la otra dirección: con la pista, en 16-19 de cada 20 frames con B > 7 la fila de más **ya no es el árbitro**. Con B2 lo era en 14 de 20 (23-oct b).
+- Para la pizarra, eso significa que el árbitro deja de pintarse como un naranja más.
