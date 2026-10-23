@@ -312,6 +312,13 @@ arbitro:
   # El catálogo por observación solo saca a `otro` una fila si su identidad lo dispara en
   # mayoría o su trozo (tracklet) en ≥ frac_trozo (X fijado midiendo el 22-oct f: 0,084).
   # APAGADO: no cumple (docs/diagnostico_22oct_f.md, bloque B).
+  # El árbitro como seguimiento de UN objeto (Viterbi sobre el chaleco visto en píxeles y la
+  # continuidad de movimiento). Necesita rutas.cache_chaleco (scripts/cache_chaleco.py).
+  # APAGADO. docs/diagnostico_23oct_c.md.
+  viterbi:
+    activo: false
+    variante: sustituye  # o «anade»
+    modelo_emision: configs/arbitro_viterbi_benja.json
   catalogo_requiere_identidad:
     activo: false
     frac_identidad: 0.5

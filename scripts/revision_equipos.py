@@ -23,7 +23,18 @@ CABECERA = ["ventana", "imagen", "caja", "equipo_correcto", "causa", "nota"]
 # `otro_v3`: recortes de las filas que la feature v3 manda a `otro` (docs/diagnostico_22oct_d.md,
 # bloque 1b). Sus cajas viven en `cajas_otro_v3.csv`, con la identidad y la etiqueta OCULTAS.
 # `tope_cardinalidad`: filas cuya etiqueta cambia con el tope (docs/diagnostico_22oct_e.md).
-VENTANAS = ["gt", "minuto_malo", "azar", "otro_v3", "tope_cardinalidad", "tope_trozo"]
+# `arbitro_viterbi` / `viterbi_a_otro`: la pista del árbitro y lo que saca de los equipos
+# (23-oct c).
+VENTANAS = [
+    "gt",
+    "minuto_malo",
+    "azar",
+    "otro_v3",
+    "tope_cardinalidad",
+    "tope_trozo",
+    "arbitro_viterbi",
+    "viterbi_a_otro",
+]
 EQUIPOS = [
     "A",
     "B",

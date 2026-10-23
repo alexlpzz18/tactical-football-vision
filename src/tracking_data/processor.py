@@ -965,6 +965,48 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             else {}
         )
 
+    # EL ÁRBITRO COMO SEGUIMIENTO DE UN ÚNICO OBJETO (flag `arbitro.viterbi` del YAML de
+    # equipos, apagado; docs/diagnostico_23oct_c.md): una sola pista por partido, por el chaleco
+    # visto en píxeles (caché de chaleco) y la continuidad de movimiento. Sus filas pasan a 'otro'.
+    cfg_vit = ((cfg_equipos or {}).get("arbitro") or {}).get("viterbi") or {}
+    if clasificador is not None and cfg_vit.get("activo", False):
+        from src.team_classification.arbitro_viterbi import (
+            ParametrosArbitroViterbi,
+            aplicar_pista,
+            cargar_modelo_emision,
+            pista_del_arbitro,
+            reindexar_chaleco,
+        )
+
+        ruta_chaleco = cfg["rutas"].get("cache_chaleco")
+        if not ruta_chaleco:
+            raise ValueError(
+                "arbitro.viterbi necesita rutas.cache_chaleco (scripts/cache_chaleco.py)"
+            )
+        params_vit = ParametrosArbitroViterbi.desde_dict(cfg_vit)
+        with open(ruta_chaleco, "rb") as fh:
+            chaleco = reindexar_chaleco(
+                pickle.load(fh),
+                cargar_cache(cfg["rutas"]["cache"])["cache"],
+                datos["cache"],
+            )
+        pista = pista_del_arbitro(
+            datos["cache"],
+            chaleco,
+            cargar_modelo_emision(params_vit.modelo_emision),
+            params_vit,
+            (cfg["campo_m"]["largo"], cfg["campo_m"]["ancho"]),
+        )
+        etiquetas_por_obs = aplicar_pista(
+            identidades,
+            equipos,
+            etiquetas_por_obs,
+            pista,
+            colores,
+            clasificador,
+            params_vit,
+        )
+
     trayectorias, equipos = postprocesar(
         identidades,
         equipos,
