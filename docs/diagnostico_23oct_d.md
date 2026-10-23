@@ -327,3 +327,50 @@ portero de verdad sigue contado en B. Hoy se clasifica con esa cuenta.
 - **La clasificación de los 28 paneles es mía y a ojo**, con cajas de 15-40 px. «Duplicado» se
   apoya en un hecho medible (dos filas casadas con la misma caja), los demás no tanto. Los 4 «no se
   distingue» se dejan así y no se reparten.
+
+## Resultado del bloque 4 — el clip y el frame f23553
+
+`python scripts/diag23d.py clip --salida outputs/diagnostico_23oct_d`. En
+`outputs/diagnostico_23oct_d/clip_10m/` (no van al repo):
+- `video_10m_hoy.mp4` y `video_10m_variante.mp4`;
+- `pizarra_10m_hoy.html` y `pizarra_10m_variante.html`.
+
+El tramo es 10:00-10:45 del archivo (11:33-12:18 del reproductor).
+
+### ⚠️ En este clip hoy y la variante 2 casi no se distinguen
+- Solo **13 filas** de 6.776 cambian de etiqueta, todas de A/B a `otro` (ids 292, 429 y 468).
+- En ese minuto hoy ya manda al árbitro a `otro` casi siempre. Es el mismo efecto que en las cachés
+  de 60 s del minuto 5, donde la v2 no cambiaba nada.
+- En el partido entero cambian 5.238 filas. Los tramos de 45 s donde más se distinguen:
+  - **1:00-1:45 archivo / 2:33-3:18 reproductor**: 429 filas;
+  - **7:00-7:45 archivo / 8:33-9:18 reproductor**: 427 filas;
+  - 0:45-1:30 archivo / 2:18-3:03 reproductor: 421 filas.
+- No se han renderizado: el encargo era 10:00-10:45.
+
+### Por qué la variante 2 deja al árbitro en B en f23553 (13:05,9 archivo / 14:38,9 reproductor)
+Detalle frame a frame en `traza_f23553.json`.
+
+1. La pista sigue al árbitro (identidad 288, chaleco 0,37-0,65, log LR +5) en TODOS los frames de
+   13:02,9 a 13:05,8. En esos frames su fila es `otro`.
+2. **En f23553 la pista se salta ese frame.** La detección del árbitro sigue ahí (chaleco 0,63,
+   log LR +5, caja sin fundir: IoU 0,02), pero su pie salta de (37,37; 11,11) a (38,42; 10,98):
+   **1,05 m en 0,1 s**. En el frame siguiente vuelve a 37,46.
+3. El salto, solo, cabe en la puerta (0,78 m de la predicción, contra 1,3). Pero la pista arrastra
+   la velocidad del predecesor: si pasa por f23553, la predicción del frame siguiente cae en
+   ~39,2 m. Volver a 37,46 sale a 1,75 m, FUERA de la puerta. La alternativa, saltarse un frame,
+   cuesta solo 1,0, y Viterbi la elige.
+4. En la variante 2 solo las filas DE LA PISTA pasan a `otro`. La fila del árbitro en f23553 se
+   queda con su voto de color por observación, que es **B**.
+
+Es el **temblor de la detección** del bloque 1 (un salto de ~1 m que se deshace en el frame
+siguiente), ahora con coste: la pista no se equivoca de persona, pero deja una fila suelta.
+
+**Cuánto pasa**: en todo el partido hay 116 huecos de UN frame con la misma identidad del tracker a
+los dos lados y su detección presente. En 56 de ellos esa fila sigue en un equipo. f23553 ni
+siquiera entra en esa cuenta: en el frame siguiente la pista sigue en la detección de OTRA
+identidad del tracker (la 618), a 0,1 m de la anterior.
+
+**Arreglo posible (NO implementado, para decidirlo)**: rellenar los huecos cortos de la pista (≤ 2
+frames) con la detección de la identidad que está a los dos lados. O, más general, no arrastrar la
+velocidad de UN solo paso, sino estimarla sobre varios. Sería un intento nuevo con su criterio
+fijado antes. Pesa poco: 56 filas, frente a las 5.238 que mueve la pista.
