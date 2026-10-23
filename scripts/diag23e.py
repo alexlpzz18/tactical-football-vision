@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import yaml
 
 R = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(R))
@@ -320,12 +321,262 @@ def regla(salida: Path) -> dict:
     return res
 
 
+# ── bloque 3: recall y precisión de los jugadores por zona ────────────────────────────────────
+
+PATAS = {
+    "benja": dict(
+        gt="data/annotations/gt_benja/annotations.xml",
+        config="configs/processor_benja_parte_entera.yaml",
+        offset=9750,
+        largo=62.0,
+        ancho=40.0,
+    ),
+    "villa": dict(
+        gt="data/annotations/ground_truth_tracking/annotations.xml",
+        config="configs/processor.yaml",
+        offset=7500,
+        largo=100.0,
+        ancho=64.0,
+    ),
+}
+
+
+def _iou_matriz(G: np.ndarray, D: np.ndarray) -> np.ndarray:
+    """IoU de cada caja del GT (filas) con cada detección (columnas); cajas x1, y1, x2, y2."""
+    ix = np.clip(
+        np.minimum(G[:, None, 2], D[None, :, 2])
+        - np.maximum(G[:, None, 0], D[None, :, 0]),
+        0,
+        None,
+    )
+    iy = np.clip(
+        np.minimum(G[:, None, 3], D[None, :, 3])
+        - np.maximum(G[:, None, 1], D[None, :, 1]),
+        0,
+        None,
+    )
+    inter = ix * iy
+    area_g = (G[:, 2] - G[:, 0]) * (G[:, 3] - G[:, 1])
+    area_d = (D[:, 2] - D[:, 0]) * (D[:, 3] - D[:, 1])
+    return inter / (area_g[:, None] + area_d[None, :] - inter + 1e-9)
+
+
+def _casar(G, D, criterio: str):
+    """Pares (i_gt, j_det) 1-a-1 (húngaro). 'iou': IoU ≥ 0,5; 'centro': el centro de la caja del GT
+    cae dentro de la detección (coste = distancia de centros)."""
+    from scipy.optimize import linear_sum_assignment
+
+    if not len(G) or not len(D):
+        return []
+    if criterio == "iou":
+        iou = _iou_matriz(G, D)
+        valido = iou >= 0.5
+        coste = np.where(valido, 1 - iou, 1e6)
+    else:
+        cx, cy = (G[:, 0] + G[:, 2]) / 2, (G[:, 1] + G[:, 3]) / 2
+        valido = (
+            (cx[:, None] >= D[None, :, 0])
+            & (cx[:, None] <= D[None, :, 2])
+            & (cy[:, None] >= D[None, :, 1])
+            & (cy[:, None] <= D[None, :, 3])
+        )
+        dcx, dcy = (D[:, 0] + D[:, 2]) / 2, (D[:, 1] + D[:, 3]) / 2
+        dist = np.hypot(cx[:, None] - dcx[None, :], cy[:, None] - dcy[None, :])
+        coste = np.where(valido, dist, 1e6)
+    filas, cols = linear_sum_assignment(coste)
+    return [(int(i), int(j)) for i, j in zip(filas, cols) if valido[i, j]]
+
+
+def recall_pata(pata: str) -> dict:
+    """Recall/precisión por zona (terciles de metros por píxel en el pie del GT)."""
+    import pandas as pd
+
+    from src.evaluation.gt_parser import parsear_cvat
+    from src.tracking.cache_io import cargar_cache
+
+    P = PATAS[pata]
+    cfg = yaml.safe_load(open(R / P["config"]))
+    H = np.load(R / cfg["rutas"]["homografia"])
+    alto_img = cargar_cache(R / cfg["rutas"]["cache"])["wh"][1]
+    dets = {
+        e["frame_idx"]: e["dets"]
+        for e in cargar_cache(R / cfg["rutas"]["cache"])["cache"]
+    }
+    por_frame: dict[int, list] = {}
+    for t in parsear_cvat(R / P["gt"]):
+        for c in t.cajas:
+            por_frame.setdefault(P["offset"] + 15 * c.frame_local, []).append(
+                (t.label, c)
+            )
+
+    def proy(u, v):
+        q = H @ np.array([u, v, 1.0])
+        return q[:2] / q[2]
+
+    def m_por_px(u, v):
+        return float(np.linalg.norm(proy(u, v + 1) - proy(u, v)))
+
+    filas_gt, filas_det = [], []
+    for f, obs in sorted(por_frame.items()):
+        D = np.array([d[2:6] for d in dets.get(f, [])], float).reshape(-1, 4)
+        G = np.array([[c.xtl, c.ytl, c.xbr, c.ybr] for _l, c in obs], float).reshape(
+            -1, 4
+        )
+        pares = {k: dict(_casar(G, D, k)) for k in ("iou", "centro")}
+        iou = _iou_matriz(G, D) if len(D) else np.zeros((len(G), 0))
+        for i, (lab, c) in enumerate(obs):
+            g = G[i]
+            fila = {
+                "frame": f,
+                "label": lab,
+                "m_por_px": m_por_px((g[0] + g[2]) / 2, g[3]),
+                "alto_px": g[3] - g[1],
+                "casa_iou": i in pares["iou"],
+                "casa_centro": i in pares["centro"],
+                "iou_max": float(iou[i].max()) if iou.shape[1] else 0.0,
+                "toca_borde": bool(g[3] >= alto_img - 2 or g[1] <= 1),
+            }
+            # ¿FUNDIDA? una detección casada (por centro) con OTRA persona solapa a esta
+            otras = [pares["centro"][k] for k in pares["centro"] if k != i]
+            fila["fundida"] = (
+                bool(any(iou[i, j] >= 0.3 for j in otras)) if iou.shape[1] else False
+            )
+            filas_gt.append(fila)
+        casadas = {k: set(v.values()) for k, v in pares.items()}
+        for j, d in enumerate(dets.get(f, [])):
+            mx, my = float(d[0]), float(d[1])
+            en_campo = 0 <= mx <= P["largo"] and 0 <= my <= P["ancho"]
+            if not en_campo:
+                continue
+            u, v = (d[2] + d[4]) / 2, d[5]
+            filas_det.append(
+                {
+                    "frame": f,
+                    "m_por_px": m_por_px(u, v),
+                    "casa_iou": j in casadas["iou"],
+                    "casa_centro": j in casadas["centro"],
+                }
+            )
+    gt = pd.DataFrame(filas_gt)
+    det = pd.DataFrame(filas_det)
+    jug = gt[gt.label == "player"]
+    cortes = jug.m_por_px.quantile([1 / 3, 2 / 3]).tolist()
+
+    def zona(m):
+        return "cerca" if m <= cortes[0] else ("media" if m <= cortes[1] else "lejos")
+
+    jug = jug.assign(zona=jug.m_por_px.map(zona))
+    det = det.assign(zona=det.m_por_px.map(zona))
+
+    def clase_fallo(r):
+        if r.fundida:
+            return "fundida"
+        if r.toca_borde:
+            return "cortada"
+        if r.alto_px < 20:
+            return "muy_pequena"
+        if r.iou_max > 0.1:
+            return "mal_localizada"
+        return "nada"
+
+    res = {"cortes_m_por_px": [round(c, 3) for c in cortes], "zonas": {}}
+    for z in ("cerca", "media", "lejos"):
+        g, d = jug[jug.zona == z], det[det.zona == z]
+        faltan = g[~g.casa_centro]
+        res["zonas"][z] = {
+            "gt_jugadores": len(g),
+            "alto_gt_px_mediana": round(float(g.alto_px.median()), 1),
+            "recall_iou_0_5": round(float(g.casa_iou.mean()), 3),
+            "recall_centro": round(float(g.casa_centro.mean()), 3),
+            "precision_iou_0_5": round(float(d.casa_iou.mean()), 3) if len(d) else None,
+            "precision_centro": (
+                round(float(d.casa_centro.mean()), 3) if len(d) else None
+            ),
+            "detecciones_en_campo": len(d),
+            "faltan_centro_por_tipo": faltan.apply(clase_fallo, axis=1)
+            .value_counts()
+            .to_dict(),
+            "faltan_iou_por_tipo": g[~g.casa_iou]
+            .apply(clase_fallo, axis=1)
+            .value_counts()
+            .to_dict(),
+        }
+    # IC 95 % del recall por centro, remuestreando FRAMES (las personas de un frame no son
+    # independientes: un frame malo pierde a varias a la vez)
+    rng = np.random.default_rng(0)
+    por_f = jug.groupby("frame").casa_centro.agg(["sum", "size"])
+    boot = []
+    for _ in range(2000):
+        m = por_f.iloc[rng.integers(0, len(por_f), len(por_f))]
+        boot.append(m["sum"].sum() / m["size"].sum())
+    res["recall_centro_ic95"] = [
+        round(float(q), 3) for q in np.quantile(boot, [0.025, 0.975])
+    ]
+    res["total"] = {
+        "recall_iou_0_5": round(float(jug.casa_iou.mean()), 3),
+        "recall_centro": round(float(jug.casa_centro.mean()), 3),
+        "precision_iou_0_5": round(float(det.casa_iou.mean()), 3),
+        "precision_centro": round(float(det.casa_centro.mean()), 3),
+    }
+    return res
+
+
+def recall(salida: Path) -> dict:
+    return {pata: recall_pata(pata) for pata in PATAS}
+
+
+def paneles_balon(salida: Path) -> dict:
+    """Los 30 paneles del 22-oct (outputs/diagnostico_balon/) con TODAS las candidatas (≥ 0,35)."""
+    import cv2
+
+    from src.utils.video_ffmpeg import leer_frames_ffmpeg
+
+    nombres = sorted(p.stem for p in (R / "outputs/diagnostico_balon").glob("*.jpg"))
+    frames = sorted({int(n.split("_")[1]) for n in nombres})
+    cand = {
+        e["frame_idx"]: e["dets"]
+        for e in pickle.load(open(CACHE_BALON_P1, "rb"))["cache"]
+    }
+    carpeta = salida / "paneles_balon_todas"
+    carpeta.mkdir(parents=True, exist_ok=True)
+    lista = []
+    for f, img in leer_frames_ffmpeg(VIDEO_BENJA, frames):
+        for k, d in enumerate(cand.get(f, [])):
+            x1, y1, x2, y2 = (int(round(float(v))) for v in d[2:6])
+            cv2.rectangle(img, (x1 - 6, y1 - 6), (x2 + 6, y2 + 6), (0, 0, 255), 2)
+            cv2.putText(
+                img,
+                f"{k}:{float(d[6]):.2f}",
+                (x1 - 6, y1 - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 255),
+                2,
+            )
+        cv2.putText(
+            img,
+            f"f{f}  {relojes(f)}  candidatas: {len(cand.get(f, []))}",
+            (10, 34),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (255, 255, 255),
+            2,
+        )
+        cv2.imwrite(str(carpeta / f"f{f}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        lista.append(
+            {"frame": f, "relojes": relojes(f), "candidatas": len(cand.get(f, []))}
+        )
+    return {"paneles": lista, "estratos": nombres}
+
+
 def main() -> None:
     acciones = {
         "candidatas": candidatas,
         "segunda_tanda": segunda_tanda,
         "hoja_control_regla": hoja_control_regla,
         "regla": regla,
+        "recall": recall,
+        "paneles_balon": paneles_balon,
     }
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("accion", choices=list(acciones))

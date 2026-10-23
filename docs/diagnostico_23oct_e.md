@@ -276,3 +276,107 @@ el del otro campo está en otra región, con su propio movimiento.
 - frames del tramo sin balón **≤ hoy + 3 puntos** (hoy, 51,6 %: el 22-oct b);
 - y la segunda pregunta, «¿qué podría estar inventando?»: lo que elige tiene que MOVERSE como un
   balón. Mediana de desplazamiento por muestra ≥ la del balón real del tramo; las marcas dan 0,02 m.
+
+## Resultado del bloque 3 — recall de los detectores por zona
+
+`python scripts/diag23e.py recall --salida outputs/diagnostico_23oct_e` (`recall.json`).
+- Detecciones de la caché de producción, antes del tracker.
+- Zonas: terciles de metros por píxel en el pie de la caja del GT.
+  - Benjamín: ≤ 0,157 · ≤ 0,224 · más.
+  - Villaviciosa: ≤ 0,635 · ≤ 0,877 · más.
+
+**Jugadores, benjamín (60 frames, 814 personas del GT):**
+
+| zona | GT | recall IoU ≥ 0,5 | **recall centro** | precisión IoU | precisión centro (cota inferior) | faltan (por centro) |
+|---|---|---|---|---|---|---|
+| cerca | 272 | 0,4 % | **94,9 %** | 0,7 % | 88,6 % | 14: 8 mal localizadas, 6 sin detección |
+| media | 271 | 21,0 % | **93,4 %** | 19,2 % | 85,6 % | 18: 9 mal localizadas, 8 sin detección, 1 fundida |
+| lejos | 271 | 59,4 % | **96,3 %** | 59,0 % | 94,4 % | 10: 8 mal localizadas, 1 fundida, 1 sin detección |
+| **total** | 814 | 26,9 % | **94,8 %** (IC 95 % por frames: 93,5-96,2) | 25,4 % | 89,4 % | 42 |
+
+**Jugadores, Villaviciosa (100 frames, 2.118 personas del GT):**
+
+| zona | GT | alto del GT (px, mediana) | recall IoU ≥ 0,5 | **recall centro** | precisión centro | faltan (por centro) |
+|---|---|---|---|---|---|---|
+| cerca | 706 | 34,3 | 90,8 % | **99,2 %** | 96,7 % | 6: 4 muy pequeñas, 2 fundidas |
+| media | 706 | 26,1 | 86,8 % | **95,8 %** | 86,0 % | 30: 20 mal localizadas, 4 fundidas, 4 muy pequeñas, 2 sin detección |
+| lejos | 706 | 20,0 | 52,1 % | **64,6 %** | 87,9 % | **250: 167 muy pequeñas (< 20 px)**, 41 sin detección, 26 fundidas, 16 mal localizadas |
+| total | 2.118 | | 76,6 % | 86,5 % (IC 84,4-88,5) | 90,1 % | 286 |
+
+**Lectura fijada antes: el benjamín NO llega al 95 % por la letra (94,8 %), pero NO se distingue de
+él.**
+- El IC 95 % es [93,5; 96,2] y contiene al 95.
+- Los dos emparejados no coinciden de lado: con IoU sale 26,9 %. Ese número es el sesgo de la
+  plantilla fija de 18 × 40 px (en la zona cercana, con jugadores de ~100 px de alto, el IoU es
+  0,4 %), no el detector.
+- Lo que falta en el benjamín **no es lo que arregla más datos**: casi nada es pequeño ni fundido.
+  - «Mal localizada» (25 de 42) es una detección que solapa con la persona pero cuyo centro no
+    contiene el centro de la plantilla. Es sobre todo la plantilla en los jugadores grandes y
+    cercanos.
+  - «Sin detección» son 15.
+- ⇒ **Ampliar los datos de jugadores no es la palanca del benjamín.** Su techo de recall está en
+  ~95 % y lo que falta es localización y emparejado.
+- **En Villaviciosa sí**: el tercio lejano pierde el 35 %, y dos tercios de eso son personas de
+  menos de 20 px. Es el «por debajo de 25 px el detector se degrada» de CLAUDE.md. Ampliar datos
+  con jugadores muy pequeños sirve para generalizar a F11 (o se cambia la cámara).
+
+¿Qué podría estar inventando?
+- **El emparejado de centro es generoso con las cajas grandes**: una detección que funde a dos
+  personas contiene los dos centros, pero en el húngaro solo casa con UNA. Por eso las fundidas
+  salen como fallo, no como acierto.
+- **La precisión del benjamín es una cota inferior**: el GT no anota al árbitro ni al staff que pisa
+  el campo, y esas detecciones cuentan como falsas.
+- **Los 60 frames son el minuto 5.** La ventana del GT no representa el partido (CLAUDE.md), y en
+  los minutos 0-5 el recuento era peor.
+
+**Balón: ninguno de los dos GT anota el balón** (solo tracks `player` y, en Villaviciosa,
+`referee`).
+- Medido a ojo en los 30 paneles del 22-oct, redibujados con TODAS las candidatas (≥ 0,35; no se
+  puede bajar a 0,25: la caché empieza en 0,35):
+  - **Zona cercana** (4 paneles: f8992, f9012, f9144 y f9282, balón a < 15 m de la cámara): **4 de
+    4** tienen una candidata sobre el balón.
+  - **Zona lejana** (los otros 24): la medida **no es fiable** a la resolución de los paneles. En
+    los 4 frames donde la única candidata está en el campo de al lado (f9306, f9360, f9738 y
+    f10472), no encuentro el balón del partido en la imagen, pero no puedo afirmar que sea visible
+    y no detectado.
+- **NO MEDIDO con rigor.** Haría falta un recorte ampliado de cada panel, como la hoja de
+  candidatas, o anotar el balón en CVAT.
+
+## Resultado del bloque 4 — `outputs/` (NO se ha borrado nada)
+
+`outputs/` ocupa 6,1 GB (15 GB libres en el disco, 97 %). Marcas:
+- **R-mac**: regenerable en el Mac desde cachés y scripts del repo;
+- **R-gpu**: regenerable solo con GPU (re-detectar en Colab);
+- **NO**: trabajo a mano o entrada que no se puede reproducir.
+
+| fichero o carpeta | MB | ¿regenerable? | nota |
+|---|---|---|---|
+| `detecciones_benja_p1.mp4` | 987,7 | R-mac | `generar_video_detecciones.py` desde la caché |
+| `video_parte_entera_v3.mp4` | 987,7 | R-mac | ídem, con el CSV v3 |
+| `video_parte_entera.mp4` | 987,7 | R-mac | ídem |
+| `pool_balon_pegado/` | 459,7 | **NO** (en parte) | contiene `etiquetado/` y anotaciones CVAT; el paquete YOLO se puede rehacer, las etiquetas no |
+| `diagnostico_22oct_b/` | 439,9 | R-mac | el 98 % es `cache_colores_v3.pkl` (420 MB): se rehace con `diag22b_feature_v3.py` (CPU, 20 min) |
+| `fragmento_balon_7m03/` | 359,0 | R-mac | vídeos y pizarras de un fragmento |
+| `diagnostico_23oct_d/` | 325,7 | R-mac | capturas de la pista (`captura_*.pkl`) y clips; **rama abierta** |
+| `detecciones_conjunto_balon.mp4` | 246,8 | R-mac | |
+| `hoja_equipos/` | 141,5 | **NO** | contiene `revision.csv` (marcado a mano) |
+| `diagnostico_23oct_b/` | 115,6 | R-mac | 84 MB de paneles de auditoría |
+| `diagnostico_22oct_g/` | 112,5 | R-mac | CSV de variantes |
+| `recortes_sueltos/` | 81,7 | R-mac | |
+| `etiquetado_balon_dirigido/` | 78,7 | **NO** (en parte) | `labels/`: etiquetas a mano |
+| `diagnostico_22oct_e/`, `_22oct_f/` | 58,0 · 53,9 | R-mac | |
+| `hoja_recuento/`, `hoja_recuento 2/`, `hoja_recuento.zip` | 51,5 × 2 + 51,2 | R-mac (la hoja) | las tres son la misma hoja (copia y zip); la revisión de Alex quedó en el informe |
+| `diagnostico_23oct_c/` | 49,7 | **NO** para esta rama | sus cachés de chaleco son ENTRADAS de la adopción (copiadas ya a `data/tracking_benja/`) |
+| 9 vídeos de 48,8 MB (`FINAL_`, `ACUMULADO_`, `EXPERIMENTAL_benja_cajas.mp4`, `detecciones_benja*.mp4`, `video_jugadores_balon_5m10.mp4`, `detecciones_muestra3min.mp4`) | 439 | R-mac | |
+| `gt_huecos/` | 34,5 | R-mac | |
+| `arbitro_obs/` | 33,5 | R-mac | lo usa `diag22b_filas.py` como entrada |
+| `diagnostico_22oct_c/`, `_22oct_d/`, `_23oct_a/`, `_22oct/` | 31,5 · 20,1 · 19,8 · 8,5 | R-mac | `_22oct_d/posiciones_hoy.csv` es entrada del modelo de emisión: **no borrar** |
+| `gt_balon_en_vuelo/`, `gt_posicion_balon/` (+ ` 2` y `.zip`), `gt_desempates/` (+ `.zip`) | ~9 cada una | **NO** | `respuestas*.csv` y `.numbers`: GT de Alex |
+| el resto (< 8 MB cada uno) | ~60 | casi todo R-mac | |
+
+- **Lo que más libera sin perder nada**:
+  - los tres vídeos de la parte entera (2,9 GB, R-mac);
+  - `cache_colores_v3.pkl` (420 MB, R-mac en CPU);
+  - las copias duplicadas `hoja_recuento 2` y `gt_posicion_balon 2` con sus `.zip`, ~120 MB.
+    Antes de borrarlas, comprobar con `diff -r` que son copias idénticas.
+- **Nada de esto se ha borrado.**
