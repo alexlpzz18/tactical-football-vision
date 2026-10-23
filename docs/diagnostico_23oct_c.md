@@ -159,8 +159,9 @@ ese criterio queda **NO MEDIDO**, y todo lo que sigue son proxies.
 > planteada. El recuento de B **incluye a `portero_B`**, así que un portero verde etiquetado «B»
 > cuenta igual que uno etiquetado `portero_B` y **no añade ninguna fila**. Lo que sí la añade es
 > que `portero_B` se lo lleve un jugador de A. Con la cuenta bien hecha, el rol de portero explica
-> ~4 de 28 frames con B > 7 (≈ 14 %), no «casi siempre». La causa mayor son las filas duplicadas
-> (8 de 28).
+> ~4 de 28 frames con B > 7 (≈ 14 %), no «casi siempre». Las «filas duplicadas» (8 de 28) resultaron
+> ser, con la caja propia del tracker, ~2 duplicados y ~5 filas DESPLAZADAS sobre la caja de otra
+> persona (`docs/diagnostico_23oct_d.md`, bloque 5).
 
 ### Control (ii): las dos cachés de 60 s
 

@@ -94,11 +94,29 @@ def pasada(nombre: str, salida: Path, modelo: Path, vit: dict | None):
         captura.update(pista=p, cache=cache, chaleco=chaleco, modelo=mod)
         return p
 
+    original_aplicar = av.aplicar_pista
+
+    def espia_aplicar(identidades, equipos, etiquetas, pista, colores, clf, params):
+        salida_obs = original_aplicar(
+            identidades, equipos, etiquetas, pista, colores, clf, params
+        )
+        captura.update(
+            identidades=[
+                [(int(f), int(j)) for tr in ident for (f, j) in tr.det_idxs]
+                for ident in identidades
+            ],
+            equipos=dict(equipos),
+            etiquetas_por_obs=dict(salida_obs),
+        )
+        return salida_obs
+
     pe.cargar_config_equipos, av.pista_del_arbitro = con_flag, espia
+    av.aplicar_pista = espia_aplicar
     try:
         procesar_desde_cache(cfg)
     finally:
         pe.cargar_config_equipos, av.pista_del_arbitro = original_cfg, original_pista
+        av.aplicar_pista = original_aplicar
     return csv, captura
 
 
@@ -801,6 +819,280 @@ def tabla_filas_b(salida: Path) -> dict:
     return out
 
 
+# ── bloque 5: las filas duplicadas ────────────────────────────────────────────────────────────
+
+CASOS_DUPLICADO = [4662, 4923, 6780, 10782, 13959, 17115, 18885, 19608]  # bloque 3
+
+
+def equipo_base(etiqueta) -> str:
+    e = str(etiqueta)
+    return e.replace("portero_", "") if e.startswith("portero_") else e
+
+
+def iou_cajas(a, b) -> float:
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return float(inter / union) if union > 0 else 0.0
+
+
+def observaciones_por_frame(cap: dict) -> dict:
+    """{frame: [(identidad 1-based, índice filtrado, equipo base de su etiqueta FINAL)]}."""
+    out: dict[int, list] = {}
+    for i, obs in enumerate(cap["identidades"], start=1):
+        et_id = cap["equipos"].get(i, "otro")
+        for f, j in obs:
+            et = cap["etiquetas_por_obs"].get((i, f)) or et_id
+            out.setdefault(f, []).append((i, j, equipo_base(et)))
+    return out
+
+
+def pareja(cap, filtrado, f, a, b) -> dict:
+    """IoU de las cajas PROPIAS, distancia y solape temporal de dos observaciones del frame f."""
+    (i1, j1, e1), (i2, j2, e2) = a, b
+    d1, d2 = filtrado[f][j1], filtrado[f][j2]
+    f1 = {x for x, _ in cap["identidades"][i1 - 1]}
+    f2 = {x for x, _ in cap["identidades"][i2 - 1]}
+    return {
+        "frame": int(f),
+        "ids": [int(i1), int(i2)],
+        "equipos": [e1, e2],
+        "iou_propio": round(iou_cajas(d1[2:6], d2[2:6]), 3),
+        "distancia_m": round(float(np.hypot(d1[0] - d2[0], d1[1] - d2[1])), 2),
+        "solape_temporal": round(len(f1 & f2) / max(min(len(f1), len(f2)), 1), 3),
+        "obs": [len(f1), len(f2)],
+    }
+
+
+def casos_misma_caja(salida, cap, filtrado, crudo, frames) -> list[dict]:
+    """Parejas de filas reales del CSV en la MISMA caja cruda (la medida del bloque 3)."""
+    import pandas as pd
+
+    inv = _mod("diag22e_invariantes")
+    filas = pd.read_csv(salida / "v2_anade_ident.csv")
+    fk = inv.con_caja(filas[filas.frame.isin(frames)], crudo)
+    pf = observaciones_por_frame(cap)
+    out = []
+    for f in frames:
+        g = fk[fk.frame == f]
+        obs_de = {o[0]: o for o in pf.get(f, [])}
+        for k, gg in g.groupby("k"):
+            if len(gg) < 2 or not gg.etiqueta.map(equipo_base).eq("B").any():
+                continue
+            ids = [int(x) for x in gg.id_jugador]
+            fila = {
+                "frame": int(f),
+                "relojes": relojes(int(f)),
+                "ids": ids,
+                "etiquetas": gg.etiqueta.astype(str).tolist(),
+                "con_observacion_propia": [i in obs_de for i in ids],
+            }
+            if all(i in obs_de for i in ids[:2]):
+                fila.update(pareja(cap, filtrado, f, obs_de[ids[0]], obs_de[ids[1]]))
+            out.append(fila)
+    return out
+
+
+def parejas_gt(cap, filtrado, radio_gt: float = 2.0, casado: float = 1.0) -> list[dict]:
+    """Compañeros del GT a ≤ radio_gt, casados 1-a-1 a ≤ casado con detecciones de identidades
+    DISTINTAS: el control de personas distintas."""
+    from scipy.optimize import linear_sum_assignment
+
+    col = _mod("diag22g_color")
+    gt = col.gt_de("benja")
+    pf = observaciones_por_frame(cap)
+    out = []
+    for f, obs in gt.items():
+        if f not in filtrado:
+            continue
+        D = np.array([d[:2] for d in filtrado[f]], float).reshape(-1, 2)
+        P = np.array([o.pos for o in obs], float)
+        if not len(D):
+            continue
+        coste = np.hypot(D[None, :, 0] - P[:, None, 0], D[None, :, 1] - P[:, None, 1])
+        casa = {}
+        for i, j in zip(*linear_sum_assignment(np.where(coste > casado, 1e6, coste))):
+            if coste[i, j] <= casado:
+                casa[i] = j
+        dueno = {j: o for o in pf.get(f, []) for j in [o[1]]}
+        for a in range(len(obs)):
+            for b in range(a + 1, len(obs)):
+                if equipo_base(obs[a].team) != equipo_base(obs[b].team):
+                    continue
+                if (
+                    np.hypot(*(np.asarray(obs[a].pos) - np.asarray(obs[b].pos)))
+                    > radio_gt
+                ):
+                    continue
+                if a not in casa or b not in casa:
+                    continue
+                oa, ob = dueno.get(casa[a]), dueno.get(casa[b])
+                if oa is None or ob is None or oa[0] == ob[0]:
+                    continue
+                out.append(pareja(cap, filtrado, f, oa, ob))
+    return out
+
+
+def reconciliar(salida, cap, filtrado, crudo) -> dict:
+    """«Filas en la misma caja» en la ventana del GT: ¿una persona o dos, según el GT?"""
+    import pandas as pd
+
+    inv, col = _mod("diag22e_invariantes"), _mod("diag22g_color")
+    gt = col.gt_de("benja")
+    filas = pd.read_csv(salida / "v2_anade_ident.csv")
+    r = filas[filas.es_real == 1]
+    fk = inv.con_caja(r[r.frame.isin(list(gt))], crudo)
+    una = dos = ninguna = 0
+    for (f, k), gg in fk.groupby(["frame", "k"]):
+        if len(gg) < 2:
+            continue
+        x, y = crudo[f][int(k)][:2]
+        cerca = sum(np.hypot(o.pos[0] - x, o.pos[1] - y) <= 1.5 for o in gt[f])
+        if cerca >= 2:
+            dos += 1
+        elif cerca == 1:
+            una += 1
+        else:
+            ninguna += 1
+    return {
+        "cajas_con_2_o_mas_filas_en_los_frames_del_gt": una + dos + ninguna,
+        "con_1_persona_del_gt_a_1_5m": una,
+        "con_2_o_mas_personas_del_gt_a_1_5m": dos,
+        "sin_persona_del_gt": ninguna,
+        "frames_del_gt": len(gt),
+    }
+
+
+def control_gt_amplio(cap, filtrado, casado: float = 1.0) -> list[tuple]:
+    """TODAS las parejas del mismo equipo en los frames del GT cuyas detecciones están casadas con
+    personas DISTINTAS, a cualquier distancia: (IoU de las cajas, distancia en m, frame).
+
+    El control de compañeros a ≤ 2 m no ve a dos personas que se solapan en la IMAGEN estando
+    lejos en METROS (una detrás de otra en profundidad), que es justo lo que un IoU toca.
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    gt = _mod("diag22g_color").gt_de("benja")
+    pf = observaciones_por_frame(cap)
+    out = []
+    for f, obs in gt.items():
+        if f not in filtrado:
+            continue
+        D = np.array([x[:2] for x in filtrado[f]], float).reshape(-1, 2)
+        P = np.array([o.pos for o in obs], float)
+        C = np.hypot(D[None, :, 0] - P[:, None, 0], D[None, :, 1] - P[:, None, 1])
+        persona = {}
+        for i, j in zip(*linear_sum_assignment(np.where(C > casado, 1e6, C))):
+            if C[i, j] <= casado:
+                persona[j] = i
+        lst = pf.get(f, [])
+        for a in range(len(lst)):
+            for b in range(a + 1, len(lst)):
+                (_, j1, e1), (_, j2, e2) = lst[a], lst[b]
+                if e1 != e2 or e1 not in ("A", "B"):
+                    continue
+                if j1 in persona and j2 in persona and persona[j1] != persona[j2]:
+                    iou = iou_cajas(filtrado[f][j1][2:6], filtrado[f][j2][2:6])
+                    out.append(
+                        (round(iou, 3), round(float(np.hypot(*(D[j1] - D[j2]))), 2), f)
+                    )
+    return sorted(out, reverse=True)
+
+
+def desplazamiento_de_filas(salida, cap, filtrado, casos) -> None:
+    """Distancia de la fila del CSV a la detección PROPIA de su identidad (añade a cada caso)."""
+    import pandas as pd
+
+    filas = pd.read_csv(salida / "v2_anade_ident.csv")
+    pf = observaciones_por_frame(cap)
+    for c in casos:
+        f = c["frame"]
+        obs_de = {o[0]: o for o in pf.get(f, [])}
+        c["desplazamiento_fila_m"] = []
+        for i in c["ids"][:2]:
+            fila = filas[(filas.frame == f) & (filas.id_jugador == i)].iloc[0]
+            j = obs_de[i][1]
+            c["desplazamiento_fila_m"].append(
+                round(
+                    float(
+                        np.hypot(
+                            fila.x_m - filtrado[f][j][0], fila.y_m - filtrado[f][j][1]
+                        )
+                    ),
+                    2,
+                )
+            )
+
+
+def capturar_identidades(salida: Path) -> dict:
+    if not (salida / "captura_v2_anade_ident.pkl").exists():
+        _csv, cap = pasada("v2_anade_ident", salida, MODELO, {"variante": "anade"})
+        pickle.dump(cap, open(salida / "captura_v2_anade_ident.pkl", "wb"))
+    return pickle.load(open(salida / "captura_v2_anade_ident.pkl", "rb"))
+
+
+def duplicados(salida: Path) -> dict:
+    cap = capturar_identidades(salida)
+    filtrado = {e["frame_idx"]: e["dets"] for e in cap["cache"]}
+    crudo = dets_crudos()
+    casos = casos_misma_caja(salida, cap, filtrado, crudo, CASOS_DUPLICADO)
+    desplazamiento_de_filas(salida, cap, filtrado, casos)
+    negativos = parejas_gt(cap, filtrado)
+    amplio = control_gt_amplio(cap, filtrado)
+    iou_neg = sorted(p["iou_propio"] for p in negativos)
+    iou_casos = sorted(
+        (c["iou_propio"] for c in casos if "iou_propio" in c), reverse=True
+    )
+    techo_neg = iou_neg[-1] if iou_neg else 0.0
+    sexto = iou_casos[5] if len(iou_casos) >= 6 else None
+    if sexto is not None and sexto > techo_neg:
+        x = round((techo_neg + sexto) / 2, 3)
+        criterio = {"intervalo": [techo_neg, sexto], "x": x}
+    else:
+        criterio = {
+            "intervalo": None,
+            "x": None,
+            "motivo": "ningún x deja 0 parejas del GT y cubre ≥ 6 de los 8",
+        }
+
+    def cuantiles(v):
+        return (
+            [round(float(q), 3) for q in np.quantile(v, [0, 0.5, 0.9, 1])]
+            if v
+            else None
+        )
+
+    res = {
+        "casos": casos,
+        "control_gt": {
+            "parejas": len(negativos),
+            "iou_propio_min_med_p90_max": cuantiles(iou_neg),
+            "distancia_m_min_med_p90_max": cuantiles(
+                [p["distancia_m"] for p in negativos]
+            ),
+            "solape_min_med_p90_max": cuantiles(
+                [p["solape_temporal"] for p in negativos]
+            ),
+        },
+        "criterio_con_el_control_de_companeros_a_2m": criterio,
+        "control_gt_amplio": {
+            "parejas_de_personas_distintas": len(amplio),
+            "top_iou_distancia_frame": amplio[:8],
+            "con_iou_>=_x": (
+                sum(a[0] >= criterio["x"] for a in amplio) if criterio["x"] else None
+            ),
+            "casos_con_iou_por_encima_del_maximo_amplio": sum(
+                c.get("iou_propio", 0) > (amplio[0][0] if amplio else 0) for c in casos
+            ),
+        },
+        "reconciliacion_ventana_gt": reconciliar(salida, cap, filtrado, crudo),
+    }
+    (salida / "bloque5_parejas_gt.json").write_text(json.dumps(negativos, indent=1))
+    return res
+
+
 def porteros(salida: Path) -> dict:
     crudo = dets_crudos()
     fk = filas_con_caja(salida / "v2_anade.csv", crudo)
@@ -933,19 +1225,181 @@ def clip(salida: Path) -> dict:
     }
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument(
-        "accion",
-        choices=[
-            "pista",
-            "velocidades",
-            "cruzada",
-            "porteros",
-            "tabla_filas_b",
-            "clip",
-        ],
+# ── bloque 6: relleno de los huecos de un frame (velocidad mediana de 3 pasos) ────────────────
+
+
+def huecos_de_un_frame(
+    salida: Path, cap: dict, filtrado: dict, crudo: dict
+) -> list[dict]:
+    """Los 56 casos del bloque 4: un frame fuera de la pista entre dos frames de la pista con la
+    MISMA identidad del tracker, con la detección de esa identidad presente y su fila en un equipo.
+    """
+    import pandas as pd
+
+    ident = identidad_por_deteccion(salida / "v2_anade.csv", filtrado, crudo)
+    filas = pd.read_csv(salida / "v2_anade.csv")
+    r = filas[filas.es_real == 1]
+    et = {
+        (int(a), int(b)): str(c) for a, b, c in zip(r.frame, r.id_jugador, r.etiqueta)
+    }
+    p = cap["pista"]
+    frames = sorted(filtrado)
+    casos = []
+    for n in range(1, len(frames) - 1):
+        f, a, b = frames[n], frames[n - 1], frames[n + 1]
+        if f in p or a not in p or b not in p:
+            continue
+        ia, ib = ident.get((a, p[a])), ident.get((b, p[b]))
+        if ia is None or ia != ib:
+            continue
+        j = next((j for j in range(len(filtrado[f])) if ident.get((f, j)) == ia), None)
+        if j is None:
+            continue
+        if equipo_base(et.get((f, ia))) in ("A", "B"):
+            casos.append({"frame": int(f), "id": int(ia), "det": int(j)})
+    return casos
+
+
+def relleno(salida: Path) -> dict:
+    import pandas as pd
+
+    inv = _mod("diag22e_invariantes")
+    base = cargar_captura(salida)
+    filtrado = {e["frame_idx"]: e["dets"] for e in base["cache"]}
+    t_de = {e["frame_idx"]: float(e["t"]) for e in base["cache"]}
+    crudo = dets_crudos()
+    casos = huecos_de_un_frame(salida, base, filtrado, crudo)
+    csv, cap = pasada(
+        "v2_vel3", salida, MODELO, {"variante": "anade", "velocidad_pasos": 3}
     )
+
+    def medidas(csv_ruta, c):
+        fs = sorted(c["pista"])
+        pos = np.array([filtrado[f][c["pista"][f]][:2] for f in fs])
+        v = pasos(fs, np.array([t_de[f] for f in fs]), pos)
+        filas = pd.read_csv(csv_ruta)
+        return {
+            "cobertura_pct": round(100 * len(fs) / max(len(filtrado), 1), 2),
+            "B_mas_de_7_pct": inv.invariantes(
+                inv.recuento_por_frame(filas, 62.0, 40.0), 7
+            )["pct_B_mas_del_tope"],
+            "pasos_mas_de_9_pct": round(100 * float(np.mean(v > 9.0)), 2),
+        }
+
+    antes = medidas(salida / "v2_anade.csv", base)
+    despues = medidas(csv, cap)
+    cubiertos = sum(cap["pista"].get(c["frame"]) == c["det"] for c in casos)
+    comunes = set(cap["pista"]) & set(base["pista"])
+    cambia = sum(cap["pista"][f] != base["pista"][f] for f in comunes)
+    return {
+        "casos": len(casos),
+        "cubiertos": int(cubiertos),
+        "v2_velocidad_1_paso": antes,
+        "v2_velocidad_3_pasos": despues,
+        "frames_que_entran_en_la_pista": len(set(cap["pista"]) - set(base["pista"])),
+        "frames_que_salen_de_la_pista": len(set(base["pista"]) - set(cap["pista"])),
+        "frames_con_otra_deteccion_elegida": int(cambia),
+        "criterio": {
+            "cubre_>=40": cubiertos >= 40,
+            "cobertura_no_empeora": despues["cobertura_pct"] >= antes["cobertura_pct"],
+            "B_mas_de_7_no_empeora": despues["B_mas_de_7_pct"]
+            <= antes["B_mas_de_7_pct"],
+            "pasos_>9_suben_<=0,2": despues["pasos_mas_de_9_pct"]
+            <= antes["pasos_mas_de_9_pct"] + 0.2,
+        },
+    }
+
+
+# ── bloque 7: los clips donde hoy y la variante 2 más se distinguen ───────────────────────────
+
+TRAMOS_CLIP = {"1m00": (60.0, 105.0), "7m00": (420.0, 465.0)}  # segundos del ARCHIVO
+
+
+def clips(salida: Path) -> dict:
+    """Vídeo + pizarra de cada tramo, con hoy y con la variante 2 (ésta, con la pista dibujada)."""
+    import subprocess
+
+    import pandas as pd
+
+    cap = cargar_captura(salida)
+    filtrado = {e["frame_idx"]: e["dets"] for e in cap["cache"]}
+    py = sys.executable
+    res = {}
+    for nombre, (t0, t1) in TRAMOS_CLIP.items():
+        carpeta = salida / f"clip_{nombre}"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        cfg = yaml.safe_load(open(CONFIG))
+        cfg["muestreo"]["tramo"] = {"min_ini": t0 / 60, "dur_seg": t1 - t0}
+        ruta_cfg = carpeta / "config_tramo.yaml"
+        ruta_cfg.write_text(yaml.safe_dump(cfg, allow_unicode=True))
+        frames = [f for f in sorted(filtrado) if t0 <= f / FPS < t1]
+        cajas = {
+            str(f): [float(v) for v in filtrado[f][cap["pista"][f]][2:6]]
+            for f in frames
+            if f in cap["pista"]
+        }
+        ruta_pista = carpeta / "pista_v2.json"
+        ruta_pista.write_text(json.dumps({"cajas": cajas}))
+        for variante, csv in (("hoy", "hoy.csv"), ("v2", "v2_anade.csv")):
+            tramo = pd.read_csv(salida / csv)
+            tramo = tramo[tramo.tiempo_s.between(t0, t1)]
+            csv_tramo = carpeta / f"tramo_{variante}.csv"
+            tramo.to_csv(csv_tramo, index=False)
+            orden = [
+                py,
+                str(R / "scripts/generar_video_detecciones.py"),
+                "--config",
+                str(ruta_cfg),
+                "--csv",
+                str(csv_tramo),
+                "--salida",
+                str(carpeta / f"video_{nombre}_{variante}.mp4"),
+            ]
+            if variante == "v2":
+                orden += ["--pista", str(ruta_pista)]
+            subprocess.run(orden, check=True)
+            subprocess.run(
+                [
+                    py,
+                    str(R / "scripts/generar_replay.py"),
+                    "--csv",
+                    str(csv_tramo),
+                    "--salida",
+                    str(carpeta / f"pizarra_{nombre}_{variante}.html"),
+                    "--config-campo",
+                    str(R / "configs/campo_benja.yaml"),
+                    "--titulo",
+                    f"{int(t0 // 60)}:{int(t0 % 60):02d}-{int(t1 // 60)}:{int(t1 % 60):02d}"
+                    f" (archivo) · {variante}",
+                ],
+                check=True,
+            )
+        res[nombre] = {
+            "archivo_s": [t0, t1],
+            "frames": len(frames),
+            "frames_con_pista": len(cajas),
+            "frames_sin_pista_borde_rojo": len(frames) - len(cajas),
+            "ficheros": sorted(
+                p.name for p in carpeta.iterdir() if p.suffix in (".mp4", ".html")
+            ),
+        }
+    return res
+
+
+def main() -> None:
+    # Una sola tabla de acciones: los subcomandos válidos salen de ella, así no se desincronizan.
+    acciones = {
+        "velocidades": velocidades,
+        "cruzada": cruzada,
+        "porteros": porteros,
+        "tabla_filas_b": tabla_filas_b,
+        "duplicados": duplicados,
+        "clip": clip,
+        "clips": clips,
+        "relleno": relleno,
+    }
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("accion", choices=["pista", *acciones])
     ap.add_argument("--salida", required=True)
     args = ap.parse_args()
     salida = Path(args.salida)
@@ -953,13 +1407,7 @@ def main() -> None:
     if args.accion == "pista":
         pista_base(salida)
         return
-    res = {
-        "velocidades": velocidades,
-        "cruzada": cruzada,
-        "porteros": porteros,
-        "tabla_filas_b": tabla_filas_b,
-        "clip": clip,
-    }[args.accion](salida)
+    res = acciones[args.accion](salida)
     texto = json.dumps(res, indent=1, ensure_ascii=False, default=lambda o: o.item())
     (salida / f"{args.accion}.json").write_text(texto)
     print(texto)

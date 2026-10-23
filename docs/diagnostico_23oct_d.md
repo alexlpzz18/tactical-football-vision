@@ -238,6 +238,8 @@ portero de verdad sigue contado en B. Hoy se clasifica con esa cuenta.
 | fantasma (caja diminuta) | 1 | f1806 (#55) |
 | no se distingue | 4 | f3351, f12579, f24954, f33183 |
 
+- ⚠️ *Corregido en el bloque 5*: con la caja PROPIA del tracker, de esas 8 «duplicadas» solo ~2 son
+  duplicados; ~5 son filas DESPLAZADAS 2,5-9,4 m de su detección que caen sobre la caja de otro.
 - La fila de más **no tiene un dueño**. El grupo mayor (8 de 28) es una fila DUPLICADA. Son
   29 filas B en los 28 frames con otra fila en la misma caja: es asociación, no color ni regla.
 - El rol de portero explica 4 de 28 (14 %).
@@ -468,3 +470,146 @@ eso el criterio de velocidad sigue, y se informa cuántos frames cambian de dete
 ## Bloque 8 — `outputs/` de ramas cerradas
 
 Lista ordenada por tamaño, **sin borrar nada**.
+
+---
+
+## Resultado del bloque 5 — las «filas duplicadas» casi nunca son duplicados
+
+`python scripts/diag23d.py duplicados --salida outputs/diagnostico_23oct_d` (`duplicados.json`).
+Las identidades se capturan del tracker en una pasada de la variante 2; su CSV es idéntico byte a
+byte al de la variante 2 (`cmp`).
+
+### 5a — los 8 casos, con la caja PROPIA de cada observación
+Son 9 parejas en 8 frames: en f18885 hay dos.
+
+| frame | ids | IoU propio | distancia | solape temporal | fila desplazada de su caja | lectura |
+|---|---|---|---|---|---|---|
+| 4923 | 62 · 148 | **0,47** | 1,27 m | 0,99 | 0,14 · 0,70 m | **duplicado probable** |
+| 19608 | 292 · 548 | **0,41** | 0,34 m | 0,96 | 1,43 · 0,96 m | **duplicado probable** |
+| 13959 | 161 · 366 | 0,15 | 0,77 m | 0,38 | 0,42 · 0,25 m | dudoso |
+| 4662 | 139 · 148 | 0,19 | 4,25 m | 0,64 | 0,51 · **2,53** m | dos personas, una fila desplazada |
+| 6780 | 179 · 212 | 0,10 | 5,00 m | 0,01 | **3,84** · 0,58 m | dos personas, una fila desplazada |
+| 10782 | 284 · 309 | 0,19 | 12,37 m | 0,68 | 1,30 · **9,43** m | dos personas, una fila desplazada |
+| 17115 | 436 · 486 | 0,00 | 1,31 m | 0,93 | **2,70** · 1,67 m | dos personas (una `otro`) |
+| 18885 | 459 · 477 | 0,00 | 3,09 m | 0,74 | **2,95** · 0,20 m | dos personas (A y B) |
+| 18885 | 292 · 366 | 0,10 | 7,34 m | 0,97 | 0,56 · **5,66** m | dos personas (B y A) |
+
+- En **5 de los 8 frames**, la «fila duplicada» del bloque 3 es una fila **DESPLAZADA** entre 2,5 y
+  9,4 m de su propia detección, que cae encima de la caja de OTRA persona. No es una persona en dos
+  identidades. Es la fila `es_real = 1` que no está en su detección: el suavizado de ~2 s, o un
+  cambio de persona dentro de la identidad (`docs/traza_por_etapas.md`).
+- Solo 2 de los 8 (f4923 y f19608) tienen la forma de un duplicado: cajas que se solapan mucho,
+  pies a < 1,3 m y dos identidades vivas a la vez casi todo el tiempo. Un tercero (f13959) es
+  dudoso.
+
+**Reconciliación con el 22-oct (b).** Las dos medidas no son la misma, y no se contradicen:
+- En los 60 frames del GT hay 28 cajas con ≥ 2 filas encima:
+  - 13 tienen UNA persona del GT a ≤ 1,5 m (pueden ser duplicados o desplazadas);
+  - 10 tienen DOS o más (dos personas reales);
+  - 5 no tienen ninguna.
+- El 22-oct contaba otra cosa: una fila SIN casar a < `R_DUP` de una fila CASADA. Por eso salían
+  8 de 140, compatible con estas 13.
+- Mi «duplicado» del bloque 3 mezclaba duplicados con filas desplazadas y con dos personas en una
+  caja fundida. **Corrección del bloque 3**: la causa mayor de B > 7 no son 8 duplicados. Son
+  ~2 duplicados y ~5 filas desplazadas.
+
+**El criterio de duplicado: NO existe uno que cumpla las dos condiciones.**
+- Con el control fijado, los compañeros del GT a ≤ 2 m (11 parejas, IoU máximo 0,03), el intervalo
+  sería (0,03; 0,104] y x = 0,067.
+- **Pero ese control no veía lo que un IoU toca.** Con el control LITERAL de «0 retiradas de personas
+  distintas en la ventana del GT» (todas las parejas del mismo equipo casadas con personas
+  distintas, a cualquier distancia: 1.378), el IoU máximo es **0,156**: dos personas a 7,9 m, una
+  detrás de otra en profundidad. Con x = 0,067 se retirarían **11 personas distintas** en la
+  ventana.
+- Para no retirar a ninguna haría falta x > 0,156, y entonces solo se cubren **4 de los 8**; se
+  pedían ≥ 6.
+- **Veredicto: no hay criterio de duplicado. El 5b NO se ha corrido (NO MEDIDO). El flag
+  `tracking.dedupe_identidades` no se ha implementado.**
+
+¿Qué podría estar inventando?
+- **Mi propio control**, al fijarlo: elegí «compañeros a ≤ 2 m», y la proximidad en METROS no es
+  proximidad en la IMAGEN, que es lo que mide un IoU. Es la lección de «proximidad en la imagen no
+  es oclusión», del revés.
+- **La clasificación del bloque 3**: medía lo que el emparejamiento por posición decía, no lo que el
+  tracker hizo. La medida que valía era la caja propia.
+
+## Resultado del bloque 6 — velocidad mediana de 3 pasos: NO PASA (un solo intento, se cierra)
+
+`python scripts/diag23d.py relleno --salida outputs/diagnostico_23oct_d` (`relleno.json`).
+
+| | variante 2 (1 paso) | variante 2 (mediana de 3 pasos) | criterio |
+|---|---|---|---|
+| casos cubiertos, de 56 | — | **17** | ≥ 40 ✗ |
+| cobertura | 97,11 % | 97,30 % | no empeora ✓ |
+| B > 7 | 8,45 % | 8,38 % | no empeora ✓ |
+| pasos > 9 m/s | 1,03 % | 1,10 % | ≤ 1,23 % ✓ |
+
+- 70 frames entran en la pista, 47 salen y en 15 cambia la detección elegida.
+- **Por qué no cubre más**: en los 39 casos sin cubrir, la detección saltada se aparta una
+  **mediana de 1,62 m** del punto medio de sus vecinos, y en 27 pasa de 1,3 m, la puerta de un
+  frame (8 m/s · 0,1 s + 0,5 m). En los 17 cubiertos, la mediana es 0,87 m.
+- Los huecos de un frame son en su mayoría **saltos más grandes que la puerta**, no temblores
+  pequeños arrastrados por la velocidad. f23553 (1,05 m) era de los pequeños. Ninguna velocidad
+  suavizada los deja pasar; haría falta abrir la puerta, y eso no se ha probado.
+- El parámetro `arbitro.viterbi.velocidad_pasos` se queda en el código **en 1 (= la pista de
+  antes)**, con su test del caso f23553 y el de que 1 no cambia la pista. El CSV de la variante 2
+  es idéntico byte a byte.
+
+## Resultado del bloque 7 — los clips de 1:00 y de 7:00
+
+`python scripts/diag23d.py clips --salida outputs/diagnostico_23oct_d`. En `outputs/diagnostico_23oct_d/`
+(no van al repo):
+
+| | archivo | reproductor | frames | sin pista (borde rojo) |
+|---|---|---|---|---|
+| `clip_1m00/` | 1:00-1:45 | 2:33-3:18 | 449 | 20 |
+| `clip_7m00/` | 7:00-7:45 | 8:33-9:18 | 450 | 19 |
+
+- En cada carpeta: `video_*_hoy.mp4`, `video_*_v2.mp4`, `pizarra_*_hoy.html` y `pizarra_*_v2.html`.
+- En `video_*_v2.mp4`, la detección de la pista va con un contorno blanco grueso y «ÁRBITRO». Los
+  frames sin pista llevan un borde rojo en todo el vídeo.
+- Comprobado sobre dos frames extraídos:
+  - en **f2112 (1:10,5 archivo / 2:43,5 reproductor)** el contorno «ÁRBITRO» está sobre el chaleco;
+  - en **f1905 (1:03,6 / 2:36,6)**, con borde rojo, **el árbitro sale como «#12 B»**: lo que pasa
+    en los huecos de la pista.
+- `generar_video_detecciones.py` gana la opción `--pista`. Sin ella, el vídeo sale igual que antes.
+- **Ningún número de este informe se apoya en los clips**: son para que Alex mire.
+
+## Resultado del bloque 8 — `outputs/` de ramas cerradas (NO se ha borrado nada)
+
+`outputs/` ocupa **6,1 GB**, con 15 GB libres en el disco (97 %).
+
+**Carpetas de diagnóstico**, por tamaño:
+
+| carpeta | MB | rama | ¿la usa esta rama? |
+|---|---|---|---|
+| `diagnostico_22oct_b` | 439,9 | fix-22oct-b | no |
+| `diagnostico_23oct_d` | 326,2 | **fix-23oct-d (esta)** | — |
+| `diagnostico_23oct_b` | 115,6 | fix-23oct-b | no |
+| `diagnostico_22oct_g` | 112,5 | fix-22oct-g | no |
+| `diagnostico_22oct_e` | 58,0 | fix-22oct-e | no |
+| `diagnostico_22oct_f` | 53,9 | fix-22oct-f | no |
+| `diagnostico_23oct_c` | 49,7 | fix-23oct-c | **sí**: las cachés de chaleco |
+| `diagnostico_22oct_c` | 31,5 | fix-22oct-c | no |
+| `diagnostico_22oct_d` | 20,1 | fix-22oct-d | **sí**: `posiciones_hoy.csv` (la verdad del modelo de emisión) |
+| `diagnostico_23oct_a` | 19,8 | fix-23oct-a | no |
+| `diagnostico_22oct` | 8,5 | diagnostico-22oct | no |
+
+**Lo más grande fuera de esas carpetas** (trabajo anterior, sin rama de diagnóstico propia):
+
+| fichero o carpeta | MB |
+|---|---|
+| `detecciones_benja_p1.mp4` | 987,7 |
+| `video_parte_entera_v3.mp4` | 987,7 |
+| `video_parte_entera.mp4` | 987,7 |
+| `pool_balon_pegado/` | 459,7 |
+| `fragmento_balon_7m03/` | 359,0 |
+| `detecciones_conjunto_balon.mp4` | 246,8 |
+| `hoja_equipos/` | 141,5 |
+| `recortes_sueltos/` | 81,7 |
+| `etiquetado_balon_dirigido/` | 78,7 |
+| `hoja_recuento/` (dos entradas con el mismo nombre visible) + `hoja_recuento.zip` | 51,5 + 51,5 + 51,2 |
+| `video_jugadores_balon_5m10.mp4`, `FINAL_`, `ACUMULADO_`, `EXPERIMENTAL_benja_cajas.mp4`, `detecciones_benja*.mp4`, `detecciones_muestra3min.mp4` | 48,8 cada uno (9 ficheros) |
+
+- Los tres vídeos de la parte entera, de ~1 GB cada uno, son el 48 % de `outputs/`.
+- La lista completa (106 entradas) sale con `du -sk outputs/* | sort -rn`.

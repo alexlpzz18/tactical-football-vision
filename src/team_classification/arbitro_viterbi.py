@@ -44,6 +44,11 @@ class ParametrosArbitroViterbi:
     coste_readquirir: float = 8.0
     margen_campo_m: float = 2.0
     ventana_voto_s: float = 1.5
+    # Con cuántos pasos se estima la velocidad que predice el siguiente frame. 1 = la del último
+    # paso (el comportamiento original). Con 3, la MEDIANA de los últimos 3, componente a
+    # componente: un salto de un frame por temblor del pie ya no arrastra la predicción
+    # (docs/diagnostico_23oct_d.md, bloque 6).
+    velocidad_pasos: int = 1
     control_permutar_semilla: int | None = None  # SOLO control del diagnóstico
 
     @classmethod
@@ -135,8 +140,10 @@ def pista_del_arbitro(
         J.append(idx)
         T.append(float(e["t"]))
     n = len(frames)
+    pasos_vel = max(1, int(params.velocidad_pasos))
     V = [None] * n  # puntuación de cada detección
-    vel = [None] * n
+    vel = [None] * n  # velocidad con la que cada estado predice el siguiente frame
+    historia = [None] * n  # las últimas `pasos_vel` velocidades de paso de cada estado
     atras = [None] * n  # (t_prev, i_prev) o ("nv", t_prev)
     v_nv = np.zeros(n)
     atras_nv = [None] * n
@@ -145,6 +152,7 @@ def pista_del_arbitro(
         mejor = np.full(nj, -np.inf)
         bp = [None] * nj
         vv = np.zeros((nj, 2))
+        hh = np.full((nj, pasos_vel, 2), np.nan)
         # desde «no visible» en t−1 (o arranque): readquirir en cualquier sitio
         base = (v_nv[t - 1] if t > 0 else 0.0) - params.coste_readquirir
         mejor[:] = base
@@ -177,15 +185,21 @@ def pista_del_arbitro(
                     bp[j] = (tp, int(i[j]))
                     v = (P[t][j] - P[tp][int(i[j])]) / dt
                     rap = float(np.linalg.norm(v))
-                    vv[j] = (
-                        v * (params.v_max_m_s / rap) if rap > params.v_max_m_s else v
-                    )
+                    paso = v * (params.v_max_m_s / rap) if rap > params.v_max_m_s else v
+                    if pasos_vel == 1:
+                        vv[j] = paso
+                    else:
+                        h = np.vstack([historia[tp][int(i[j])][1:], paso[None]])
+                        hh[j] = h
+                        vv[j] = np.nanmedian(h, axis=0)
             k += 1
         for j in range(nj):
             if bp[j][0] == "nv":
                 vv[j] = 0.0
+                hh[j] = np.nan
         V[t] = mejor + E[t]
         vel[t] = vv
+        historia[t] = hh
         atras[t] = bp
         # «no visible» en t
         desde_nv = (v_nv[t - 1] if t > 0 else 0.0) - params.coste_no_visible

@@ -68,3 +68,50 @@ def test_con_la_emision_permutada_pierde_al_arbitro():
     pista = pista_del_arbitro(cache, chaleco, modelo, params, (62.0, 40.0))
     aciertos = sum(pista.get(f) == j for f, j in verdad.items())
     assert aciertos < 0.7 * len(verdad)
+
+
+def _escena_temblor():
+    """El caso de f23553: el árbitro anda a 1 m/s y en el frame 30 su pie salta 1,05 m adelante
+    para volver en el 31 (temblor de la caja). Dos jugadores quietos, lejos."""
+    cache, chaleco = [], {}
+    for f in range(60):
+        x = 10.0 + 0.1 * f + (1.05 if f == 30 else 0.0)
+        dets = [(x, 20.0, 0, 0, 1, 1, 0.9), (40.0, 30.0, 0, 0, 1, 1, 0.9)]
+        dets.append((50.0, 10.0, 0, 0, 1, 1, 0.9))
+        chaleco.update({(f, 0): 0.06, (f, 1): 0.0, (f, 2): 0.0})
+        cache.append({"frame_idx": f, "t": f * 0.1, "dets": dets})
+    modelo = estimar_modelo(np.full(50, 0.06), np.zeros(500), BINS)
+    return cache, chaleco, (np.asarray(modelo["bins"]), np.asarray(modelo["log_lr"]))
+
+
+def test_con_un_paso_se_salta_el_temblor_y_con_tres_lo_cubre():
+    cache, chaleco, modelo = _escena_temblor()
+    uno = pista_del_arbitro(
+        cache, chaleco, modelo, ParametrosArbitroViterbi(activo=True), (62.0, 40.0)
+    )
+    tres = pista_del_arbitro(
+        cache,
+        chaleco,
+        modelo,
+        ParametrosArbitroViterbi(activo=True, velocidad_pasos=3),
+        (62.0, 40.0),
+    )
+    assert 30 not in uno  # lo que pasó en f23553
+    assert tres.get(30) == 0
+    assert all(tres.get(f) == 0 for f in range(60))
+
+
+def test_velocidad_de_un_paso_por_defecto_no_cambia_la_pista():
+    cache, chaleco, _verdad, modelo = _escena()
+    base = pista_del_arbitro(
+        cache, chaleco, modelo, ParametrosArbitroViterbi(activo=True), (62.0, 40.0)
+    )
+    explicito = pista_del_arbitro(
+        cache,
+        chaleco,
+        modelo,
+        ParametrosArbitroViterbi(activo=True, velocidad_pasos=1),
+        (62.0, 40.0),
+    )
+    assert ParametrosArbitroViterbi().velocidad_pasos == 1
+    assert base == explicito
