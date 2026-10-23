@@ -155,6 +155,13 @@ ese criterio queda **NO MEDIDO**, y todo lo que sigue son proxies.
 
 **Lo nuevo**: con el árbitro fuera, **la fila de más que queda es casi siempre un PORTERO** con el rol equivocado. Es el siguiente frente, y no es de color: es la regla de portero.
 
+> ⚠️ **CORREGIDO el 23-oct (d)** (`docs/diagnostico_23oct_d.md`, bloque 3): esta lectura estaba mal
+> planteada. El recuento de B **incluye a `portero_B`**, así que un portero verde etiquetado «B»
+> cuenta igual que uno etiquetado `portero_B` y **no añade ninguna fila**. Lo que sí la añade es
+> que `portero_B` se lo lleve un jugador de A. Con la cuenta bien hecha, el rol de portero explica
+> ~4 de 28 frames con B > 7 (≈ 14 %), no «casi siempre». La causa mayor son las filas duplicadas
+> (8 de 28).
+
 ### Control (ii): las dos cachés de 60 s
 
 | | v3 hoy | v3 v1 | v3 v2 | v4 hoy | v4 v1 | v4 v2 |
@@ -179,7 +186,7 @@ ese criterio queda **NO MEDIDO**, y todo lo que sigue son proxies.
 ### Lo que dice la observación de Alex
 - El ojo de Alex dijo que con B2 el árbitro se veía peor.
 - La auditoría lo confirma en la otra dirección: con la pista, en 16-19 de cada 20 frames con B > 7 la fila de más **ya no es el árbitro**. Con B2 lo era en 14 de 20 (23-oct b).
-- Para la pizarra, eso significa que el árbitro deja de pintarse como un naranja más.
+- *(Retirado el 23-oct d: aquí decía que en la pizarra el árbitro dejaba de pintarse como un naranja más. No estaba comprobado en ningún clip.)*
 
 ## Resultado del bloque 2 — Villaviciosa: celda de Colab preparada, NO ejecutada
 

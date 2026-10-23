@@ -296,7 +296,12 @@ portero de verdad sigue contado en B. Hoy se clasifica con esa cuenta.
   alargarse, se lleva a otra persona**. Es la lección de «una persona es N identidades», vista al
   revés: una identidad son N personas.
 
-### (c) Propuesta del cambio mínimo (NO implementado)
+### (c) Propuesta del cambio mínimo (NO implementado; decisión de Alex: no se prueba ahora)
+
+Alcance: con la tabla de arriba, el rol de portero explica **~4 de 28 frames con B > 7 (≈ 14 %)**.
+Además, **`portero_A` está en `otro` (identidad 26) los dos primeros minutos**: en f924, f1806 y
+f3351 el portero negro de A es `otro` #26. Es otra causa, la del catálogo, y la propuesta no la
+toca.
 **«`portero_X` por observación, con dos señales»**:
 - Una observación de una identidad coronada como `portero_X` conserva el rol, salvo que se cumplan
   las dos condiciones a la vez:
@@ -330,22 +335,10 @@ portero de verdad sigue contado en B. Hoy se clasifica con esa cuenta.
 
 ## Resultado del bloque 4 — el clip y el frame f23553
 
-`python scripts/diag23d.py clip --salida outputs/diagnostico_23oct_d`. En
-`outputs/diagnostico_23oct_d/clip_10m/` (no van al repo):
-- `video_10m_hoy.mp4` y `video_10m_variante.mp4`;
-- `pizarra_10m_hoy.html` y `pizarra_10m_variante.html`.
-
-El tramo es 10:00-10:45 del archivo (11:33-12:18 del reproductor).
-
-### ⚠️ En este clip hoy y la variante 2 casi no se distinguen
-- Solo **13 filas** de 6.776 cambian de etiqueta, todas de A/B a `otro` (ids 292, 429 y 468).
-- En ese minuto hoy ya manda al árbitro a `otro` casi siempre. Es el mismo efecto que en las cachés
-  de 60 s del minuto 5, donde la v2 no cambiaba nada.
-- En el partido entero cambian 5.238 filas. Los tramos de 45 s donde más se distinguen:
-  - **1:00-1:45 archivo / 2:33-3:18 reproductor**: 429 filas;
-  - **7:00-7:45 archivo / 8:33-9:18 reproductor**: 427 filas;
-  - 0:45-1:30 archivo / 2:18-3:03 reproductor: 421 filas.
-- No se han renderizado: el encargo era 10:00-10:45.
+### El clip 10:00-10:45 NO sirve para comparar hoy con la variante 2
+- En ese minuto solo cambian 13 filas de 6.776: el clip no prueba nada en ningún sentido.
+- Se sustituye por 1:00-1:45 y 7:00-7:45 (bloque 7), los tramos de 45 s con más filas distintas
+  (429 y 427).
 
 ### Por qué la variante 2 deja al árbitro en B en f23553 (13:05,9 archivo / 14:38,9 reproductor)
 Detalle frame a frame en `traza_f23553.json`.
@@ -374,3 +367,104 @@ identidad del tracker (la 618), a 0,1 m de la anterior.
 frames) con la detección de la identidad que está a los dos lados. O, más general, no arrastrar la
 velocidad de UN solo paso, sino estimarla sobre varios. Sería un intento nuevo con su criterio
 fijado antes. Pesa poco: 56 filas, frente a las 5.238 que mueve la pista.
+
+---
+
+# Segunda tanda (decisiones de Alex del 23-oct)
+
+- **Velocidad**: el criterio queda en ✗ con la lectura del bloque 1, sin penalización de continuidad.
+- **La variante 2 NO se adopta todavía.** Alex espera a marcar las hojas y ver los clips.
+- **Portero**: la propuesta no se prueba ahora.
+
+Criterios escritos y commiteados ANTES de medir, igual que en la primera tanda.
+
+## Bloque 5 — las filas duplicadas (la causa mayor de B > 7: 8 de 28)
+
+**Qué hay que reconciliar.** El 22-oct (b) los duplicados eran 8 de 140 filas sin casar en la
+ventana del GT, pero aquella medida y la del bloque 3 no son la misma:
+- **22-oct b**: una fila SIN casar a menos de `R_DUP` de una fila CASADA con una persona del GT. Solo
+  en los 60 frames del GT, que caen en el minuto 5.
+- **bloque 3**: dos filas reales del CSV cuya caja cruda MÁS CERCANA es la misma. En frames con B > 7,
+  seleccionados justamente por tener filas de más.
+
+Esa segunda medida puede FABRICAR duplicados: si el detector funde a dos personas cercanas en una
+caja, las dos identidades siguen vivas y las dos filas caen en la misma caja. Son dos personas, no
+una. Por eso el bloque 5a usa la detección PROPIA de cada observación, sacada del tracker, y no el
+emparejamiento por posición.
+
+### 5a — medición (las identidades se capturan del tracker en una pasada de la variante 2)
+
+Para cada pareja de observaciones de identidades distintas en el mismo frame:
+- **IoU de sus cajas propias**;
+- **distancia en metros** entre sus pies;
+- **solape temporal**: los frames en que las dos identidades tienen observación, divididos por los
+  de la más corta.
+
+Sobre dos poblaciones:
+1. **Los 8 casos** del bloque 3: la pareja de filas sobre la misma caja, en cada uno de los 8 frames.
+2. **Las parejas de compañeros cercanos de la ventana del GT** (el control: personas DISTINTAS).
+   - Dos personas del GT del mismo equipo a ≤ 2 m en un frame del GT, cada una casada 1-a-1 a
+     ≤ 1 m con una detección.
+   - Esas dos detecciones pertenecen a identidades distintas del tracker.
+
+Se informa además, para reconciliar: cuántas «filas en la misma caja» hay en la ventana del GT y en
+el partido entero, y cuántas de las de la ventana son de verdad una sola persona según el GT.
+
+**Criterio de duplicado**: dos observaciones del mismo frame, de identidades distintas y del mismo
+equipo (A/B por su etiqueta final de la observación; el portero cuenta en el suyo), con IoU ≥ x.
+- **x** tiene que cumplir dos cosas a la vez:
+  - **0 parejas de personas distintas** de la ventana del GT con IoU ≥ x;
+  - **≥ 6 de los 8 casos** con IoU ≥ x.
+- Si existe un intervalo que cumple las dos, x es su **centro**.
+- Si no existe, **no hay criterio de duplicado**: el 5b no se corre y queda NO MEDIDO.
+
+¿Qué podría estar inventando?
+- Si los 8 casos resultan ser dos personas en una caja fundida (IoU propio bajo), un dedupe por IoU
+  no los toca, y la «causa mayor» del bloque 3 era un artefacto del emparejamiento por posición. Se
+  dice así.
+
+### 5b — flag `tracking.dedupe_identidades` (apagado = CSV idéntico)
+- Ante un duplicado (el criterio de 5a), se conserva la observación de la identidad con MÁS
+  observaciones y se retira la otra de ESE frame.
+- Se retira del CSV final su fila de ese frame, sea real o interpolada. Si solo se quitara la
+  observación, la interpolación rellenaría el hueco con una fila `es_real = 0` y el B > 7, que
+  cuenta filas reales, mejoraría sin arreglar nada.
+
+**Criterios (antes de medir), sobre la variante 2:**
+- B > 7: 8,45 % → **≤ 6 %**;
+- equipo equivocado **≤ 1,5 %** (1,2 + 0,3);
+- centroide **≤ hoy** (0,47 m con la variante 2);
+- en 20 frames con filas retiradas (semilla 0), **≥ 18 son duplicados reales**, a ojo;
+- hoja de **60 recortes de filas retiradas** (formato `revision_equipos.py`), para que la marque Alex.
+
+¿Qué podría estar inventando? B > 7 puede bajar quitando a una persona real que estaba pegada a un
+compañero. Lo vigilan el control de la ventana del GT (0 retiradas de personas distintas), los 20
+frames y la hoja.
+
+## Bloque 6 — relleno de los huecos de la pista (un solo intento)
+
+- Parámetro `arbitro.viterbi.velocidad_pasos`, por defecto **1** (hoy: la velocidad del último paso).
+- Con **3**, la velocidad que se usa para predecir es la **mediana, componente a componente, de los
+  últimos 3 pasos** del camino. Se aplica en todas las transiciones; solo cambia algo donde los pasos
+  difieren, que es justo tras un salto de un frame como el de f23553.
+
+**Criterios (antes de medir)**, contra la variante 2 con el parámetro en 1:
+- cubre **≥ 40 de los 56 casos** del bloque 4: huecos de UN frame con la misma identidad del tracker a
+  los dos lados, cuya fila estaba en un equipo; un caso queda cubierto si ahora la pista pasa por la
+  detección de esa identidad;
+- cobertura y B > 7 **no empeoran** (97,11 % y 8,45 %);
+- pasos > 9 m/s **no suben más de 0,2 puntos** (1,03 % → ≤ 1,23 %).
+
+¿Qué podría estar inventando? Una velocidad más suave también deja pasar saltos a OTRA persona. Por
+eso el criterio de velocidad sigue, y se informa cuántos frames cambian de detección elegida.
+
+## Bloque 7 — clips 1:00-1:45 y 7:00-7:45 del archivo (2:33-3:18 y 8:33-9:18 del reproductor)
+
+- Vídeo y pizarra, con hoy y con la variante 2.
+- En el vídeo de la variante 2:
+  - la detección que elige la pista va con un **contorno blanco grueso** y la etiqueta **«ÁRBITRO»**;
+  - los frames donde la pista **no cubre** llevan un **borde rojo** en todo el vídeo.
+
+## Bloque 8 — `outputs/` de ramas cerradas
+
+Lista ordenada por tamaño, **sin borrar nada**.
