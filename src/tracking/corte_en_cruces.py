@@ -233,8 +233,18 @@ def cortar_y_reenlazar(
             cadena.append(trozos[actual])
             actual = siguiente.get(actual)
         tracklets = []
-        for trozo in cadena:
+        vistos: set[int] = (
+            set()
+        )  # una cadena no puede tener dos observaciones en un frame
+        for pos_c, trozo in enumerate(cadena):
             obs = sorted(trozo["limpias"] + trozo["cruce"], key=lambda o: o[0])
+            # el cruce del que ENTRA se corta donde empieza el trozo con el que se reenlaza:
+            # el cruce de una pista puede durar más que el de la otra
+            if pos_c + 1 < len(cadena) and cadena[pos_c + 1]["limpias"]:
+                t_sig = cadena[pos_c + 1]["limpias"][0][0]
+                obs = [o for o in obs if o[0] < t_sig]
+            obs = [o for o in obs if o[2][0] not in vistos]
+            vistos.update(o[2][0] for o in obs)
             if not obs:
                 continue
             t0, p0, par0 = obs[0]

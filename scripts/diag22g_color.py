@@ -43,6 +43,15 @@ GT = {
     ),
 }
 PARAMS_BASE = {"lambda_rel": 0.5, "alfa": 0.2, "iou_solape": 0.1}
+# B2 (corte_cruces): los parámetros fijados en el doc ANTES de medir
+PARAMS_CRUCES = {
+    "iou_solape": 0.1,
+    "dist_max_m": 1.5,
+    "hueco_max_s": 1.0,
+    "lambda_rel": 0.5,
+    "umbral_rel": 0.973,
+    "alfa": 0.2,
+}
 
 
 def _mod(nombre):
@@ -128,7 +137,13 @@ def calibrar(salida: Path) -> dict:
     }
 
 
-def variante(pata: str, salida: Path, params_color: dict | None, por_obs: bool = True):
+def variante(
+    pata: str,
+    salida: Path,
+    params_color: dict | None,
+    por_obs: bool = True,
+    flag: str = "coste_color",
+):
     """(captura, csv) de una pasada con el término de color dado (None = hoy)."""
     import src.team_classification.pipeline_equipos as pe
 
@@ -142,14 +157,15 @@ def variante(pata: str, salida: Path, params_color: dict | None, por_obs: bool =
             else "color"
         )
     )
-    csv = salida / f"color_{pata}_{nombre}{'' if por_obs else '_sin_por_obs'}.csv"
+    pre = "color" if flag == "coste_color" else flag
+    csv = salida / f"{pre}_{pata}_{nombre}{'' if por_obs else '_sin_por_obs'}.csv"
 
     def ajustar(cfg):
         if params_color is None:
             return
         trk = yaml.safe_load(open(R / cfg["config_tracking"]))
-        trk["coste_color"] = {"activo": True, **params_color}
-        ruta = salida / f"tracking_{pata}_{nombre}.yaml"
+        trk[flag] = {"activo": True, **params_color}
+        ruta = salida / f"tracking_{pre}_{pata}_{nombre}.yaml"
         ruta.write_text(yaml.safe_dump(trk, allow_unicode=True))
         cfg["config_tracking"] = str(ruta)
 
@@ -177,12 +193,16 @@ def impureza(pata, captura) -> float:
     return round(100 * (1 - maj / tot), 2)
 
 
-def medir(salida: Path, umbral: float) -> dict:
+def medir(salida: Path, umbral: float, flag: str = "coste_color") -> dict:
     import pandas as pd
 
     b3, inv = _mod("diag22b_bloque3_medir"), _mod("diag22e_invariantes")
-    res = {"umbral_rel": umbral}
-    params = {**PARAMS_BASE, "umbral_rel": umbral}
+    res = {"flag": flag, "umbral_rel": umbral}
+    params = (
+        {**PARAMS_BASE, "umbral_rel": umbral}
+        if flag == "coste_color"
+        else dict(PARAMS_CRUCES)
+    )
     variantes = {
         "hoy": None,
         "color": params,
@@ -193,7 +213,7 @@ def medir(salida: Path, umbral: float) -> dict:
         for nombre, pc in variantes.items():
             if pata != "benja" and nombre == "permutado":
                 continue
-            captura, datos, csv = variante(pata, salida, pc)
+            captura, datos, csv = variante(pata, salida, pc, flag=flag)
             n_dets = sum(len(e["dets"]) for e in datos["cache"])
             asignadas = sum(
                 len(tr.det_idxs) for ident in captura["bytetrack"] for tr in ident
@@ -209,7 +229,7 @@ def medir(salida: Path, umbral: float) -> dict:
                 inv_ = inv.invariantes(inv.recuento_por_frame(filas, 62.0, 40.0), 7)
                 m["otro_2_pct"] = inv_["pct_otro_2_o_mas"]
                 m["B_mas_de_7_pct"] = inv_["pct_B_mas_del_tope"]
-                _c, _d, csv_sin = variante(pata, salida, pc, por_obs=False)
+                _c, _d, csv_sin = variante(pata, salida, pc, por_obs=False, flag=flag)
                 m["error_equipo_por_identidad_pct"] = b3.error_equipo(csv_sin)
             res[pata][nombre] = m
     h, c = res["benja"]["hoy"], res["benja"]["color"]
@@ -250,6 +270,9 @@ def main() -> None:
     ap.add_argument("accion", choices=["calibrar", "medir"])
     ap.add_argument("--salida", required=True)
     ap.add_argument("--umbral", type=float, default=None)
+    ap.add_argument(
+        "--flag", choices=["coste_color", "corte_cruces"], default="coste_color"
+    )
     args = ap.parse_args()
     salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
@@ -257,8 +280,8 @@ def main() -> None:
         res = calibrar(salida)
         nombre = "bloqueB_calibracion.json"
     else:
-        res = medir(salida, args.umbral)
-        nombre = "bloqueB.json"
+        res = medir(salida, args.umbral, args.flag)
+        nombre = "bloqueB.json" if args.flag == "coste_color" else "bloqueB2.json"
     # los criterios salen como numpy.bool_ / numpy.float64: se pasan a tipos de Python
     texto = json.dumps(res, indent=1, ensure_ascii=False, default=lambda o: o.item())
     (salida / nombre).write_text(texto)

@@ -65,3 +65,17 @@ def test_con_el_color_permutado_no_puede_decidir_igual():
         idents, cache, iguales, 1.0, ParametrosCorteCruces(activo=True)
     )
     assert sum(len(tr.det_idxs) for ident in salida for tr in ident) == 60
+
+
+def test_una_cadena_no_repite_frame_aunque_los_cruces_duren_distinto():
+    """El cruce de P dura más que el de Q: el reenlace no puede dejar dos obs en un frame."""
+    cache, colores, idents = _escena()
+    # Q sale del cruce en el frame 16, pero la caja de P sigue solapada con un tercero en 16-17
+    for f in (16, 17):
+        cache[f]["dets"].append((11.0, 10.0, 255 + 10 * (f - 16), 100, 275, 140, 0.5))
+    salida = cortar_y_reenlazar(
+        idents, cache, colores, 1.0, ParametrosCorteCruces(activo=True)
+    )
+    for ident in salida:
+        frames = [par[0] for tr in ident for par in tr.det_idxs]
+        assert len(frames) == len(set(frames))

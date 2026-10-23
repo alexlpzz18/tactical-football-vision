@@ -307,3 +307,58 @@ mismo frame.
 **Predicción (antes de medir)**: como B2 corta SOLO en los cruces y reúne lo que puede, debería
 fragmentar mucho menos que B1. El riesgo es el contrario: que en los cruces largos o múltiples (3+
 personas) los reenlaces fallen y queden trozos sueltos.
+
+---
+
+## Resultado de B2 — cortar en los cruces y reenlazar: NO CUMPLE (pero el color sí aporta)
+
+`scripts/diag22g_color.py medir --flag corte_cruces`.
+
+*Un fallo de montaje en la primera ejecución*: una cadena podía quedarse con dos observaciones en
+el mismo frame (el cruce de una pista dura más que el de la otra), y la interpolación fallaba.
+- Se arregló: el cruce del que entra se recorta donde empieza el trozo con el que se reenlaza, y
+  ningún frame se repite.
+- Test nuevo. No cuenta como intento: no cambia la regla, solo un error de código.
+
+| | hoy | **B2 (color real)** | B2 con color PERMUTADO (control i) | criterio |
+|---|---|---|---|---|
+| impureza del CSV, benjamín | 22,78 | **8,33** | 13,09 | ≤ 14 → sí |
+| impureza del CSV, Villaviciosa | 15,76 | **13,24** | — | ≤ 11 → **NO** |
+| equipo equivocado por identidad, sin voto por obs. (benjamín) | 16,0 % | **2,8 %** | 10,7 % | ≤ 6 → sí |
+| identidades finales, benjamín | 900 | **1.823 (+103 %)** | 2.113 | ≤ 1.080 → **NO** |
+| identidades finales, Villaviciosa | 115 | **189 (+64 %)** | — | ≤ 138 → **NO** |
+| asignación | 95,8 % / 93,5 % | **igual** (no quita detecciones) | igual | ver abajo |
+| otro ≥ 2, partido entero | 12,2 % | **7,2 %** | 9,7 % | ≤ 8 → sí |
+| B > 7, partido entero | 28,5 % | **17,0 %** | 23,1 % | ≤ 20 → sí |
+
+*Asignación*: B2 no descarta ninguna detección (corta y reenlaza lo que ByteTrack ya asignó), así
+que sale IDÉNTICA a hoy. Con el número del criterio (98 %, el del log de ByteTrack) cumple; con la
+medida del script (95,8 %) ni hoy llegaría al 97. Se lee como «no cambia».
+
+**Controles:**
+- **(i) NO pasa**: con el color permutado la impureza también baja (13,1), porque cortar y
+  reenlazar solo por MOVIMIENTO ya ayuda.
+- (ii) sí: v3 −15,4 y v4 −15,9 puntos, mismo signo.
+
+**¿Qué podría estar inventando? Otra vez, en parte, la fragmentación.** Las identidades se doblan:
+los trozos que no se reenlazan quedan sueltos, y la pureza premia partir. Pero esta vez se puede
+separar algo, porque el control fragmenta parecido:
+
+| a fragmentación parecida | identidades | impureza | error por identidad |
+|---|---|---|---|
+| color real | 1.823 | 8,3 | 2,8 % |
+| color permutado | 2.113 | 13,1 | 10,7 % |
+
+⇒ **El color de los frames LIMPIOS sí lleva información para reenlazar después de un cruce**: con
+casi la misma fragmentación, ~5 puntos de impureza y ~8 de error de equipo mejor que sin él. Es lo
+que el bloque A predecía (86-94 % de los cambios en cruce son entre rivales). Lo que falla es el
+precio: el doble de identidades.
+
+**Decisión**: B2 no cumple (identidades en las dos patas, impureza de Villaviciosa y control i).
+**Con B1 son dos intentos: la ruta «asociación con color» se cierra tal como está planteada.** Los
+dos flags quedan apagados.
+
+**Para un plan futuro, no como tercer intento**: el problema de B2 son los trozos que no se
+reenlazan, no los reenlaces. La palanca sería que el cosido por pureza (que ya existe) volviera a
+unir esos trozos sueltos usando el color de sus frames limpios. Se mediría con el número de
+identidades POR PERSONA del GT, no con la pureza, que premia partir.
