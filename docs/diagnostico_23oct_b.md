@@ -142,3 +142,23 @@ benjamín 41, Villaviciosa 116.
 - **Los recalls salen de 41 y 116 cambios**: IC 95 % de ±12 y ±7 puntos. El 80 % es una línea fina.
 - La curva no es monótona (IoU > 0 cubre más que > 0,05): con umbrales bajos las rachas de cruce se
   alargan y el corte, que es la ENTRADA en la racha, se adelanta fuera del margen de ±0,5 s.
+
+---
+
+## Bloque 2 — implementación, ANTES de medir
+
+`src/tracking/corte_en_cruces.py`, el mismo módulo de B2, con tres parámetros nuevos:
+- `usar_color` (False en esta variante);
+- `crecimiento_m_s` (la puerta: 1,5 m + 3,0 m/s × hueco);
+- el control `control_cortes_aleatorios_semilla`, que pone el mismo nº de cortes por pista en
+  observaciones al azar.
+
+Flag `corte_cruces_sin_color` en los dos YAML de tracking (`activo: false`, IoU > 0,1, hueco ≤
+2,5 s). No puede encenderse junto a `corte_cruces`.
+
+Tests:
+- sin color, el cruce sintético se deshace solo por movimiento;
+- el control conserva todas las observaciones;
+- los flags están apagados en producción.
+
+**Flags apagados: CSV idéntico byte a byte al de hoy en las dos patas.**

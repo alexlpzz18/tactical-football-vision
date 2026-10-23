@@ -79,3 +79,33 @@ def test_una_cadena_no_repite_frame_aunque_los_cruces_duren_distinto():
     for ident in salida:
         frames = [par[0] for tr in ident for par in tr.det_idxs]
         assert len(frames) == len(set(frames))
+
+
+def test_sin_color_apagado_en_produccion():
+    for ruta in ("configs/tracking_benja.yaml", "configs/tracking.yaml"):
+        assert (
+            yaml.safe_load(open(R / ruta))["corte_cruces_sin_color"]["activo"] is False
+        )
+
+
+def test_sin_color_deshace_el_cruce_solo_por_movimiento():
+    """P y Q van en sentidos opuestos: la predicción de movimiento basta, sin color."""
+    cache, _colores, idents = _escena()
+    params = ParametrosCorteCruces(
+        activo=True, usar_color=False, crecimiento_m_s=3.0, hueco_max_s=2.5
+    )
+    salida = cortar_y_reenlazar(idents, cache, None, None, params)
+    personas = [
+        {par[1] for tr in ident for par in tr.det_idxs if par[0] not in (14, 15)}
+        for ident in salida
+    ]
+    assert sorted(len(s) for s in personas) == [1, 1]
+
+
+def test_control_cortes_al_azar_conserva_todas_las_observaciones():
+    cache, _colores, idents = _escena()
+    params = ParametrosCorteCruces(
+        activo=True, usar_color=False, control_cortes_aleatorios_semilla=0
+    )
+    salida = cortar_y_reenlazar(idents, cache, None, None, params)
+    assert sum(len(tr.det_idxs) for ident in salida for tr in ident) == 60

@@ -223,6 +223,14 @@ corte_cruces:
   lambda_rel: 0.5
   umbral_rel: 0.973
   alfa: 0.2
+# Cortar en los cruces y reenlazar SIN COLOR, solo por movimiento, con la puerta
+# que crece con el hueco (docs/diagnostico_23oct_b.md, bloque 2). APAGADO.
+corte_cruces_sin_color:
+  activo: false
+  iou_solape: 0.1   # la definición de cruce elegida en el bloque 1
+  dist_max_m: 1.5
+  crecimiento_m_s: 3.0
+  hueco_max_s: 2.5
 coste_color:
   activo: false
   lambda_rel: 0.5

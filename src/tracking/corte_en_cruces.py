@@ -45,6 +45,12 @@ class ParametrosCorteCruces:
     alfa: float = 0.2  # media móvil del modelo de color
     v_max_m_s: float = 10.0  # tope de la velocidad usada para predecir
     control_permutar_semilla: int | None = None  # SOLO control del diagnóstico
+    # ── variante SIN COLOR (flag `corte_cruces_sin_color`, docs/diagnostico_23oct_b.md) ──
+    usar_color: bool = True
+    # la puerta de distancia CRECE con el hueco: dist_max_m + crecimiento_m_s · hueco
+    crecimiento_m_s: float = 0.0
+    # SOLO control del diagnóstico: corta en instantes AL AZAR (el mismo nº de cortes por pista)
+    control_cortes_aleatorios_semilla: int | None = None
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosCorteCruces":
@@ -117,6 +123,29 @@ def _modelo(limpias, feat_de, alfa, desde_el_final: bool):
     return m
 
 
+def _cortes_al_azar(identidades, en_cruce, semilla: int) -> set[tuple[int, int]]:
+    """CONTROL: el mismo nº de cortes por pista, en observaciones elegidas AL AZAR.
+
+    Cada corte es un «cruce» de un frame. Si con esto el árbitro también sale de los equipos, el
+    efecto del corte es PARTIR, no partir EN EL CRUCE.
+    """
+    rng = np.random.default_rng(semilla)
+    falso: set[tuple[int, int]] = set()
+    for ident in identidades:
+        obs = sorted(tuple(par) for tr in ident for par in tr.det_idxs)
+        n_cortes = sum(
+            1
+            for prev, act in zip(obs[:-1], obs[1:])
+            if act in en_cruce and prev not in en_cruce
+        )
+        if n_cortes and len(obs) > 2:
+            elegidos = rng.choice(
+                np.arange(1, len(obs) - 1), min(n_cortes, len(obs) - 2), False
+            )
+            falso.update(obs[int(k)] for k in elegidos)
+    return falso
+
+
 def cortar_y_reenlazar(
     identidades: list[list[Tracklet]],
     cache: list[dict],
@@ -144,7 +173,11 @@ def cortar_y_reenlazar(
         iou = _iou_maximo(np.array([d[2:6] for d in dets], dtype=float))
         f = e["frame_idx"]
         feats = [
-            _solo_hs(colores[(f, j)]) if (f, j) in colores else None
+            (
+                _solo_hs(colores[(f, j)])
+                if params.usar_color and colores and (f, j) in colores
+                else None
+            )
             for j in range(len(dets))
         ]
         if rng is not None:
@@ -155,6 +188,10 @@ def cortar_y_reenlazar(
             elif feats[j] is not None:
                 feat_de[(f, j)] = feats[j]
 
+    if params.control_cortes_aleatorios_semilla is not None:
+        en_cruce = _cortes_al_azar(
+            identidades, en_cruce, int(params.control_cortes_aleatorios_semilla)
+        )
     trozos = []
     for ident in identidades:
         trozos.extend(
@@ -179,7 +216,8 @@ def cortar_y_reenlazar(
             if dt <= 0 or dt > params.hueco_max_s:
                 continue
             dist = float(np.linalg.norm(p_fin + v * dt - p_ini))
-            if dist > params.dist_max_m:
+            dist_max = params.dist_max_m + params.crecimiento_m_s * dt
+            if dist > dist_max:
                 continue
             m_b = _modelo(
                 tb["limpias"][:10], feat_de, params.alfa, desde_el_final=False
@@ -191,7 +229,7 @@ def cortar_y_reenlazar(
             )
             if d_col is not None and d_col > params.umbral_rel:
                 continue
-            coste = dist / params.dist_max_m + params.lambda_rel * (d_col or 0.0)
+            coste = dist / dist_max + params.lambda_rel * (d_col or 0.0)
             pares.append((a, b, coste))
     # asignación 1-a-1 por componentes conexas del grafo de pares posibles
     siguiente: dict[int, int] = {}

@@ -184,6 +184,16 @@ def _perfil_bytetrack(
     # de los prototipos del clasificador ya entrenado.
     params_color = ParametrosCosteColor.desde_dict(cfg_tracking.get("coste_color"))
     params_cruces = ParametrosCorteCruces.desde_dict(cfg_tracking.get("corte_cruces"))
+    # Variante SIN COLOR (docs/diagnostico_23oct_b.md, bloque 2): mismo corte, reenlace solo por
+    # movimiento con la puerta que crece con el hueco. No puede convivir con la de color.
+    params_sin_color = ParametrosCorteCruces.desde_dict(
+        cfg_tracking.get("corte_cruces_sin_color")
+    )
+    params_sin_color.usar_color = False
+    if params_cruces.activo and params_sin_color.activo:
+        raise ValueError(
+            "corte_cruces y corte_cruces_sin_color no pueden ir los dos encendidos"
+        )
     separacion = None
     if params_color.activo or params_cruces.activo:
         if clasificador is None or getattr(clasificador, "_prototipos", None) is None:
@@ -207,6 +217,10 @@ def _perfil_bytetrack(
     if params_cruces.activo:
         identidades = cortar_y_reenlazar(
             identidades, cache, colores, separacion, params_cruces
+        )
+    elif params_sin_color.activo:
+        identidades = cortar_y_reenlazar(
+            identidades, cache, None, None, params_sin_color
         )
     dt = sample / fps if fps else 0.12
     # Puerta de apariencia en la RE-ENTRADA, ANTES del cosido: aquí se
