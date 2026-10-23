@@ -135,3 +135,144 @@ marcando cuáles son regenerables:
 - **en el Mac**, desde cachés y scripts del repo;
 - **solo con GPU** (Colab);
 - **no regenerables**: trabajo a mano (etiquetas, hojas marcadas) o entradas que ya no existen.
+
+---
+
+## Resultado del bloque 1 — adopción preparada (rama `adopcion-viterbi`, commit db17b22, SIN fusionar)
+
+**Qué cambia en esa rama:**
+- **Un solo campo decide el formato.** `ModeloCampo.formato` (`src/campo_modelo.py`) sale del `tipo`
+  del modelo de campo (`campo_benja.yaml` → `f7`). Sin sección `campo`, es el F11 de Villaviciosa.
+- **Los valores por defecto que dependen del formato**, en una tabla: `DEFECTOS_POR_FORMATO`, con
+  `arbitro_viterbi` F7 = encendido y F11 = apagado.
+- **`viterbi_activo()`** (`processor.py`): la clave `arbitro.viterbi.activo` si está escrita; si
+  no, el formato.
+- `team_classification_benja.yaml`: `variante: anade` y **sin `activo`** (lo decide el formato).
+- Los tres configs del benjamín (`_parte_entera`, de 60 s v3 y v4) llevan `rutas.cache_chaleco`. Las
+  cachés se copiaron a `data/tracking_benja/` (fuera de git); hay que subirlas a Drive.
+- F7 sin caché de chaleco **da error**, con el mensaje de cómo generarla. El modo `full` no la crea.
+- `tests/test_formato_arbitro.py`, 5 tests, uno de ellos EJERCE el interruptor con la caché real de
+  60 s:
+  - el valor por defecto cambia el CSV respecto a `activo: false`;
+  - los cambios son solo a `otro`;
+  - sin chaleco, da error.
+
+**Comprobaciones:**
+
+| | resultado |
+|---|---|
+| 1. benjamín entero, `activo: false` explícito, contra `main` (worktree de `main` con los mismos datos) | **idéntico byte a byte** (`cmp`) |
+| 2. Villaviciosa 60 s (F11, valores por defecto) contra `main` | **idéntico byte a byte** |
+| 3. benjamín entero con los valores por defecto (F7) contra `v2_anade.csv` del 23-oct (d) | **idéntico byte a byte** |
+| 4. tests de comportamiento | 5 de 5; la suite entera en la rama: 763 passed |
+| 5. `outputs/adopcion/` | `posiciones_benja_p1_viterbi.csv` (+ meta) y `pizarra_benja_p1_viterbi.html`, sin vídeos |
+
+**CLAUDE.md** (en la rama de adopción): sección «Rutas cerradas», con las 12 rutas pedidas, una
+línea cada una (qué se probó, cuándo, por qué falló y dónde está la medida).
+
+¿Qué podría estar inventando? «Idéntico a `main`» es sobre el CSV desde caché de DOS partidos. No
+cubre el modo `full` ni otro F7 sin caché de chaleco (para ese caso está el error). Tampoco dice
+nada de si la variante 2 está bien en Villaviciosa: allí sigue apagada.
+
+## Resultado del bloque 2 — el balón
+
+### 2a. Las candidatas y la regla en píxeles: separa el campo de al lado, pero NO CUMPLE en el control
+
+`python scripts/diag23e.py candidatas | segunda_tanda | hoja_control_regla | regla --salida outputs/diagnostico_23oct_e`.
+Etiquetas en `docs/etiquetas_balon_23oct_e.json`: es trabajo a mano, no se puede regenerar.
+
+**Primero, una corrección de datos.** Hay dos pasadas del detector sobre el tramo de 60 s:
+- `cache_balon_piloto.pkl`: 519 candidatas, solo 21 frames con dos o más.
+- `cache_balon_p1.pkl`, la de producción y la de los 30 paneles del 22-oct: 1.083 candidatas,
+  268 frames con dos o más.
+
+En la del piloto **no está ninguno** de los balones del campo de al lado de los paneles (f9306,
+f9360, f9738, f10472 y f10474 salen vacíos). Se usa la de producción.
+
+**Selección para etiquetar, sin mirar la posición**: candidatas de frames con DOS O MÁS candidatas
+(semilla 0, y otra tanda con semilla 1). Etiquetadas a ojo: **96 en el tramo** (15 campo de al lado,
+38 balón real y 43 otro).
+- ⚠️ Pedía 20 + 20; del campo de al lado salen **15**, no 20.
+- De esos 15, 10 son balones del otro partido y 5 son personas sobre ese campo.
+
+**Lo que separa es la REGIÓN; el tamaño y la confianza no:**
+
+| | campo de al lado (mín · mediana · máx) | balón real |
+|---|---|---|
+| cx (px) | 195 · 348 · 536 | 39 · 307 · 1.773 |
+| **cy (px)** | **536 · 549 · 573** | **543 · 678 · 823** |
+| ancho (px) | 4,0 · 6,7 · 11,1 | 4,9 · 15,2 · 22,8 |
+| confianza | 0,37 · 0,45 · 0,64 | 0,38 · 0,66 · 0,76 |
+
+- Tamaño y confianza se solapan enteros.
+- El único balón real con cy < 573 a la izquierda era uno en el aire (f10624, a 1.149 px).
+
+**La regla.** En el tramo, todas las reglas de la forma «cx < X y cy < Y» que cumplen forman una
+meseta de X 490-1390 y Y 566-640. Se fijó su CENTRO, **cx < 940 px y cy < 603 px**, antes de mirar
+el control.
+
+| | campo de al lado fuera | balón real dentro | ¿cumple (≥ 90 % y ≥ 95 %)? |
+|---|---|---|---|
+| tramo de 60 s (ajuste) | 15 / 15 = 100 % | 38 / 38 = 100 % | sí, por construcción |
+| **control: minutos 14-16** (88 etiquetadas, 48 de ellas en una hoja ciega y barajada) | **9 / 9 = 100 %** | **33 / 36 = 91,7 %** | **NO** |
+| control en «la caché v4» | — | — | **NO MEDIDO**: no hay caché de balón v4 |
+
+**Los 3 balones reales que saca**, todos a cy 598-601, rozando el corte de 603:
+- **C09 y C25** (f26888, f26870; 14:56,9 / 16:29,9 y 14:56,3 / 16:29,3): **saques de banda con
+  el balón SOBRE LA CABEZA, delante de la grada**. Son los mismos que tumbaron el corte duro del
+  22-oct (c).
+- **C00** (f27116; 15:04,6 / 16:37,6): el balón en la tierra, tras la línea de fondo.
+
+**Lo que enseña la imagen** (`outputs/diagnostico_23oct_e/candidatas_en_la_imagen.jpg`):
+- El campo de al lado está ENCIMA de la línea superior de la grada, y esa línea va **inclinada**
+  (de cy ≈ 590 a la izquierda a ≈ 600 junto a la portería del fondo).
+- Un rectángulo pone el borde horizontal y corta por donde pasan los saques de banda.
+- **La separación existe, pero por el borde de la grada y no por una horizontal.** Un polígono que
+  siga ese borde probablemente pasaría.
+- No se prueba aquí: sería una regla NUEVA ajustada después de ver el control, y el control ya no
+  serviría.
+- Para un intento nuevo, el criterio ya está: el mismo de hoy, con un tercer tramo de control.
+
+**Lo que la regla también deja fuera, sin que se pidiera**: 14 de las 43 «otro» del control. Son
+personas en la loma detrás del fondo, la cara de un entrenador y balones del otro campo en la tierra
+de la esquina. No es el campo de al lado, pero tampoco es el balón del partido.
+
+¿Qué podría estar inventando?
+- **15 + 9 muestras del campo de al lado**: un 100 % con 9 tiene un intervalo de confianza ancho
+  (cota inferior al 95 % ≈ 66 %).
+- **La clasificación es mía, de un recorte.** Las dudosas fueron a «otro» y no entran en las dos
+  tasas.
+- **El control falla por 1 balón** (34 / 36 = 94,4 % todavía no llega). No es un fallo marginal de
+  redondeo: es el mismo caso que ya rompió el corte duro.
+
+### 2b. Propuesta (NO implementada): seguimiento del balón en el espacio de la IMAGEN
+
+**Por qué en píxeles**: en metros, la homografía de suelo mezcla el balón del otro campo con
+cualquier balón alto (22-oct d). En la imagen, el balón del partido se mueve de forma continua y
+el del otro campo está en otra región, con su propio movimiento.
+
+**Diseño:**
+1. Estado: Kalman de velocidad constante en píxeles, `(u, v, du, dv)` del centro de la caja.
+   - Ruido de proceso alto en velocidad: un chut cambia de golpe.
+   - Ruido de medida proporcional al tamaño de la caja.
+2. **Puerta que crece con el tiempo desde la última detección aceptada**: radio
+   r(Δt) = r₀ + v_max_px(v) · Δt.
+   - v_max_px depende de la fila de la imagen: un balón a 30 m/s recorre muchos menos píxeles en el
+     fondo que cerca. Se saca de la homografía, en el pie.
+   - Un tope r_max evita que la puerta abarque la imagen entera tras un hueco largo.
+3. **Elección dentro de la puerta**: la candidata de menor distancia de Mahalanobis a la predicción.
+   - Si no hay ninguna dentro, el frame se queda **sin balón**. No se coge «la mejor de fuera».
+   - Esto es lo contrario del prior de campo: allí, sin alternativa, se quedaba con la de fuera.
+4. **Re-adquisición**: tras un hueco mayor que T_max, se acepta una candidata nueva solo si se
+   confirma en k frames seguidos con movimiento coherente.
+   - Una sola detección no basta: así no salta al balón quieto del otro campo, ni a las marcas de la
+     base del muro (que son estáticas: CLAUDE.md, las marcas del campo).
+5. **La pizarra no cambia**: se sigue proyectando la base, con las fases aéreas de siempre. Lo que
+   cambia es QUÉ candidata se elige.
+
+**Criterio, fijado para cuando se implemente** (los 30 paneles de `outputs/diagnostico_balon/`):
+- «campo de al lado» de **7 → ≤ 2**;
+- **ningún panel «ok» empeora**;
+- frames del tramo sin balón **≤ hoy + 3 puntos** (hoy, 51,6 %: el 22-oct b);
+- y la segunda pregunta, «¿qué podría estar inventando?»: lo que elige tiene que MOVERSE como un
+  balón. Mediana de desplazamiento por muestra ≥ la del balón real del tramo; las marcas dan 0,02 m.
