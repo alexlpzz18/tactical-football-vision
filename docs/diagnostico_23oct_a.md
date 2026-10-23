@@ -150,3 +150,78 @@ cruces.**
   del 22-oct (g).
 - **Métricas nuevas**: `src/evaluation/asociacion_desde_csv.py` (IDF1 y fragmentación por persona
   desde un CSV), con test. Desde hoy van junto a la pureza, que premia partir.
+
+---
+
+## Resultado del bloque 2 — el chaleco por fila: SEPARA (AUC 0,85-0,90) pero NO llega a los criterios
+
+`scripts/diag23a_chaleco.py --pata benja`. ffmpeg CLI, torso de la caja SIN máscara. **Villaviciosa:
+NO MEDIDO** (el vídeo no está en local). Celda de Colab:
+`python scripts/diag23a_chaleco.py --pata villa --salida ...`.
+
+**La banda**, medida en la primera mitad de la ventana del GT sobre los 11.387 píxeles candidatos
+(S ≥ 100, V ≥ 150) de las filas «árbitro»:
+
+| | H | S mín. | V mín. |
+|---|---|---|---|
+| medida (p5-p95 de H; p5 de S y V) | **38-48** | **112** | **173** |
+| la de partida | 40-52 | 150 | 235 |
+
+- Más ancha en S y V que la de partida: el chaleco en sombra o en movimiento baja de brillo.
+- No toca el césped (H ≈ 55, V ≈ 113-128).
+- **τ = 0,0056**: basta con ~0,6 % de los píxeles del torso en la banda, en la práctica uno o dos
+  píxeles. Es el umbral de mayor recall con ≤ 0,5 % de falsos positivos en la primera mitad.
+
+**Verdad**: 70 filas «árbitro» (por eliminación: dentro del campo, a > 3 m de toda persona del GT) y
+605 «jugador» (casadas a ≤ 1 m), en la ventana del GT.
+
+| | AUC | recall del árbitro | falsos positivos (jugador) |
+|---|---|---|---|
+| **segunda mitad, banda** | **0,849** | 70,3 % (26 de 37) | **1,4 %** (4 de 286) |
+| ventana entera, banda | 0,899 | 80,0 % | 0,83 % |
+| control: banda desplazada +30 en H | 0,500 | 0 % | 0 % |
+| control: con la máscara anti-césped actual | **0,500** | 0 % | 0 % |
+| **marcas de Alex («arbitro», hoja de revisión)** | — | **29 de 29** | — |
+
+**Criterios**: falsos positivos ≤ 0,5 % → **NO** (1,4 %); recall ≥ 80 % → **NO** (70 %). Los dos
+controles se comportan como debían. Las dos patas → **NO** (Villaviciosa sin medir).
+
+**Partido entero, sin GT** (11.989 frames, τ y banda fijados):
+
+| | |
+|---|---|
+| frames con UNA fila marcada en el campo | 86,7 % |
+| frames con **≥ 2** filas marcadas | **11,9 %** (criterio ≤ 5 % → **NO**) |
+| filas marcadas | 13.313 |
+| … en identidades que hoy son de un equipo (mayoría A/B) | **9.603** |
+| … con etiqueta A/B hoy | 6.007 |
+
+**Lectura:**
+- **El chaleco SE VE por fila cuando se mira sin la máscara**: AUC 0,85-0,90. La máscara actual lo
+  borra entero (AUC 0,50, lo mismo que una banda al azar).
+- Es la primera medida que contradice, por fila, «el árbitro en un recorte suelto no existe»: no
+  existía en la REPRESENTACIÓN, no en los píxeles. El aviso de CLAUDE.md, «una propiedad medida en
+  una representación no es una propiedad del objeto», se confirma a escala de fila.
+- **Pero no es una prueba limpia por fila.** 1,4 % de falsos positivos sobre jugadores es mucho
+  sobre ~160.000 filas de jugador del partido: ~2.200. Y en el 11,9 % de los frames marca a dos.
+- **El 98,5 % de los frames tiene alguna fila marcada**: el árbitro casi siempre está a la vista.
+  De las 6.007 filas marcadas que hoy cuentan para A o B, descontando los ~2.200 falsos positivos
+  esperables, unas ~3.800 serían el árbitro. Cuadra con las ~4.200 del proxy (22-oct b).
+
+**¿Qué podría estar inventando?**
+- **La verdad por eliminación**: incluye cualquier persona no anotada a > 3 m (staff, cajas
+  fantasma). Eso baja el recall medido. Por eso las marcas de Alex (29 de 29) apuntan a que el
+  recall real es más alto.
+- **Los falsos positivos** pueden ser cajas FUNDIDAS con el árbitro (`docs/proximidad_deteccion.md`):
+  una caja de jugador que contiene medio chaleco. No se ha verificado: el script no guarda la
+  puntuación por fila.
+- **τ = 0,0056 es frágil**: unos píxeles de diferencia cambian la marca. Un cambio de cámara o de
+  luz lo movería.
+- **La ventana del GT son 30 s**: 37 filas de árbitro en la segunda mitad. Un recall de 26/37 tiene
+  un intervalo ancho (IC 95 % ≈ 54-83 %).
+
+**No pasa, así que no se propone cómo usarla** (el bloque lo pedía solo si pasaba). Lo que la
+dejaría cerca:
+- medir en Villaviciosa (Colab);
+- comprobar si los falsos positivos son cajas fundidas con el árbitro. Si lo son, no son un error
+  de la prueba sino del detector, y habría que medir la prueba solo sobre cajas no solapadas.
