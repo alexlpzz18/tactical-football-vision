@@ -97,3 +97,56 @@ equipos sin la amplificación por identidad.
 ¿Qué podría estar inventando? La verdad por eliminación del benjamín incluye cualquier cosa no
 anotada a > 3 m de los jugadores: staff que pisa el campo, una caja fantasma, un recogepelotas. Por
 eso la segunda verdad (las marcas de Alex), que es independiente.
+
+---
+
+## Resultado del bloque 1 — B2 en métricas de producto: NO CUMPLE (mejora mucho el benjamín, empeora Villaviciosa)
+
+`scripts/diag23a_b2_producto.py`. Pipeline entero, solo filas reales.
+
+| | benjamín hoy | **benjamín B2** | benjamín B2 permutado | Villaviciosa hoy | **Villaviciosa B2** | Villaviciosa B2 permutado | criterio |
+|---|---|---|---|---|---|---|---|
+| equipo equivocado con voto | 1,2 % | 1,4 % | 1,1 % | 23,6 % | 23,2 % | 24,1 % | ≤ hoy + 0,3 → sí / sí |
+| árbitro dentro de un equipo | 53,5 % | **4,3 %** | 2,5 % | 5,3 % | **0,0 %** | 75,8 % | ≤ 35 / ≤ 5,3 → sí / sí |
+| otro ≥ 2 (partido / tramo) | 12,2 % | **7,2 %** | 9,7 % | 4,2 % | 20,4 % | 3,0 % | benjamín ≤ 12,2 → sí |
+| B > 7 (benjamín) / A > 11 (Villaviciosa) | 28,5 % | **17,0 %** | 23,1 % | 54,6 % | **69,8 %** | 80,6 % | ≤ 20 → sí / ≤ 54,6 → **NO** |
+| centroide | 0,863 m | **0,591 m** | 0,506 m | 4,374 m | **4,747 m** | 5,030 m | ≤ hoy + 0,05 → sí / **NO** |
+| anchura | 0,389 m | 0,389 m | 0,387 m | 4,805 m | **5,295 m** | 4,736 m | ≤ hoy + 0,05 → sí / **NO** |
+| ocupación (error, menos es mejor) | 4,06 | 2,49 | 2,73 | 13,8 | **17,5** | 17,4 | ≤ hoy + 0,5 → sí / **NO** |
+| portero bien etiquetado | 100 % | 100 % | 99,1 % | 88,4 % | 91,9 % | 85,9 % | ≥ hoy − 2 → sí / sí |
+| metros interpolados | 297 | 391 | 439 | 195 | 201 | 230 | (informativo) |
+| huecos > 2,5 s sin posición (nº / s) | 22 / 94 | **62 / 219** | 57 / 206 | 0 / 0 | 0 / 0 | 0 / 0 | (informativo) |
+| IDF1 | 0,589 | 0,566 | 0,556 | 0,442 | **0,364** | 0,371 | (informativo) |
+| identidades por persona del GT (media) | 3,07 | 4,29 | 5,14 | 5,68 | 7,91 | 8,41 | (informativo) |
+
+*Línea base*: el criterio citaba 0,97 / 0,40 m de centroide y anchura en el benjamín. Medido hoy con
+`foto_de_estado.medir` sobre el CSV de producción da 0,863 / 0,389. El criterio va relativo a hoy,
+así que no cambia el veredicto.
+
+**No cumple**: en Villaviciosa empeoran A > 11, el centroide, la anchura y la ocupación.
+
+**Control: el color real NO gana en el benjamín** (error 1,4 contra 1,1 y árbitro 4,3 contra 2,5
+del permutado). En Villaviciosa sí gana (23,2 contra 24,1; 0,0 contra 75,8).
+
+**¿Qué podría estar inventando? Lo que mejora el benjamín no es el color: es CORTAR en los
+cruces.**
+- Con el color permutado, el benjamín mejora igual o más: árbitro dentro de un equipo 2,5 %,
+  centroide 0,51 m.
+- Es coherente con el bloque B del 22-oct (f): las quimeras árbitro + jugador se forman en los
+  cruces, y partir la identidad ahí ya las deshace, se reenlace bien o mal.
+- El precio está en las métricas de asociación, que es por lo que se añadieron:
+  - IDF1 baja (0,589 → 0,566);
+  - las identidades por persona suben (3,1 → 4,3);
+  - los huecos > 2,5 s sin posición casi se triplican (94 → 219 s): los trozos sueltos de B2 dejan
+    a personas sin ficha más tiempo.
+- La mejora del centroide (0,86 → 0,59) puede venir en parte de ahí: sin ficha no hay error de
+  posición.
+- En Villaviciosa, donde ya se etiqueta por identidad y la impureza era menor, partir empeora el
+  recuento (A > 11, otro ≥ 2 del 4 al 20 %).
+
+**Decisión**: no se adopta; el flag sigue apagado.
+- **Dato para un plan futuro**: el corte en cruces SIN color arregla al árbitro del benjamín (53,5
+  → 2,5-4,3 %). Lo que falta es reunir los trozos sin perder las fichas: el mismo cuello de botella
+  del 22-oct (g).
+- **Métricas nuevas**: `src/evaluation/asociacion_desde_csv.py` (IDF1 y fragmentación por persona
+  desde un CSV), con test. Desde hoy van junto a la pureza, que premia partir.
