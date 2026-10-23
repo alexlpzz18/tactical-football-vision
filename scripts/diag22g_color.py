@@ -143,12 +143,16 @@ def variante(
     params_color: dict | None,
     por_obs: bool = True,
     flag: str = "coste_color",
+    nombre: str | None = None,
 ):
-    """(captura, csv) de una pasada con el término de color dado (None = hoy)."""
+    """(captura, csv) de una pasada con el término de color dado (None = hoy).
+
+    `nombre` fija el sufijo de los ficheros (si no, «hoy», «permutado» o «color»).
+    """
     import src.team_classification.pipeline_equipos as pe
 
     dp = _mod("diag22f_pureza")
-    nombre = (
+    nombre = nombre or (
         "hoy"
         if params_color is None
         else (

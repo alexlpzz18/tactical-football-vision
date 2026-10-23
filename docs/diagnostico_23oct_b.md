@@ -162,3 +162,51 @@ Tests:
 - los flags están apagados en producción.
 
 **Flags apagados: CSV idéntico byte a byte al de hoy en las dos patas.**
+
+---
+
+## Resultado del bloque 2 — corte en cruces SIN color: NO CUMPLE, y explica a B2
+
+`scripts/diag23b_sin_color.py`. Pipeline entero, solo filas reales.
+
+| | benjamín hoy | **sin color** | cortes al AZAR (control i) | Villaviciosa hoy | **sin color** | al azar |
+|---|---|---|---|---|---|---|
+| árbitro dentro de un equipo | 53,5 % | **53,4 %** | 53,2 % | 5,3 % | 8,4 % | 42,1 % |
+| equipo equivocado | 1,2 % | **3,2 %** | 1,7 % | 23,6 % | 22,5 % | 23,7 % |
+| centroide | 0,863 m | **1,304 m** | 0,862 m | 4,374 m | **4,875 m** | 4,599 m |
+| anchura | 0,389 | 0,556 | 0,396 | 4,805 | 5,823 | 5,080 |
+| B > 7 / A > 11 | 28,5 % | 27,9 % | 29,5 % | 54,6 % | **65,8 %** | 74,8 % |
+| otro ≥ 2 | 12,2 % | 11,9 % | 5,5 % | 4,2 % | **45,8 %** | 14,4 % |
+| huecos (% tiempo-jugador) | 0,51 | 0,64 | 0,47 | 0 | 0 | 0 |
+| IDF1 | 0,589 | **0,546** | 0,589 | 0,442 | **0,360** | 0,378 |
+| identidades por persona | 3,07 | 4,43 | 3,57 | 5,68 | 7,09 | 7,09 |
+| portero bien | 100 % | 100 % | 100 % | 88,4 % | 86,9 % | 79,8 % |
+
+**Criterios: solo cumple los huecos (benjamín) y el equipo equivocado (Villaviciosa).** Todo lo
+demás falla, y el árbitro del benjamín no se mueve (53,4 % contra ≤ 10 %).
+
+**Controles:**
+- (i) con cortes al azar el árbitro sale igual (53,2 %): no hay efecto que atribuir.
+- (ii) en las cachés de 60 s, el equipo equivocado EMPEORA en las dos, mismo signo: v3 1,2 → 3,2 %
+  y v4 3,6 → **19,4 %**.
+  - El proxy del árbitro de esas cachés («frames de la ventana sin `otro`») sale 0 % en todas:
+    con su detector siempre hay un `otro` en el campo, y no sirve para medir aquí.
+
+**Lo que enseña, y corrige la lectura del 23-oct (a):**
+- B2 sacaba al árbitro de los equipos (53,5 → 4,3 %), y con el color permutado también (2,5 %).
+- Lo leí como «lo que funciona es CORTAR en los cruces». **No era eso.**
+- Con un reenlace por movimiento generoso (puerta de hasta 9 m, hueco 2,5 s) y sin color, cortar
+  en los cruces no hace NADA por el árbitro: el reenlace vuelve a unir casi todo y las quimeras se
+  reconstruyen.
+- Lo que deshacía las quimeras en B2 era su puerta ESTRECHA (1,5 m, hueco 1 s) más la puerta de
+  color, aunque el color estuviera permutado: dejaban muchos trozos SIN reenlazar.
+- ⇒ **El efecto de B2 sobre el árbitro era la FRAGMENTACIÓN, no el cruce ni el color.** Encaja con
+  sus huecos duplicados y su IDF1 más bajo.
+
+**¿Qué podría estar inventando?** El centroide del benjamín empeora (0,86 → 1,30 m) con más
+identidades y peor IDF1: los reenlaces generosos unen trozos de personas DISTINTAS que estaban
+cerca. Es el «una persona es N identidades» al revés: N personas, una identidad.
+
+**Decisión**: no se adopta; el flag queda apagado. La ruta «cortar en cruces y reenlazar» llega
+aquí a su tercer planteamiento (B2 con color, este sin color). El cuello de botella no es dónde
+cortar sino cómo REUNIR sin mezclar, y eso el movimiento solo no lo distingue en los cruces.
