@@ -174,3 +174,36 @@ de ayer (`cmp`). Se mide lo mismo que se midió.
   medidas tienen el mismo tipo de ruido; por eso el control vale.
 - «Caja fundida» y «fondo» no son independientes: en el fondo las cajas son pequeñas y se solapan más.
   No se ha separado una cosa de la otra.
+
+## Resultado del bloque 2 — emisión con mitades cruzadas: PASA
+
+`python scripts/diag23d.py cruzada --salida outputs/diagnostico_23oct_d` (`cruzada.json`).
+
+**Los tres modelos** (log LR por bin; bins [0, 0,002, 0,005, 0,01, 0,02, 0,05, 0,1, 0,2, 1]):
+
+| modelo | filas de árbitro / jugador | log LR |
+|---|---|---|
+| ventana entera (ayer) | 71 / 610 | −1,64 · 2,06 · 0,45 · 1,36 · 2,06 · 1,36 · 3,16 · 5,0 |
+| solo H1 (9750-10191) | 33 / 323 | −2,30 · 2,09 · 0,99 · 2,09 · 2,09 · 2,09 · 2,09 · 5,0 |
+| solo H2 (10192-10635) | 38 / 287 | −1,31 · 1,86 · 0,76 · 1,17 · 1,86 · 1,17 · 2,96 · 5,0 |
+
+**La variante 2 con cada modelo**, comparada con el modelo de la ventana entera:
+
+| | cobertura | B > 7 | centroide en la mitad NO vista | pista con la misma detección |
+|---|---|---|---|---|
+| estima H1, evalúa H2 | 97,08 % (−0,03) | 8,45 % (0,00) | 1,078 m (0,000) | 99,93 % |
+| estima H2, evalúa H1 | 97,12 % (+0,01) | 8,41 % (−0,04) | 0,261 m (0,000) | 99,90 % |
+
+Los tres criterios (centroide ≤ 0,03 m; cobertura y B > 7 ≤ 1 punto) **se cumplen en las dos
+direcciones**: los números no dependen de haber estimado la emisión en la misma ventana donde se
+mide.
+
+¿Qué podría estar inventando?
+- **La estabilidad no dice que la emisión no importe**: el control permutado de ayer, con la misma
+  pista y la emisión barajada, perdía al árbitro (cobertura 97 → 32 %). Los tres modelos comparten la
+  forma: el bin sin chaleco es negativo (−1,3 a −2,3), todos los demás son positivos y el último
+  satura en +5. La pista depende del ORDEN de las detecciones por chaleco, no del valor exacto, y ese
+  orden es el mismo con 33 filas que con 71.
+- Los 1,078 m y 0,261 m son el centroide de cada mitad, no un cambio: la segunda mitad es el tramo
+  malo conocido del GT (el error triplica entre los tercios de la ventana). Lo que se compara es
+  la diferencia, que es 0.
