@@ -108,3 +108,37 @@ más. Se mide cuántos píxeles son 2 m en las detecciones de cada pata (homogra
 
 **¿Qué podría estar inventando?** El tiempo-jugador suma la vida de cada identidad, también la de
 las quimeras y los fragmentos. No es el tiempo de las personas reales: es el de las fichas.
+
+---
+
+## Resultado del bloque 1 — gana el IoU > 0,1 (por poco); la hipótesis de Villaviciosa no se sostiene
+
+`scripts/diag23b_cortes.py`, salida de ByteTrack de hoy, ventanas del GT. Cambios verdaderos:
+benjamín 41, Villaviciosa 116.
+
+| definición | benjamín: recall · precisión · cortes/persona-min | Villaviciosa: recall · precisión · cortes/persona-min |
+|---|---|---|
+| (a) otra detección a < 2 m | **0,659** · 0,245 · 28,3 | 0,819 · 0,252 · 28,2 |
+| IoU > 0 | 0,805 · 0,178 · 34,8 | 0,784 · 0,207 · 29,7 |
+| IoU > 0,05 | 0,732 · 0,190 · 34,9 | 0,793 · 0,208 · 29,3 |
+| **(b) IoU > 0,1** | **0,805** · 0,228 · 34,9 | **0,802** · 0,225 · 26,1 |
+| IoU > 0,2 | 0,659 · 0,192 · 24,6 | 0,690 · 0,246 · 20,2 |
+| IoU > 0,3 | 0,415 · 0,190 · 14,7 | 0,448 · 0,226 · 13,2 |
+| IoU > 0,4 | 0,293 · 0,356 · 6,6 | 0,284 · 0,241 · 7,1 |
+| IoU > 0,5 | 0,146 · 0,438 · 2,4 | 0,069 · 0,132 · 2,4 |
+
+- **(c)**: el mayor t con recall ≥ 80 % en las dos patas es **t = 0,1**, el mismo valor que (b).
+- **Elección: IoU > 0,1**, la única definición con recall ≥ 80 % en las dos patas. Llega justa:
+  33 de 41 y 93 de 116.
+- (a) se queda en 66 % en el benjamín.
+- **La hipótesis «en Villaviciosa 2 m son 4-5 px y por eso (a) corta de más» NO se sostiene.**
+  Medido con la homografía inversa sobre las detecciones, 2 m son **~20 px** en Villaviciosa (45 en
+  el benjamín). Y (a) no corta más allí que en el benjamín (28 por persona-minuto en las dos).
+
+**¿Qué podría estar inventando?**
+- **La precisión es baja en todas**: solo ~1 de cada 4 cortes cae en un cambio real. Un cruce casi
+  nunca intercambia a las personas: la mayoría de los cortes serán reenlaces correctos que, si
+  fallan, ROMPEN una identidad buena. Es el precio que se vio en B2.
+- **Los recalls salen de 41 y 116 cambios**: IC 95 % de ±12 y ±7 puntos. El 80 % es una línea fina.
+- La curva no es monótona (IoU > 0 cubre más que > 0,05): con umbrales bajos las rachas de cruce se
+  alargan y el corte, que es la ENTRADA en la racha, se adelanta fuera del margen de ±0,5 s.
