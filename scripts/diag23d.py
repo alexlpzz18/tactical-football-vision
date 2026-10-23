@@ -742,6 +742,65 @@ def paneles_30(salida: Path, fk, pf: dict, crudo: dict) -> list[dict]:
     return lista
 
 
+def tabla_filas_b(salida: Path) -> dict:
+    """Apoyo a la lectura a ojo de los paneles: cada fila B / portero_B de los frames elegidos.
+
+    Para cada fila: el voto de color de ESA observación, la altura de su caja relativa a las
+    vecinas a la misma altura de imagen (< 0,6 = fragmento o fantasma), el IoU con otra caja
+    (> 0,3 = fundida) y cuántas filas del CSV caen en la MISMA caja (≥ 2 = fila duplicada).
+    """
+    from src.team_classification.oclusion import color_medio_limpio
+
+    inv = _mod("diag22e_invariantes")
+    import pandas as pd
+
+    lista = json.loads((salida / "paneles_30/paneles.json").read_text())
+    frames = [x["frame"] for x in lista]
+    crudo = dets_crudos()
+    filas = pd.read_csv(salida / "v2_anade.csv")
+    fk = inv.con_caja(filas[filas.frame.isin(frames)], crudo)
+    clf, colores = clasificador_de_color()
+    out = {}
+    for f in frames:
+        g = fk[fk.frame == f]
+        D = crudo[f]
+        filas_b = []
+        for r in g.itertuples():
+            if str(r.etiqueta) not in ("B", "portero_B"):
+                continue
+            caja = D[int(r.k)][2:6]
+            vecinas = [
+                D[int(o.k)][2:6]
+                for o in g.itertuples()
+                if o.k != r.k and abs(D[int(o.k)][5] - caja[3]) < 60
+            ]
+            alto_med = np.median([v[3] - v[1] for v in vecinas]) if vecinas else None
+            c = colores.get((f, int(r.k)))
+            voto = (
+                clf.predict_color(
+                    color_medio_limpio([((f, int(r.k)), c)], None), solo_equipos=True
+                )
+                if c is not None
+                else None
+            )
+            filas_b.append(
+                {
+                    "id": int(r.id_jugador),
+                    "etiqueta": str(r.etiqueta),
+                    "voto_color": voto,
+                    "alto_relativo": (
+                        round(float((caja[3] - caja[1]) / alto_med), 2)
+                        if alto_med
+                        else None
+                    ),
+                    "iou_max": round(iou_max_con_otras(D, int(r.k)), 2),
+                    "filas_en_la_misma_caja": int((g.k == r.k).sum()),
+                }
+            )
+        out[str(f)] = {"relojes": relojes(f), "filas_B": filas_b}
+    return out
+
+
 def porteros(salida: Path) -> dict:
     crudo = dets_crudos()
     fk = filas_con_caja(salida / "v2_anade.csv", crudo)
@@ -877,7 +936,15 @@ def clip(salida: Path) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "accion", choices=["pista", "velocidades", "cruzada", "porteros", "clip"]
+        "accion",
+        choices=[
+            "pista",
+            "velocidades",
+            "cruzada",
+            "porteros",
+            "tabla_filas_b",
+            "clip",
+        ],
     )
     ap.add_argument("--salida", required=True)
     args = ap.parse_args()
@@ -890,6 +957,7 @@ def main() -> None:
         "velocidades": velocidades,
         "cruzada": cruzada,
         "porteros": porteros,
+        "tabla_filas_b": tabla_filas_b,
         "clip": clip,
     }[args.accion](salida)
     texto = json.dumps(res, indent=1, ensure_ascii=False, default=lambda o: o.item())

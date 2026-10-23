@@ -207,3 +207,123 @@ mide.
 - Los 1,078 m y 0,261 m son el centroide de cada mitad, no un cambio: la segunda mitad es el tramo
   malo conocido del GT (el error triplica entre los tercios de la ventana). Lo que se compara es
   la diferencia, que es 0.
+
+## Resultado del bloque 3 — la regla de portero (solo medición)
+
+Scripts:
+- `python scripts/diag23d.py porteros --salida outputs/diagnostico_23oct_d` (`porteros.json`; los
+  paneles, en `paneles_30/`);
+- `python scripts/diag23d.py tabla_filas_b ...` (`tabla_filas_b.json`), el apoyo a la lectura a ojo.
+
+### ⚠️ Corrección de lo que escribí ayer (23-oct c)
+Ayer puse que, con la pista, la fila de más era «casi siempre un PORTERO con el rol equivocado»: el
+portero verde de B etiquetado como jugador de B. **Esa lectura estaba mal planteada.** El recuento de
+B **incluye a `portero_B`** (`recuento_por_frame` mete a cada portero en su equipo). Así que un
+portero verde etiquetado «B» cuenta exactamente igual que uno etiquetado `portero_B`: **no añade
+ninguna fila**. Lo que sí añade una es que `portero_B` se lo lleve OTRA persona, la de A, mientras el
+portero de verdad sigue contado en B. Hoy se clasifica con esa cuenta.
+
+### (a) La fila de más en los frames con B > 7 (variante 2)
+- Salen **28 paneles, no 30**: dos de los 30 tramos no tienen ningún frame con B > 7.
+- Lectura a ojo, PROVISIONAL, apoyada en la tabla de cada fila B (voto de color de la observación,
+  caja duplicada, fragmento, fundida).
+
+| la fila de más es… | frames | ejemplos (archivo / reproductor) |
+|---|---|---|
+| **una fila DUPLICADA**: dos identidades del CSV sobre la MISMA caja | **8** | f4923 (2:44,3 / 4:17,3), f13959, f18885 |
+| **un jugador de A etiquetado B** | 4 | f9264 (5:09,1 / 6:42,1), f16779, f23289, f32244 |
+| **`portero_B` llevado por un jugador de A** (identidad quimera) | 4 | f924, f11193 (#211), f34611 y f34935 (#766) |
+| **fragmentos de una caja fundida** (un racimo de jugadores) | 4 | f22656, f25176, f27243, f28581 |
+| **el árbitro** | 3 | f20682 (#288), f29799, f30018 (#764) |
+| fantasma (caja diminuta) | 1 | f1806 (#55) |
+| no se distingue | 4 | f3351, f12579, f24954, f33183 |
+
+- La fila de más **no tiene un dueño**. El grupo mayor (8 de 28) es una fila DUPLICADA. Son
+  29 filas B en los 28 frames con otra fila en la misma caja: es asociación, no color ni regla.
+- El rol de portero explica 4 de 28 (14 %).
+- El árbitro sigue siendo la fila de más en 3 de 28 (11 %). Ayer la auditoría de la v2 daba 1 de 20.
+
+### (b) ¿Quién se lleva `portero_A` / `portero_B`?
+
+**Control del proxy** (la detección más profunda de su área), contra los porteros del GT, en la ventana:
+
+| lado | track GT | proxy a ≤ 1,5 m | |
+|---|---|---|---|
+| B (portería del fondo) | 7 (x mediana 56,8) | **90,0 %** de 60 | ✓ vale |
+| A (portería de la cámara) | 6 (x mediana 8,1) | **49,2 %** de 59 | ✗ < 80 % |
+
+- **Lado A: la fracción automática queda NO MEDIDA.** El portero de A está cortado por el borde
+  inferior en 47 de 57 muestras (`docs/portero_cortado.md`): su pie no se ve y su posición en metros
+  no es la del pie, así que «el más profundo» no es él.
+- A ojo, en los 28 paneles:
+  - **desde f4662 (2:35,6 / 4:08,6) `portero_A` está sobre el portero negro en todos los paneles
+    donde se ve** (10 de 10);
+  - **en los tres primeros (f924, f1806, f3351) el portero de A es `otro` #26**. Es una de las
+    identidades del tercer grupo que avisa el log («26 (1095 obs)»): el `azul_electrico` ya
+    documentado (`docs/peso_arbitro_y_portero.md`).
+
+**Lado B** (proxy válido), en los 8.746 frames con candidato en las dos áreas:
+
+| | frames | % |
+|---|---|---|
+| **rol correcto** (la detección del proxy lleva `portero_B`) | 5.268 | **60,2 %** |
+| 3 · sin corona: nadie lleva `portero_B` | 2.692 | 30,8 % |
+| 1b · lo lleva otra detección con voto de color B | 557 | 6,4 % |
+| 1 · lo lleva un jugador del OTRO equipo (voto de color A) | 117 | 1,3 % |
+| 4 · dos `portero_B` a la vez | 112 | 1,3 % |
+| 2 · cortado por el borde | 0 | — |
+
+- En 3.460 de los 3.478 fallos, **el portero real está etiquetado `B`**: se cuenta en su equipo y en
+  su sitio. Para el centroide y para B > 7 **no cuesta nada**. Cuesta en el informe, si este dice
+  «el portero».
+- Los fallos que SÍ cuestan filas son el 1 y el 4 (229 frames, el 2,6 %): son los que salen en los
+  paneles.
+
+**Las identidades que se llevan `portero_B`**, verificadas a ojo sobre los paneles:
+
+| id | filas | tramo (archivo) | ¿es el portero? |
+|---|---|---|---|
+| 11 | 409 | 0:00-0:42 | ✗ en f924 es un jugador blanco de A |
+| 211 | 1.525 | 3:45-6:20 | ✓ en f9264 y f10782; ✗ en f11193 (6:13,5): la identidad pasa a un jugador de A |
+| 350 | 1.953 | 6:33-9:51 | ✓ (f12579, f13959, f16779) |
+| 665 | 1.502 | 13:13-15:43 | ✓ (f24954, f25176, f27243) |
+| 766 | 2.536 | 15:45-20:00 | ✓ hasta f32244; ✗ en f34611 y f34935 (19:15-19:26): otra quimera con un jugador de A |
+| 883 | 490 | 19:07-20:00 | ✓; a la vez que la 766 |
+
+- Hay dos huecos sin `portero_B`: **0:42-3:45** y **9:51-13:13** (archivo). En ellos el portero verde
+  es `B` (#6, #14, #525).
+- El patrón del fallo que cuesta: **la regla corona una identidad entera, y la identidad, al
+  alargarse, se lleva a otra persona**. Es la lección de «una persona es N identidades», vista al
+  revés: una identidad son N personas.
+
+### (c) Propuesta del cambio mínimo (NO implementado)
+**«`portero_X` por observación, con dos señales»**:
+- Una observación de una identidad coronada como `portero_X` conserva el rol, salvo que se cumplan
+  las dos condiciones a la vez:
+  1. NO es la detección más profunda de su área en ese frame (o está a > 3 m de ella);
+  2. su voto de color por observación (ventana de 1,5 s, el de `etiquetar_por_observacion`) es del
+     OTRO equipo.
+- Si se cumplen las dos, vuelve a su voto de color.
+- Además, la **exclusividad por frame**: un solo `portero_X` por frame, el más profundo.
+- Es la forma de «dos señales débiles que juntas son fuertes»: la posición sola se equivoca en los
+  córneres, y el color solo, con el portero verde.
+
+**Criterio, para fijarlo ANTES de medir:**
+- fallos de tipo 1 + 4 en B: 229 → **≤ 50 frames**;
+- B > 7 **no sube**; equipo equivocado ≤ 1,5 %; centroide ≤ hoy;
+- hoja de 60 observaciones que pierden `portero_B`: **≤ 10 % son el portero real**;
+- control: las mismas dos condiciones con la etiqueta de equipo BARAJADA tienen que dar ≥ 3× más
+  observaciones movidas.
+- No toca el lado A: allí el proxy no vale. El portero de A en `otro` de los minutos 0-2 es otra
+  causa, la del catálogo.
+
+¿Qué podría estar inventando?
+- **El 60,2 % depende del proxy**. El proxy acierta el 90 % en la ventana del GT, así que hasta ~10
+  puntos de «fallo» pueden ser del proxy y no de la regla (córneres, un defensor por detrás del
+  portero).
+- **El voto de color de los tipos 1 y 1b** usa un clasificador reentrenado con el caché CRUDO, no
+  con el filtrado que usa producción. Puede diferir en las observaciones dudosas; por eso el tipo 1
+  se apoya en los paneles y no solo en el número.
+- **La clasificación de los 28 paneles es mía y a ojo**, con cajas de 15-40 px. «Duplicado» se
+  apoya en un hecho medible (dos filas casadas con la misma caja), los demás no tanto. Los 4 «no se
+  distingue» se dejan así y no se reparten.
