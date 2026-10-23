@@ -120,3 +120,57 @@ también el log LR de cada bin de los tres modelos.
   (`diag23b_auditoria.py render`).
 - Explicación, con los datos de la pista, de por qué en el frame **f23553** (**13:05,9** archivo /
   **14:38,9** reproductor) la variante 2 deja al árbitro en B.
+
+---
+
+## Resultado del bloque 1 — los pasos a más de 9 m/s
+
+`python scripts/diag23d.py velocidades --salida outputs/diagnostico_23oct_d` (`velocidades.json`; el
+detalle paso a paso, en `bloque1_pasos.json`).
+
+Comprobación previa: la pasada de hoy y la de la variante 2 dan un CSV **idéntico byte a byte** al
+de ayer (`cmp`). Se mide lo mismo que se midió.
+
+### La lectura fijada: el criterio NO era específico
+
+| | pasos | > 9 m/s |
+|---|---|---|
+| pista del árbitro, partido entero | 11.641 | **1,03 %** (120) |
+| pista del árbitro, solo la ventana del GT | 289 | 0,0 % (0) |
+| **jugadores del GT, mismo muestreo, casados a ≤ 1 m** | 3.074 (14 personas) | **2,28 %** |
+| jugadores del GT, casados a ≤ 2 m | 3.637 | 4,81 % |
+
+- Los jugadores dan **2,2× la fracción del árbitro**, por encima del 0,7× fijado: **el fallo del
+  1,03 % no cuenta**.
+- Ningún benjamín corre a más de 9 m/s. Si los jugadores casados con el GT, con su posición real
+  conocida, pasan ese umbral el 2,3 % de las veces, lo que dispara el criterio es el **temblor de la
+  detección**: 1 px vale hasta 0,42 m en el fondo y un paso dura 0,1 s.
+- El sesgo previsto va en la dirección que refuerza la lectura: casar a 2 m (más permisivo) DUPLICA
+  la fracción de los jugadores.
+- **No se añade la penalización de continuidad.** El criterio de ayer no se cambia: formalmente sigue
+  en ✗. Lo que cambia es lo que dice ese ✗.
+
+### De dónde salen los 120 pasos de la pista
+
+| | sí | no | lo que dice |
+|---|---|---|---|
+| cruzan un **hueco** (Δt > 0,15 s) | 54 | 66 | solo el 2,0 % de los pasos tiene hueco, pero el 22,8 % de ellos supera 9 m/s; sin hueco, el 0,58 % |
+| tienen **caja fundida** (IoU > 0,1) | 74 | 46 | el 19 % de todos los pasos tiene caja fundida; con ella, el 3,3 % supera 9 m/s; sin ella, el 0,49 % |
+| **cambian de identidad** del tracker | 10 | 110 | casi nunca salta a OTRA persona del tracker |
+| el **chaleco cae** (log LR ≤ 0) | 2 | 118 | la pista casi nunca pisa una detección sin chaleco |
+
+- **Por zona**: cerca 0,54 %, medio 0,82 %, fondo **1,34 %**. Crece con los metros por píxel, que es
+  la firma del temblor y no la de un cambio de persona.
+- **Por magnitud**: 57 en 9-12, 45 en 12-20, 17 en 20-40 y 1 > 40 m/s. Son casi todos saltos de
+  1-2 m en 0,1 s: una caja fundida desplaza su pie.
+- Quedan **32 pasos** (0,27 % de la pista) sin hueco y sin caja fundida.
+
+### ¿Qué podría estar inventando este número?
+- El 0,0 % del árbitro en la ventana del GT son 0 de 289 pasos. Con la tasa del partido se esperarían
+  3, y ver 0 pasa un ~5 % de las veces. No es prueba de nada; por eso la comparación se hace contra
+  la tasa del partido.
+- El control de los jugadores no es una pista de Viterbi: casa por persona en cada frame. Puede saltar
+  de detección cuando dos jugadores están a menos de 1 m, lo mismo que puede hacer la pista. Las dos
+  medidas tienen el mismo tipo de ruido; por eso el control vale.
+- «Caja fundida» y «fondo» no son independientes: en el fondo las cajas son pequeñas y se solapan más.
+  No se ha separado una cosa de la otra.
