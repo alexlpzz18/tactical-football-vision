@@ -87,3 +87,24 @@ más. Se mide cuántos píxeles son 2 m en las detecciones de cada pata (homogra
 - **Vídeo + pizarra** del tramo 10:00-10:45 del archivo (11:33-12:18 del reproductor), con hoy y
   con la variante, para Alex: `generar_video_detecciones.py` con el CSV de cada uno y la pizarra
   (`generar_replay.py`) del mismo tramo.
+
+---
+
+## Resultado del bloque 0
+
+`scripts/diag23b_bloque0.py`, sobre los CSV del 23-oct (a).
+
+| | otro ≥ 2 (partido / tramo) | tiempo-jugador | huecos > 2,5 s | **huecos en % del tiempo-jugador** |
+|---|---|---|---|---|
+| benjamín hoy | 12,19 % | 18.446 s | 94 s | **0,51 %** |
+| benjamín B2 | 7,19 % | 18.651 s | 219 s | **1,17 %** |
+| Villaviciosa hoy | 4,2 % | 1.446 s | 0 | 0 % |
+| Villaviciosa B2 | 20,4 % | 1.485 s | 0 | 0 % |
+
+- En % del tiempo-jugador, los huecos de B2 son 1,2 %: se duplican, pero son una fracción pequeña.
+- El tiempo-jugador de B2 es algo MAYOR: más identidades cortas que suman vida.
+- En Villaviciosa (60 s) no hay huecos > 2,5 s ni hoy ni con B2; lo que B2 empeora allí es el
+  recuento (otro ≥ 2 del 4 al 20 %).
+
+**¿Qué podría estar inventando?** El tiempo-jugador suma la vida de cada identidad, también la de
+las quimeras y los fragmentos. No es el tiempo de las personas reales: es el de las fichas.
