@@ -160,3 +160,40 @@ Además, sin cambios:
   por 10 seguiría por debajo del 5 %.
 - **F11 no guarda la puntuación** (no hay banda medida). El criterio decía «si es barato»: es
   barato, pero sería otro chaleco bajo el mismo nombre.
+
+## Resultado del bloque 2 — máscara de zona de juego: implementada, herramienta lista, NO MEDIDA
+
+- **Flag** `balon.mascara_zona`, en `configs/campo_benja.yaml`, `null` = APAGADO.
+  - `ParametrosBalon.mascara_zona`, `filtrar_por_mascara_zona` y `dentro_del_poligono` (regla
+    par-impar, admite polígonos cóncavos).
+  - Se aplica al principio de `seleccionar_balon_activo`, sobre las detecciones y también sobre las
+    que se readmitirían como vuelo. Es el único punto que comparten el vídeo y la pizarra.
+- **Apagado = igual que antes**: el CSV de `procesar_balon.py` (parte entera, 191.805 filas) es
+  **idéntico byte a byte** al de `fix-23oct-e`.
+- Tests nuevos: `tests/test_mascara_zona_balon.py`, 4. Uno es de comportamiento: con la máscara, la
+  candidata de fuera, que ganaba, deja de elegirse.
+- **La herramienta, para Alex** (6-8 clics, `z` deshace, Enter guarda):
+
+  ```
+  python scripts/marcar_mascara_zona.py marcar --escribir-yaml
+  ```
+
+  - El frame de ejemplo ya está extraído con el decodificador de producción:
+    `data/calibracion_benja/frame_mascara.png`, f9306 (5:10,5 archivo / 6:43,5 reproductor). Sale
+    el balón del campo de al lado y la grada despejada.
+  - Guarda en `data/calibracion_benja/mascara_zona_benja.json` y, con `--escribir-yaml`, en el
+    config del campo.
+- **La medida, lista para cuando haya polígono**:
+
+  ```
+  python scripts/diag23f_mascara.py --salida outputs/diagnostico_23oct_f
+  ```
+
+  Calcula los 4 criterios, el control desplazado 100 px incluido.
+  - Solo se ha pasado una **prueba de humo** con un polígono que es la imagen entera, que no es
+    ningún ajuste: 7 de 7 paneles siguen mal, ninguno cambia, 100 % de balón real dentro y el
+    control no empeora nada. Es lo esperado para una máscara que no quita nada: el script corre de
+    punta a punta.
+- ⚠️ **Una precisión del criterio 2.** Los paneles del 22-oct no guardaron QUÉ frames eran «ok»
+  (13 de 30), solo cuántos por estrato. Se mide de forma más ESTRICTA: ninguno de los 23 paneles que
+  no son del campo de al lado puede cambiar de detección elegida. Si alguno cambia, se mira a ojo.

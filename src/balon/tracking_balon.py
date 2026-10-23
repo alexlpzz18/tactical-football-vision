@@ -212,6 +212,12 @@ class ParametrosBalon:
     # la columna `calidad_balon` (medida / aerea / rellena / fuera_del_campo). No es más preciso:
     # solo deja de desaparecer el balón cuando sale.
     recortar_a_campo: bool = False
+    # ── MÁSCARA DE ZONA DE JUEGO en la IMAGEN (docs/diagnostico_23oct_f.md, bloque 2) ──
+    # None = APAGADO. Con un polígono [[x, y], ...] en PÍXELES (lo marca Alex con
+    # scripts/marcar_mascara_zona.py), las candidatas con el centro FUERA se descartan antes de
+    # elegir, también las que se readmitirían como vuelo. Es una máscara de UNA instalación de
+    # cámara: si la cámara se mueve, hay que volver a marcarla.
+    mascara_zona: list | None = None
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -255,6 +261,12 @@ def seleccionar_balon_activo(
     segurísimo de que son balones — porque lo son, solo que no el del
     partido.
     """
+    if params.mascara_zona is not None:
+        detecciones = filtrar_por_mascara_zona(detecciones, params.mascara_zona)
+        if detecciones_fuera_de_campo is not None:
+            detecciones_fuera_de_campo = filtrar_por_mascara_zona(
+                detecciones_fuera_de_campo, params.mascara_zona
+            )
     if params.quitar_balon_de_staff:
         if posiciones_staff is None or dimensiones_campo is None:
             raise ValueError(
@@ -392,6 +404,36 @@ def seleccionar_balon_activo(
         )
         return _solo_vuelos_de_ida_y_vuelta(elegido, no_abren, tiempos, params)
     return {f: lista[0] for f, lista in ordenados.items()}
+
+
+def dentro_del_poligono(x: float, y: float, poligono) -> bool:
+    """¿El punto (x, y) cae dentro del polígono [[x, y], ...]? (rayo hacia +x, regla par-impar)."""
+    dentro = False
+    n = len(poligono)
+    for i in range(n):
+        x1, y1 = poligono[i]
+        x2, y2 = poligono[(i + 1) % n]
+        if (y1 > y) != (y2 > y):
+            corte = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+            if x < corte:
+                dentro = not dentro
+    return dentro
+
+
+def filtrar_por_mascara_zona(detecciones: dict, poligono) -> dict:
+    """Quita las candidatas cuyo CENTRO en píxeles cae fuera del polígono (frames vacíos fuera)."""
+    if len(poligono) < 3:
+        raise ValueError(f"balon.mascara_zona necesita ≥ 3 vértices: {poligono!r}")
+    out = {}
+    for frame, dets in detecciones.items():
+        quedan = [
+            d
+            for d in dets
+            if dentro_del_poligono((d[2] + d[4]) / 2, (d[3] + d[5]) / 2, poligono)
+        ]
+        if quedan:
+            out[frame] = quedan
+    return out
 
 
 def descartar_balon_fuera(

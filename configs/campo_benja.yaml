@@ -74,3 +74,8 @@ balon:
   # cambia de posición; gana la columna `calidad_balon`. ACTIVADO a petición
   # de Alex (docs/diagnostico_22oct_f.md, bloque D).
   recortar_a_campo: true
+  # MÁSCARA DE ZONA DE JUEGO en píxeles: las candidatas de balón con el centro fuera se descartan
+  # antes de elegir (el balón del campo de al lado, detrás de la grada). null = APAGADO. El
+  # polígono lo marca Alex sobre el borde de la grada con scripts/marcar_mascara_zona.py; NO se
+  # ajusta a las candidatas etiquetadas. docs/diagnostico_23oct_f.md, bloque 2.
+  mascara_zona: null
