@@ -526,11 +526,31 @@ Para no reabrirlas por inercia. Reabrir una exige un plan NUEVO con su criterio,
 - NO tocar los notebooks de `notebooks/`: son el registro de experimentos.
 - NO sustituir el tracker en metros por uno en píxeles de librería: el
   tracking en coordenadas de campo es la ventaja diferencial.
-- NO usar boxmot (rompió el entorno). Fijar `numpy<2.1` y `scipy<1.14`.
+- NO usar boxmot (rompió el entorno).
+- ⚠️ **Los pins `numpy<2.1` y `scipy<1.14` están DESFASADOS** (26-oct, `docs/diagnostico_26oct_entornos.md`).
+  El Mac tiene numpy 2.4.6, scipy 1.17.1 y supervision 0.28.0, y con eso pasan los 775 tests y
+  están medidos todos los números de `desde_cache`. Pero **el detector NO corre en el Mac**: torch
+  2.2.2 es el último para Intel x86_64, está compilado contra numpy 1.x y con numpy 2.4.6 falla
+  («Numpy is not available»). La detección (SAHI/YOLO) va a **Colab** o a un **venv con numpy
+  1.26** (numpy 1.26.4, scipy 1.13.1, torch 2.2.2, torchvision 0.17.2, opencv-python-headless
+  4.9.0.80 y `sahi`/`ultralytics` con `--no-deps`; `--only-binary :all:`, o pip compila OpenCV).
+- **supervision cambia el TRACKING** (no la detección): 0.25.1 (Colab) y 0.28.0 (Mac) dan el
+  mismo IDF1 y la misma fragmentación, pero no el mismo CSV en 20 min (una identidad se reparte de
+  otra forma; 336 frames con alguna fila real distinta, B > 7 8,45 contra 8,41 %). Las dos son
+  deterministas. **La canónica para medir es la del Mac, 0.28.0**: un CSV de Colab no es
+  comparable byte a byte con uno del Mac.
 - **Licencias**: nada AGPL (YOLO-pose, boxmot) y nada entrenado con
   SoccerNet (CC BY-NC). Código permisivo con pesos NC ⇒ hay que reentrenar.
 - La **GPU no está en este Mac**: SAHI, YOLO y re-detección se hacen en
   Colab. Aquí se trabaja contra los cachés.
+- **Receta de Colab, UNA celda** (validada el 26-oct: la celda del chaleco pasó con ella). No hace
+  falta reiniciar el kernel: todo el trabajo corre en SUBPROCESOS (`procesar_partido.py`,
+  `cache_chaleco.py`), que arrancan ya con las versiones nuevas:
+  ```
+  !git fetch -q && git checkout -q <rama> && pip install -q -r requirements-colab.txt && python scripts/<celda>.py --salida /content/<carpeta>
+  ```
+  `requirements-colab.txt` = numpy 2.4.6, scipy 1.17.1, supervision 0.25.1, ultralytics, sahi y
+  pyyaml; torch, el de la imagen de Colab.
 
 ## Datos de trabajo (Alex los copia de Drive a `data/`, gitignored)
 - `data/tracking_benja/cache_detecciones_benja_p1.pkl` (+ `_colores_`, 418

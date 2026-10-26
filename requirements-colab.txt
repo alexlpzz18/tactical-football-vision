@@ -1,21 +1,21 @@
-# Versiones EXACTAS del entorno del Mac (`football-vision`, comprobadas el 25-oct-2026 con
-# `import x; x.__version__`), para que Colab corra con las mismas.
-# docs/diagnostico_25oct_chaleco_colab.md.
+# Versiones de Colab VALIDADAS el 26-oct-2026: con ellas pasó la celda del chaleco
+# (scripts/colab_chaleco_full.py: 600 frames, 10.908 detecciones, chaleco igual a la pasada aparte,
+# pista idéntica). docs/diagnostico_25oct_chaleco_colab.md y docs/diagnostico_26oct_entornos.md.
 #
-# Uso en Colab, ANTES de importar nada del repo:
-#     !pip install -q -r requirements-colab.txt
+# Uso, en UNA celda y sin reiniciar el kernel (el trabajo corre en subprocesos):
+#     !pip install -q -r requirements-colab.txt && python scripts/<celda>.py --salida /content/<x>
 #
-# ⚠️ Tres avisos:
-# - supervision: el Mac tiene 0.28.0, NO 0.25.1 (0.25.1 es lo que tenía Colab el 25-oct).
-# - torch NO se fija aquí: el del Mac (2.2.2, el último para Intel) está compilado contra numpy 1.x
-#   y NO funciona con numpy 2.4.6 («Numpy is not available»). En Colab se usa el torch de la
-#   imagen, que sí es compatible con numpy 2.
-# - CLAUDE.md pide fijar numpy<2.1 y scipy<1.14, y el Mac ya no lo cumple (numpy 2.4.6,
-#   scipy 1.17.1). Aquí se fijan las del Mac, que es con lo que están medidos los 772 tests;
-#   decidir cuál de las dos reglas manda es cosa de Alex.
+# ⚠️ Diferencias con el Mac (entorno `football-vision`):
+# - supervision: Colab 0.25.1, Mac 0.28.0. NO cambia la detección; SÍ cambia, poco, el TRACKING
+#   (ByteTrack): mismo IDF1 y misma fragmentación, pero el CSV de 20 min no es idéntico (336 de
+#   11.989 frames con alguna fila real distinta). Los números del proyecto están medidos con la del
+#   Mac; si un CSV de Colab tiene que coincidir con el del Mac, instala aquí supervision==0.28.0.
+# - torch: no se fija. El de la imagen de Colab funciona con numpy 2. El del Mac (2.2.2, Intel) NO,
+#   y por eso el detector no corre en el Mac (docs/diagnostico_26oct_entornos.md).
+# - Python: Colab 3.13, Mac 3.11.
 numpy==2.4.6
 scipy==1.17.1
-supervision==0.28.0
+supervision==0.25.1
 ultralytics==8.4.71
 sahi==0.12.1
 pyyaml==6.0.3
