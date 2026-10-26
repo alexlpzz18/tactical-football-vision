@@ -61,3 +61,20 @@ git checkout main && git reset --hard pre-integracion-23oct && git push --force-
 formato es `f11` y la pista está APAGADA por defecto (`DEFECTOS_POR_FORMATO["f11"]`). No tiene clave
 `viterbi`. Encenderla exige una banda medida para Villaviciosa (`scripts/colab_arbitro_villa.py`,
 sin ejecutar).
+
+## Resultado (26-oct): CUMPLE
+
+Merge `--no-ff` de `fix-23oct-h` a `main` (commit 79ff980), sin conflictos. CSV de equipos de
+`desde_cache`, desde la etiqueta `pre-integracion-23oct` (worktree) y desde `main` tras el merge:
+
+| caché | antes del merge | después del merge |
+|---|---|---|
+| benjamín, parte entera (`processor_benja_parte_entera.yaml`) | 180.480 líneas | **idéntico byte a byte** |
+| benjamín, 60 s v3 (`processor_benja.yaml`) | 8.785 líneas | **idéntico byte a byte** |
+| Villaviciosa, 60 s (`processor.yaml`) | 12.162 líneas | **idéntico byte a byte** |
+
+- La pista del árbitro no corre en ninguno: el log no tiene ni una línea de Viterbi.
+- Los `_meta.json` no se comparan: llevan la fecha de proceso.
+- Tests sobre `main` tras el merge: 777 passed. Dos de ellos son nuevos y demuestran que el
+  `activo: false` del YAML gana al valor por defecto de F7; su prueba de mutación (ignorar la clave
+  explícita) los hace fallar.
