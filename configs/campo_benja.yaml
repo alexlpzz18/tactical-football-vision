@@ -58,3 +58,24 @@ rutas:
 # Elegida visualmente por Alex (11-ago-2026) entre las cuatro variantes.
 espejar: y
 radio_ficha_m: 0.8   # feedback perceptual: la ficha grande sobrevende la precisión
+
+# ── BALÓN: parámetros que comparten el vídeo y la pizarra ──
+# Los lee `src.balon.carga.parametros_balon_de_campo` y se los pasa a los dos
+# consumidores (procesar_balon.py y generar_video_detecciones.py), así que los
+# dos eligen el mismo balón. Lo que no aparezca aquí toma el valor por defecto
+# de `ParametrosBalon`. Una clave que no exista da error.
+balon:
+  # Corte duro: sin balón si el elegido cae a más de estos metros fuera del
+  # campo (el balón del campo de al lado). null = APAGADO, como hasta ahora.
+  # docs/diagnostico_22oct_c.md, bloque 1.
+  descartar_fuera_m: null
+  # SOLO COSMÉTICO, y solo en la PIZARRA: el balón fuera del campo se dibuja
+  # en el punto más cercano del rectángulo en vez de desaparecer. El CSV no
+  # cambia de posición; gana la columna `calidad_balon`. ACTIVADO a petición
+  # de Alex (docs/diagnostico_22oct_f.md, bloque D).
+  recortar_a_campo: true
+  # MÁSCARA DE ZONA DE JUEGO en píxeles: las candidatas de balón con el centro fuera se descartan
+  # antes de elegir (el balón del campo de al lado, detrás de la grada). null = APAGADO. El
+  # polígono lo marca Alex sobre el borde de la grada con scripts/marcar_mascara_zona.py; NO se
+  # ajusta a las candidatas etiquetadas. docs/diagnostico_23oct_f.md, bloque 2.
+  mascara_zona: null

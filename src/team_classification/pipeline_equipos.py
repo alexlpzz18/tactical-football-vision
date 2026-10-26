@@ -66,6 +66,12 @@ def _profundidad_configurada(cfg_equipos: dict):
     return modelo, EjeProfundidad.desde_dict(cfg_equipos.get("profundidad"))
 
 
+def formato_del_partido(cfg_equipos: dict | None) -> str:
+    """'f7' o 'f11', del modelo de campo del config de equipos (la ÚNICA fuente del formato)."""
+    modelo, _eje = _profundidad_configurada(cfg_equipos or {})
+    return modelo.formato
+
+
 def entrenar_clasificador(
     colores: dict,
     cfg_equipos: dict | None = None,
@@ -183,6 +189,27 @@ def entrenar_clasificador(
     return clasificador
 
 
+def color_de_identidad(
+    identidad, colores, modelo, profundidad, umbral, solo_cercanos, ocluidas=None
+):
+    """(color medio, recortes que lo forman) de una identidad, como la vota el clasificador.
+
+    Con `solo_cercanos`, solo los recortes a menos de `umbral` de profundidad (los lejanos son
+    ruido de pocos píxeles), salvo que no haya ninguno. La usan `clasificar_identidades` y el
+    tope de cardinalidad (`tope_cardinalidad.py`), para que los dos vean el MISMO color.
+    """
+    todos, cercanos = [], []
+    for tracklet in identidad:
+        for pos, par in zip(tracklet.pos, tracklet.det_idxs):
+            if par not in colores:
+                continue
+            todos.append((par, colores[par]))
+            if profundidad.de(pos, modelo) < umbral:
+                cercanos.append((par, colores[par]))
+    feats = cercanos if (solo_cercanos and cercanos) else todos
+    return color_medio_limpio(feats, ocluidas), feats
+
+
 def clasificar_identidades(
     identidades: list[list[Tracklet]],
     colores: dict,
@@ -207,16 +234,9 @@ def clasificar_identidades(
 
     equipos: dict[int, str] = {}
     for id_identidad, identidad in enumerate(identidades, start=1):
-        todos, cercanos = [], []
-        for tracklet in identidad:
-            for pos, par in zip(tracklet.pos, tracklet.det_idxs):
-                if par not in colores:
-                    continue
-                todos.append((par, colores[par]))
-                if profundidad.de(pos, modelo) < umbral:
-                    cercanos.append((par, colores[par]))
-        feats = cercanos if (solo_cercanos and cercanos) else todos
-        media = color_medio_limpio(feats, ocluidas)
+        media, feats = color_de_identidad(
+            identidad, colores, modelo, profundidad, umbral, solo_cercanos, ocluidas
+        )
         if media is not None:
             etiqueta = clasificador.predict_color(
                 media, dist_max=cfg_agg.get("dist_max_prototipo")
@@ -396,31 +416,50 @@ def clasificar_identidades(
     logger.info(
         "Equipos por identidad: %d/%d clasificadas", len(equipos), len(identidades)
     )
-    avisar_tercer_grupo(equipos, identidades, modelo)
+    avisar_tercer_grupo(
+        equipos,
+        identidades,
+        modelo,
+        max_pct_simultaneos=cfg_equipos.get("arbitro", {}).get(
+            "guarda_pct_simultaneos", 3.0
+        ),
+    )
     return equipos
 
 
-def avisar_tercer_grupo(equipos: dict[int, str], identidades, modelo) -> int:
-    """Comprueba que en el TERCER GRUPO quede exactamente una persona.
+def avisar_tercer_grupo(
+    equipos: dict[int, str],
+    identidades,
+    modelo,
+    max_pct_simultaneos: float = 3.0,
+) -> int:
+    """Comprueba que el TERCER GRUPO sea UNA persona: cuenta SIMULTANEIDAD, no identidades.
 
     La guarda que pidió Alex, y protege de un umbral frágil. El árbitro no
     se identifica con ninguna señal de comportamiento —los cinco medidos
     fallan (docs/arbitro.md)— sino **por eliminación**: dentro del campo,
     quitando los dos equipos, los dos porteros y el staff, debería quedar
-    él y nadie más. Medido: queda exactamente 1 en las dos patas.
+    él y nadie más.
 
-    Pero eso depende de `arbitro.margen_equipo`, cuya ventana en el
-    benjamín es de solo 0,62-0,75, con acantilado en 0,78. En otro campo
-    puede caerse, y el síntoma sería silencioso: o el árbitro se cuela en
-    un equipo (0 en el tercer grupo) o el catálogo roba jugadores (2 o
-    más). Las dos cosas salen por el log.
+    ⚠️ Antes contaba IDENTIDADES y exigía exactamente una. Pero UNA PERSONA ES
+    N IDENTIDADES: el árbitro se parte en ~10 trozos en 20 min, así que «7» o
+    «14» identidades puede ser una sola persona en trozos SECUENCIALES (bien) o
+    varias personas a la vez (mal), y el recuento no los distingue
+    (docs/diagnostico_22oct_d.md, bloque 1c). Una persona no está en dos sitios
+    a la vez: lo que delata un robo es que haya ≥ 2 identidades del tercer grupo
+    DENTRO del campo en el mismo frame. Se avisa si eso pasa en más del
+    `max_pct_simultaneos` % de los frames (config `arbitro.guarda_pct_simultaneos`).
+
+    Los dos síntomas silenciosos siguen saliendo por el log: el árbitro colado en
+    un equipo (tercer grupo vacío) y el catálogo o el color robando jugadores
+    (simultaneidad).
 
     No corrige nada a propósito: solo avisa. Corregir a ciegas con una
     señal que no separa es exactamente lo que este proyecto lleva
     aprendiendo a no hacer.
 
     Returns:
-        Cuántas identidades quedan en el tercer grupo.
+        Cuántas identidades quedan en el tercer grupo (dato; ya no es el criterio).
     """
     quedan = []
     for indice, identidad in enumerate(identidades, start=1):
@@ -438,28 +477,54 @@ def avisar_tercer_grupo(equipos: dict[int, str], identidades, modelo) -> int:
             continue
         quedan.append((indice, len(posiciones), mx, my))
 
-    if len(quedan) == 1:
-        logger.info(
-            "Tercer grupo: 1 identidad (la %d, %d obs en (%.1f, %.1f)) — "
-            "el árbitro sale por eliminación",
-            *quedan[0],
-        )
-    elif not quedan:
+    if not quedan:
         logger.warning(
             "TERCER GRUPO VACÍO: no queda nadie dentro del campo que no sea "
             "jugador, portero o staff. Si hay árbitro en este partido, está "
             "contando para un equipo. Revisa arbitro.margen_equipo (ventana "
             "medida: 0,62-0,75)."
         )
+        return 0
+
+    # Frames del tramo (todos los que tiene alguna identidad) y, en cada uno,
+    # cuántas identidades del tercer grupo están DENTRO del campo a la vez.
+    todos_los_frames = {
+        par[0] for identidad in identidades for tr in identidad for par in tr.det_idxs
+    }
+    presentes: dict[int, int] = {}
+    for indice, *_resto in quedan:
+        frames_dentro = {
+            par[0]
+            for tr in identidades[indice - 1]
+            for pos, par in zip(tr.pos, tr.det_idxs)
+            if 0.0 <= pos[0] <= modelo.largo and 0.0 <= pos[1] <= modelo.ancho
+        }
+        for f in frames_dentro:
+            presentes[f] = presentes.get(f, 0) + 1
+    con_dos = sum(1 for n in presentes.values() if n >= 2)
+    pct = 100.0 * con_dos / max(len(todos_los_frames), 1)
+
+    if pct <= max_pct_simultaneos:
+        logger.info(
+            "Tercer grupo: %d identidades, con ≥ 2 a la vez dentro del campo en el "
+            "%.1f %% de los frames (umbral %.1f %%): trozos de una sola persona, el "
+            "árbitro sale por eliminación",
+            len(quedan),
+            pct,
+            max_pct_simultaneos,
+        )
     else:
         detalle = ", ".join(
             f"{i} ({n} obs en {mx:.0f},{my:.0f})" for i, n, mx, my in quedan
         )
         logger.warning(
-            "TERCER GRUPO CON %d IDENTIDADES: debería quedar solo el árbitro. "
-            "Puede que el catálogo esté robando jugadores. Candidatas: %s. "
-            "Revisa arbitro.margen_equipo (ventana medida: 0,62-0,75).",
+            "TERCER GRUPO SIMULTÁNEO: %d identidades y ≥ 2 a la vez dentro del campo "
+            "en el %.1f %% de los frames (umbral %.1f %%). Debería ser UNA persona (el "
+            "árbitro, aunque esté en varios trozos): el catálogo o el color está "
+            "robando jugadores. Candidatas: %s.",
             len(quedan),
+            pct,
+            max_pct_simultaneos,
             detalle,
         )
     return len(quedan)
@@ -599,52 +664,120 @@ def etiquetar_por_observacion(
         if not activos:
             catalogo = False
 
-    salida: dict[tuple[int, int], str] = {}
-    n_cambios = 0
-    n_arbitro = 0
+    # ── El catálogo REQUIERE IDENTIDAD (flag `arbitro.catalogo_requiere_identidad`) ──
+    # docs/diagnostico_22oct_f.md, bloque B. APAGADO por defecto. Medido el 22-oct (e): de los
+    # frames con ≥ 2 «otro», el 94 % son el árbitro + un JUGADOR, y dos tercios los crea este
+    # catálogo al sacar observaciones sueltas de identidades de jugador. Con el flag, el catálogo
+    # solo manda una observación a `otro` si su identidad lo dispara en ≥ `frac_identidad` de sus
+    # observaciones, o su trozo (el tracklet) en ≥ `frac_trozo`. Si no, se etiqueta A/B.
+    cfg_req = (cfg_equipos.get("arbitro", {}) or {}).get(
+        "catalogo_requiere_identidad"
+    ) or {}
+    requiere = catalogo and bool(cfg_req.get("activo", False))
+
+    # Fase 1: por cada observación de una identidad A/B, ¿dispara el catálogo? y su A/B.
+    por_identidad: dict[int, list[tuple]] = {}
     for id_identidad, identidad in enumerate(identidades, start=1):
         etiqueta = str(equipos.get(id_identidad, "otro"))
         if etiqueta not in ("A", "B"):
             continue  # portero, staff y 'otro' los decide la posición
         obs = sorted(
             (
-                (t, tuple(par))
-                for tracklet in identidad
+                (t, tuple(par), k)
+                for k, tracklet in enumerate(identidad)
                 for t, par in zip(tracklet.ts, tracklet.det_idxs)
             ),
             key=lambda o: o[0],
         )
-        for t_actual, par in obs:
+        pares = [(t, p) for t, p, _k in obs]
+        decididas = []
+        for t_actual, par, k_trozo in obs:
             cerca = [
                 (p, colores[p])
-                for t2, p in obs
+                for t2, p in pares
                 if abs(t2 - t_actual) <= ventana / 2 and p in colores
             ]
             if not cerca:
                 continue
             if excluir_ocluidas:
                 cerca = _recortes_para_votar(
-                    cerca, obs, t_actual, colores, ocluidas, ampliar_s
+                    cerca, pares, t_actual, colores, ocluidas, ampliar_s
                 )
             media = color_medio_limpio(cerca, None)
             if media is None:
                 continue
-            # Primero: ¿esta ventana viste de árbitro? Si sí, la
-            # observación sale del cómputo de equipos (va al tercer
-            # grupo) y NO se le pregunta a qué equipo se parece más.
+            # ¿Esta ventana viste de árbitro? (si sí, la observación sale del cómputo de
+            # equipos y NO se le pregunta a qué equipo se parece más)
+            dispara = False
             if catalogo:
                 tono = tono_dominante(media)
                 if tono is not None:
                     brillo = brillo_medio(media)
-                    if any(a.contiene(tono[0], tono[1], brillo) for a in activos):
-                        salida[(id_identidad, par[0])] = "otro"
-                        n_arbitro += 1
-                        continue
+                    dispara = any(a.contiene(tono[0], tono[1], brillo) for a in activos)
+            nueva = (
+                None
+                if (dispara and not requiere) or solo_catalogo
+                else clasificador.predict_color(media, solo_equipos=forzar)
+            )
+            decididas.append((par, k_trozo, dispara, nueva))
+        por_identidad[id_identidad] = (etiqueta, decididas)
+
+    # Fase 2 (solo con el flag): fracción que dispara por identidad y por trozo.
+    permitido = None
+    if requiere:
+        frac_id = {
+            i: float(np.mean([d[2] for d in dec])) if dec else 0.0
+            for i, (_e, dec) in por_identidad.items()
+        }
+        frac_trozo: dict[tuple[int, int], float] = {}
+        for i, (_e, dec) in por_identidad.items():
+            por_k: dict[int, list[bool]] = {}
+            for _par, k, disp, _n in dec:
+                por_k.setdefault(k, []).append(disp)
+            for k, v in por_k.items():
+                frac_trozo[(i, k)] = float(np.mean(v))
+        semilla = cfg_req.get("control_permutar_semilla")
+        if semilla is not None:
+            # CONTROL del diagnóstico: las fracciones se permutan entre identidades y entre
+            # trozos; si la regla depende de verdad de la identidad, esto tiene que empeorarla.
+            rng = np.random.default_rng(int(semilla))
+            ids, vals = list(frac_id), list(frac_id.values())
+            frac_id = dict(zip(ids, rng.permutation(vals)))
+            ks, vals = list(frac_trozo), list(frac_trozo.values())
+            frac_trozo = dict(zip(ks, rng.permutation(vals)))
+        min_id = float(cfg_req.get("frac_identidad", 0.5))
+        min_trozo = float(cfg_req.get("frac_trozo", 1.0))
+
+        def _permite(i, k):
+            return frac_id[i] >= min_id or frac_trozo[(i, k)] >= min_trozo
+
+        permitido = _permite
+
+    # Fase 3: la decisión (con el flag apagado, exactamente la de siempre).
+    salida: dict[tuple[int, int], str] = {}
+    n_cambios = 0
+    n_arbitro = 0
+    n_vetadas = 0
+    for id_identidad, (etiqueta, decididas) in por_identidad.items():
+        for par, k_trozo, dispara, nueva in decididas:
+            if dispara and (permitido is None or permitido(id_identidad, k_trozo)):
+                salida[(id_identidad, par[0])] = "otro"
+                n_arbitro += 1
+                continue
+            if dispara:
+                n_vetadas += 1
             if solo_catalogo:
                 continue  # el A/B lo sigue decidiendo el voto de la identidad
-            nueva = clasificador.predict_color(media, solo_equipos=forzar)
             salida[(id_identidad, par[0])] = nueva
             n_cambios += nueva != etiqueta
+    if requiere:
+        logger.info(
+            "Catálogo que requiere identidad: %d observaciones que disparaban se quedan en A/B "
+            "(identidad ≥ %.2f o trozo ≥ %.2f)",
+            n_vetadas,
+            float(cfg_req.get("frac_identidad", 0.5)),
+            float(cfg_req.get("frac_trozo", 1.0)),
+        )
     if salida:
         logger.info(
             "Etiqueta por observación (ventana %.1f s): %d observaciones "

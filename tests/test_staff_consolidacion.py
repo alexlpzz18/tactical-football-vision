@@ -665,15 +665,54 @@ def test_tercer_grupo_VACIO_avisa(caplog):
     assert any("TERCER GRUPO VACÍO" in r.message for r in caplog.records)
 
 
-def test_tercer_grupo_con_DOS_avisa(caplog):
-    """El catálogo está robando jugadores."""
+def test_tercer_grupo_con_DOS_A_LA_VEZ_avisa(caplog):
+    """Dos identidades dentro del campo en los mismos frames: el catálogo roba jugadores."""
     from src.team_classification.pipeline_equipos import avisar_tercer_grupo
 
     idents = [_ident_simple(31.0, 20.0), _ident_simple(25.0, 30.0)]
     with caplog.at_level(logging.WARNING):
         n = avisar_tercer_grupo({1: "otro", 2: "otro"}, idents, _modelo_f7())
     assert n == 2
-    assert any("TERCER GRUPO CON 2" in r.message for r in caplog.records)
+    assert any("TERCER GRUPO SIMULTÁNEO" in r.message for r in caplog.records)
+
+
+def _ident_desde(x, y, frame0, n=30):
+    """Identidad que empieza en `frame0` (para fabricar trozos SECUENCIALES)."""
+    from src.tracking.field_tracker import Tracklet
+
+    tr = Tracklet(1, frame0 * 0.1, np.array([x, y]), 0, frame0)
+    for i in range(1, n):
+        tr.anadir((frame0 + i) * 0.1, np.array([x + 0.02 * (i % 3), y]), 0, frame0 + i)
+    return [tr]
+
+
+def test_tercer_grupo_en_trozos_SECUENCIALES_no_avisa(caplog):
+    """UNA PERSONA ES N IDENTIDADES: tres trozos seguidos del árbitro son una sola persona."""
+    from src.team_classification.pipeline_equipos import avisar_tercer_grupo
+
+    idents = [
+        _ident_desde(31.0, 20.0, 0),
+        _ident_desde(33.0, 22.0, 30),
+        _ident_desde(35.0, 21.0, 60),
+    ]
+    with caplog.at_level(logging.WARNING):
+        n = avisar_tercer_grupo({1: "otro", 2: "otro", 3: "otro"}, idents, _modelo_f7())
+    assert n == 3
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_tercer_grupo_umbral_de_simultaneidad(caplog):
+    """Un solape breve (5 de 90 frames, 5,6 %) avisa con el 3 % y no con el 10 %."""
+    from src.team_classification.pipeline_equipos import avisar_tercer_grupo
+
+    idents = [_ident_desde(31.0, 20.0, 0, n=50), _ident_desde(20.0, 10.0, 45, n=45)]
+    equipos = {1: "otro", 2: "otro"}
+    with caplog.at_level(logging.WARNING):
+        avisar_tercer_grupo(equipos, idents, _modelo_f7(), max_pct_simultaneos=10.0)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    with caplog.at_level(logging.WARNING):
+        avisar_tercer_grupo(equipos, idents, _modelo_f7(), max_pct_simultaneos=3.0)
+    assert any("TERCER GRUPO SIMULTÁNEO" in r.message for r in caplog.records)
 
 
 def test_tercer_grupo_no_cuenta_lo_de_fuera_del_campo(caplog):

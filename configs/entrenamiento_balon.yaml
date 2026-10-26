@@ -45,7 +45,8 @@ augmentation:
   # conservan el balón. Por debajo del 95 %, la augmentation está en
   # contra del objetivo.
 
-# SAHI en inferencia: tiles más pequeños que para jugadores (allí 2x4).
+# SAHI en inferencia: tiles más pequeños que para jugadores (allí filas 2 × columnas 4 en el
+# config, que con solape 0,2 son 15 teselas, 5 × 3, más una pasada de imagen completa).
 # Un objeto de 8 px necesita más aumento efectivo; el solape puede ser
 # menor porque el balón no se parte entre tiles como sí le pasa a un
 # jugador de pie.

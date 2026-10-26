@@ -80,6 +80,9 @@ class ModeloCampo:
     largo: float
     ancho: float
     marcas: MarcasReglamentarias
+    # El REGLAMENTO del partido ('f7' o 'f11'). Es el ÚNICO sitio del que sale el formato: los
+    # valores por defecto que dependen de él están en DEFECTOS_POR_FORMATO, abajo.
+    formato: str = "f11"
 
     # ─────────────────────────── geometría ───────────────────────────
 
@@ -340,13 +343,40 @@ class EjeProfundidad:
 
 # F11 de Villaviciosa: el modelo con el que está calibrada la homografía en
 # producción. NO cambiar sin recalibrar (ver src/campo.py).
-MODELO_F11 = ModeloCampo(nombre="f11", largo=100.0, ancho=64.0, marcas=MARCAS_F11)
+MODELO_F11 = ModeloCampo(
+    nombre="f11", largo=100.0, ancho=64.0, marcas=MARCAS_F11, formato="f11"
+)
 
 # F7 (benjamines): 62x40 es la ESTIMACIÓN de partida, pendiente de derivar
 # de las marcas reglamentarias con scripts/auditar_escala.py.
-MODELO_F7 = ModeloCampo(nombre="f7", largo=62.0, ancho=40.0, marcas=MARCAS_F7)
+MODELO_F7 = ModeloCampo(
+    nombre="f7", largo=62.0, ancho=40.0, marcas=MARCAS_F7, formato="f7"
+)
 
 MODELOS = {"f11": MODELO_F11, "f7": MODELO_F7}
+
+# ── Lo que cambia con el FORMATO, en UNA sola tabla ───────────────────────────────────────────
+#
+# Cada comportamiento que depende de si el partido es F7 o F11 se decide AQUÍ, no con `if`
+# repartidos por el código. Una clave explícita en el YAML manda sobre esta tabla.
+#
+# - `arbitro_viterbi`: el árbitro como seguimiento de UN objeto (variante 2, «añade»).
+#   F7: encendido (benjamín: B > 7 28,5 → 8,45 %, centroide 0,863 → 0,47 m;
+#   docs/diagnostico_23oct_c.md y _d.md). F11: apagado hasta que se mida Villaviciosa (la celda
+#   de Colab está preparada, scripts/colab_arbitro_villa.py).
+DEFECTOS_POR_FORMATO = {
+    "f7": {"arbitro_viterbi": True},
+    "f11": {"arbitro_viterbi": False},
+}
+
+
+def defecto_de_formato(formato: str, clave: str):
+    """El valor por defecto de `clave` para el formato del partido (error si no existe)."""
+    if formato not in DEFECTOS_POR_FORMATO:
+        raise ValueError(
+            f"Formato desconocido: {formato!r} (usa {sorted(DEFECTOS_POR_FORMATO)})"
+        )
+    return DEFECTOS_POR_FORMATO[formato][clave]
 
 
 def cargar_modelo(
@@ -377,6 +407,7 @@ def cargar_modelo(
             largo=float(cfg["largo"]),
             ancho=float(cfg["ancho"]),
             marcas=marcas,
+            formato=base.formato,
         )
     if nombre is None:
         raise ValueError("Indica un modelo por nombre o un config YAML.")

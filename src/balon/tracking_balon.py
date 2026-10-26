@@ -188,6 +188,36 @@ class ParametrosBalon:
     # es_real=0 y fuera de contactos y posesión. Solo evitan cortar la pista.
     readmitir_vuelos: bool = True
     vuelo_max_s: float = 2.5
+    # ── prior de CAMPO en el selector (docs/diagnostico_22oct_b.md, bloque 2) ──
+    # APAGADO por defecto: con False, el selector hace exactamente lo de antes.
+    # Encendido, en cada frame se descartan los candidatos a más de
+    # `prior_campo_margen_m` fuera del campo y los que exigirían más de
+    # `prior_campo_v_max_m_s` desde el último candidato válido. Si en un frame no
+    # queda ninguno, se conserva la lista de siempre (para no borrar los saques de
+    # banda). Medido el 22-oct: solo el 11 % de los frames con el balón fuera
+    # tiene una alternativa dentro, así que su alcance es pequeño.
+    prior_campo_activo: bool = False
+    prior_campo_margen_m: float = 3.0
+    prior_campo_v_max_m_s: float = 35.0
+    # ── CORTE DURO: sin balón si el elegido cae lejos del campo (docs/diagnostico_22oct_c.md) ──
+    # None = APAGADO (el comportamiento de siempre). Con un número, se descarta el balón ELEGIDO
+    # si cae a más de esos metros fuera del campo, sin buscar alternativa (casi nunca la hay: el
+    # 11 %, 22-oct b) y SIN rellenar a través de esos frames: ni recta, ni mantener, ni vuelo, y
+    # el balón de después abre un tramo nuevo. Es el balón del campo de al lado, detrás de la
+    # grada. Los saques de banda están a menos de 3 m: no se tocan.
+    descartar_fuera_m: float | None = None
+    # ── SOLO COSMÉTICO: balón recortado al campo EN LA PIZARRA (docs/diagnostico_22oct_f.md, D) ──
+    # False = APAGADO. Con True: la pizarra (`replay_tactico`) dibuja las filas de balón fuera del
+    # rectángulo en su punto más cercano, en vez de borrarlas; el CSV NO cambia de posición y gana
+    # la columna `calidad_balon` (medida / aerea / rellena / fuera_del_campo). No es más preciso:
+    # solo deja de desaparecer el balón cuando sale.
+    recortar_a_campo: bool = False
+    # ── MÁSCARA DE ZONA DE JUEGO en la IMAGEN (docs/diagnostico_23oct_f.md, bloque 2) ──
+    # None = APAGADO. Con un polígono [[x, y], ...] en PÍXELES (lo marca Alex con
+    # scripts/marcar_mascara_zona.py), las candidatas con el centro FUERA se descartan antes de
+    # elegir, también las que se readmitirían como vuelo. Es una máscara de UNA instalación de
+    # cámara: si la cámara se mueve, hay que volver a marcarla.
+    mascara_zona: list | None = None
 
     @classmethod
     def desde_dict(cls, d: dict | None) -> "ParametrosBalon":
@@ -231,6 +261,12 @@ def seleccionar_balon_activo(
     segurísimo de que son balones — porque lo son, solo que no el del
     partido.
     """
+    if params.mascara_zona is not None:
+        detecciones = filtrar_por_mascara_zona(detecciones, params.mascara_zona)
+        if detecciones_fuera_de_campo is not None:
+            detecciones_fuera_de_campo = filtrar_por_mascara_zona(
+                detecciones_fuera_de_campo, params.mascara_zona
+            )
     if params.quitar_balon_de_staff:
         if posiciones_staff is None or dimensiones_campo is None:
             raise ValueError(
@@ -350,6 +386,12 @@ def seleccionar_balon_activo(
         f: [det for _d, det in sorted(lista, key=lambda x: (x[0], -x[1][6]))]
         for f, lista in por_frame.items()
     }
+    if params.prior_campo_activo:
+        if dimensiones_campo is None or tiempos is None:
+            raise ValueError(
+                "El prior de campo necesita las dimensiones del campo y los tiempos"
+            )
+        ordenados = _prior_de_campo(ordenados, tiempos, dimensiones_campo, params)
     if params.continuidad_activa:
         if tiempos is None:
             raise ValueError(
@@ -362,6 +404,142 @@ def seleccionar_balon_activo(
         )
         return _solo_vuelos_de_ida_y_vuelta(elegido, no_abren, tiempos, params)
     return {f: lista[0] for f, lista in ordenados.items()}
+
+
+def dentro_del_poligono(x: float, y: float, poligono) -> bool:
+    """¿El punto (x, y) cae dentro del polígono [[x, y], ...]? (rayo hacia +x, regla par-impar)."""
+    dentro = False
+    n = len(poligono)
+    for i in range(n):
+        x1, y1 = poligono[i]
+        x2, y2 = poligono[(i + 1) % n]
+        if (y1 > y) != (y2 > y):
+            corte = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+            if x < corte:
+                dentro = not dentro
+    return dentro
+
+
+def filtrar_por_mascara_zona(detecciones: dict, poligono) -> dict:
+    """Quita las candidatas cuyo CENTRO en píxeles cae fuera del polígono (frames vacíos fuera)."""
+    if len(poligono) < 3:
+        raise ValueError(f"balon.mascara_zona necesita ≥ 3 vértices: {poligono!r}")
+    out = {}
+    for frame, dets in detecciones.items():
+        quedan = [
+            d
+            for d in dets
+            if dentro_del_poligono((d[2] + d[4]) / 2, (d[3] + d[5]) / 2, poligono)
+        ]
+        if quedan:
+            out[frame] = quedan
+    return out
+
+
+def descartar_balon_fuera(
+    activo: dict, dimensiones_campo: tuple[float, float], params: ParametrosBalon
+) -> tuple[dict, set[int]]:
+    """Quita el balón elegido de los frames en que cae lejos del campo (corte duro).
+
+    Va DESPUÉS de `seleccionar_balon_activo` y la llaman el vídeo y la pizarra, para que los dos
+    pinten la misma selección. Los frames quitados se devuelven aparte: `preparar_balon` los
+    necesita (`vetados`) para no rellenar ni unir a través de ellos.
+
+    Returns:
+        (selección sin esos frames, frames descartados). Con `params.descartar_fuera_m` en None
+        devuelve la selección intacta y un conjunto vacío.
+    """
+    if params.descartar_fuera_m is None:
+        return activo, set()
+    descartados = {
+        f
+        for f, det in activo.items()
+        if _fuera_del_campo_m(det[0], det[1], dimensiones_campo)
+        > params.descartar_fuera_m
+    }
+    if descartados:
+        logger.info(
+            "Corte duro del balón: %d frames con el elegido a > %.1f m fuera del campo, sin balón",
+            len(descartados),
+            params.descartar_fuera_m,
+        )
+    return {f: d for f, d in activo.items() if f not in descartados}, descartados
+
+
+def recortar_al_campo(x, y, dimensiones_campo: tuple[float, float]):
+    """El punto más cercano del rectángulo [0, largo] × [0, ancho] (lo usa la PIZARRA)."""
+    largo, ancho = dimensiones_campo
+    return np.clip(x, 0.0, largo), np.clip(y, 0.0, ancho)
+
+
+def calidad_del_balon(balon, preparadas, dimensiones_campo) -> list[str]:
+    """Calidad de cada fila de balón del CSV: fuera_del_campo / aerea / rellena / medida.
+
+    `preparadas` es la salida de `preparar_balon` ((frame, pos, es_aereo, es_real)); una fila
+    `balon_aereo` es siempre aérea. Fuera del campo manda sobre todo lo demás: es lo que la
+    pizarra dibuja recortado.
+    """
+    largo, ancho = dimensiones_campo
+    aereo_de = {int(f): bool(a) for f, _p, a, _r in preparadas}
+    out = []
+    for f, etq, x, y, real in zip(
+        balon.frame, balon.etiqueta, balon.x_m, balon.y_m, balon.es_real
+    ):
+        if not (0.0 <= x <= largo and 0.0 <= y <= ancho):
+            out.append("fuera_del_campo")
+        elif etq == "balon_aereo" or aereo_de.get(int(f), False):
+            out.append("aerea")
+        elif not real:
+            out.append("rellena")
+        else:
+            out.append("medida")
+    return out
+
+
+def _hay_veto(vetados_ordenados: list[int], frame_a: int, frame_b: int) -> bool:
+    """¿Hay algún frame vetado ESTRICTAMENTE entre frame_a y frame_b?"""
+    i = bisect.bisect_right(vetados_ordenados, frame_a)
+    return i < len(vetados_ordenados) and vetados_ordenados[i] < frame_b
+
+
+def _fuera_del_campo_m(x: float, y: float, dimensiones: tuple[float, float]) -> float:
+    """Cuántos metros cae (x, y) fuera del rectángulo del campo (0 si está dentro)."""
+    largo, ancho = dimensiones
+    return float(max(0.0, -x, x - largo, -y, y - ancho))
+
+
+def _prior_de_campo(ordenados: dict, tiempos: dict, dimensiones, params) -> dict:
+    """Deja en cada frame solo los candidatos dentro del campo (con margen) y alcanzables.
+
+    Alcanzable = a ≤ `prior_campo_v_max_m_s` del último candidato válido. Si en un
+    frame no queda ninguno, ese frame se deja COMO ESTABA: el prior solo elige
+    mejor donde hay con qué, nunca borra un balón.
+    """
+    salida, ultimo = {}, None  # (t, posición) del último candidato válido
+    for f in sorted(ordenados):
+        lista = ordenados[f]
+        t = tiempos.get(f)
+        validos = []
+        for det in lista:
+            if (
+                _fuera_del_campo_m(det[0], det[1], dimensiones)
+                > params.prior_campo_margen_m
+            ):
+                continue
+            if ultimo is not None and t is not None and t > ultimo[0]:
+                v = float(np.linalg.norm(np.array(det[:2]) - ultimo[1])) / (
+                    t - ultimo[0]
+                )
+                if v > params.prior_campo_v_max_m_s:
+                    continue
+            validos.append(det)
+        if validos:
+            salida[f] = validos
+            if t is not None:
+                ultimo = (t, np.array(validos[0][:2], dtype=float))
+        else:
+            salida[f] = lista
+    return salida
 
 
 def quitar_balones_de_staff(
@@ -883,8 +1061,12 @@ def _rellenar_huecos_parados(
     tiempos: dict,
     params: ParametrosBalon,
     cortes: set[int] | frozenset = frozenset(),
+    vetados: set[int] | frozenset = frozenset(),
 ) -> list[tuple]:
     """Rellena huecos SIN detección manteniendo la última posición.
+
+    `vetados`: frames cuyo balón se descartó a propósito (`descartar_balon_fuera`). Un hueco que
+    contenga uno NO se rellena de ninguna forma: no hay balón ahí y no se inventa.
 
     Idea de Alex, y sale de una etiqueta suya del GT de huecos: en el caso
     4 escribió *"el balón está quieto exactamente en el mismo sitio que en
@@ -934,6 +1116,8 @@ def _rellenar_huecos_parados(
         j = bisect.bisect_left(muestreados, frame_b)
         faltan = muestreados[i:j]
         if not faltan:
+            continue
+        if vetados and any(f in vetados for f in faltan):
             continue
         # Con futuro primero: la recta entre las dos anclas es mejor que mantener
         # (y contiene a mantener como caso particular: extremos iguales). Si las
@@ -1060,6 +1244,7 @@ def preparar_balon(
     tiempos: dict,
     params: ParametrosBalon,
     centros_px: dict | None = None,
+    vetados: set[int] | frozenset = frozenset(),
 ) -> tuple[list[tuple], set[int]]:
     """Deja el balón listo para pintarse sin inventar coordenadas.
 
@@ -1107,9 +1292,14 @@ def preparar_balon(
        CORTE): el suavizado y el relleno no lo cruzan, y el CSV le da otra
        identidad (`id_de_tramo`). Lo mismo entre dos filas de suelo contiguas.
 
+    5. **Frames VETADOS** (corte duro, `descartar_balon_fuera`): ningún tratamiento los cruza.
+       Ni el suavizado, ni la recta de un vuelo, ni el relleno de huecos; y la primera fila
+       después de uno abre un tramo nuevo (otra identidad), para que el replay no los una.
+
     Args:
         centros_px: {frame: (cx, cy)} del centro de la caja en píxeles. Sin
             él la puerta no actúa.
+        vetados: frames sin balón a propósito. Vacío = el comportamiento de siempre.
 
     Returns:
         ([(frame_idx, pos, es_aereo, es_real)], cortes) — las filas para el
@@ -1142,6 +1332,21 @@ def preparar_balon(
             if float(np.hypot(dx, dy)) / dt > params.vel_max_px_s:
                 cortes_idx.add(i2)
 
+    # ── frames vetados: la primera fila tras uno abre tramo (como un corte) ──
+    vetos = sorted(vetados)
+    tras_veto_idx: set[int] = set()
+    if vetos:
+        for i in range(1, len(trayectoria)):
+            if _hay_veto(vetos, trayectoria[i - 1][0], trayectoria[i][0]):
+                tras_veto_idx.add(i)
+    # Para el suavizado: un tramo de suelo se corta en un veto aunque el veto caiga entre dos
+    # filas de suelo no contiguas en la trayectoria.
+    cortes_suelo = set(cortes_idx)
+    if vetos:
+        for (i1, _t1), (i2, _t2) in zip(suelo, suelo[1:]):
+            if _hay_veto(vetos, trayectoria[i1][0], trayectoria[i2][0]):
+                cortes_suelo.add(i2)
+
     # 1. suavizado de las posiciones de suelo, POR TRAMOS CONTINUOS.
     #
     # ⚠️ Antes se promediaba la lista de suelo entera como si fuera una serie
@@ -1159,7 +1364,7 @@ def preparar_balon(
         [i for i, _t in suelo],
         tiempos,
         params.max_hueco_suavizado_s,
-        cortes_idx,
+        cortes_suelo,
     ):
         puntos = np.array([trayectoria[i][1] for i in tramo], dtype=float)
         if len(puntos) >= ventana:
@@ -1184,11 +1389,15 @@ def preparar_balon(
         if not previos:
             continue  # aún no hay ninguna posición fiable de la que partir
         a = posicion_suelo[previos[-1]]
+        if vetos and _hay_veto(vetos, trayectoria[previos[-1]][0], frame):
+            continue  # entre el despegue y aquí hubo un frame sin balón a propósito
         if not siguientes:
             salida.append((frame, a, True, False))  # no volvió al suelo
             continue
         if siguientes[0] in cortes_idx:
             continue  # los extremos no son el mismo balón: no hay vuelo que dibujar
+        if vetos and _hay_veto(vetos, frame, trayectoria[siguientes[0]][0]):
+            continue  # la recta cruzaría un frame vetado
         b = posicion_suelo[siguientes[0]]
         # Recta entre despegue y bote: los dos extremos son medidas, y lo
         # de en medio va marcado como no real.
@@ -1204,8 +1413,11 @@ def preparar_balon(
             else (i - previos[-1]) / (siguientes[0] - previos[-1])
         )
         salida.append((frame, a + alfa * (b - a), True, False))
-    cortes = {trayectoria[i][0] for i in cortes_idx}
-    return _rellenar_huecos_parados(salida, tiempos, params, cortes), cortes
+    cortes = {trayectoria[i][0] for i in cortes_idx | tras_veto_idx}
+    return (
+        _rellenar_huecos_parados(salida, tiempos, params, cortes, set(vetados)),
+        cortes,
+    )
 
 
 def detectar_contactos_por_velocidad(

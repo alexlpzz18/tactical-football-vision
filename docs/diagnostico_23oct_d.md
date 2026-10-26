@@ -1,0 +1,615 @@
+# Diagnóstico 23-oct (d): velocidades de la pista, emisión cruzada, regla de portero y clip
+
+Rama `fix-23oct-d`, sale de `fix-23oct-c`. Criterios escritos y commiteados ANTES de medir; un commit
+por bloque, solo con pytest en código 0. Producción solo cambia tras flag (apagado = idéntico a
+`main`). Todo se mide sobre la **variante 2 («añade»)** del 23-oct (c), la que se quedó más cerca.
+Su pista es la misma que la de la variante 1: las dos variantes solo difieren en qué hacen después.
+
+Relojes: frame / 29,97 = tiempo del **archivo**; el reproductor de Alex va **+1:33**.
+
+---
+
+## Bloque 1 — los pasos de la pista a más de 9 m/s
+
+Ayer: el 1,03 % de los pasos de la pista supera 9 m/s, y el criterio era ≤ 1 %. **El criterio de
+ayer no se cambia**; aquí solo se explica de dónde sale ese 1,03 %.
+
+**Paso** = dos frames CONSECUTIVOS de la pista, aunque haya un hueco entre ellos (la misma definición
+que `metricas_pista`). Velocidad = distancia en metros / Δt.
+
+Cada paso de más de 9 m/s se clasifica por:
+- **zona**: metros por píxel en el pie (la homografía local; < 0,1 cerca, 0,1-0,2 medio, > 0,2 fondo);
+- **magnitud**: 9-12, 12-20, 20-40 y > 40 m/s;
+- **hueco**: Δt de un frame procesado (≤ 0,15 s) o más (la pista saltó frames o pasó por «no visible»);
+- **¿cambia la detección elegida de persona?**: las dos detecciones pertenecen a identidades
+  DISTINTAS del tracker (la identidad sale del CSV, con la caja cruda más cercana, como el proxy de
+  siempre);
+- **¿cae el chaleco?**: alguna de las dos detecciones tiene log LR ≤ 0;
+- **¿caja fundida?**: alguna de las dos cajas solapa otra caja del frame con IoU > 0,1 (la definición
+  de cruce del 23-oct b).
+
+**Control: los jugadores al mismo muestreo.**
+- Para cada persona del GT del benjamín (14 tracks, frames 9750-10635), en CADA frame procesado de la
+  ventana: su posición del GT interpolada linealmente entre las anotaciones (cada 15 frames).
+- La pista del jugador es la detección casada 1-a-1 a ≤ 1 m de esa posición (Hungarian, el protocolo
+  de siempre).
+- Su fracción de pasos > 9 m/s se calcula con la MISMA definición de paso.
+- Se compara con la fracción de la pista del árbitro en la misma ventana y en el partido entero.
+
+**Lectura fijada antes (de Alex):**
+- Los jugadores dan **≥ 0,7×** la fracción del árbitro: el criterio no era específico (el temblor
+  de las detecciones también lo dispara), y el fallo del 1,03 % **no cuenta**.
+- Dan **menos de 0,7×**: son saltos reales de la pista. Se añade una **penalización de continuidad**
+  tras un parámetro (por defecto 0 = la pista idéntica a hoy), y se mide con los criterios de AYER,
+  sin cambiarlos.
+
+¿Qué podría estar inventando?
+- El casado a ≤ 1 m del GT RECORTA los saltos de los jugadores: una detección que salta más de ~2 m
+  ya no se casa. Esto sesga el control hacia ABAJO, es decir, a favor de «saltos reales». Se dice
+  cuánto pesa repitiendo el control a ≤ 2 m.
+- La ventana del GT es de 30 s del minuto 5: el árbitro se compara también en esa ventana.
+
+## Bloque 2 — emisión con mitades cruzadas
+
+La ventana del GT se parte en dos por el frame 10192: H1 = 9750-10191 y H2 = 10192-10635. Se hacen
+dos modelos de emisión, con la misma verdad del 23-oct (a) y los mismos bins:
+- uno estimado solo con H1 y evaluado en H2;
+- otro estimado solo con H2 y evaluado en H1.
+
+Para cada uno, la variante 2 sobre la parte entera:
+- **cobertura** y **B > 7**, en el partido entero;
+- **centroide** (`foto_de_estado`), SOLO en la mitad que el modelo no vio.
+
+La referencia es el modelo de la ventana entera (el de ayer), medido sobre la misma mitad.
+
+**Criterio**:
+- el centroide no cambia más de **0,03 m**;
+- cobertura y B > 7 no cambian más de **1 punto**.
+
+Si cambian, se dice cuánto y en qué dirección.
+
+¿Qué podría estar inventando? Con ~35 filas de árbitro por mitad, el suavizado de Laplace pesa más.
+Un modelo «estable» podría serlo porque la pista la manda el movimiento y no la emisión. Se informa
+también el log LR de cada bin de los tres modelos.
+
+## Bloque 3 — la regla de portero (solo medición, no se implementa nada)
+
+**(a) La fila de más en los frames con B > 7.**
+- 30 frames con B > 7 de la variante 2, repartidos por el partido: 30 tramos iguales de tiempo, y un
+  frame al azar (semilla 1) de cada tramo que tenga alguno.
+- Panel por frame: el vídeo con todas las cajas (etiqueta e identidad) y, al lado, la pizarra de ese
+  frame.
+- Clasificación a ojo de la fila de más:
+  - **portero con rol equivocado**, con dos subtipos: (a1) el portero verde de B etiquetado como
+    jugador de B; (a2) el portero de A etiquetado B;
+  - árbitro;
+  - fantasma o balón;
+  - duplicado;
+  - jugador de A etiquetado B;
+  - otro.
+
+**(b) ¿Quién se lleva `portero_A` / `portero_B`, y cuál es el portero real?**
+- Proxy del **portero real** por frame: la detección más profunda dentro de su área (área F7 del
+  modelo: x 0-12 y 50-62, y 7-33):
+  - para B, la de mayor x con x ≥ 50;
+  - para A, la de menor x con x ≤ 12.
+  - Es POSICIÓN DEL INSTANTE, no de la identidad: la regla de producción decide sobre el conjunto de
+    fragmentos de una identidad, así que el proxy no es la misma medida.
+- **Control del proxy, ANTES de usarlo:**
+  - en la ventana del GT, los tracks GT de los porteros (la persona con la mediana de x más extrema
+    de cada lado): ¿el proxy cae a ≤ 1,5 m de ellos?
+  - en los 30 paneles, con el proxy marcado: ¿es el portero (camiseta verde de B / negra de A)?
+  - Si el proxy acierta menos del **80 %** en alguno de los dos, la fracción de rol correcto queda
+    **NO MEDIDA** y solo vale la lectura a ojo.
+- **Frames con ambos porteros visibles** = el proxy encuentra candidato en las dos áreas.
+- Por lado se mide:
+  - la **fracción de frames con rol correcto** (la detección del proxy lleva `portero_X`);
+  - la tabla de identidades que se llevan `portero_X`, con filas y tramo;
+  - los fallos por tipo:
+    1. la etiqueta se la lleva OTRA detección; se cuenta si es un jugador del otro equipo según el
+       voto de color de ESA observación;
+    2. el portero real está **cortado por el borde inferior** (la caja toca el borde) y no lleva su
+       etiqueta;
+    3. nadie lleva la etiqueta en ese frame (sin corona);
+    4. dos `portero_X` a la vez.
+- **Propuesta** del cambio mínimo con su criterio, SIN implementar.
+
+## Bloque 4 — el clip 10:00-10:45 del archivo (11:33-12:18 del reproductor)
+
+- Vídeo con etiquetas y pizarra, con **hoy** y con la **variante 2**, para que Alex los compare
+  (`diag23b_auditoria.py render`).
+- Explicación, con los datos de la pista, de por qué en el frame **f23553** (**13:05,9** archivo /
+  **14:38,9** reproductor) la variante 2 deja al árbitro en B.
+
+---
+
+## Resultado del bloque 1 — los pasos a más de 9 m/s
+
+`python scripts/diag23d.py velocidades --salida outputs/diagnostico_23oct_d` (`velocidades.json`; el
+detalle paso a paso, en `bloque1_pasos.json`).
+
+Comprobación previa: la pasada de hoy y la de la variante 2 dan un CSV **idéntico byte a byte** al
+de ayer (`cmp`). Se mide lo mismo que se midió.
+
+### La lectura fijada: el criterio NO era específico
+
+| | pasos | > 9 m/s |
+|---|---|---|
+| pista del árbitro, partido entero | 11.641 | **1,03 %** (120) |
+| pista del árbitro, solo la ventana del GT | 289 | 0,0 % (0) |
+| **jugadores del GT, mismo muestreo, casados a ≤ 1 m** | 3.074 (14 personas) | **2,28 %** |
+| jugadores del GT, casados a ≤ 2 m | 3.637 | 4,81 % |
+
+- Los jugadores dan **2,2× la fracción del árbitro**, por encima del 0,7× fijado: **el fallo del
+  1,03 % no cuenta**.
+- Ningún benjamín corre a más de 9 m/s. Si los jugadores casados con el GT, con su posición real
+  conocida, pasan ese umbral el 2,3 % de las veces, lo que dispara el criterio es el **temblor de la
+  detección**: 1 px vale hasta 0,42 m en el fondo y un paso dura 0,1 s.
+- El sesgo previsto va en la dirección que refuerza la lectura: casar a 2 m (más permisivo) DUPLICA
+  la fracción de los jugadores.
+- **No se añade la penalización de continuidad.** El criterio de ayer no se cambia: formalmente sigue
+  en ✗. Lo que cambia es lo que dice ese ✗.
+
+### De dónde salen los 120 pasos de la pista
+
+| | sí | no | lo que dice |
+|---|---|---|---|
+| cruzan un **hueco** (Δt > 0,15 s) | 54 | 66 | solo el 2,0 % de los pasos tiene hueco, pero el 22,8 % de ellos supera 9 m/s; sin hueco, el 0,58 % |
+| tienen **caja fundida** (IoU > 0,1) | 74 | 46 | el 19 % de todos los pasos tiene caja fundida; con ella, el 3,3 % supera 9 m/s; sin ella, el 0,49 % |
+| **cambian de identidad** del tracker | 10 | 110 | casi nunca salta a OTRA persona del tracker |
+| el **chaleco cae** (log LR ≤ 0) | 2 | 118 | la pista casi nunca pisa una detección sin chaleco |
+
+- **Por zona**: cerca 0,54 %, medio 0,82 %, fondo **1,34 %**. Crece con los metros por píxel, que es
+  la firma del temblor y no la de un cambio de persona.
+- **Por magnitud**: 57 en 9-12, 45 en 12-20, 17 en 20-40 y 1 > 40 m/s. Son casi todos saltos de
+  1-2 m en 0,1 s: una caja fundida desplaza su pie.
+- Quedan **32 pasos** (0,27 % de la pista) sin hueco y sin caja fundida.
+
+### ¿Qué podría estar inventando este número?
+- El 0,0 % del árbitro en la ventana del GT son 0 de 289 pasos. Con la tasa del partido se esperarían
+  3, y ver 0 pasa un ~5 % de las veces. No es prueba de nada; por eso la comparación se hace contra
+  la tasa del partido.
+- El control de los jugadores no es una pista de Viterbi: casa por persona en cada frame. Puede saltar
+  de detección cuando dos jugadores están a menos de 1 m, lo mismo que puede hacer la pista. Las dos
+  medidas tienen el mismo tipo de ruido; por eso el control vale.
+- «Caja fundida» y «fondo» no son independientes: en el fondo las cajas son pequeñas y se solapan más.
+  No se ha separado una cosa de la otra.
+
+## Resultado del bloque 2 — emisión con mitades cruzadas: PASA
+
+`python scripts/diag23d.py cruzada --salida outputs/diagnostico_23oct_d` (`cruzada.json`).
+
+**Los tres modelos** (log LR por bin; bins [0, 0,002, 0,005, 0,01, 0,02, 0,05, 0,1, 0,2, 1]):
+
+| modelo | filas de árbitro / jugador | log LR |
+|---|---|---|
+| ventana entera (ayer) | 71 / 610 | −1,64 · 2,06 · 0,45 · 1,36 · 2,06 · 1,36 · 3,16 · 5,0 |
+| solo H1 (9750-10191) | 33 / 323 | −2,30 · 2,09 · 0,99 · 2,09 · 2,09 · 2,09 · 2,09 · 5,0 |
+| solo H2 (10192-10635) | 38 / 287 | −1,31 · 1,86 · 0,76 · 1,17 · 1,86 · 1,17 · 2,96 · 5,0 |
+
+**La variante 2 con cada modelo**, comparada con el modelo de la ventana entera:
+
+| | cobertura | B > 7 | centroide en la mitad NO vista | pista con la misma detección |
+|---|---|---|---|---|
+| estima H1, evalúa H2 | 97,08 % (−0,03) | 8,45 % (0,00) | 1,078 m (0,000) | 99,93 % |
+| estima H2, evalúa H1 | 97,12 % (+0,01) | 8,41 % (−0,04) | 0,261 m (0,000) | 99,90 % |
+
+Los tres criterios (centroide ≤ 0,03 m; cobertura y B > 7 ≤ 1 punto) **se cumplen en las dos
+direcciones**: los números no dependen de haber estimado la emisión en la misma ventana donde se
+mide.
+
+¿Qué podría estar inventando?
+- **La estabilidad no dice que la emisión no importe**: el control permutado de ayer, con la misma
+  pista y la emisión barajada, perdía al árbitro (cobertura 97 → 32 %). Los tres modelos comparten la
+  forma: el bin sin chaleco es negativo (−1,3 a −2,3), todos los demás son positivos y el último
+  satura en +5. La pista depende del ORDEN de las detecciones por chaleco, no del valor exacto, y ese
+  orden es el mismo con 33 filas que con 71.
+- Los 1,078 m y 0,261 m son el centroide de cada mitad, no un cambio: la segunda mitad es el tramo
+  malo conocido del GT (el error triplica entre los tercios de la ventana). Lo que se compara es
+  la diferencia, que es 0.
+
+## Resultado del bloque 3 — la regla de portero (solo medición)
+
+Scripts:
+- `python scripts/diag23d.py porteros --salida outputs/diagnostico_23oct_d` (`porteros.json`; los
+  paneles, en `paneles_30/`);
+- `python scripts/diag23d.py tabla_filas_b ...` (`tabla_filas_b.json`), el apoyo a la lectura a ojo.
+
+### ⚠️ Corrección de lo que escribí ayer (23-oct c)
+Ayer puse que, con la pista, la fila de más era «casi siempre un PORTERO con el rol equivocado»: el
+portero verde de B etiquetado como jugador de B. **Esa lectura estaba mal planteada.** El recuento de
+B **incluye a `portero_B`** (`recuento_por_frame` mete a cada portero en su equipo). Así que un
+portero verde etiquetado «B» cuenta exactamente igual que uno etiquetado `portero_B`: **no añade
+ninguna fila**. Lo que sí añade una es que `portero_B` se lo lleve OTRA persona, la de A, mientras el
+portero de verdad sigue contado en B. Hoy se clasifica con esa cuenta.
+
+### (a) La fila de más en los frames con B > 7 (variante 2)
+- Salen **28 paneles, no 30**: dos de los 30 tramos no tienen ningún frame con B > 7.
+- Lectura a ojo, PROVISIONAL, apoyada en la tabla de cada fila B (voto de color de la observación,
+  caja duplicada, fragmento, fundida).
+
+| la fila de más es… | frames | ejemplos (archivo / reproductor) |
+|---|---|---|
+| **una fila DUPLICADA**: dos identidades del CSV sobre la MISMA caja | **8** | f4923 (2:44,3 / 4:17,3), f13959, f18885 |
+| **un jugador de A etiquetado B** | 4 | f9264 (5:09,1 / 6:42,1), f16779, f23289, f32244 |
+| **`portero_B` llevado por un jugador de A** (identidad quimera) | 4 | f924, f11193 (#211), f34611 y f34935 (#766) |
+| **fragmentos de una caja fundida** (un racimo de jugadores) | 4 | f22656, f25176, f27243, f28581 |
+| **el árbitro** | 3 | f20682 (#288), f29799, f30018 (#764) |
+| fantasma (caja diminuta) | 1 | f1806 (#55) |
+| no se distingue | 4 | f3351, f12579, f24954, f33183 |
+
+- ⚠️ *Corregido en el bloque 5*: con la caja PROPIA del tracker, de esas 8 «duplicadas» solo ~2 son
+  duplicados; ~5 son filas DESPLAZADAS 2,5-9,4 m de su detección que caen sobre la caja de otro.
+- La fila de más **no tiene un dueño**. El grupo mayor (8 de 28) es una fila DUPLICADA. Son
+  29 filas B en los 28 frames con otra fila en la misma caja: es asociación, no color ni regla.
+- El rol de portero explica 4 de 28 (14 %).
+- El árbitro sigue siendo la fila de más en 3 de 28 (11 %). Ayer la auditoría de la v2 daba 1 de 20.
+
+### (b) ¿Quién se lleva `portero_A` / `portero_B`?
+
+**Control del proxy** (la detección más profunda de su área), contra los porteros del GT, en la ventana:
+
+| lado | track GT | proxy a ≤ 1,5 m | |
+|---|---|---|---|
+| B (portería del fondo) | 7 (x mediana 56,8) | **90,0 %** de 60 | ✓ vale |
+| A (portería de la cámara) | 6 (x mediana 8,1) | **49,2 %** de 59 | ✗ < 80 % |
+
+- **Lado A: la fracción automática queda NO MEDIDA.** El portero de A está cortado por el borde
+  inferior en 47 de 57 muestras (`docs/portero_cortado.md`): su pie no se ve y su posición en metros
+  no es la del pie, así que «el más profundo» no es él.
+- A ojo, en los 28 paneles:
+  - **desde f4662 (2:35,6 / 4:08,6) `portero_A` está sobre el portero negro en todos los paneles
+    donde se ve** (10 de 10);
+  - **en los tres primeros (f924, f1806, f3351) el portero de A es `otro` #26**. Es una de las
+    identidades del tercer grupo que avisa el log («26 (1095 obs)»): el `azul_electrico` ya
+    documentado (`docs/peso_arbitro_y_portero.md`).
+
+**Lado B** (proxy válido), en los 8.746 frames con candidato en las dos áreas:
+
+| | frames | % |
+|---|---|---|
+| **rol correcto** (la detección del proxy lleva `portero_B`) | 5.268 | **60,2 %** |
+| 3 · sin corona: nadie lleva `portero_B` | 2.692 | 30,8 % |
+| 1b · lo lleva otra detección con voto de color B | 557 | 6,4 % |
+| 1 · lo lleva un jugador del OTRO equipo (voto de color A) | 117 | 1,3 % |
+| 4 · dos `portero_B` a la vez | 112 | 1,3 % |
+| 2 · cortado por el borde | 0 | — |
+
+- En 3.460 de los 3.478 fallos, **el portero real está etiquetado `B`**: se cuenta en su equipo y en
+  su sitio. Para el centroide y para B > 7 **no cuesta nada**. Cuesta en el informe, si este dice
+  «el portero».
+- Los fallos que SÍ cuestan filas son el 1 y el 4 (229 frames, el 2,6 %): son los que salen en los
+  paneles.
+
+**Las identidades que se llevan `portero_B`**, verificadas a ojo sobre los paneles:
+
+| id | filas | tramo (archivo) | ¿es el portero? |
+|---|---|---|---|
+| 11 | 409 | 0:00-0:42 | ✗ en f924 es un jugador blanco de A |
+| 211 | 1.525 | 3:45-6:20 | ✓ en f9264 y f10782; ✗ en f11193 (6:13,5): la identidad pasa a un jugador de A |
+| 350 | 1.953 | 6:33-9:51 | ✓ (f12579, f13959, f16779) |
+| 665 | 1.502 | 13:13-15:43 | ✓ (f24954, f25176, f27243) |
+| 766 | 2.536 | 15:45-20:00 | ✓ hasta f32244; ✗ en f34611 y f34935 (19:15-19:26): otra quimera con un jugador de A |
+| 883 | 490 | 19:07-20:00 | ✓; a la vez que la 766 |
+
+- Hay dos huecos sin `portero_B`: **0:42-3:45** y **9:51-13:13** (archivo). En ellos el portero verde
+  es `B` (#6, #14, #525).
+- El patrón del fallo que cuesta: **la regla corona una identidad entera, y la identidad, al
+  alargarse, se lleva a otra persona**. Es la lección de «una persona es N identidades», vista al
+  revés: una identidad son N personas.
+
+### (c) Propuesta del cambio mínimo (NO implementado; decisión de Alex: no se prueba ahora)
+
+Alcance: con la tabla de arriba, el rol de portero explica **~4 de 28 frames con B > 7 (≈ 14 %)**.
+Además, **`portero_A` está en `otro` (identidad 26) los dos primeros minutos**: en f924, f1806 y
+f3351 el portero negro de A es `otro` #26. Es otra causa, la del catálogo, y la propuesta no la
+toca.
+**«`portero_X` por observación, con dos señales»**:
+- Una observación de una identidad coronada como `portero_X` conserva el rol, salvo que se cumplan
+  las dos condiciones a la vez:
+  1. NO es la detección más profunda de su área en ese frame (o está a > 3 m de ella);
+  2. su voto de color por observación (ventana de 1,5 s, el de `etiquetar_por_observacion`) es del
+     OTRO equipo.
+- Si se cumplen las dos, vuelve a su voto de color.
+- Además, la **exclusividad por frame**: un solo `portero_X` por frame, el más profundo.
+- Es la forma de «dos señales débiles que juntas son fuertes»: la posición sola se equivoca en los
+  córneres, y el color solo, con el portero verde.
+
+**Criterio, para fijarlo ANTES de medir:**
+- fallos de tipo 1 + 4 en B: 229 → **≤ 50 frames**;
+- B > 7 **no sube**; equipo equivocado ≤ 1,5 %; centroide ≤ hoy;
+- hoja de 60 observaciones que pierden `portero_B`: **≤ 10 % son el portero real**;
+- control: las mismas dos condiciones con la etiqueta de equipo BARAJADA tienen que dar ≥ 3× más
+  observaciones movidas.
+- No toca el lado A: allí el proxy no vale. El portero de A en `otro` de los minutos 0-2 es otra
+  causa, la del catálogo.
+
+¿Qué podría estar inventando?
+- **El 60,2 % depende del proxy**. El proxy acierta el 90 % en la ventana del GT, así que hasta ~10
+  puntos de «fallo» pueden ser del proxy y no de la regla (córneres, un defensor por detrás del
+  portero).
+- **El voto de color de los tipos 1 y 1b** usa un clasificador reentrenado con el caché CRUDO, no
+  con el filtrado que usa producción. Puede diferir en las observaciones dudosas; por eso el tipo 1
+  se apoya en los paneles y no solo en el número.
+- **La clasificación de los 28 paneles es mía y a ojo**, con cajas de 15-40 px. «Duplicado» se
+  apoya en un hecho medible (dos filas casadas con la misma caja), los demás no tanto. Los 4 «no se
+  distingue» se dejan así y no se reparten.
+
+## Resultado del bloque 4 — el clip y el frame f23553
+
+### El clip 10:00-10:45 NO sirve para comparar hoy con la variante 2
+- En ese minuto solo cambian 13 filas de 6.776: el clip no prueba nada en ningún sentido.
+- Se sustituye por 1:00-1:45 y 7:00-7:45 (bloque 7), los tramos de 45 s con más filas distintas
+  (429 y 427).
+
+### Por qué la variante 2 deja al árbitro en B en f23553 (13:05,9 archivo / 14:38,9 reproductor)
+Detalle frame a frame en `traza_f23553.json`.
+
+1. La pista sigue al árbitro (identidad 288, chaleco 0,37-0,65, log LR +5) en TODOS los frames de
+   13:02,9 a 13:05,8. En esos frames su fila es `otro`.
+2. **En f23553 la pista se salta ese frame.** La detección del árbitro sigue ahí (chaleco 0,63,
+   log LR +5, caja sin fundir: IoU 0,02), pero su pie salta de (37,37; 11,11) a (38,42; 10,98):
+   **1,05 m en 0,1 s**. En el frame siguiente vuelve a 37,46.
+3. El salto, solo, cabe en la puerta (0,78 m de la predicción, contra 1,3). Pero la pista arrastra
+   la velocidad del predecesor: si pasa por f23553, la predicción del frame siguiente cae en
+   ~39,2 m. Volver a 37,46 sale a 1,75 m, FUERA de la puerta. La alternativa, saltarse un frame,
+   cuesta solo 1,0, y Viterbi la elige.
+4. En la variante 2 solo las filas DE LA PISTA pasan a `otro`. La fila del árbitro en f23553 se
+   queda con su voto de color por observación, que es **B**.
+
+Es el **temblor de la detección** del bloque 1 (un salto de ~1 m que se deshace en el frame
+siguiente), ahora con coste: la pista no se equivoca de persona, pero deja una fila suelta.
+
+**Cuánto pasa**: en todo el partido hay 116 huecos de UN frame con la misma identidad del tracker a
+los dos lados y su detección presente. En 56 de ellos esa fila sigue en un equipo. f23553 ni
+siquiera entra en esa cuenta: en el frame siguiente la pista sigue en la detección de OTRA
+identidad del tracker (la 618), a 0,1 m de la anterior.
+
+**Arreglo posible (NO implementado, para decidirlo)**: rellenar los huecos cortos de la pista (≤ 2
+frames) con la detección de la identidad que está a los dos lados. O, más general, no arrastrar la
+velocidad de UN solo paso, sino estimarla sobre varios. Sería un intento nuevo con su criterio
+fijado antes. Pesa poco: 56 filas, frente a las 5.238 que mueve la pista.
+
+---
+
+# Segunda tanda (decisiones de Alex del 23-oct)
+
+- **Velocidad**: el criterio queda en ✗ con la lectura del bloque 1, sin penalización de continuidad.
+- **La variante 2 NO se adopta todavía.** Alex espera a marcar las hojas y ver los clips.
+- **Portero**: la propuesta no se prueba ahora.
+
+Criterios escritos y commiteados ANTES de medir, igual que en la primera tanda.
+
+## Bloque 5 — las filas duplicadas (la causa mayor de B > 7: 8 de 28)
+
+**Qué hay que reconciliar.** El 22-oct (b) los duplicados eran 8 de 140 filas sin casar en la
+ventana del GT, pero aquella medida y la del bloque 3 no son la misma:
+- **22-oct b**: una fila SIN casar a menos de `R_DUP` de una fila CASADA con una persona del GT. Solo
+  en los 60 frames del GT, que caen en el minuto 5.
+- **bloque 3**: dos filas reales del CSV cuya caja cruda MÁS CERCANA es la misma. En frames con B > 7,
+  seleccionados justamente por tener filas de más.
+
+Esa segunda medida puede FABRICAR duplicados: si el detector funde a dos personas cercanas en una
+caja, las dos identidades siguen vivas y las dos filas caen en la misma caja. Son dos personas, no
+una. Por eso el bloque 5a usa la detección PROPIA de cada observación, sacada del tracker, y no el
+emparejamiento por posición.
+
+### 5a — medición (las identidades se capturan del tracker en una pasada de la variante 2)
+
+Para cada pareja de observaciones de identidades distintas en el mismo frame:
+- **IoU de sus cajas propias**;
+- **distancia en metros** entre sus pies;
+- **solape temporal**: los frames en que las dos identidades tienen observación, divididos por los
+  de la más corta.
+
+Sobre dos poblaciones:
+1. **Los 8 casos** del bloque 3: la pareja de filas sobre la misma caja, en cada uno de los 8 frames.
+2. **Las parejas de compañeros cercanos de la ventana del GT** (el control: personas DISTINTAS).
+   - Dos personas del GT del mismo equipo a ≤ 2 m en un frame del GT, cada una casada 1-a-1 a
+     ≤ 1 m con una detección.
+   - Esas dos detecciones pertenecen a identidades distintas del tracker.
+
+Se informa además, para reconciliar: cuántas «filas en la misma caja» hay en la ventana del GT y en
+el partido entero, y cuántas de las de la ventana son de verdad una sola persona según el GT.
+
+**Criterio de duplicado**: dos observaciones del mismo frame, de identidades distintas y del mismo
+equipo (A/B por su etiqueta final de la observación; el portero cuenta en el suyo), con IoU ≥ x.
+- **x** tiene que cumplir dos cosas a la vez:
+  - **0 parejas de personas distintas** de la ventana del GT con IoU ≥ x;
+  - **≥ 6 de los 8 casos** con IoU ≥ x.
+- Si existe un intervalo que cumple las dos, x es su **centro**.
+- Si no existe, **no hay criterio de duplicado**: el 5b no se corre y queda NO MEDIDO.
+
+¿Qué podría estar inventando?
+- Si los 8 casos resultan ser dos personas en una caja fundida (IoU propio bajo), un dedupe por IoU
+  no los toca, y la «causa mayor» del bloque 3 era un artefacto del emparejamiento por posición. Se
+  dice así.
+
+### 5b — flag `tracking.dedupe_identidades` (apagado = CSV idéntico)
+- Ante un duplicado (el criterio de 5a), se conserva la observación de la identidad con MÁS
+  observaciones y se retira la otra de ESE frame.
+- Se retira del CSV final su fila de ese frame, sea real o interpolada. Si solo se quitara la
+  observación, la interpolación rellenaría el hueco con una fila `es_real = 0` y el B > 7, que
+  cuenta filas reales, mejoraría sin arreglar nada.
+
+**Criterios (antes de medir), sobre la variante 2:**
+- B > 7: 8,45 % → **≤ 6 %**;
+- equipo equivocado **≤ 1,5 %** (1,2 + 0,3);
+- centroide **≤ hoy** (0,47 m con la variante 2);
+- en 20 frames con filas retiradas (semilla 0), **≥ 18 son duplicados reales**, a ojo;
+- hoja de **60 recortes de filas retiradas** (formato `revision_equipos.py`), para que la marque Alex.
+
+¿Qué podría estar inventando? B > 7 puede bajar quitando a una persona real que estaba pegada a un
+compañero. Lo vigilan el control de la ventana del GT (0 retiradas de personas distintas), los 20
+frames y la hoja.
+
+## Bloque 6 — relleno de los huecos de la pista (un solo intento)
+
+- Parámetro `arbitro.viterbi.velocidad_pasos`, por defecto **1** (hoy: la velocidad del último paso).
+- Con **3**, la velocidad que se usa para predecir es la **mediana, componente a componente, de los
+  últimos 3 pasos** del camino. Se aplica en todas las transiciones; solo cambia algo donde los pasos
+  difieren, que es justo tras un salto de un frame como el de f23553.
+
+**Criterios (antes de medir)**, contra la variante 2 con el parámetro en 1:
+- cubre **≥ 40 de los 56 casos** del bloque 4: huecos de UN frame con la misma identidad del tracker a
+  los dos lados, cuya fila estaba en un equipo; un caso queda cubierto si ahora la pista pasa por la
+  detección de esa identidad;
+- cobertura y B > 7 **no empeoran** (97,11 % y 8,45 %);
+- pasos > 9 m/s **no suben más de 0,2 puntos** (1,03 % → ≤ 1,23 %).
+
+¿Qué podría estar inventando? Una velocidad más suave también deja pasar saltos a OTRA persona. Por
+eso el criterio de velocidad sigue, y se informa cuántos frames cambian de detección elegida.
+
+## Bloque 7 — clips 1:00-1:45 y 7:00-7:45 del archivo (2:33-3:18 y 8:33-9:18 del reproductor)
+
+- Vídeo y pizarra, con hoy y con la variante 2.
+- En el vídeo de la variante 2:
+  - la detección que elige la pista va con un **contorno blanco grueso** y la etiqueta **«ÁRBITRO»**;
+  - los frames donde la pista **no cubre** llevan un **borde rojo** en todo el vídeo.
+
+## Bloque 8 — `outputs/` de ramas cerradas
+
+Lista ordenada por tamaño, **sin borrar nada**.
+
+---
+
+## Resultado del bloque 5 — las «filas duplicadas» casi nunca son duplicados
+
+`python scripts/diag23d.py duplicados --salida outputs/diagnostico_23oct_d` (`duplicados.json`).
+Las identidades se capturan del tracker en una pasada de la variante 2; su CSV es idéntico byte a
+byte al de la variante 2 (`cmp`).
+
+### 5a — los 8 casos, con la caja PROPIA de cada observación
+Son 9 parejas en 8 frames: en f18885 hay dos.
+
+| frame | ids | IoU propio | distancia | solape temporal | fila desplazada de su caja | lectura |
+|---|---|---|---|---|---|---|
+| 4923 | 62 · 148 | **0,47** | 1,27 m | 0,99 | 0,14 · 0,70 m | **duplicado probable** |
+| 19608 | 292 · 548 | **0,41** | 0,34 m | 0,96 | 1,43 · 0,96 m | **duplicado probable** |
+| 13959 | 161 · 366 | 0,15 | 0,77 m | 0,38 | 0,42 · 0,25 m | dudoso |
+| 4662 | 139 · 148 | 0,19 | 4,25 m | 0,64 | 0,51 · **2,53** m | dos personas, una fila desplazada |
+| 6780 | 179 · 212 | 0,10 | 5,00 m | 0,01 | **3,84** · 0,58 m | dos personas, una fila desplazada |
+| 10782 | 284 · 309 | 0,19 | 12,37 m | 0,68 | 1,30 · **9,43** m | dos personas, una fila desplazada |
+| 17115 | 436 · 486 | 0,00 | 1,31 m | 0,93 | **2,70** · 1,67 m | dos personas (una `otro`) |
+| 18885 | 459 · 477 | 0,00 | 3,09 m | 0,74 | **2,95** · 0,20 m | dos personas (A y B) |
+| 18885 | 292 · 366 | 0,10 | 7,34 m | 0,97 | 0,56 · **5,66** m | dos personas (B y A) |
+
+- En **5 de los 8 frames**, la «fila duplicada» del bloque 3 es una fila **DESPLAZADA** entre 2,5 y
+  9,4 m de su propia detección, que cae encima de la caja de OTRA persona. No es una persona en dos
+  identidades. Es la fila `es_real = 1` que no está en su detección: el suavizado de ~2 s, o un
+  cambio de persona dentro de la identidad (`docs/traza_por_etapas.md`).
+- Solo 2 de los 8 (f4923 y f19608) tienen la forma de un duplicado: cajas que se solapan mucho,
+  pies a < 1,3 m y dos identidades vivas a la vez casi todo el tiempo. Un tercero (f13959) es
+  dudoso.
+
+**Reconciliación con el 22-oct (b).** Las dos medidas no son la misma, y no se contradicen:
+- En los 60 frames del GT hay 28 cajas con ≥ 2 filas encima:
+  - 13 tienen UNA persona del GT a ≤ 1,5 m (pueden ser duplicados o desplazadas);
+  - 10 tienen DOS o más (dos personas reales);
+  - 5 no tienen ninguna.
+- El 22-oct contaba otra cosa: una fila SIN casar a < `R_DUP` de una fila CASADA. Por eso salían
+  8 de 140, compatible con estas 13.
+- Mi «duplicado» del bloque 3 mezclaba duplicados con filas desplazadas y con dos personas en una
+  caja fundida. **Corrección del bloque 3**: la causa mayor de B > 7 no son 8 duplicados. Son
+  ~2 duplicados y ~5 filas desplazadas.
+
+**El criterio de duplicado: NO existe uno que cumpla las dos condiciones.**
+- Con el control fijado, los compañeros del GT a ≤ 2 m (11 parejas, IoU máximo 0,03), el intervalo
+  sería (0,03; 0,104] y x = 0,067.
+- **Pero ese control no veía lo que un IoU toca.** Con el control LITERAL de «0 retiradas de personas
+  distintas en la ventana del GT» (todas las parejas del mismo equipo casadas con personas
+  distintas, a cualquier distancia: 1.378), el IoU máximo es **0,156**: dos personas a 7,9 m, una
+  detrás de otra en profundidad. Con x = 0,067 se retirarían **11 personas distintas** en la
+  ventana.
+- Para no retirar a ninguna haría falta x > 0,156, y entonces solo se cubren **4 de los 8**; se
+  pedían ≥ 6.
+- **Veredicto: no hay criterio de duplicado. El 5b NO se ha corrido (NO MEDIDO). El flag
+  `tracking.dedupe_identidades` no se ha implementado.**
+
+¿Qué podría estar inventando?
+- **Mi propio control**, al fijarlo: elegí «compañeros a ≤ 2 m», y la proximidad en METROS no es
+  proximidad en la IMAGEN, que es lo que mide un IoU. Es la lección de «proximidad en la imagen no
+  es oclusión», del revés.
+- **La clasificación del bloque 3**: medía lo que el emparejamiento por posición decía, no lo que el
+  tracker hizo. La medida que valía era la caja propia.
+
+## Resultado del bloque 6 — velocidad mediana de 3 pasos: NO PASA (un solo intento, se cierra)
+
+`python scripts/diag23d.py relleno --salida outputs/diagnostico_23oct_d` (`relleno.json`).
+
+| | variante 2 (1 paso) | variante 2 (mediana de 3 pasos) | criterio |
+|---|---|---|---|
+| casos cubiertos, de 56 | — | **17** | ≥ 40 ✗ |
+| cobertura | 97,11 % | 97,30 % | no empeora ✓ |
+| B > 7 | 8,45 % | 8,38 % | no empeora ✓ |
+| pasos > 9 m/s | 1,03 % | 1,10 % | ≤ 1,23 % ✓ |
+
+- 70 frames entran en la pista, 47 salen y en 15 cambia la detección elegida.
+- **Por qué no cubre más**: en los 39 casos sin cubrir, la detección saltada se aparta una
+  **mediana de 1,62 m** del punto medio de sus vecinos, y en 27 pasa de 1,3 m, la puerta de un
+  frame (8 m/s · 0,1 s + 0,5 m). En los 17 cubiertos, la mediana es 0,87 m.
+- Los huecos de un frame son en su mayoría **saltos más grandes que la puerta**, no temblores
+  pequeños arrastrados por la velocidad. f23553 (1,05 m) era de los pequeños. Ninguna velocidad
+  suavizada los deja pasar; haría falta abrir la puerta, y eso no se ha probado.
+- El parámetro `arbitro.viterbi.velocidad_pasos` se queda en el código **en 1 (= la pista de
+  antes)**, con su test del caso f23553 y el de que 1 no cambia la pista. El CSV de la variante 2
+  es idéntico byte a byte.
+
+## Resultado del bloque 7 — los clips de 1:00 y de 7:00
+
+`python scripts/diag23d.py clips --salida outputs/diagnostico_23oct_d`. En `outputs/diagnostico_23oct_d/`
+(no van al repo):
+
+| | archivo | reproductor | frames | sin pista (borde rojo) |
+|---|---|---|---|---|
+| `clip_1m00/` | 1:00-1:45 | 2:33-3:18 | 449 | 20 |
+| `clip_7m00/` | 7:00-7:45 | 8:33-9:18 | 450 | 19 |
+
+- En cada carpeta: `video_*_hoy.mp4`, `video_*_v2.mp4`, `pizarra_*_hoy.html` y `pizarra_*_v2.html`.
+- En `video_*_v2.mp4`, la detección de la pista va con un contorno blanco grueso y «ÁRBITRO». Los
+  frames sin pista llevan un borde rojo en todo el vídeo.
+- Comprobado sobre dos frames extraídos:
+  - en **f2112 (1:10,5 archivo / 2:43,5 reproductor)** el contorno «ÁRBITRO» está sobre el chaleco;
+  - en **f1905 (1:03,6 / 2:36,6)**, con borde rojo, **el árbitro sale como «#12 B»**: lo que pasa
+    en los huecos de la pista.
+- `generar_video_detecciones.py` gana la opción `--pista`. Sin ella, el vídeo sale igual que antes.
+- **Ningún número de este informe se apoya en los clips**: son para que Alex mire.
+
+## Resultado del bloque 8 — `outputs/` de ramas cerradas (NO se ha borrado nada)
+
+`outputs/` ocupa **6,1 GB**, con 15 GB libres en el disco (97 %).
+
+**Carpetas de diagnóstico**, por tamaño:
+
+| carpeta | MB | rama | ¿la usa esta rama? |
+|---|---|---|---|
+| `diagnostico_22oct_b` | 439,9 | fix-22oct-b | no |
+| `diagnostico_23oct_d` | 326,2 | **fix-23oct-d (esta)** | — |
+| `diagnostico_23oct_b` | 115,6 | fix-23oct-b | no |
+| `diagnostico_22oct_g` | 112,5 | fix-22oct-g | no |
+| `diagnostico_22oct_e` | 58,0 | fix-22oct-e | no |
+| `diagnostico_22oct_f` | 53,9 | fix-22oct-f | no |
+| `diagnostico_23oct_c` | 49,7 | fix-23oct-c | **sí**: las cachés de chaleco |
+| `diagnostico_22oct_c` | 31,5 | fix-22oct-c | no |
+| `diagnostico_22oct_d` | 20,1 | fix-22oct-d | **sí**: `posiciones_hoy.csv` (la verdad del modelo de emisión) |
+| `diagnostico_23oct_a` | 19,8 | fix-23oct-a | no |
+| `diagnostico_22oct` | 8,5 | diagnostico-22oct | no |
+
+**Lo más grande fuera de esas carpetas** (trabajo anterior, sin rama de diagnóstico propia):
+
+| fichero o carpeta | MB |
+|---|---|
+| `detecciones_benja_p1.mp4` | 987,7 |
+| `video_parte_entera_v3.mp4` | 987,7 |
+| `video_parte_entera.mp4` | 987,7 |
+| `pool_balon_pegado/` | 459,7 |
+| `fragmento_balon_7m03/` | 359,0 |
+| `detecciones_conjunto_balon.mp4` | 246,8 |
+| `hoja_equipos/` | 141,5 |
+| `recortes_sueltos/` | 81,7 |
+| `etiquetado_balon_dirigido/` | 78,7 |
+| `hoja_recuento/` (dos entradas con el mismo nombre visible) + `hoja_recuento.zip` | 51,5 + 51,5 + 51,2 |
+| `video_jugadores_balon_5m10.mp4`, `FINAL_`, `ACUMULADO_`, `EXPERIMENTAL_benja_cajas.mp4`, `detecciones_benja*.mp4`, `detecciones_muestra3min.mp4` | 48,8 cada uno (9 ficheros) |
+
+- Los tres vídeos de la parte entera, de ~1 GB cada uno, son el 48 % de `outputs/`.
+- La lista completa (106 entradas) sale con `du -sk outputs/* | sort -rn`.

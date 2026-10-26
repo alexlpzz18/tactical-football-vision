@@ -82,11 +82,61 @@ class ParametrosByteTrack:
         return cls(**conocidos)
 
 
+@dataclass
+class ParametrosCosteColor:
+    """Término de COLOR en la asociación (flag `tracking.coste_color`, docs/diagnostico_22oct_g.md).
+
+    APAGADO por defecto. Encendido, el coste de emparejar una pista con una detección pasa a ser el
+    de ByteTrack (1 − IoU, fusionado con la confianza) + `lambda_rel` · d / sep, donde d es la
+    distancia entre el MODELO de color de la pista y la feature de la detección, y sep la distancia
+    entre los prototipos A y B del partido. Si d / sep > `umbral_rel`, no se pueden emparejar.
+
+    Por qué relativo a sep: un número en unidades de histograma no viaja entre partidos (lo enseñó
+    `dist_max_prototipo`, CLAUDE.md); lo que separa a dos equipos sí es una escala del problema.
+
+    El color de un recorte SOLAPADO es una mezcla de dos camisetas: en esos frames (IoU >
+    `iou_solape` con otra caja) el modelo de la pista no se actualiza y el término no se usa.
+    """
+
+    activo: bool = False
+    lambda_rel: float = 0.5
+    umbral_rel: float = float("inf")
+    alfa: float = 0.2  # media móvil exponencial del modelo de color de la pista
+    iou_solape: float = 0.1
+    # SOLO para el control del diagnóstico: permuta los vectores de color entre las detecciones
+    # del mismo frame. Si el término mejora igual, la mejora no viene del color.
+    control_permutar_semilla: int | None = None
+
+    @classmethod
+    def desde_dict(cls, d: dict | None) -> "ParametrosCosteColor":
+        if not d:
+            return cls()
+        return cls(**{c: d[c] for c in cls.__dataclass_fields__ if c in d})
+
+
+def _iou_maximo(cajas: np.ndarray) -> np.ndarray:
+    """Para cada caja, el IoU máximo con cualquier OTRA caja del frame."""
+    if len(cajas) < 2:
+        return np.zeros(len(cajas))
+    x1 = np.maximum(cajas[:, None, 0], cajas[None, :, 0])
+    y1 = np.maximum(cajas[:, None, 1], cajas[None, :, 1])
+    x2 = np.minimum(cajas[:, None, 2], cajas[None, :, 2])
+    y2 = np.minimum(cajas[:, None, 3], cajas[None, :, 3])
+    inter = np.clip(x2 - x1, 0, None) * np.clip(y2 - y1, 0, None)
+    area = (cajas[:, 2] - cajas[:, 0]) * (cajas[:, 3] - cajas[:, 1])
+    iou = inter / (area[:, None] + area[None, :] - inter + 1e-9)
+    np.fill_diagonal(iou, 0.0)
+    return iou.max(axis=1)
+
+
 def asociar_con_bytetrack(
     cache: list[dict],
     fps: float,
     sample: int,
     params: ParametrosByteTrack | None = None,
+    colores: dict | None = None,
+    separacion: float | None = None,
+    params_color: ParametrosCosteColor | None = None,
 ) -> list[list[Tracklet]]:
     """Identidades de ByteTrack sobre las detecciones ya cacheadas.
 
@@ -97,6 +147,8 @@ def asociar_con_bytetrack(
         fps: fps del vídeo original.
         sample: 1 de cada `sample` frames está en el caché.
         params: ver ParametrosByteTrack.
+        colores, separacion, params_color: solo con el término de color encendido
+            (`ParametrosCosteColor`): la caché de color {(frame, det): feature} y ‖A − B‖.
 
     Returns:
         Lista de identidades en el formato del resto del pipeline: cada
@@ -128,12 +180,73 @@ def asociar_con_bytetrack(
             minimum_consecutive_frames=params.min_frames_consecutivos,
         )
 
+    con_color = params_color is not None and params_color.activo
+    if con_color and (not colores or not separacion):
+        raise ValueError(
+            "El término de color necesita la caché de color y la separación A−B"
+        )
+    if con_color:
+        from supervision.tracker.byte_tracker import matching
+
+        from src.team_classification.color_classifier import _solo_hs
+
+        iou_original = matching.iou_distance
+        modelos: dict[int, np.ndarray] = {}  # {track_id externo: modelo de color}
+        rng = (
+            np.random.default_rng(int(params_color.control_permutar_semilla))
+            if params_color.control_permutar_semilla is not None
+            else None
+        )
+
     # {track_id: [(t, pos_m, det_idx, frame_idx)]}
     observaciones: dict[int, list[tuple]] = {}
     for entrada in cache:
         dets = entrada["dets"]
         if not dets:
             continue
+        if con_color:
+            cajas = np.array([d[2:6] for d in dets], dtype=float)
+            iou_max = _iou_maximo(cajas)
+            feats = [
+                (
+                    _solo_hs(colores[(entrada["frame_idx"], j)])
+                    if (entrada["frame_idx"], j) in colores
+                    else None
+                )
+                for j in range(len(dets))
+            ]
+            if rng is not None:
+                feats = [feats[k] for k in rng.permutation(len(feats))]
+
+            def iou_con_color(
+                atracks, btracks, _cajas=cajas, _feats=feats, _iou=iou_max
+            ):
+                base = iou_original(atracks, btracks)
+                if base.size == 0 or isinstance(atracks[0], np.ndarray):
+                    return base
+                # solo entre PISTAS y DETECCIONES de este frame (las detecciones aún no
+                # tienen id): `remove_duplicate_tracks` también llama aquí con dos pistas
+                if any(
+                    b.external_track_id != b.external_id_counter.NO_ID for b in btracks
+                ):
+                    return base
+                base = base.copy()
+                for bi, b in enumerate(btracks):
+                    j = int(np.argmin(np.abs(_cajas - np.asarray(b.tlbr)).sum(axis=1)))
+                    if _feats[j] is None or _iou[j] > params_color.iou_solape:
+                        continue  # caja solapada o sin color: el coste de siempre
+                    for ai, a in enumerate(atracks):
+                        m = modelos.get(int(a.external_track_id))
+                        if m is None:
+                            continue
+                        d = float(np.linalg.norm(m - _feats[j])) / separacion
+                        if d > params_color.umbral_rel:
+                            base[ai, bi] = 2.0  # la puerta: no se pueden emparejar
+                        else:
+                            base[ai, bi] += params_color.lambda_rel * d
+                return base
+
+            matching.iou_distance = iou_con_color
         detecciones = sv.Detections(
             xyxy=np.array([[d[2], d[3], d[4], d[5]] for d in dets], dtype=np.float32),
             confidence=np.array([d[6] for d in dets], dtype=np.float32),
@@ -142,12 +255,25 @@ def asociar_con_bytetrack(
             # otro lado, sin tener que reconocer la caja por su geometría.
             data={"det_idx": np.arange(len(dets))},
         )
-        seguidas = tracker.update_with_detections(detecciones)
+        try:
+            seguidas = tracker.update_with_detections(detecciones)
+        finally:
+            if con_color:
+                matching.iou_distance = iou_original
         for track_id, det_idx in zip(
             seguidas.tracker_id, seguidas.data.get("det_idx", [])
         ):
             if track_id is None:
                 continue
+            if con_color:
+                # el modelo de la pista solo aprende de recortes LIMPIOS, con peso 1 − IoU
+                j = int(det_idx)
+                if feats[j] is not None and iou_max[j] <= params_color.iou_solape:
+                    w = params_color.alfa * (1.0 - float(iou_max[j]))
+                    previo = modelos.get(int(track_id))
+                    modelos[int(track_id)] = (
+                        feats[j] if previo is None else (1 - w) * previo + w * feats[j]
+                    )
             d = dets[int(det_idx)]
             observaciones.setdefault(int(track_id), []).append(
                 (

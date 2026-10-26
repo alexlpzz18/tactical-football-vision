@@ -309,6 +309,23 @@ arbitro:
   # "aquí no hay". Verificado en Villaviciosa: borrando al árbitro del
   # caché, corona a la identidad 39 (106 obs).
   uno_solo: true
+  # El catálogo por observación solo saca a `otro` una fila si su identidad lo dispara en
+  # mayoría o su trozo (tracklet) en ≥ frac_trozo (X fijado midiendo el 22-oct f: 0,084).
+  # APAGADO: no cumple (docs/diagnostico_22oct_f.md, bloque B).
+  # El árbitro como seguimiento de UN objeto (Viterbi sobre el chaleco visto en píxeles y la
+  # continuidad de movimiento). Necesita rutas.cache_chaleco (scripts/cache_chaleco.py).
+  # Sin `activo`: lo decide el FORMATO (F7 → encendido; src/campo_modelo.py::DEFECTOS_POR_FORMATO).
+  # `activo` EXPLÍCITO manda sobre el formato. INTEGRADO EN MAIN APAGADO (26-oct,
+  # docs/integracion_23oct_main.md): `activo: false` = la salida de antes del merge, byte a byte.
+  # Para encenderlo: `activo: true` (o borrar la línea y que decida el formato).
+  viterbi:
+    activo: false
+    variante: anade  # la variante 2 del 23-oct (c); «sustituye» es la 1
+    modelo_emision: configs/arbitro_viterbi_benja.json
+  catalogo_requiere_identidad:
+    activo: false
+    frac_identidad: 0.5
+    frac_trozo: 0.084
   # Devolver por COLOR a los 'otro' que no gana la exclusividad. APAGADO:
   # se midió y empeoraba Villaviciosa 3,55 -> 3,65 m (docs/arbitro.md). La
   # clave existe para MEDIRLO (1-oct-2026), no para usarlo.

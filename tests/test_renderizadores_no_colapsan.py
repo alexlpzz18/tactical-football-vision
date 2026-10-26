@@ -225,9 +225,13 @@ NO_PINTAN_POR_OBSERVACION = {
     "scripts/gt_a_replay.py": "pinta el GROUND TRUTH, que no lleva etiqueta del sistema",
     "scripts/comparar_instante.py": "pinta UN instante: no hay vida de identidad que colapsar",
     "scripts/deriva_parte_entera.py": "banco de medida; solo lee los colores del fit para informar",
+    "scripts/diag22f_villa.py": "diagnóstico de medida: lee los colores del fit y el color "
+    "dominante de la caché para informar, no pinta nada",
     "scripts/etiquetar_equipos_gt.py": "herramienta de etiquetado manual, no pinta el sistema",
     "scripts/poligonal_defensa.py": "pinta una POLIGONAL por equipo con la etiqueta de cada "
     "fila EN ESE FRAME (no la moda de la identidad); no hay ficha por observación",
+    "scripts/hoja_revision_equipos.py": "pinta UN instante por imagen, con la etiqueta de cada "
+    "observación EN ESE FRAME (la del CSV, no la moda de la identidad): no hay vida que colapsar",
     "scripts/lineas_tacticas.py": "pinta LÍNEAS por equipo calculadas con la etiqueta de cada fila "
     "EN ESE FRAME (no la moda de la identidad); no hay ficha por observación que colapsar",
 }

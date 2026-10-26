@@ -97,6 +97,18 @@ def main() -> None:
     # La orientación puede venir del config del campo (es una propiedad
     # de la CÁMARA de ese partido, no del comando que se teclee).
     espejar = args.espejar
+    # El recorte del balón al campo es del CONFIG DEL CAMPO (`balon.recortar_a_campo`), el mismo
+    # que lee procesar_balon.py: solo cambia el dibujo de la pizarra.
+    recortar_balon = False
+    if args.config_campo:
+        import yaml
+
+        with open(args.config_campo) as f:
+            recortar_balon = bool(
+                ((yaml.safe_load(f) or {}).get("balon") or {}).get(
+                    "recortar_a_campo", False
+                )
+            )
     if espejar is None and args.config_campo:
         import yaml
 
@@ -144,6 +156,7 @@ def main() -> None:
         titulo=args.titulo,
         etiqueta_por_identidad=args.etiqueta_por_identidad,
         suavizado_visual_ventana=args.suavizado_visual_ventana,
+        recortar_balon_a_campo=recortar_balon,
     )
     print(f"✓ Replay en {ruta}")
 

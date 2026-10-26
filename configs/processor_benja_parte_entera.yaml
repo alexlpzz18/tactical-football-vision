@@ -29,6 +29,10 @@ modo: full # vídeo → cachés → CSV. En local: --modo desde_cache.
 
 # ── Detección (GPU) ──────────────────────────────────────────────────
 deteccion:
+  # Puntuación de CHALECO del árbitro en la misma pasada (H0, H1, S0, V0), medida el 23-oct (a)
+  # sobre el árbitro del benjamín. Se guarda en la caché de detección (clave `chaleco`) y la usa
+  # arbitro.viterbi (docs/diagnostico_23oct_f.md, bloque 1).
+  chaleco_banda: [38, 48, 112, 173]
   modelo: models/weights/best_v4pre.pt
   confianza: 0.3
   max_area_caja: 0.05
@@ -84,6 +88,14 @@ config_tracking: configs/tracking_benja.yaml
 # ── Clasificación de equipos ─────────────────────────────────────────
 equipos:
   activo: true
+  # Etiqueta con TOPE DE CARDINALIDAD (docs/diagnostico_22oct_e.md, bloque 1): las
+  # identidades se etiquetan juntas con ≤ tope por equipo y ≤ 1 «otro» en cada frame.
+  # APAGADO: con activo false no corre nada y la salida es la de siempre.
+  tope_cardinalidad:
+    activo: false
+    tope: 7  # F7: 7 por equipo, portero incluido
+    tope_otro: 1
+    lambda_holgura: 1.0  # coste de un frame con una persona de exceso
 config_equipos: configs/team_classification_benja.yaml
 
 # ── Campo ────────────────────────────────────────────────────────────
@@ -98,6 +110,9 @@ rutas:
   cache: data/tracking_benja/cache_detecciones_benja_p1.pkl
   cache_colores: data/tracking_benja/cache_colores_benja_p1.pkl
   homografia: data/calibracion_benja/homografia_benja.npy
+  # Chaleco del árbitro por detección (scripts/cache_chaleco.py; el modo full NO la crea). La
+  # usa arbitro.viterbi, encendido por defecto en F7 (docs/diagnostico_23oct_e.md).
+  cache_chaleco: data/tracking_benja/cache_chaleco_benja_p1.pkl
   salida_csv: data/tracking_benja/posiciones_benja_p1.csv
   salida_meta: data/tracking_benja/posiciones_benja_p1_meta.json
 # ─────────────── QUÉ VA A CAMBIAR AL PASAR DE 60 s A 20 min ──────────

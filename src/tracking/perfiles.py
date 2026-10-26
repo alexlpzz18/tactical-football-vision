@@ -29,8 +29,10 @@ import numpy as np
 
 from src.tracking.asociacion_bytetrack import (
     ParametrosByteTrack,
+    ParametrosCosteColor,
     asociar_con_bytetrack,
 )
+from src.tracking.corte_en_cruces import ParametrosCorteCruces, cortar_y_reenlazar
 from src.tracking.cosido_pureza import ParametrosCosidoPureza, coser_por_pureza
 from src.tracking.cota_plantilla import fusionar_hasta_cota
 from src.tracking.exclusion_espacial import fusionar_identidades_duplicadas
@@ -100,7 +102,9 @@ def correr_perfil(
         raise ValueError(f"Perfil desconocido: {perfil!r} (usa uno de {PERFILES})")
 
     if perfil == "bytetrack":
-        return _perfil_bytetrack(cache, fps, sample, cfg_tracking, colores, embeddings)
+        return _perfil_bytetrack(
+            cache, fps, sample, cfg_tracking, colores, embeddings, clasificador
+        )
 
     params_a = dict(cfg_tracking["etapa_a"])
     params_cosido = dict(cfg_tracking["cosido"])
@@ -164,6 +168,7 @@ def _perfil_bytetrack(
     cfg_tracking: dict,
     colores: dict | None,
     embeddings: dict | None = None,
+    clasificador=None,
 ) -> list[list[Tracklet]]:
     """Asociación con ByteTrack + cosido por pureza (sin cota de plantilla).
 
@@ -174,12 +179,49 @@ def _perfil_bytetrack(
     post-proceso completo bajaba la cobertura de ByteTrack de 0.516 a
     0.441).
     """
+    # Término de COLOR en la asociación (flag `coste_color`, apagado por defecto;
+    # docs/diagnostico_22oct_g.md, bloque B). Sus umbrales van relativos a ‖A − B‖, la separación
+    # de los prototipos del clasificador ya entrenado.
+    params_color = ParametrosCosteColor.desde_dict(cfg_tracking.get("coste_color"))
+    params_cruces = ParametrosCorteCruces.desde_dict(cfg_tracking.get("corte_cruces"))
+    # Variante SIN COLOR (docs/diagnostico_23oct_b.md, bloque 2): mismo corte, reenlace solo por
+    # movimiento con la puerta que crece con el hueco. No puede convivir con la de color.
+    params_sin_color = ParametrosCorteCruces.desde_dict(
+        cfg_tracking.get("corte_cruces_sin_color")
+    )
+    params_sin_color.usar_color = False
+    if params_cruces.activo and params_sin_color.activo:
+        raise ValueError(
+            "corte_cruces y corte_cruces_sin_color no pueden ir los dos encendidos"
+        )
+    separacion = None
+    if params_color.activo or params_cruces.activo:
+        if clasificador is None or getattr(clasificador, "_prototipos", None) is None:
+            raise ValueError(
+                "coste_color y corte_cruces necesitan el clasificador de equipos entrenado"
+            )
+        pr = clasificador._prototipos
+        separacion = float(np.linalg.norm(pr.a - pr.b))
     identidades = asociar_con_bytetrack(
         cache,
         fps,
         sample,
         ParametrosByteTrack.desde_dict(cfg_tracking.get("bytetrack")),
+        colores=colores,
+        separacion=separacion,
+        params_color=params_color,
     )
+    # CORTAR EN LOS CRUCES Y REENLAZAR (flag `corte_cruces`, apagado; docs/diagnostico_22oct_g.md,
+    # B2): se parte cada pista donde su caja se solapa con otra y se reúne lo que sale del cruce
+    # con lo que entró, por movimiento en metros y color de los frames limpios.
+    if params_cruces.activo:
+        identidades = cortar_y_reenlazar(
+            identidades, cache, colores, separacion, params_cruces
+        )
+    elif params_sin_color.activo:
+        identidades = cortar_y_reenlazar(
+            identidades, cache, None, None, params_sin_color
+        )
     dt = sample / fps if fps else 0.12
     # Puerta de apariencia en la RE-ENTRADA, ANTES del cosido: aquí se
     # parte lo que ByteTrack recuperó sobre la persona equivocada, y el

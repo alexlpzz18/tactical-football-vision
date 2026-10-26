@@ -208,9 +208,13 @@ def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
         )
     import numpy as np
 
-    from src.balon.carga import cargar_detecciones_limpias, contexto_del_selector
+    from src.balon.carga import (
+        cargar_detecciones_limpias,
+        contexto_del_selector,
+        parametros_balon_de_campo,
+    )
     from src.balon.tracking_balon import (
-        ParametrosBalon,
+        descartar_balon_fuera,
         detectar_fases_aereas,
         marcar_vuelos_readmitidos,
         seleccionar_balon_activo,
@@ -222,12 +226,17 @@ def balon_activo(ruta_cache_balon, ruta_csv, ruta_campo) -> dict:
     jug, ctx = contexto_del_selector(
         ruta_csv, tiempos, dets, ruta_campo, modelo, meta["fuera_de_campo"]
     )
-    params = ParametrosBalon()
+    # Mismos parámetros y mismo corte que la pizarra (`procesar_balon.py`): bloque `balon:` del
+    # config de campo y `descartar_balon_fuera` (flag apagado por defecto).
+    params = parametros_balon_de_campo(ruta_campo)
     activo = seleccionar_balon_activo(
         dets,
         {f: [(j[0], j[1]) for j in v] for f, v in jug.items()},
         params,
         **ctx,
+    )
+    activo, _descartados = descartar_balon_fuera(
+        activo, ctx["dimensiones_campo"], params
     )
     orden = sorted(activo)
     trayectoria = [
@@ -264,6 +273,47 @@ def dibujar_balon(frame, det, es_aereo: bool):
             1,
             cv2.LINE_AA,
         )
+
+
+def _fuente_con_tildes(tam: int):
+    """Una fuente TrueType para el texto con tildes (el Hershey de OpenCV no pinta la «Á»)."""
+    from PIL import ImageFont
+
+    for ruta in (
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ):
+        if Path(ruta).exists():
+            return ImageFont.truetype(ruta, tam)
+    return ImageFont.load_default()
+
+
+def dibujar_pista(frame, caja, fuente):
+    """La pista del árbitro (docs/diagnostico_23oct_d.md, bloque 7).
+
+    - Si cubre el frame: contorno blanco grueso en su detección, con la etiqueta «ÁRBITRO».
+    - Si no lo cubre: un borde rojo en todo el vídeo, para que se vea el hueco.
+    """
+    from PIL import Image, ImageDraw
+
+    h, w = frame.shape[:2]
+    if caja is None:
+        cv2.rectangle(frame, (0, 0), (w - 1, h - 1), (0, 0, 255), 12)
+        return frame
+    x1, y1, x2, y2 = (int(round(v)) for v in caja)
+    cv2.rectangle(frame, (x1 - 3, y1 - 3), (x2 + 3, y2 + 3), (255, 255, 255), 4)
+    img = Image.fromarray(frame[:, :, ::-1])
+    ImageDraw.Draw(img).text(
+        (x1, max(0, y1 - 26)),
+        "ÁRBITRO",
+        font=fuente,
+        fill=(255, 255, 255),
+        stroke_width=2,
+        stroke_fill=(0, 0, 0),
+    )
+    frame[:] = np.asarray(img)[:, :, ::-1]
+    return frame
 
 
 def dets_del_cache(cfg):
@@ -335,6 +385,12 @@ def main() -> None:
     )
     parser.add_argument("--conf", action="store_true", help="Escribir la confianza")
     parser.add_argument(
+        "--pista",
+        default=None,
+        help="JSON {'cajas': {frame: [x1, y1, x2, y2]}} con la pista del árbitro: su caja va "
+        "en blanco con «ÁRBITRO» y los frames sin pista llevan un borde rojo",
+    )
+    parser.add_argument(
         "--fps-salida",
         type=float,
         default=None,
@@ -370,6 +426,13 @@ def main() -> None:
         logger.info("Colores de equipo: %s", colores_equipo)
 
     tracking = cargar_tracking(Path(args.csv), H) if args.csv else {}
+    pista = None
+    if args.pista:
+        pista = {
+            int(f): c
+            for f, c in json.loads(Path(args.pista).read_text())["cajas"].items()
+        }
+        fuente_pista = _fuente_con_tildes(22)
 
     # El balón va en su propio caché y a otra frecuencia, así que se
     # indexa por frame y se pinta el que toque (o ninguno).
@@ -457,6 +520,8 @@ def main() -> None:
                     break
             if cercano is not None:
                 dibujar_balon(frame, *cercano)
+            if pista is not None:
+                frame = dibujar_pista(frame, pista.get(frame_idx), fuente_pista)
             # Reloj y contador, para poder citar un instante concreto
             cv2.putText(
                 frame,

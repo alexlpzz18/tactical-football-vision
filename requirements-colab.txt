@@ -1,0 +1,21 @@
+# Versiones de Colab VALIDADAS el 26-oct-2026: con ellas pasó la celda del chaleco
+# (scripts/colab_chaleco_full.py: 600 frames, 10.908 detecciones, chaleco igual a la pasada aparte,
+# pista idéntica). docs/diagnostico_25oct_chaleco_colab.md y docs/diagnostico_26oct_entornos.md.
+#
+# Uso, en UNA celda y sin reiniciar el kernel (el trabajo corre en subprocesos):
+#     !pip install -q -r requirements-colab.txt && python scripts/<celda>.py --salida /content/<x>
+#
+# ⚠️ Diferencias con el Mac (entorno `football-vision`):
+# - supervision: Colab 0.25.1, Mac 0.28.0. NO cambia la detección; SÍ cambia, poco, el TRACKING
+#   (ByteTrack): mismo IDF1 y misma fragmentación, pero el CSV de 20 min no es idéntico (336 de
+#   11.989 frames con alguna fila real distinta). Los números del proyecto están medidos con la del
+#   Mac; si un CSV de Colab tiene que coincidir con el del Mac, instala aquí supervision==0.28.0.
+# - torch: no se fija. El de la imagen de Colab funciona con numpy 2. El del Mac (2.2.2, Intel) NO,
+#   y por eso el detector no corre en el Mac (docs/diagnostico_26oct_entornos.md).
+# - Python: Colab 3.13, Mac 3.11.
+numpy==2.4.6
+scipy==1.17.1
+supervision==0.25.1
+ultralytics==8.4.71
+sahi==0.12.1
+pyyaml==6.0.3

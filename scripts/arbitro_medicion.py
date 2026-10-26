@@ -170,3 +170,23 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def filas_arbitro_en_equipo(
+    reales: pd.DataFrame, cache_dets: dict, cache_color: dict
+) -> dict:
+    """ESTIMACIÓN (no hay GT del árbitro): filas reales que el proxy de píxeles marca como
+    árbitro y que van etiquetadas A o B, es decir, el árbitro contado en un equipo.
+
+    Es la segunda línea del «equipo equivocado» (docs/plan_causas_equipo_equivocado.md): el casado
+    contra el GT no puede verlas porque el GT no anota al árbitro.
+    """
+    W = masa_de_ventana(reales, cache_dets, cache_color)
+    zona_b = (W.x_m >= ZONA_PORTERO_B_X) & ((W.y_m - 20.0).abs() <= ZONA_PORTERO_B_DY)
+    arb = W[(W.masa >= UMBRAL_MASA) & ~zona_b & (W.etiqueta != "portero_B")]
+    en_equipo = arb[arb.etiqueta.isin(["A", "B"])]
+    return {
+        "filas_arbitro_proxy": int(len(arb)),
+        "en_un_equipo": int(len(en_equipo)),
+        "filas_reales_AB": int(reales.etiqueta.isin(["A", "B"]).sum()),
+    }

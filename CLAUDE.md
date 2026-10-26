@@ -26,6 +26,13 @@ aguanta la escala:
 | | 5 min | 20 min |
 |---|---|---|
 | equipo equivocado (casado 1-a-1, radio 2 m) | 1,2 % | **1,2 %** |
+
+⚠️ **El equipo equivocado son DOS líneas, no una** (18-oct, `docs/plan_causas_equipo_equivocado.md`):
+- **jugadores**: 1,24 % (9 de 723 casadas, contra el GT, casado 1-a-1 a 2 m);
+- **filas de ÁRBITRO contadas en un equipo**: **4.035 filas** en la parte entera (el 3,0 % de las
+  filas reales A/B; 28 en la ventana del GT, contra 9 de jugador), casi todas en el B. **ESTIMACIÓN**
+  con el proxy de píxeles (`scripts/arbitro_medicion.py`) hasta que haya un GT del árbitro: el GT
+  del benjamín no lo anota, así que el casado no puede verlas. `comparar_escalas.py` imprime las dos.
 | deriva de los minutos 5-20 | — | **plana** |
 
 ⚠️ **Tres avisos que costó una verificación adversarial, y sin los que
@@ -307,12 +314,32 @@ Todo lo demás acaba desembocando aquí:
   descarta un patrón — solo señala dónde mirar (`docs/mas_episodios_como_tercio3.md`).
   ⇒ Cuando no hay GT para validar un proxy nuevo, comprobarlo contra el ÚNICO caso
   conocido antes de usarlo para buscar más casos.
-- **UN UMBRAL DE SATURACIÓN QUE FALLA NO SE ARREGLA BAJÁNDOLO.** El chaleco
-  del árbitro alterna entre S≈248 y S≈72-104 según el minuto (el catálogo
-  pide S≥170: acierta el 3 % o el 98 % de los minutos). Bajar el umbral con
-  la regla del bin dominante recupera el 93 % del árbitro y captura además
-  el 6,4 % de todas las ventanas A/B. Lo que separa es otra medida (la MASA
-  en la región), no otro número.
+- **UN UMBRAL DE SATURACIÓN QUE FALLA NO SE ARREGLA BAJÁNDOLO.** El catálogo
+  arbitral (bin dominante con S≥170) acierta el 3 % o el 98 % de los minutos según
+  el minuto. Bajar el umbral con la regla del bin dominante recupera el 93 % del
+  árbitro y captura además el 6,4 % de todas las ventanas A/B. Lo que separa es otra
+  medida (la MASA en la región), no otro número.
+  ⚠️ **Corregido el 19-oct** (`docs/plan_arbitro_intento2_puerta.md`): la
+  «alternancia S≈248 / S≈72-104 del chaleco» es una propiedad del HISTOGRAMA del
+  caché de color, **no de los píxeles**. En píxeles, la S del chaleco está en
+  171-178 en los 20 minutos (y H≈46, V≈247). La explicación probable: la feature
+  lleva una máscara anti-verde (H 35-85, S≥40, V≥40 se borra como césped,
+  `docs/recortes_sueltos.md`), y el chaleco cae ENTERO dentro de ella. El
+  histograma solo ve los restos que sobreviven a la máscara, y esos restos son lo
+  que «alterna». ⇒ **Una propiedad medida en una REPRESENTACIÓN no es una
+  propiedad del OBJETO**: antes de usarla como premisa sobre el mundo, medirla en
+  los píxeles.
+- **Medir color: decodificar siempre con el ffmpeg de línea de comandos, nunca con
+  cv2.VideoCapture.** En macOS cv2 usa AVFoundation y no coincide con producción (una feature
+  recalculada así coincidió el 0,27 % con la caché; con ffmpeg CLI, el 100 %). Las cifras de píxel
+  medidas con cv2 en el Mac (H/S/V del chaleco, 'la máscara ve el 7,3 % del torso', vest-on-grass
+  gate, tono_brillo) valen como dirección, no como número. Guarda: antes de medir color, reproducir
+  ≥ 99 % de la caché de producción en 50 frames fijos (`tests/test_decodificador_produccion.py`;
+  lector en `src/utils/video_ffmpeg.py`).
+  Re-medido con ffmpeg el 22-oct (`docs/diagnostico_22oct_c.md`, bloque 0): las ESTADÍSTICAS de
+  píxel apenas se mueven (chaleco H 46, S 163-178, V 244-249 por minuto, ±2 unidades; «7,3 %» →
+  7,7 %); lo que no aguanta es la feature EXACTA (un histograma de 256 bins de un recorte de 15-40 px
+  cambia con desplazamientos de 1-2 unidades). tono_brillo no se ha re-medido.
 - **COMPROBAR LA PREMISA ANTES DE CONSTRUIR** (tercera vez: el Kalman, excluir ocluidos en 3a y otra vez el 21-sep). Antes de excluir ocluidos bastaba una tabla de 2 filas: acierto por recorte de limpios (93,6 %) contra ocluidos (91,4 %). Si la diferencia no existe, no hay nada que arreglar por ahí.
 - **UN CAMBIO DE ETIQUETA NO ES SIEMPRE UN FALLO.** En la ventana del GT, 8 de
   los 18 cambios A↔B corrigen una etiqueta y 10 la rompen: casi la mitad es
@@ -371,6 +398,10 @@ Todo lo demás acaba desembocando aquí:
   en el índice. **Y mirar el REMOTO antes de decir que algo está
   subido**: la rama llegó a acumular 27 commits sin pushear, y el
   síntoma le llegó a Alex como "el fichero no existe".
+- **SOLO SE COMMITEA SI PYTEST SALE CON CÓDIGO 0, comprobado sobre el CÓDIGO DE SALIDA y sin
+  pipes.** `pytest -q | tail -1 && git commit` commitea aunque falle: el código de salida que
+  ve `&&` es el de `tail`. Pasó el 22-oct (f): un test en rojo llegó a un commit. La forma:
+  `pytest -q > log; rc=$?; [ $rc -eq 0 ] && git commit ...` (y la suite ENTERA, no un `-k`).
 - **Documentar los negativos.** Media semana se ahorra leyendo por qué
   algo ya se descartó.
 
@@ -449,7 +480,27 @@ Todo lo demás acaba desembocando aquí:
 | **Procesar 1/1 en vez de 1/3** (ablación en el piloto de 5 min, 16-oct) | Mejora la presencia (sobran −0,23, faltan −0,06 por equipo y frame) pero no la asociación: DetA, AssA e IDF1 dentro del ruido de las tres fases 1/3, y las identidades por persona EMPEORAN (+0,33 contra 0,21 de ruido). Fuera de la ventana del GT, el portero de B queda dentro de una quimera de 5 min: a 1/1 su identidad no se corta y sigue a otra persona sin saltar. ×3 de GPU por nada. `docs/plan_ablacion_1a1.md` |
 | **Suavizado por tiempo real y sin cruzar saltos** (V1/V2/V3, 16-oct) | Ninguna variante pasa en las dos patas. V1 (ventana por tiempo) mejora la exactitud pero sube el temblor con IC (+0,002 m benja, +0,099 m en el fondo de Villaviciosa). V2 (cortar en saltos > v_umbral local) recupera la mitad del margen del centroide sin subir el temblor, pero deja a la vista los saltos que la media emborronaba (0,73 % de pasos pintados sobre el umbral contra 0). Formalmente NO CONCLUYENTE: el control de filas por identidad se puso sobre el CSV, donde el recorte del export y la interpolación lo mueven ≤ 0,04 %. `docs/plan_suavizado_por_tiempo.md` |
 | **Resolución local en el cosido por pureza** (cablear `_resolucion`, 16-oct) | Veredicto OFICIAL: **NO CONCLUYENTE** (no mueve ni una cifra contra el GT en ninguna pata: benja 0 uniones cambiadas en la ventana, Villaviciosa CSV idéntico porque allí el escalado está apagado). **El cierre se apoya en un diagnóstico A POSTERIORI** sobre los 20 min: 40 uniones nuevas, 16 fuera del campo; de las 24 dentro, **10 juntan trozos con etiquetas distintas en la base** (8 A↔B, 1 jugador+staff, y 1 jugador+árbitro que manda **495 filas de jugador a `otro`**, 53 s). Fabrica quimeras. No se adopta (decisión de Alex). `docs/resolucion_en_cosido.md` |
+| **Árbitro por observación con un umbral de color en píxeles** (2 intentos, 18-19 oct) | Intento 1 (H 55-75): mide CÉSPED, convierte ≥ 3 jugadores/porteros a cualquier umbral y recupera ≤ 3 % del árbitro; en su top-20 salen jugadores reales. Intento 2: la puerta chaleco/césped es NO CONCLUYENTE porque en PÍXELES el chaleco no tiene minutos de S baja (S 171-178 siempre; la alternancia de S era del histograma del caché). Dato para el futuro: chaleco H ≈ 46 y V ≈ 247, césped H ≈ 55 y V ≈ 113-128. `docs/plan_arbitro_intento2_puerta.md` |
 | **Feature de color en `float32`** | Ahorraría disco pero movería la entrada del KMeans, que es la pieza frágil. |
+
+---
+
+## Rutas cerradas (una línea por ruta: qué se probó, cuándo, por qué falló)
+
+Para no reabrirlas por inercia. Reabrir una exige un plan NUEVO con su criterio, no «un intento más».
+
+- **Grupo tercero por color** (3 intentos, ago-2026): buscar al árbitro como un tercer prototipo en el histograma HS de 15-40 px. En un recorte suelto el árbitro está tan cerca de su prototipo como un jugador (0,884 frente a 0,936); su verde solo aparece al promediar ~40 recortes (`docs/arbitro.md`).
+- **`devolver_por_color`** (2 mediciones, la última el 1-oct-2026): devolver por color a los `otro` que no gana la exclusividad. Empeora Villaviciosa (3,55 → 3,65 m), baja el trío portero-árbitro-portero del benjamín (24 → 20 %), y con v3 deja al árbitro en un equipo el 36,6 % (`docs/arbitro.md`, `docs/diagnostico_22oct_c.md`).
+- **`arbitro.margen_equipo`** (27-ago-2026): adoptado a 0,68-0,70 y revertido el mismo día; la ventana útil se mueve con el detector (0,62-0,75 en v3, ≤ 0,50 en v4). Hoy en 0,0 (`docs/arbitro.md`).
+- **Puerta por observación** (distancia al prototipo, 27-ago; umbral de color en píxeles, 18-19 oct, 2 intentos): por observación pierde 8 jugadores por cada árbitro cazado; el umbral en píxeles mide CÉSPED y la «alternancia de S» del chaleco era del histograma, no de los píxeles (`docs/arbitro.md`, `docs/plan_arbitro_intento2_puerta.md`).
+- **Tono/brillo antiguo, el sensor ciego** (19-22 oct): la máscara anti-verde de la feature borra el chaleco entero (ve el 7,3 % del torso del árbitro, como del césped), y sus números se midieron con `cv2.VideoCapture` (AVFoundation), que coincide un 0,27 % con producción. Lo sustituye la banda del chaleco medida con el ffmpeg CLI y sin máscara (`docs/diagnostico_22oct.md`, `_22oct_b.md`, `_23oct_a.md`).
+- **v3 de máscara** (`deteccion.mascara_color: posicion`, 22-oct b/c, 2 intentos): el sensor SÍ ve el chaleco (árbitro en B 4.075 → 264 detecciones), pero v3 sola no cumple el criterio (iii) y v3 + un solo árbitro + devolver deja al árbitro en un equipo el 36,6 %. El obstáculo es la asociación (`docs/diagnostico_22oct_c.md`).
+- **Tope de cardinalidad** (MILP «≤ 7 por equipo, ≤ 1 árbitro», 22-oct e, 2 intentos): por identidad pierde el voto por observación (equipo equivocado 1,2 → ~23 %); por trozos de 1,5 s, el árbitro de Villaviciosa en un equipo sube 5,3 → 42,1 % (`docs/diagnostico_22oct_e.md`).
+- **Asociación con color, B1/B2** (22-oct g y 23-oct a/b): B1 (término de color en la asociación) fragmenta y no pasa el control permutado; B2 (cortar en cruces y reenlazar con color) mejoraba el benjamín por FRAGMENTACIÓN, empeora Villaviciosa (A > 11, centroide), deja al árbitro en B en 14 de 20 frames del partido y Alex lo ve peor en el vídeo (`docs/diagnostico_22oct_g.md`, `_23oct_a.md`, `_23oct_b.md`).
+- **Corte en cruces sin color** (23-oct b): árbitro en un equipo 53,5 → 53,4 %, equipo equivocado 1,2 → 3,2 %, centroide 0,86 → 1,30 m, Villaviciosa peor (`docs/diagnostico_23oct_b.md`).
+- **Dedupe de identidades por IoU** (23-oct d): no existe umbral. Entre personas DISTINTAS del GT el IoU llega a 0,156 (una detrás de otra en profundidad), y por encima solo se cubren 4 de los 8 casos. Además, los «duplicados» eran sobre todo filas DESPLAZADAS 2,5-9,4 m de su caja (`docs/diagnostico_23oct_d.md`, bloque 5).
+- **Relleno de huecos de la pista del árbitro** (velocidad mediana de 3 pasos, 23-oct d, un intento): cubre 17 de 56 casos. Los huecos son saltos mayores que la puerta (mediana 1,62 m), no temblor. `arbitro.viterbi.velocidad_pasos` queda en 1 (`docs/diagnostico_23oct_d.md`, bloque 6).
+- **Balón con prior de campo y corte duro** (22-oct b/c/d): el prior (quitar candidatas > 3 m fuera o > 35 m/s) deja el «campo de al lado» en 6 de 7 e inventa 101 frames nuevos con balón fuera; en el 89 % de esos frames no hay otra candidata. El corte duro hace perder el balón a 9 de 21 paneles buenos y borra saques de banda con el balón sobre la cabeza, que proyectan 4-8 m fuera. El campo de al lado no está «a un lado» en metros: si se reintenta, la región tiene que ser de PÍXELES (`docs/diagnostico_22oct_b.md`, `_c.md`, `_d.md`).
 
 ---
 
@@ -461,7 +512,10 @@ Todo lo demás acaba desembocando aquí:
 - Configuración externalizada (umbrales en un YAML), nunca números
   mágicos hardcodeados.
 - Logging con el módulo `logging` (no prints) en `src/`.
-- Rama `experimento/asociacion-global`. **Nada se mergea a `main` sin el
+- **`main` es el estado bueno**: lo que hay ahí está medido, revisado y pasa la suite. **Se
+  trabaja en ramas** que salen de `main`, una por frente (hoy: `clasificacion-benja`).
+  `experimento/asociacion-global` se fusionó a `main` el 18-oct-2026 y ya no existe
+  (`docs/merge_asociacion_global_a_main.md`). **Nada se mergea a `main` sin el
   OK de Alex.** Nada se adopta como default sin su OK, **salvo** que
   mejore TODAS las métricas a la vez sin degradar ninguna.
 - Si una vía no paga en DOS intentos, se abandona.
@@ -472,11 +526,31 @@ Todo lo demás acaba desembocando aquí:
 - NO tocar los notebooks de `notebooks/`: son el registro de experimentos.
 - NO sustituir el tracker en metros por uno en píxeles de librería: el
   tracking en coordenadas de campo es la ventaja diferencial.
-- NO usar boxmot (rompió el entorno). Fijar `numpy<2.1` y `scipy<1.14`.
+- NO usar boxmot (rompió el entorno).
+- ⚠️ **Los pins `numpy<2.1` y `scipy<1.14` están DESFASADOS** (26-oct, `docs/diagnostico_26oct_entornos.md`).
+  El Mac tiene numpy 2.4.6, scipy 1.17.1 y supervision 0.28.0, y con eso pasan los 775 tests y
+  están medidos todos los números de `desde_cache`. Pero **el detector NO corre en el Mac**: torch
+  2.2.2 es el último para Intel x86_64, está compilado contra numpy 1.x y con numpy 2.4.6 falla
+  («Numpy is not available»). La detección (SAHI/YOLO) va a **Colab** o a un **venv con numpy
+  1.26** (numpy 1.26.4, scipy 1.13.1, torch 2.2.2, torchvision 0.17.2, opencv-python-headless
+  4.9.0.80 y `sahi`/`ultralytics` con `--no-deps`; `--only-binary :all:`, o pip compila OpenCV).
+- **supervision cambia el TRACKING** (no la detección): 0.25.1 (Colab) y 0.28.0 (Mac) dan el
+  mismo IDF1 y la misma fragmentación, pero no el mismo CSV en 20 min (una identidad se reparte de
+  otra forma; 336 frames con alguna fila real distinta, B > 7 8,45 contra 8,41 %). Las dos son
+  deterministas. **La canónica para medir es la del Mac, 0.28.0**: un CSV de Colab no es
+  comparable byte a byte con uno del Mac.
 - **Licencias**: nada AGPL (YOLO-pose, boxmot) y nada entrenado con
   SoccerNet (CC BY-NC). Código permisivo con pesos NC ⇒ hay que reentrenar.
 - La **GPU no está en este Mac**: SAHI, YOLO y re-detección se hacen en
   Colab. Aquí se trabaja contra los cachés.
+- **Receta de Colab, UNA celda** (validada el 26-oct: la celda del chaleco pasó con ella). No hace
+  falta reiniciar el kernel: todo el trabajo corre en SUBPROCESOS (`procesar_partido.py`,
+  `cache_chaleco.py`), que arrancan ya con las versiones nuevas:
+  ```
+  !git fetch -q && git checkout -q <rama> && pip install -q -r requirements-colab.txt && python scripts/<celda>.py --salida /content/<carpeta>
+  ```
+  `requirements-colab.txt` = numpy 2.4.6, scipy 1.17.1, supervision 0.25.1, ultralytics, sahi y
+  pyyaml; torch, el de la imagen de Colab.
 
 ## Datos de trabajo (Alex los copia de Drive a `data/`, gitignored)
 - `data/tracking_benja/cache_detecciones_benja_p1.pkl` (+ `_colores_`, 418

@@ -7,6 +7,9 @@ modo: desde_cache        # full (vídeo→cachés→informe, Colab GPU) | desde_
 
 # ── Detección (solo modo full; requiere GPU/Colab) ──
 deteccion:
+  # Puntuación de chaleco del árbitro: SIN banda en F11. No se ha medido la del amarillo flúor de
+  # Villaviciosa (la mide scripts/colab_arbitro_villa.py) y la del benjamín sería otro chaleco.
+  chaleco_banda: null
   modelo: models/weights/best_v3.pt
   confianza: 0.3         # filtro validado
   max_area_caja: 0.05    # filtro validado: cajas >5% del área del frame → fuera
@@ -38,6 +41,14 @@ config_tracking: configs/tracking.yaml
 # ── Clasificación de equipos (configs/team_classification.yaml) ──
 equipos:
   activo: true
+  # Etiqueta con TOPE DE CARDINALIDAD (docs/diagnostico_22oct_e.md, bloque 1): las
+  # identidades se etiquetan juntas con ≤ tope por equipo y ≤ 1 «otro» en cada frame.
+  # APAGADO: con activo false no corre nada y la salida es la de siempre.
+  tope_cardinalidad:
+    activo: false
+    tope: 11  # F11: 11 por equipo, portero incluido
+    tope_otro: 1
+    lambda_holgura: 1.0  # coste de un frame con una persona de exceso
 
 # ── Campo (para el filtro de posiciones del export; ejes de la homografía) ──
 campo_m:

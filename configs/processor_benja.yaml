@@ -24,6 +24,10 @@ modo: full # vídeo → cachés → CSV. En local: --modo desde_cache.
 
 # ── Detección (GPU) ──────────────────────────────────────────────────
 deteccion:
+  # Puntuación de CHALECO del árbitro en la misma pasada (H0, H1, S0, V0), medida el 23-oct (a)
+  # sobre el árbitro del benjamín. Se guarda en la caché de detección (clave `chaleco`) y la usa
+  # arbitro.viterbi (docs/diagnostico_23oct_f.md, bloque 1).
+  chaleco_banda: [38, 48, 112, 173]
   modelo: models/weights/best_v4pre.pt
   confianza: 0.3 # el mismo filtro validado en Villaviciosa
   max_area_caja: 0.05 # cajas > 5 % del frame → fuera (bulto, no jugador)
@@ -83,6 +87,9 @@ rutas:
   cache: data/tracking_benja/cache_detecciones_benja.pkl
   cache_colores: data/tracking_benja/cache_colores_benja.pkl
   homografia: data/calibracion_benja/homografia_benja.npy
+  # Chaleco del árbitro por detección (scripts/cache_chaleco.py; el modo full NO la crea). La
+  # usa arbitro.viterbi, encendido por defecto en F7 (docs/diagnostico_23oct_e.md).
+  cache_chaleco: data/tracking_benja/cache_chaleco_benja.pkl
   salida_csv: data/tracking_benja/posiciones_benja.csv
   salida_meta: data/tracking_benja/posiciones_benja_meta.json
 # ─────────────────── QUÉ ESPERAR DE ESTE CAMPO ───────────────────────

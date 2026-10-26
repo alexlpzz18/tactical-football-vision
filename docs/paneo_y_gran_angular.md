@@ -22,7 +22,7 @@ Sin construir nada: la evidencia es el código. Orden: lo que rompe TODO primero
 | 2 | **El modelo de lente es fijo y supone focal = ancho** | `processor.py:44-47`: `_build_camera_matrix(w, h, focal_factor=1.0)` → `fx = fy = w`; `k1, k2` a mano por config (Villaviciosa: `k1 = -1.5`) | Una 0,5x tiene otra focal y otra distorsión. Con K mal, `undistort` deja un residuo radial, y Villaviciosa ya lo sufre: no cuadran a la vez el círculo y las áreas. |
 | 3 | **Las líneas dejan de ser rectas** | la homografía es un modelo de plano SIN distorsión | El residuo radial curva las líneas en los bordes: falla la H manual (los clics de los bordes no cuadran) y la automática, que busca rectas y círculos. |
 | 4 | **Coste de corregir la distorsión** | `processor.py:349`: 27,8 ms por frame a 1080p (5,6 min de CPU por parte) | Hoy el benjamín se lo salta (k1 = k2 = 0); una 0,5x no puede. |
-| 5 | **Teselas de SAHI y umbrales en píxeles** | `deteccion.sahi` (2×4), `jitter_px: 3.5`, `puerta_reentrada` y los cruces por IoU | Están medidos para una escala de imagen concreta; a la mitad de tamaño habría que volver a medirlos. CLAUDE.md: "los umbrales van pegados al detector". |
+| 5 | **Teselas de SAHI y umbrales en píxeles** | `deteccion.sahi` (filas 2 × columnas 4 en el config, que con solape 0,2 son 15 teselas, 5 × 3, más la imagen completa), `jitter_px: 3.5`, `puerta_reentrada` y los cruces por IoU | Están medidos para una escala de imagen concreta; a la mitad de tamaño habría que volver a medirlos. CLAUDE.md: "los umbrales van pegados al detector". |
 
 ## Prioridad para el producto ("cualquier cámara")
 
