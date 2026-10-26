@@ -87,3 +87,104 @@ saca del equipo (el árbitro) no se ve en esta medida; lo vieron las hojas del 2
     al lado. Esa región (cx < 940, cy < 603) es la regla del 23-oct (e), que como filtro NO cumplió:
     aquí solo DESCRIBE, no decide.
 - **Salida fuera de git**: `outputs/clips_26oct/`.
+
+---
+
+## Resultado A — el error por observación es 1,2 % contra 16,0 % de identidad: MEJORA, en todos los cortes
+
+`python scripts/diag26b.py capturar | error | hoja --salida outputs/diagnostico_26oct_b`.
+
+**Control superado.**
+- La captura es `main` tal cual: su CSV es idéntico byte a byte a la variante 2, y la etiqueta
+  capturada coincide al 100 % con la del CSV.
+- Sobre las MISMAS 723 filas casadas (814 personas del GT, 60 frames, 1-a-1 a 2 m), el casado de
+  `comparar_escalas` da **116 / 723 = 16,0 %** con la etiqueta de la identidad (la línea base,
+  exacta) y **9 / 723 = 1,2 %** con la de la observación.
+
+| corte (ventana del GT) | filas | voto de la identidad (IC 95 %) | por observación (IC 95 %) | diferencia pareada (IC 95 %) |
+|---|---|---|---|---|
+| **total** | 723 | **16,0 %** [13,0; 19,2] | **1,2 %** [0,4; 2,3] | **14,8 pts** [11,9; 17,9] |
+| en cruce (rival a ≤ 2 m) | 116 | 29,3 % [21,5; 37,7] | 4,3 % [0,0; 10,2] | 25,0 pts [16,1; 33,6] |
+| sin cruce | 607 | 13,5 % [10,3; 17,0] | 0,7 % [0,2; 1,3] | 12,9 pts [9,6; 16,4] |
+| equipo A (GT) | 353 | 10,2 % [7,3; 13,3] | 1,7 % [0,6; 3,1] | 8,5 pts [5,7; 11,5] |
+| equipo B (GT) | 370 | 21,6 % [17,9; 25,7] | 0,8 % [0,0; 1,7] | 20,8 pts [17,2; 24,8] |
+
+**Criterio: CUMPLE.**
+- La diferencia pareada tiene el IC entero por encima de 0, en el total y en los cuatro cortes.
+- El IC del error por observación está entero por debajo del 16,0 %.
+- Con 723 filas, el criterio decidía diferencias de ≳ 7,6 pts; la medida es de 14,8.
+
+**Lo que dicen los cortes:**
+- **Los cruces son donde más gana**: el voto de la identidad se equivoca el 29,3 %, porque la
+  identidad mezcla a dos personas al cruzarse, y por observación baja al 4,3 %.
+- Aun así, los cruces siguen siendo el sitio peor: su IC llega al 10,2 %, con solo 116 filas.
+- **El voto de la identidad falla el doble en B (21,6 %) que en A (10,2 %).** Por observación, los
+  dos se quedan en ~1-2 %.
+
+¿Qué podría estar inventando?
+- **Es UNA ventana de 30 s del minuto 5**, el minuto bueno (CLAUDE.md: «el GT de una ventana no
+  representa el partido»). Para el resto del partido no hay GT: es la hoja.
+- **El GT no anota al árbitro**: estas cifras son de JUGADORES. Lo que la pista saca del equipo lo
+  cubren las hojas del 26-oct (59/60).
+- **El IC del cruce es ancho (116 filas)**: el 4,3 % es compatible con hasta un 10 %.
+
+**La hoja para los 20 minutos (para Alex).**
+- `outputs/hoja_equipos/equipo_por_obs_20min/con_recuadro/` (Finder) o
+  `outputs/hoja_equipos/revision_equipo_por_obs_20min.html`.
+- 120 filas reales A/B: 10 tramos de 2 min × (6 en cruce + 6 fuera); 32 tienen la etiqueta de la
+  observación distinta del voto.
+- Se marca el equipo real de la persona del recuadro. La clave (las dos etiquetas del sistema, cruce
+  y tramo) está en `clave_equipo_por_obs_20min.csv`.
+- Con 120 filas decide diferencias de ≳ 19 pts: sirve para ver si fuera del minuto 5 se repite el
+  orden de magnitud (16 → 1).
+
+## Resultado B — los tres clips (`outputs/clips_26oct/`, fuera de git)
+
+`python scripts/render_clips_26oct.py --captura outputs/diagnostico_26oct_b --salida outputs/clips_26oct`.
+
+| clip | archivo | reproductor | por qué esta ventana | frames · MB |
+|---|---|---|---|---|
+| `clip_1_balon_14_16.mp4` | 14:00-15:30 | 15:33-17:03 | ventana de control del balón (regla fijada) | 899 · 15,4 |
+| `clip_2_cruces.mp4` | 0:40-1:55 | 2:13-3:28 | la de **más cruces entre rivales**: 1.497 parejas (A, B) reales a ≤ 2 m, sumadas por frame (la máxima de todas las ventanas de 75 s) | 749 · 11,0 |
+| `clip_3_arbitro.mp4` | 3:10-4:25 | 4:43-5:58 | la de más frames con el **árbitro claro y cerca**: 743 frames de la pista con su caja ≥ 60 px de alto | 750 · 11,9 |
+
+- Los tres son h264, 1280 × 720, a 10 fps. Cada uno se RELEYÓ con `ffprobe`: los frames leídos son
+  los escritos.
+- ⚠️ **La ventana de más cruces cae en los minutos 0-2**, que son OTRO RÉGIMEN (CLAUDE.md: fit
+  desviado, jugadores en otra franja, recuento correcto en el 15,9 % de los frames). Muestra el
+  peor caso de los cruces, no el típico.
+- **Qué se ve**:
+  - caja por etiqueta (A lila, B naranja, otro amarillo, staff gris) con el id;
+  - «POR» y una caja más gruesa en los porteros;
+  - la pista del árbitro con un contorno blanco y «ÁRBITRO»;
+  - un **cuadro magenta** en las filas cuya etiqueta del instante difiere del voto de su
+    identidad;
+  - el balón como círculo (verde dentro del campo, rojo proyectado fuera) con su confianza, y «sin
+    detección» en la cabecera cuando no hay;
+  - en la cabecera, el contador A / B / otro, la bandera «B > 7» y los dos relojes.
+- Las detecciones que no pertenecen a ninguna identidad, en gris fino.
+
+### El balón por zona (zona = tercio en profundidad donde está la mediana de los jugadores)
+
+**Partido entero** (11.989 frames de jugadores; balón activo de `main`, sin máscara ni recorte):
+
+| zona del juego | frames | con balón | proyectado fuera | … en la región del campo de al lado | … resto (aéreo, saques, otros) |
+|---|---|---|---|---|---|
+| cerca (x 0-20,7 m) | 1.219 | **14,9 %** | 13 | 0 | 13 |
+| media (x 20,7-41,3) | 7.607 | 59,8 % | 522 | 53 | 469 |
+| lejos (x 41,3-62) | 3.163 | 60,6 % | 396 | 115 | 281 |
+
+En los clips, por ejemplo el de 14:00-15:30: lejos 80,4 % con balón y 95 proyectados fuera (38 en
+la región del campo de al lado).
+
+**Lectura**:
+- **Cuando el juego está cerca de la cámara, el balón casi no está (14,9 %).** Es el encuadre: a
+  x < 20 m la cámara ve una franja estrecha del campo (CLAUDE.md, «el encuadre es geometría»), y el
+  balón sale a menudo del plano.
+- **De lo que proyecta fuera, la mayor parte NO cae en la región del campo de al lado** (168 de
+  931): el grueso es balón aéreo, saques y otros.
+- ⚠️ Esa región es la regla del 23-oct (e), que como filtro NO cumplió (saca saques de banda). Aquí
+  solo DESCRIBE, y puede contar mal en los dos sentidos.
+
+¿Qué podría estar inventando? «Con balón» es que el SISTEMA tiene un balón activo, no que el balón
+esté en el plano: la falta de GT de balón es la hoja del 23-oct (f), aún sin marcar.
