@@ -36,3 +36,31 @@ El criterio del 23-oct (c), «velocidad de la pista > 9 m/s en ≤ 1 % de sus pa
 GT, con el mismo muestreo, dan **2,28 % (2×)**, por el temblor de la detección
 (`docs/diagnostico_23oct_d.md`, bloque 1). Es una lectura a posteriori, no un criterio fijado antes,
 y así debe constar si se cita.
+
+## Resultado (26-oct): CUMPLE
+
+| caché | referencia | resultado |
+|---|---|---|
+| benjamín, parte entera | variante 2 (`outputs/adopcion/posiciones_benja_p1_viterbi.csv` = `v2_anade.csv`) | **idéntico byte a byte** |
+| benjamín, 60 s v3 | `viterbi_benja60_v3_v2_anade.csv` | **idéntico byte a byte** |
+| benjamín, 60 s v4 | `viterbi_benja60_v4_v2_anade.csv` | **idéntico byte a byte** |
+| Villaviciosa, 60 s (F11) | el CSV de `pre-viterbi-f7` | **idéntico byte a byte** (F11 sigue apagado) |
+
+- **La comparación discrimina**: con la pista apagada, el CSV del benjamín difiere del encendido en
+  exactamente **5.238 filas**, todas de A/B a `otro`. Es el efecto medido de la variante 2: la pista
+  corrió.
+- **Error claro sin caché de chaleco**: el test
+  `test_encendida_sin_chaleco_el_error_es_claro_y_no_escribe_csv` comprueba que, sin
+  `rutas.cache_chaleco`, sale un `ValueError` que dice «ENCENDIDO», cómo arreglarlo
+  (`rutas.cache_chaleco`, `deteccion.chaleco_banda`, o `activo: false`) y que no deja ningún CSV a
+  medias. En el modo `full`, el fallo es ANTES de cargar el detector
+  (`tests/test_bucle_deteccion_chaleco.py`).
+- **Que un `false` explícito gana al formato** sigue cubierto
+  (`test_un_activo_false_explicito_gana_al_defecto_de_f7`): es lo que permite apagar la pista con una
+  línea.
+
+**Cómo apagarla**: `activo: false` en `configs/team_classification_benja.yaml`. **Revertir**:
+
+```bash
+git checkout main && git revert -m 1 <commit-del-merge> && git push origin main
+```
