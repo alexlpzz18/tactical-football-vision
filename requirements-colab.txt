@@ -1,0 +1,21 @@
+# Versiones EXACTAS del entorno del Mac (`football-vision`, comprobadas el 25-oct-2026 con
+# `import x; x.__version__`), para que Colab corra con las mismas.
+# docs/diagnostico_25oct_chaleco_colab.md.
+#
+# Uso en Colab, ANTES de importar nada del repo:
+#     !pip install -q -r requirements-colab.txt
+#
+# ⚠️ Tres avisos:
+# - supervision: el Mac tiene 0.28.0, NO 0.25.1 (0.25.1 es lo que tenía Colab el 25-oct).
+# - torch NO se fija aquí: el del Mac (2.2.2, el último para Intel) está compilado contra numpy 1.x
+#   y NO funciona con numpy 2.4.6 («Numpy is not available»). En Colab se usa el torch de la
+#   imagen, que sí es compatible con numpy 2.
+# - CLAUDE.md pide fijar numpy<2.1 y scipy<1.14, y el Mac ya no lo cumple (numpy 2.4.6,
+#   scipy 1.17.1). Aquí se fijan las del Mac, que es con lo que están medidos los 772 tests;
+#   decidir cuál de las dos reglas manda es cosa de Alex.
+numpy==2.4.6
+scipy==1.17.1
+supervision==0.28.0
+ultralytics==8.4.71
+sahi==0.12.1
+pyyaml==6.0.3

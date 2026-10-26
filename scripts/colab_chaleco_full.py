@@ -10,8 +10,18 @@ En Colab, desde la raíz del repo, con `data/` montado y GPU:
 
     !python scripts/colab_chaleco_full.py --salida /content/chaleco_full
 
+⚠️ 25-oct: la primera ejecución reventó al final de la pasada A con «arbitro.viterbi está
+ENCENDIDO… y no hay puntuación de chaleco». La causa era ESTA celda: el config A quitaba la banda
+pero dejaba la pista encendida (F7), y `procesar_partido` corre `desde_cache` tras detectar
+(docs/diagnostico_25oct_chaleco_colab.md). Ahora A apaga la pista con su propio YAML de equipos y,
+antes de las pasadas largas, un CHEQUEO PREVIO de 3 frames comprueba que la caché sale con la
+clave `chaleco`.
+
 Pasos, sobre el tramo de 60 s del minuto 5 del benjamín:
-1. Modo `full` SIN banda (`chaleco_banda: null`), cronometrado → caché A.
+0. Chequeo previo (3 frames, con banda): la caché tiene que llevar una puntuación de chaleco por
+   detección; si no, se para aquí con un mensaje claro, sin gastar la pasada larga.
+1. Modo `full` SIN banda (`chaleco_banda: null`) y con la PISTA APAGADA (`arbitro.viterbi.activo:
+   false`), cronometrado → caché A.
 2. Modo `full` CON banda → caché B, que lleva la clave `chaleco`.
    - Mismo modelo y mismas cajas: A y B tienen que tener las MISMAS detecciones.
 3. La pasada aparte (`scripts/cache_chaleco.py`, ffmpeg CLI) sobre las cajas de B → caché C.
@@ -42,13 +52,27 @@ BASE = R / "configs/processor_benja_parte_entera.yaml"
 TRAMO = {"min_ini": 5.0, "dur_seg": 60}
 
 
-def config(salida: Path, nombre: str, con_banda: bool) -> Path:
+def config(
+    salida: Path, nombre: str, con_banda: bool, max_frames: int | None = None
+) -> Path:
+    """Config del modo full para la pasada `nombre`.
+
+    Sin banda, la pista del árbitro se APAGA con un YAML de equipos propio: un F7 con la pista
+    encendida y sin banda es incoherente (no habría puntuación) y el processor lo rechaza antes de
+    detectar (`comprobar_chaleco_antes_de_detectar`).
+    """
     cfg = yaml.safe_load(open(BASE))
     cfg["modo"] = "full"
     cfg["muestreo"]["tramo"] = dict(TRAMO)
+    cfg["muestreo"]["max_frames"] = max_frames
     cfg["checkpoint"] = {"cada_frames": 0, "reanudar": False}
     if not con_banda:
         cfg["deteccion"]["chaleco_banda"] = None
+        equipos = yaml.safe_load(open(R / cfg["config_equipos"]))
+        equipos.setdefault("arbitro", {}).setdefault("viterbi", {})["activo"] = False
+        ruta_eq = salida / f"equipos_{nombre}_sin_pista.yaml"
+        ruta_eq.write_text(yaml.safe_dump(equipos, allow_unicode=True))
+        cfg["config_equipos"] = str(ruta_eq)
     cfg["rutas"].pop("cache_chaleco", None)
     cfg["rutas"].update(
         cache=str(salida / f"cache_{nombre}.pkl"),
@@ -59,6 +83,39 @@ def config(salida: Path, nombre: str, con_banda: bool) -> Path:
     ruta = salida / f"config_{nombre}.yaml"
     ruta.write_text(yaml.safe_dump(cfg, allow_unicode=True))
     return ruta
+
+
+def chequeo_previo(salida: Path, cfg_a: Path, cfg_b: Path) -> dict:
+    """ANTES de las pasadas largas: configs coherentes y 3 frames de B con la clave `chaleco`.
+
+    Corre `detectar_y_cachear` (el MISMO bucle que el modo full) sobre 9 frames originales (3 con
+    `sample_every` 3) y lee la caché DEL DISCO, que es lo que leerá `desde_cache`.
+    """
+    from src.tracking_data.processor import (
+        comprobar_chaleco_antes_de_detectar,
+        detectar_y_cachear,
+    )
+
+    for ruta in (cfg_a, cfg_b):
+        comprobar_chaleco_antes_de_detectar(yaml.safe_load(open(ruta)))
+    ruta = config(salida, "chequeo", True, max_frames=9)
+    detectar_y_cachear(yaml.safe_load(open(ruta)))
+    datos = pickle.load(open(salida / "cache_chequeo.pkl", "rb"))
+    dets = {(e["frame_idx"], j) for e in datos["cache"] for j in range(len(e["dets"]))}
+    chaleco = datos.get("chaleco")
+    if chaleco is None or set(chaleco) != dets:
+        motivo = "sin clave `chaleco`" if chaleco is None else "claves distintas"
+        raise SystemExit(
+            "CHEQUEO PREVIO FALLIDO: la pasada de detección de 3 frames NO deja la puntuación de "
+            f"chaleco en la caché ({motivo}; {len(dets)} detecciones). No se lanza la pasada "
+            "larga. Mira "
+            "docs/diagnostico_25oct_chaleco_colab.md."
+        )
+    return {
+        "frames": len(datos["cache"]),
+        "detecciones": len(dets),
+        "puntuaciones": len(chaleco),
+    }
 
 
 def correr_full(ruta_cfg: Path) -> dict:
@@ -116,6 +173,8 @@ def main() -> None:
     salida = Path(args.salida)
     salida.mkdir(parents=True, exist_ok=True)
     cfg_a, cfg_b = config(salida, "A", False), config(salida, "B", True)
+    previo = chequeo_previo(salida, cfg_a, cfg_b)
+    print(f"✓ chequeo previo: {previo}")
     t_a, t_b = correr_full(cfg_a), correr_full(cfg_b)
     A = pickle.load(open(salida / "cache_A.pkl", "rb"))
     B = pickle.load(open(salida / "cache_B.pkl", "rb"))
@@ -158,6 +217,7 @@ def main() -> None:
     ms_a = t_a["ms_por_frame_log"] or 1000 * t_a["segundos"] / max(len(A["cache"]), 1)
     ms_b = t_b["ms_por_frame_log"] or 1000 * t_b["segundos"] / max(len(B["cache"]), 1)
     res = {
+        "chequeo_previo": previo,
         "frames": len(B["cache"]),
         "mismas_cajas_A_y_B": mismas_cajas,
         "1_chaleco_dentro_contra_aparte": {

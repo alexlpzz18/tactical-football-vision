@@ -660,6 +660,37 @@ def features_del_frame(frame, frame_idx, dets, extractor, rango=None, banda=None
     return colores, chaleco
 
 
+def comprobar_chaleco_antes_de_detectar(cfg: dict) -> None:
+    """Falla ANTES de gastar GPU si el config es incoherente con la pista del árbitro.
+
+    Pasó el 25-oct en Colab (docs/diagnostico_25oct_chaleco_colab.md): un config F7 (pista
+    encendida por el formato) con `deteccion.chaleco_banda: null` y sin `rutas.cache_chaleco` hacía
+    la pasada de detección ENTERA y solo al final, en `desde_cache`, descubría que no había
+    puntuación de chaleco. La tabla por formato solo se consultaba en la ruta de caché.
+
+    Raises:
+        ValueError: pista encendida, sin banda y sin caché de chaleco aparte.
+    """
+    from src.team_classification.pipeline_equipos import cargar_config_equipos
+
+    cfg_equipos = (
+        cargar_config_equipos(cfg["config_equipos"])
+        if cfg.get("config_equipos")
+        else {}
+    )
+    if not viterbi_activo(cfg_equipos):
+        return
+    if banda_chaleco(cfg) is not None or (cfg.get("rutas") or {}).get("cache_chaleco"):
+        return
+    raise ValueError(
+        "Config INCOHERENTE, antes de detectar: arbitro.viterbi está ENCENDIDO (por el formato "
+        "del partido o por el YAML de equipos) pero `deteccion.chaleco_banda` es null y no hay "
+        "`rutas.cache_chaleco`, así que la pasada no guardaría la puntuación de chaleco y "
+        "`desde_cache` fallaría al final. Pon la banda (F7: [38, 48, 112, 173]), o "
+        "`rutas.cache_chaleco`, o apaga la pista con `arbitro.viterbi.activo: false`."
+    )
+
+
 def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     """Modo FULL (Colab GPU): vídeo → detección SAHI → cachés en disco.
 
@@ -695,6 +726,7 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
         )
 
     validar_config(cfg, _CLAVES_FULL)
+    comprobar_chaleco_antes_de_detectar(cfg)  # antes de cargar el modelo y gastar GPU
     cfg_det = cfg["deteccion"]
     H = np.load(cfg["rutas"]["homografia"])
 
