@@ -11,6 +11,7 @@ body{margin:0;background:var(--fondo);color:var(--texto);font:14px system-ui,san
 .caja:hover{border-color:#fff8}
 .caja.sel{border-color:var(--sel);box-shadow:0 0 0 2px #000}
 .caja.mal{border-color:var(--mal)}
+.caja.unica{border-color:#ff0;box-shadow:0 0 0 1px #000}
 #panel{width:330px;background:var(--panel);padding:10px;overflow:auto;box-sizing:border-box}
 h3{margin:8px 0 4px;font-size:13px;color:var(--suave);font-weight:600}
 button{background:#333;color:var(--texto);border:1px solid #555;border-radius:4px;padding:5px 7px;margin:2px;cursor:pointer;font-size:13px}
@@ -55,9 +56,10 @@ function pintar(){
 }
 function dibujarCajas(){
  document.querySelectorAll(".caja").forEach(e=>e.remove());
- const img=$("img"), esc=img.clientWidth/1920, lista=$("lista"); lista.innerHTML="";
+ const img=$("img"), esc=img.clientWidth/(img.naturalWidth||1920), lista=$("lista"); lista.innerHTML="";
  for(const c of CAJAS[IMAGENES[i].nombre]){
   const d=document.createElement("div"); d.className="caja";
+  if(CAJAS[IMAGENES[i].nombre].length===1) d.classList.add("unica"); // una sola caja: siempre visible
   Object.assign(d.style,{left:(c.x1*esc-3)+"px",top:(c.y1*esc-3)+"px",width:((c.x2-c.x1)*esc+6)+"px",height:((c.y2-c.y1)*esc+6)+"px"});
   const m=marcas[clave(IMAGENES[i].nombre,c.caja)]; if(m) d.classList.add("mal"); if(sel===c.caja) d.classList.add("sel");
   d.title=c.caja+" "+c.etiqueta+(c.id!==""?" #"+c.id:""); d.onclick=()=>{sel=c.caja;dibujarCajas();panel()};
