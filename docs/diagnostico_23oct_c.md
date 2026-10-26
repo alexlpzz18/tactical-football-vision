@@ -218,3 +218,20 @@ ese criterio queda **NO MEDIDO**, y todo lo que sigue son proxies.
 - *Nota*: «fila de equipo a < 1,5 m del árbitro» da 8,0 % hoy, no el 5,3 % de «árbitro dentro de
   un equipo»: cuenta también a un jugador que pasa a su lado. Para leer la celda, la comparación
   es contra el 8,0.
+
+---
+
+## Marcas de Alex (26-oct): las dos hojas, revisadas
+
+Sobre las copias con el recuadro dibujado (`outputs/hoja_equipos/<hoja>/con_recuadro/`). La hoja web
+pintaba el recuadro transparente y descolocado; se arregló en la rama `fix-hoja-recuadro`.
+
+| hoja | marca de Alex | criterio |
+|---|---|---|
+| `arbitro_viterbi`: detecciones que la pista elige como árbitro | **60 de 60 son el árbitro** | — (precisión de la pista) ✓ |
+| `viterbi_a_otro`: filas que pasan de A/B a `otro` | **59 árbitro, 1 jugador (1,7 %)** | jugadores sacados ≤ 10 % ✓ |
+
+- El único fallo es la nº 23, **23_7-08.6** (7:08,6 archivo / 8:41,6 reproductor): el recuadro
+  abarca a DOS jugadores pegados (un naranja y un blanco) y el árbitro está unos metros a la
+  derecha. Es una caja fundida, no un error de color.
+- Coincide con la lectura provisional de este informe (59/60, «1 jugador naranja, dorsal 23»).
