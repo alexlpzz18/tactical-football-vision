@@ -103,35 +103,55 @@ def test_el_formato_enciende_la_pista_de_verdad(tmp_path):
         procesar_desde_cache(sin_chaleco)
 
 
-def test_en_main_el_activo_false_explicito_gana_al_defecto_de_f7():
-    """Integración en main (26-oct): la pista va APAGADA aunque el formato F7 la encienda.
-
-    El error de `puntuacion_chaleco` dice que la pista se enciende «por el formato del partido o
-    por el YAML». Aquí se comprueba el orden: el formato dice SÍ, el YAML dice NO, y gana el YAML.
-    """
+def test_en_main_la_pista_esta_encendida_en_f7_y_apagada_en_f11():
+    """26-oct: encendida en F7 con `activo: true` explícito; F11 apagado por formato."""
     eq = _equipos_benja()
+    assert formato_del_partido(eq) == "f7"
+    assert eq["arbitro"]["viterbi"]["activo"] is True
+    assert viterbi_activo(eq) is True
+    f11 = yaml.safe_load(open(R / "configs/team_classification.yaml"))
+    assert formato_del_partido(f11) == "f11" and viterbi_activo(f11) is False
+
+
+def test_un_activo_false_explicito_gana_al_defecto_de_f7():
+    """El error de `puntuacion_chaleco` dice que la pista se enciende «por el formato del partido o
+    por el YAML». El orden: el formato dice SÍ, el YAML dice NO, y gana el YAML. Es lo que permite
+    apagarla en F7 con una sola línea."""
+    eq = _equipos_benja_por_formato()
+    eq["arbitro"]["viterbi"]["activo"] = False
     assert formato_del_partido(eq) == "f7"
     assert (
         DEFECTOS_POR_FORMATO["f7"]["arbitro_viterbi"] is True
     )  # el formato la encendería
-    assert eq["arbitro"]["viterbi"]["activo"] is False  # el YAML la apaga, explícito
     assert viterbi_activo(eq) is False  # y gana el YAML
-    f11 = yaml.safe_load(open(R / "configs/team_classification.yaml"))
-    assert formato_del_partido(f11) == "f11" and viterbi_activo(f11) is False
 
 
 @pytest.mark.skipif(
     not _hay_datos, reason="Faltan las cachés del benjamín (copiar de Drive)"
 )
-def test_en_main_con_el_yaml_del_repo_la_pista_no_corre(tmp_path):
-    """Comportamiento: con el YAML del repo y SIN ninguna puntuación de chaleco, `desde_cache` no
-    pide nada (la pista no corre) y sale lo mismo que con la pista apagada a mano."""
-    cfg = _cfg_60s(tmp_path, "repo", R / "configs/team_classification_benja.yaml")
-    del cfg["rutas"]["cache_chaleco"]
-    df_repo = procesar_desde_cache(cfg)  # no lanza: la pista no pide chaleco
+def test_apagada_por_yaml_la_pista_no_pide_chaleco(tmp_path):
+    """Comportamiento: con `activo: false` y SIN ninguna puntuación de chaleco, `desde_cache` no
+    pide nada (la pista no corre)."""
     eq = _equipos_benja_por_formato()
     eq["arbitro"]["viterbi"]["activo"] = False
     ruta = tmp_path / "equipos_apagado.yaml"
     ruta.write_text(yaml.safe_dump(eq, allow_unicode=True))
-    df_apa = procesar_desde_cache(_cfg_60s(tmp_path, "apagado", ruta))
-    assert df_repo.reset_index(drop=True).equals(df_apa.reset_index(drop=True))
+    cfg = _cfg_60s(tmp_path, "apagado", ruta)
+    del cfg["rutas"]["cache_chaleco"]
+    procesar_desde_cache(cfg)  # no lanza
+
+
+@pytest.mark.skipif(
+    not _hay_datos, reason="Faltan las cachés del benjamín (copiar de Drive)"
+)
+def test_encendida_sin_chaleco_el_error_es_claro_y_no_escribe_csv(tmp_path):
+    """Con el YAML del repo (encendida) y sin puntuación de chaleco: ValueError que dice qué falta
+    y cómo arreglarlo, y NINGÚN CSV a medias (no es un fallo silencioso)."""
+    cfg = _cfg_60s(tmp_path, "sin", R / "configs/team_classification_benja.yaml")
+    del cfg["rutas"]["cache_chaleco"]
+    with pytest.raises(ValueError) as err:
+        procesar_desde_cache(cfg)
+    mensaje = str(err.value)
+    for pista in ("ENCENDIDO", "rutas.cache_chaleco", "chaleco_banda", "activo: false"):
+        assert pista in mensaje, pista
+    assert not (tmp_path / "sin.csv").exists()

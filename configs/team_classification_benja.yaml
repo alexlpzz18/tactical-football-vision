@@ -315,11 +315,12 @@ arbitro:
   # El árbitro como seguimiento de UN objeto (Viterbi sobre el chaleco visto en píxeles y la
   # continuidad de movimiento). Necesita rutas.cache_chaleco (scripts/cache_chaleco.py).
   # Sin `activo`: lo decide el FORMATO (F7 → encendido; src/campo_modelo.py::DEFECTOS_POR_FORMATO).
-  # `activo` EXPLÍCITO manda sobre el formato. INTEGRADO EN MAIN APAGADO (26-oct,
-  # docs/integracion_23oct_main.md): `activo: false` = la salida de antes del merge, byte a byte.
-  # Para encenderlo: `activo: true` (o borrar la línea y que decida el formato).
+  # `activo` EXPLÍCITO manda sobre el formato. ENCENDIDO en F7 el 26-oct
+  # (docs/viterbi_f7_encendido.md; variante 2, igual byte a byte a la medida el 23-oct).
+  # Para apagarlo: `activo: false` (= la salida de antes, docs/integracion_23oct_main.md).
+  # Revertir el cambio entero: la etiqueta `pre-viterbi-f7`.
   viterbi:
-    activo: false
+    activo: true
     variante: anade  # la variante 2 del 23-oct (c); «sustituye» es la 1
     modelo_emision: configs/arbitro_viterbi_benja.json
   catalogo_requiere_identidad:
