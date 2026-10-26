@@ -22,7 +22,15 @@ CFG_BENJA = R / "configs/processor_benja.yaml"
 
 
 def _equipos_benja() -> dict:
+    """El YAML de F7 TAL CUAL está en el repo (en main: `activo: false` explícito)."""
     return yaml.safe_load(open(R / "configs/team_classification_benja.yaml"))
+
+
+def _equipos_benja_por_formato() -> dict:
+    """El mismo YAML SIN la clave `activo`: lo decide el formato (F7 → encendido)."""
+    eq = _equipos_benja()
+    eq["arbitro"]["viterbi"].pop("activo", None)
+    return eq
 
 
 def test_el_formato_sale_del_modelo_de_campo():
@@ -40,7 +48,7 @@ def test_tabla_de_defectos_por_formato():
 
 
 def test_viterbi_activo_por_formato_y_clave_explicita():
-    f7 = _equipos_benja()
+    f7 = _equipos_benja_por_formato()
     assert "activo" not in f7["arbitro"]["viterbi"]  # lo decide el formato
     assert viterbi_activo(f7) is True
     apagado = copy.deepcopy(f7)
@@ -72,7 +80,7 @@ _hay_datos = all(
     not _hay_datos, reason="Faltan las cachés del benjamín (copiar de Drive)"
 )
 def test_el_formato_enciende_la_pista_de_verdad(tmp_path):
-    eq = _equipos_benja()
+    eq = _equipos_benja_por_formato()
     apagado = copy.deepcopy(eq)
     apagado["arbitro"]["viterbi"]["activo"] = False
     rutas = {}
@@ -93,3 +101,37 @@ def test_el_formato_enciende_la_pista_de_verdad(tmp_path):
     del sin_chaleco["rutas"]["cache_chaleco"]
     with pytest.raises(ValueError, match="cache_chaleco"):
         procesar_desde_cache(sin_chaleco)
+
+
+def test_en_main_el_activo_false_explicito_gana_al_defecto_de_f7():
+    """Integración en main (26-oct): la pista va APAGADA aunque el formato F7 la encienda.
+
+    El error de `puntuacion_chaleco` dice que la pista se enciende «por el formato del partido o
+    por el YAML». Aquí se comprueba el orden: el formato dice SÍ, el YAML dice NO, y gana el YAML.
+    """
+    eq = _equipos_benja()
+    assert formato_del_partido(eq) == "f7"
+    assert (
+        DEFECTOS_POR_FORMATO["f7"]["arbitro_viterbi"] is True
+    )  # el formato la encendería
+    assert eq["arbitro"]["viterbi"]["activo"] is False  # el YAML la apaga, explícito
+    assert viterbi_activo(eq) is False  # y gana el YAML
+    f11 = yaml.safe_load(open(R / "configs/team_classification.yaml"))
+    assert formato_del_partido(f11) == "f11" and viterbi_activo(f11) is False
+
+
+@pytest.mark.skipif(
+    not _hay_datos, reason="Faltan las cachés del benjamín (copiar de Drive)"
+)
+def test_en_main_con_el_yaml_del_repo_la_pista_no_corre(tmp_path):
+    """Comportamiento: con el YAML del repo y SIN ninguna puntuación de chaleco, `desde_cache` no
+    pide nada (la pista no corre) y sale lo mismo que con la pista apagada a mano."""
+    cfg = _cfg_60s(tmp_path, "repo", R / "configs/team_classification_benja.yaml")
+    del cfg["rutas"]["cache_chaleco"]
+    df_repo = procesar_desde_cache(cfg)  # no lanza: la pista no pide chaleco
+    eq = _equipos_benja_por_formato()
+    eq["arbitro"]["viterbi"]["activo"] = False
+    ruta = tmp_path / "equipos_apagado.yaml"
+    ruta.write_text(yaml.safe_dump(eq, allow_unicode=True))
+    df_apa = procesar_desde_cache(_cfg_60s(tmp_path, "apagado", ruta))
+    assert df_repo.reset_index(drop=True).equals(df_apa.reset_index(drop=True))

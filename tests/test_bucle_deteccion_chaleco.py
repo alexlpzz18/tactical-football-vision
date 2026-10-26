@@ -85,9 +85,11 @@ def _cfg(tmp_path: Path, banda) -> dict:
     np.save(tmp_path / "h.npy", np.eye(3))
     cfg = yaml.safe_load(open(R / "configs/processor_benja_parte_entera.yaml"))
     cfg["modo"] = "full"
-    cfg["config_equipos"] = str(
-        R / cfg["config_equipos"]
-    )  # F7: la pista está encendida
+    # F7 con la pista decidida por el FORMATO (encendida): el YAML del repo, sin la clave `activo`
+    eq = yaml.safe_load(open(R / cfg["config_equipos"]))
+    eq["arbitro"]["viterbi"].pop("activo", None)
+    (tmp_path / "equipos_f7.yaml").write_text(yaml.safe_dump(eq, allow_unicode=True))
+    cfg["config_equipos"] = str(tmp_path / "equipos_f7.yaml")
     cfg["deteccion"].update(device="cpu", chaleco_banda=banda)
     cfg["muestreo"] = {"sample_every": 3, "tramo": None, "max_frames": 9}
     cfg["checkpoint"] = {"cada_frames": 0, "reanudar": False}
