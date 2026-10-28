@@ -68,3 +68,57 @@ En «Rutas cerradas», la línea de Alex sobre la medida del balón inventado po
 ## 4. Fusiones
 
 `medir-28oct-c` y `medir-28oct-d` a `main`, con `--no-ff` (d contiene a c). pytest en 0.
+
+---
+
+# Resultados
+
+## 1. Balón cercano: PENDIENTE
+
+`~/Downloads/respuestas_gt_balon_cerca.csv` no estaba en Descargas al medir. Lo más reciente era la
+mini-hoja de control, de las 11:07. Las marcas pueden estar solo en el navegador: la página las
+guarda (clave `gt_balon_cerca_28oct`) hasta que se pulsa «Descargar CSV». El script ya está:
+`python scripts/diag28d.py leer …` y `python scripts/diag28e.py cerca`.
+
+## 2. Oráculo de rachas: hace falta promediar **10 s**
+
+`python scripts/diag28e.py rachas` → `outputs/diagnostico_28oct_e/rachas.json`.
+
+- **Episodios de cruce**: 49 en la ventana del GT, sobre 125 filas. Son **cortos**: mediana de 2
+  frames del GT (1 s), media de 2,55 y máximo de 7 (3,5 s).
+- **Control**: con p = 16,7 % por episodio se invierte el **16,75 %** de las filas de cruce. El
+  instante (0,5 s) con filas sueltas reproduce el 28-oct (d): 3,62 / 2,58 m.
+
+p95 (en m) del centroide / de la anchura, promediando en ventanas sin solape:
+
+| ventana | filas sueltas | rachas | ¿cumple? (≤ 1 / ≤ 1,5) |
+|---|---|---|---|
+| 0,5 s (instante) | 3,62 / 2,58 | 3,62 / 2,56 | no / no |
+| 1 s | 2,38 / 2,12 | 2,48 / 2,25 | no / no |
+| 2 s | 1,63 / 1,51 | 1,80 / 1,59 | no / no |
+| 3 s | 1,36 / 1,22 | 1,61 / 1,27 | no / no |
+| 5 s | 1,06 / 0,98 | 1,24 / 1,04 | **la anchura sí; el centroide no** |
+| **10 s** | **0,80 / 0,74** | **0,94 / 0,85** | **sí / sí** |
+| 15 s | 0,75 / 0,61 | 0,77 / 0,70 | sí / sí |
+| 30 s | 0,59 / 0,48 | 0,66 / 0,61 | sí / sí |
+
+- **Respuesta: a partir de 10 s de promedio** se cumplen las dos, con las dos inyecciones.
+  - La que manda es el **centroide**. La anchura ya cumple desde 3 s con filas sueltas y desde 5 s
+    con rachas.
+  - Con rachas el centroide a 10 s queda en 0,94 m, cerca del límite.
+  - Entre 5 y 10 s no se probó nada (la lista estaba fijada antes).
+- Las rachas cuestan poco más que las filas sueltas, porque los episodios de cruce del GT duran ~1 s.
+- ¿Qué podría estar inventando?
+  - Las rachas son las del CRUCE del GT, cortas. En el sistema una identidad mezclada puede llevar
+    la etiqueta mal varios segundos después de separarse, y eso no está modelado: los 10 s son un
+    **mínimo**, no una garantía.
+  - Las filas fuera de cruce siguen sueltas.
+  - Con 10 s hay 3 ventanas por repetición, todas del mismo minuto 5.
+- **Para el producto**: el informe por tramos de ≥ 10 s es robusto al error de equipo actual; la
+  pizarra instante a instante no lo es.
+
+## 3 y 4. Hecho
+
+- **CLAUDE.md**: la línea de la ruta cerrada, commiteada en `medir-28oct-d`.
+- **Fusión** de `medir-28oct-d` (contiene a `medir-28oct-c`) a `main` con `--no-ff`. pytest en 0
+  (782 passed). Push y remoto comprobados.
