@@ -92,6 +92,20 @@ def main() -> None:
         "sombrean (docs/pizarra_fichas.md). Solo el dibujo.",
     )
     parser.add_argument(
+        "--histeresis-visual-s",
+        type=float,
+        default=0.0,
+        help="Color estable: un cambio de color que dura menos se DIBUJA con el color anterior "
+        "(docs/pizarra_dibujo.md). Solo el dibujo. 0 lo desactiva.",
+    )
+    parser.add_argument(
+        "--persistencia-s",
+        type=float,
+        default=0.0,
+        help="Una ficha que deja de verse se queda quieta y atenuada este tiempo, y se retira "
+        "si nace otra del mismo equipo a < 2 m (docs/pizarra_dibujo.md). 0 lo desactiva.",
+    )
+    parser.add_argument(
         "--suavizado-visual-ventana",
         type=int,
         default=3,
@@ -163,6 +177,8 @@ def main() -> None:
         etiqueta_por_identidad=args.etiqueta_por_identidad,
         suavizado_visual_ventana=args.suavizado_visual_ventana,
         recortar_balon_a_campo=recortar_balon,
+        histeresis_visual_s=args.histeresis_visual_s,
+        persistencia_s=args.persistencia_s,
         zona_no_visible=(
             json.loads(Path(args.zona_no_visible).read_text())
             if args.zona_no_visible
