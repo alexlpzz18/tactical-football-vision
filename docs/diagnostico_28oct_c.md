@@ -1,5 +1,8 @@
 # Diagnóstico 28-oct (c): las dos hojas de Alex, el balón con GT y la caja fundida
 
+> ⚠️ **CORRECCIÓN (28-oct f, `diagnostico_28oct_f.md`)**: el punto 1 está MAL MEDIDO. La hoja casaba la posición SUAVIZADA del CSV con la detección más cercana en metros, y en 11 de las 120 filas (10 en cruce) enseñó la caja de OTRA identidad. Contra el dueño de la caja que vio Alex, los errores son **2 de 120 = 1,7 % [0,5; 5,9]** (1 en cruce y 1 fuera). Con el criterio de abajo (≤ 6), **el 1,2 % SÍ se sostiene**. El 16,7 % / 3,3 % y el 5,5 % reponderado no existen.
+
+
 Rama `medir-28oct-c`, sale de `medir-28oct-balon`. **SOLO medir**: no se cambia ningún parámetro.
 Criterios escritos y commiteados ANTES de abrir las marcas de Alex. Commit solo con pytest en 0.
 
