@@ -102,6 +102,53 @@ def main() -> None:
     )
 
 
+def deteccion_de_la_fila(filas, identidades, cache_filtrado, cache_crudo) -> list:
+    """Índice en el caché CRUDO de la detección de cada fila: la de SU identidad en SU frame.
+
+    ⚠️ Es la que hay que dibujar en una hoja. La alternativa antigua, «la detección más cercana a
+    la posición del CSV» (`diag22b_bloque3_medir.caja_cruda_mas_cercana`), enseñaba la caja de OTRA
+    persona en los cruces: la posición del CSV está SUAVIZADA (~2 s de ventana real) y cae entre
+    las dos. Pasó en 11 de 120 filas de `equipo_por_obs_20min`, y 10 de los 12 «errores» de esa hoja
+    eran de la herramienta (docs/diagnostico_28oct_f.md, docs/auditoria_hojas.md).
+
+    Args:
+        filas: DataFrame con `frame` e `id_jugador` (el id del CSV = posición en `identidades` + 1).
+        identidades: [[(frame, índice en el caché filtrado), ...], ...], la asignación del tracker
+            (la captura de `diag26b.capturar`).
+        cache_filtrado: {frame: dets} sobre el que corrió el tracker (índices de `identidades`).
+        cache_crudo: {frame: dets} de donde salen las cajas de la hoja.
+
+    Returns:
+        Una lista con el índice crudo de cada fila, o None si la identidad no tiene detección en ese
+        frame (una fila interpolada) o si su caja no está en el caché crudo.
+    """
+    det_de = {}
+    for id_jugador, ident in enumerate(identidades, start=1):
+        for f, k in ident:
+            det_de[(int(id_jugador), int(f))] = int(k)
+    salida = []
+    for r in filas.itertuples():
+        f = int(r.frame)
+        k = det_de.get((int(r.id_jugador), f))
+        if k is None:
+            salida.append(None)
+            continue
+        caja = np.asarray(cache_filtrado[f][k][2:6], float)
+        crudas = np.array([d[2:6] for d in cache_crudo[f]], float)
+        dist = np.abs(crudas - caja).sum(axis=1)
+        j = int(np.argmin(dist))
+        # el filtrado de confianza QUITA detecciones (cambia los índices), pero no mueve cajas
+        salida.append(j if dist[j] < 1e-6 else None)
+    return salida
+
+
+def con_caja_de_la_fila(filas, identidades, cache_filtrado, cache_crudo):
+    """Filas reales con `k` = la detección de la fila. Se quitan las que no la tienen."""
+    r = filas[filas.es_real == 1].copy()
+    r["k"] = deteccion_de_la_fila(r, identidades, cache_filtrado, cache_crudo)
+    return r[r.k.notna()].astype({"k": int})
+
+
 def escribir_hoja(ventana: str, elegidas, dets, video: Path, clave_de) -> int:
     """Escribe una hoja de recortes con identidad y etiqueta OCULTAS (formato de revision_equipos).
 

@@ -101,6 +101,7 @@ def pasada(nombre: str, pata: str, salida: Path, vit: dict | None):
     cfg["rutas"]["cache_chaleco"] = str(salida / chal)
     captura = {}
     original_cfg, original_pista = pe.cargar_config_equipos, av.pista_del_arbitro
+    original_aplicar = av.aplicar_pista
 
     def con_flag(ruta):
         ce = original_cfg(ruta)
@@ -117,11 +118,21 @@ def pasada(nombre: str, pata: str, salida: Path, vit: dict | None):
         captura.update(pista=p, cache=cache, chaleco=chaleco, modelo=mod)
         return p
 
+    def espia_aplicar(identidades, *args, **kwargs):
+        # las identidades, para dibujar en la hoja la caja de cada FILA (docs/auditoria_hojas.md)
+        captura["identidades"] = [
+            [(int(f), int(j)) for tr in ident for (f, j) in tr.det_idxs]
+            for ident in identidades
+        ]
+        return original_aplicar(identidades, *args, **kwargs)
+
     pe.cargar_config_equipos, av.pista_del_arbitro = con_flag, espia
+    av.aplicar_pista = espia_aplicar
     try:
         procesar_desde_cache(cfg)
     finally:
         pe.cargar_config_equipos, av.pista_del_arbitro = original_cfg, original_pista
+        av.aplicar_pista = original_aplicar
     return csv, captura
 
 
@@ -164,7 +175,7 @@ def hojas(salida, captura, csv, dets_crudos, video):
     """Las dos hojas de revisión: detecciones de la pista y filas que pasan de equipo a otro."""
     import pandas as pd
 
-    hoja, inv = _mod("hoja_otro_v3"), _mod("diag22e_invariantes")
+    hoja = _mod("hoja_otro_v3")
     filt = {e["frame_idx"]: e["dets"] for e in captura["cache"]}
     rng = np.random.default_rng(0)
 
@@ -187,10 +198,13 @@ def hojas(salida, captura, csv, dets_crudos, video):
     )
     n1 = hoja.escribir_hoja("arbitro_viterbi", filas, dets_crudos, video, lambda r: {})
     cambian = cambios_a_otro(pd.read_csv(HOY), pd.read_csv(csv))
-    cambian = inv.con_caja(
+    # la caja de la FILA, no la más cercana a su posición suavizada (docs/auditoria_hojas.md)
+    cambian = hoja.con_caja_de_la_fila(
         pd.read_csv(csv).merge(
             cambian[["frame", "x_m", "y_m"]], on=["frame", "x_m", "y_m"]
         ),
+        captura["identidades"],
+        filt,
         dets_crudos,
     )
     elegidas = cambian.sample(n=min(60, len(cambian)), random_state=0)

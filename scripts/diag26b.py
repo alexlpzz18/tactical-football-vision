@@ -243,7 +243,6 @@ def hoja(salida: Path) -> dict:
     from src.tracking.cache_io import cargar_cache
 
     hoja_mod = _mod("hoja_otro_v3")
-    inv = _mod("diag22e_invariantes")
     cap = pickle.load(open(salida / "captura_main.pkl", "rb"))
     filas = filas_con_dos_etiquetas(salida, cap)
     r = filas[(filas.es_real == 1) & filas.etiqueta.map(equipo).isin(["A", "B"])].copy()
@@ -270,7 +269,10 @@ def hoja(salida: Path) -> dict:
         e["frame_idx"]: e["dets"]
         for e in cargar_cache(R / cfg["rutas"]["cache"])["cache"]
     }
-    m = inv.con_caja(m, dets)
+    # la caja de la FILA (la detección de su identidad), no la más cercana a su posición
+    # suavizada: docs/auditoria_hojas.md
+    filt = {e["frame_idx"]: e["dets"] for e in cap["cache"]}
+    m = hoja_mod.con_caja_de_la_fila(m, cap["identidades"], filt, dets)
     n = hoja_mod.escribir_hoja(
         "equipo_por_obs_20min",
         m,
