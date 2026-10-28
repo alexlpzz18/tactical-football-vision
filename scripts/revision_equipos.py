@@ -34,6 +34,7 @@ VENTANAS = [
     "tope_trozo",
     "arbitro_viterbi",
     "viterbi_a_otro",
+    "equipo_por_obs_20min",  # docs/diagnostico_26oct_b.md
 ]
 EQUIPOS = [
     "A",
