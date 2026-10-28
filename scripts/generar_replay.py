@@ -86,6 +86,12 @@ def main() -> None:
         "(la moda de toda su vida) en vez de la del instante.",
     )
     parser.add_argument(
+        "--zona-no-visible",
+        default=None,
+        help="JSON con rectángulos [x, y, ancho, alto] en metros que la cámara no ve; se "
+        "sombrean (docs/pizarra_fichas.md). Solo el dibujo.",
+    )
+    parser.add_argument(
         "--suavizado-visual-ventana",
         type=int,
         default=3,
@@ -157,6 +163,11 @@ def main() -> None:
         etiqueta_por_identidad=args.etiqueta_por_identidad,
         suavizado_visual_ventana=args.suavizado_visual_ventana,
         recortar_balon_a_campo=recortar_balon,
+        zona_no_visible=(
+            json.loads(Path(args.zona_no_visible).read_text())
+            if args.zona_no_visible
+            else None
+        ),
     )
     print(f"✓ Replay en {ruta}")
 

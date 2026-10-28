@@ -311,6 +311,7 @@ def generar_replay(
     etiqueta_por_identidad: bool = False,
     suavizado_visual_ventana: int = 3,
     recortar_balon_a_campo: bool = False,
+    zona_no_visible: list | None = None,
 ) -> Path:
     """Genera el HTML del replay desde el CSV de posiciones.
 
@@ -350,6 +351,8 @@ def generar_replay(
             que decide qué color se PINTA por frame (ver
             `_suavizar_parpadeo_visual`). No toca el dato ni las métricas.
             1 o un número par la desactiva (se pinta la etiqueta cruda).
+        zona_no_visible: rectángulos [x, y, ancho, alto] en METROS que la cámara no ve; se
+            sombrean sobre el césped (docs/pizarra_fichas.md). None = no se dibuja nada.
     """
     if espejar not in (None, "", "x", "y", "xy"):
         raise ValueError(f"espejar debe ser 'x', 'y' o 'xy' (recibido {espejar!r})")
@@ -476,6 +479,13 @@ def generar_replay(
         .replace("__TMAX__", str(t_max))
         .replace("__MAX_HUECO__", str(max_hueco_s))
         .replace(
+            "__NO_VISIBLE__",
+            json.dumps(
+                [[round(float(v), 2) for v in r] for r in (zona_no_visible or [])],
+                separators=(",", ":"),
+            ),
+        )
+        .replace(
             "__CAMPO__",
             json.dumps(modelo.geometria_dibujo(), separators=(",", ":")),
         )
@@ -578,6 +588,8 @@ const LARGO = __LARGO__, ANCHO = __ANCHO__;
 const CAMPO = __CAMPO__;
 const TMIN = __TMIN__, TMAX = __TMAX__;
 const MAX_HUECO = __MAX_HUECO__;
+// Zona que la cámara NO ve, en rectángulos de metros (vacía si no se pide).
+const NO_VISIBLE = __NO_VISIBLE__;
 const PAD = 5;              // metros de margen alrededor del campo
 const ESCALA = 10;          // píxeles por metro (canvas interno)
 // Radio del círculo del jugador, en METROS. Bajado de 1,1 a 0,8 el
@@ -633,6 +645,11 @@ function dibujarCampo() {
   v.addColorStop(0, 'rgba(0,0,0,0)');
   v.addColorStop(1, 'rgba(0,0,0,0.22)');
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  // Sombreado de lo que la cámara no ve: ahí una ficha que falta no es un fallo.
+  if (NO_VISIBLE.length) {
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    for (const [x, y, a, b] of NO_VISIBLE) rectCampo(x, y, a, b, true);
+  }
 
   // Líneas: blanco algo translúcido y extremos redondeados. El blanco
   // puro a 2 px se ve duro y compite con las fichas.

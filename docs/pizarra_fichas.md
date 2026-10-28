@@ -117,3 +117,90 @@ Sobre la pizarra de `main` sin suavizado visual (`outputs/pizarra_28oct_h/`):
 **Mismos criterios** que el intento 1, sin cambiar nada: IDF1 ≥ base en los dos equipos, tope de
 simultáneas (no sube el % con más de 7 y el p95 ≤ 7) en las dos ventanas, y eventos −50 % en el
 tramo. Es el último intento.
+
+---
+
+# Resultados
+
+`python scripts/fichas_pizarra.py todo --intento 1|2` → `outputs/pizarra_fichas_intento{1,2}/`
+(`resultado.json` y las pizarras).
+
+**Controles**:
+- los CSV de datos (`posiciones_main.csv` y `posiciones_benja_p1.csv`) salen **idénticos byte a
+  byte** antes y después;
+- el intento 1 se volvió a correr tras añadir el 2 y se reproduce exacto (2.465 fichas, IDF1
+  0,615 / 0,441, 81,3 eventos/min);
+- ⚠️ un fallo mío cazado por un número imposible: la primera pasada daba **0,0 eventos/min en las
+  dos pizarras**. La coordenada homogénea de esta homografía sale NEGATIVA y mi «está en la cámara»
+  exigía que fuera positiva, así que ningún punto estaba en la cámara. Corregido antes de leer nada.
+
+## 1. Línea base (la pizarra de `main`, sin suavizado visual)
+
+| | tramo 14:00-15:30 (90 s) | ventana del GT 5:25-5:55 (30 s) |
+|---|---|---|
+| fichas dibujadas | 38 | 20 |
+| **cambios de color por minuto** | **87,3** | 130,0 |
+| cambios por ficha (p50 · p90 · máx.) | 1,5 · 9,3 · 16 | 1 · 9,1 · 12 |
+| salto de posición en el cambio de color (p50 · p90) | 0,14 · 0,36 m | 0,14 · 0,38 m |
+| fichas distintas A · B | 29 · 30 | 15 · 15 |
+| simultáneas A: p50 · p95 · máx. · % > 7 | 6 · 7 · 8 · 4,9 % | 7 · 7 · 9 · 4,1 % |
+| simultáneas B: p50 · p95 · máx. · % > 7 | 7 · 8 · 9 · 7,7 % | 7 · 8 · 10 · 29,7 % |
+| **apariciones/desapariciones por minuto** (dentro del campo visible) | **27,3** | 22,4 |
+
+- **Lo que vio Alex, en números**:
+  - una ficha cambia de color **87 veces por minuto** en el tramo, y en el sitio (el salto mediano
+    es de 0,14 m): no es la ficha saltando a otra persona lejos, es el color cambiando sobre la
+    misma ficha;
+  - **27 apariciones o desapariciones por minuto** dentro de lo que la cámara ve;
+  - **29-30 fichas distintas por equipo en 90 s**, para 7 jugadores.
+
+## 2. (A) fichas por equipo + (B) persistencia
+
+| | base | intento 1 | intento 2 |
+|---|---|---|---|
+| cambios de color/min (≈ 0 por construcción, **no cuenta**) | 87,3 | 0 | 0 |
+| **IDF1 A** (GT) | 0,646 | 0,615 | **0,684** |
+| **IDF1 B** (GT) | 0,605 | 0,441 | 0,502 |
+| % del tiempo con > 7 A · B (tramo) | 4,9 · 7,7 | 25,8 · 37,0 | 20,2 · 37,8 |
+| % > 7 A · B (GT) | 4,1 · 29,7 | 30,1 · 49,3 | 32,8 · 69,9 |
+| p95 de simultáneas B (GT) | 8 | 11 | 13 |
+| **eventos/min (tramo)** | **27,3** | 81,3 | 68,7 |
+| fichas dibujadas en el tramo | 38 | 85 | 75 |
+
+- **Criterios, los dos intentos: NO CUMPLEN ninguno.**
+  - IDF1: el intento 2 gana en A (+0,038) pero pierde en B (−0,10);
+  - el tope de simultáneas empeora mucho;
+  - los eventos SUBEN (×2,5-3), no bajan.
+- **Por qué** (diagnóstico del intento 1, que el 2 mejora poco):
+  - las fichas por equipo FRAGMENTAN: 2.465 fichas en 20 min, el 60 % de menos de 2 s;
+  - cada fragmento es una aparición y una desaparición;
+  - con la persistencia, cada fragmento muerto se queda 1,5 s quieto mientras su sucesor ya está
+    al lado. Eso infla las simultáneas.
+  - El tracker en metros sobre el pie SIN suavizar no aguanta lo que aguantan las identidades de
+    `main` (ByteTrack en píxeles + cosido): el temblor del pie en el fondo es de metros.
+- **No es el veto**: solo 307 de 2.465 fichas nacen junto a una del otro equipo.
+- **Lo que sí sale**: la idea de partida es correcta en A, donde el intento 2 sigue a la misma
+  persona MEJOR que la identidad (0,684 contra 0,646). En B hay más observaciones sueltas
+  (p95 de 13 fichas B simultáneas en la ventana del GT). Hipótesis sin medir: el árbitro etiquetado
+  B en observaciones sueltas, más la persistencia.
+- **Ruta cerrada a los dos intentos.** Reabrirla pide un plan nuevo. Las dos pistas que deja:
+  - separar (A) de (B): medir las fichas sin persistencia;
+  - asociar sobre las identidades de `main` partiéndolas solo cuando la etiqueta cambia de forma
+    sostenida, en vez de rehacer el seguimiento desde las detecciones.
+
+## Las pizarras para Alex (mismo tramo, 14:00-15:30 / 15:33-17:03)
+
+- `main`: `outputs/pizarra_fichas_intento2/base_tramo_14_00_15_30.html`
+- intento 1: `outputs/pizarra_fichas_intento1/fichas_tramo_14_00_15_30.html`
+- intento 2: `outputs/pizarra_fichas_intento2/fichas_tramo_14_00_15_30.html`
+- En las de fichas, la zona sombreada es la que la cámara no ve (la franja cercana a la cámara).
+
+## Código
+
+En la rama `pizarra-fichas`, sin fusionar:
+- `scripts/fichas_pizarra.py`;
+- el parámetro opcional `zona_no_visible` de `replay_tactico.generar_replay` (no cambia nada si no
+  se pasa);
+- el flag `--zona-no-visible` de `generar_replay.py`.
+
+A `main` va solo este informe.
