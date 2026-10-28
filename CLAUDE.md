@@ -148,6 +148,14 @@ Todo lo demás acaba desembocando aquí:
   OpenCV, y la pizarra pintando la MODA de la identidad en vez de la
   etiqueta del instante (`docs/pizarra_colapsaba.md`). Guarda viva en
   `tests/test_renderizadores_no_colapsan.py`.
+- **CONTROL DEL INSTRUMENTO EN LAS HOJAS: la caja dibujada es la DETECCIÓN DE LA FILA** (su
+  identidad en su frame), nunca «la detección más cercana a la posición del CSV». Esa posición está
+  SUAVIZADA y en un cruce cae sobre el otro: la hoja de 120 filas enseñó la caja de otra persona en 11,
+  y 10 de los 12 «errores de equipo» eran de la herramienta (el «16,7 % en cruce» no existía; el error
+  real es 1,7 %). Antes de leer las marcas de una hoja, comprobar fila a fila que la caja es la de la
+  fila (`scripts/auditar_hojas.py`, `hoja_otro_v3.con_caja_de_la_fila`, guarda en
+  `tests/test_caja_de_la_fila.py`; `docs/auditoria_hojas.md`). Es la quinta vez que una herramienta
+  que resume miente sobre el sistema.
 - **Un interruptor de config que nadie lee es peor que no tenerlo**: da
   una falsa sensación de control. `cota_plantilla.activa: false` estaba en
   los cuatro configs y `perfiles.py` no leía la clave, así que la fusión

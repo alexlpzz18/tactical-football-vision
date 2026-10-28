@@ -99,7 +99,11 @@ def proxy_arbitro(filas_hoy, dets):
 
 
 def con_caja(filas, dets):
-    """Filas reales con el índice de su detección cruda (el método del proxy)."""
+    """Filas reales con el índice de la detección cruda MÁS CERCANA a su posición (el proxy).
+
+    ⚠️ NO sirve para elegir la caja que se dibuja en una hoja: en un cruce la posición suavizada
+    cae más cerca del OTRO (docs/auditoria_hojas.md). Para eso, `hoja_otro_v3.con_caja_de_la_fila`.
+    """
     b3 = _mod("diag22b_bloque3_medir")
     r = filas[filas.es_real == 1].copy()
     r["k"] = b3.caja_cruda_mas_cercana(r, dets)

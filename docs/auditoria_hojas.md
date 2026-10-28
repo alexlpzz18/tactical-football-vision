@@ -69,3 +69,87 @@ herramienta. Criterios escritos y commiteados ANTES de contar nada. Commit solo 
   del GT (la misma de 28-oct d/e/f).
 - p95 del centroide y de la anchura en el **instante** (0,5 s) y en ventanas de **1 s**.
 - Sin umbral nuevo: se informa contra el de Alex (≤ 1 m / ≤ 1,5 m).
+
+---
+
+# Resultados
+
+`python scripts/auditar_hojas.py` → `outputs/auditoria_hojas/auditoria.json`.
+
+**Comprobación previa**: el tracking de la pasada del viterbi es el de la captura de `main`. Las
+180.479 filas tienen la misma posición, así que la comprobación de `viterbi_a_otro` es exacta.
+
+| hoja | cómo elige la caja | filas | discrepancias | ¿valen las conclusiones? (< 2 %) |
+|---|---|---|---|---|
+| `azar` | todas las detecciones con su identidad | 91 marcas | 0 por construcción | **sí** |
+| `arbitro_viterbi` | la detección de la pista | 60 | **0** (las 60 cajas son detecciones exactas; coinciden además con la pista de `main`) | **sí** |
+| `viterbi_a_otro` | la más cercana a la posición | 60 | **1 (1,7 %)** | **sí** |
+| `equipo_por_obs_20min` | la más cercana a la posición | 120 | **11 (9,2 %)** | **no** → recalculado |
+| GT de 30 s (CVAT) | ninguna: clics de Alex sobre el fotograma entero | — | 0 por construcción | **sí** |
+| mini-GT de agosto | la más cercana a la posición (≤ 2 m) | 236 | **sin auditar**: el proxy no pasa su control | ver abajo |
+
+**`viterbi_a_otro`**: la única discrepancia es **23_7-08.6.jpg** (7:08,6 / 8:41,6). Es justo la
+imagen de la que Alex dijo «son dos jugadores, el árbitro está a unos metros a la derecha». La hoja
+le enseñó la caja de la identidad 161 en vez de la de la fila (309). Su único «fallo» en esa hoja
+era de la herramienta. Las otras 59 están bien elegidas, y Alex las dio por buenas.
+
+**`equipo_por_obs_20min`**: ya recalculado en el 28-oct (f) con la caja correcta (la etiqueta del
+DUEÑO de la caja que vio Alex): **2 de 120 = 1,7 % [0,5; 5,9]**. **No hace falta volver a marcar
+nada para el recuento.** Si se quiere la marca de la persona de la FILA (y no de la que se enseñó),
+habría que volver a marcar estas 11 con la caja nueva (archivo / reproductor):
+- 11_1-43.5 (1:43,5 / 3:16,5)
+- 12_2-00.2 (2:00,2 / 3:33,2)
+- 14_2-07.0 (2:07,0 / 3:40,0)
+- 31_5-12.3 (5:12,3 / 6:45,3)
+- 36_6-07.2 (6:07,2 / 7:40,2)
+- 42_6-51.4 (6:51,4 / 8:24,4)
+- 57_9-13.5 (9:13,5 / 10:46,5)
+- 89_14-46.5 (14:46,5 / 16:19,5)
+- 99_16-20.7 (16:20,7 / 17:53,7)
+- 104_17-30.3 (17:30,3 / 19:03,3)
+- 105_17-34.1 (17:34,1 / 19:07,1)
+
+**Mini-GT de agosto**: el proxy NO pasa su control.
+- Sobre `equipo_por_obs_20min` marca 49 dudosas y solo 6 de las 11 discrepancias conocidas.
+- Aplicado al mini-GT da 62 de 236 dudosas (26 %), pero con un proxy que falla su control ese
+  número no dice nada.
+- **Queda sin auditar**, y las identidades de entonces ya no se pueden reconstruir.
+- Pesa poco: está indexado por id de un detector anterior y ya estaba declarado caducado
+  (CLAUDE.md, «Un GT indexado por id del sistema caduca»; `diagnostico_26oct_b.md`). Ninguna cifra
+  de hoy sale de él: el 1,2 % y el banco salen del GT de CVAT, que no tiene este problema.
+
+## El arreglo
+
+- `scripts/hoja_otro_v3.py`: `deteccion_de_la_fila` y `con_caja_de_la_fila`. Dan la detección de
+  la identidad de la fila en su frame, pasada del caché filtrado al crudo por igualdad exacta de
+  caja. Una fila interpolada (sin detección) no se dibuja.
+- `diag26b.hoja` (`equipo_por_obs_20min`) y `diag23c_viterbi.hojas` (`viterbi_a_otro`) la usan en
+  vez de `con_caja`. `diag23c` captura ahora las identidades para poder hacerlo.
+- `con_caja` se queda para los proxies que la usan como MEDIDA, con un aviso en su docstring.
+- **Test** `tests/test_caja_de_la_fila.py`: un cruce sintético donde la posición suavizada está a
+  0,2 m del rival, y un caché filtrado que desplaza los índices.
+  - Con el método nuevo, la caja es la de la fila.
+  - Un test de control comprueba que el antiguo dibuja al otro.
+  - **Mutación verificada**: con `con_caja_de_la_fila` devolviendo «la más cercana», 2 de los 3
+    tests fallan (el fichero cambió; restaurado).
+- **CLAUDE.md**: la línea del control del instrumento en las hojas.
+- No se toca `src/`.
+
+## Oráculo con la tasa corregida (1,7 %)
+
+p95 en m (centroide / anchura), 200 semillas, ventana de 30 s del GT:
+
+| | instante (0,5 s) | 1 s |
+|---|---|---|
+| filas sueltas | 2,38 / 0,34 | 1,78 / 1,20 |
+| rachas | 2,36 / 0,41 | 1,81 / 1,19 |
+| media (rachas) | 0,40 / 0,15 | 0,38 / 0,15 |
+
+- **La anchura cumple ya en el instante** (≤ 1,5 m).
+- **El centroide no cumple ni en el instante ni a 1 s.** Con 1,7 % hay ~0,23 filas invertidas por
+  frame: en ~1 de cada 5 instantes, un jugador mal etiquetado mueve el centroide ~1,5-2,5 m, y el p95
+  cae ahí.
+- Con el 28-oct (f), el centroide cumple a partir de **3 s** (0,95 m).
+- Control de la inyección por rachas: se invirtió el 1,53 % de las filas de cruce (esperado 1,7 %;
+  con 49 episodios, dentro del ruido). La clave del JSON dice «control ~16,7 %» porque viene del
+  28-oct (e); aquí el objetivo es 1,7 %.
