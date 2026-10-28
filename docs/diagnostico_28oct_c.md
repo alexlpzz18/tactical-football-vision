@@ -112,3 +112,111 @@ minuto 5.
 - **Arreglo**: la etiqueta del balón en `render_clips_26oct.py` no puede pisar la de ÁRBITRO. Se
   coloca por encima del círculo y se desplaza si choca con otra.
 - Va en una rama propia, con pytest en 0, y se fusiona a `main`.
+
+---
+
+# Resultados
+
+## 1. Equipo: 12 de 120 → el 1,2 % NO se sostiene en el partido
+
+`python scripts/diag28c.py equipo --marcas outputs/diagnostico_28oct_c/revision_equipo_por_obs_20min_alex.csv`
+→ `outputs/diagnostico_28oct_c/equipo.json`.
+
+- Marcas: A 56 · B 53 · portero_A 5 · portero_B 5 · árbitro 1. **0 excluidas.**
+- **Errores: 12/120 = 10,0 % [5,8; 16,7]**. Por la regla, **≥ 12 → no se sostiene**.
+
+| corte | por observación (sistema) | voto de la identidad (mismas filas) |
+|---|---|---|
+| total | 12/120 = 10,0 % | 35/120 = 29,2 % |
+| cruce | **10/60 = 16,7 %** [9,3; 28,0] | 23/60 = 38,3 % |
+| sin cruce | **2/60 = 3,3 %** [0,9; 11,4] | 12/60 = 20,0 % |
+| A (marca) | 5 | 22 |
+| B (marca) | 6 | 12 |
+| árbitro | 1 | — |
+
+- Por tramo de 2 min: 1, 2, 1, 2, 1, 0, 0, 1, 3, 1. **Repartido**, sin un tramo malo.
+- **Dónde está: en los cruces.** 10 de los 12 errores están en filas de cruce. Fuera de los cruces,
+  el 3,3 % es compatible con el 1,2 % del minuto 5 (los IC se solapan).
+- ⚠️ La hoja se estratificó 50/50 cruce / no cruce, y en el partido solo el **16,6 %** de las filas
+  A/B reales está en un cruce. **Reponderado al partido: 5,5 % [1,9; 10,0]**. Es el número que
+  representa los 20 min; el 10,0 % es el de la hoja.
+- ¿Qué podría estar inventando? El 1,2 % no era falso: el GT de 30 s cae en un minuto con pocos
+  cruces. Lo que era falso es leerlo como el error del partido. Y la etiqueta por observación sigue
+  ganando al voto de identidad por 3-6× en los dos estratos.
+
+## 2. Balón con GT (200 frames de Alex)
+
+`python scripts/gt_balon_rapido.py leer ~/Downloads/respuestas_gt_balon.csv` y
+`python scripts/diag28c.py balon` → `outputs/diagnostico_28oct_c/balon.json`.
+
+Respuestas: acepta 171 · clic 14 · rechaza 15 · no_se 0.
+
+**(i) Zona de la hoja** (tercil de m/px de la candidata elegida):
+
+| zona | visible | recall de la elegida | falsos positivos |
+|---|---|---|---|
+| cerca | 95,0 % [86,3; 98,3] | 57/57 = 100 % [93,7; 100] | 3/60 = 5,0 % [1,7; 13,7] |
+| media | 96,7 % [88,6; 99,1] | 54/58 = 93,1 % [83,6; 97,3] | 2/60 = 3,3 % [0,9; 11,4] |
+| lejos | 100 % [94,0; 100] | 60/60 = 100 % [94,0; 100] | 0/60 |
+| sin candidata | 10/20 = 50 % visibles | — | — |
+
+**(ii) Zona del juego** (la del 14,9 %):
+
+| zona | n | visible | recall | FP |
+|---|---|---|---|---|
+| cerca | **7** | 71,4 % [35,9; 91,8] | 4/5 | 1/6 |
+| media | 135 | 91,1 % [85,1; 94,8] | 114/117 = 97,4 % [92,7; 99,1] | 3/120 = 2,5 % |
+| lejos | 58 | 98,3 % [90,9; 99,7] | 53/53 = 100 % [93,2; 100] | 1/54 = 1,9 % |
+
+- **Criterio (sobre (ii)): NO DECIDIDO.** La zona cercana del juego tiene 7 frames (< 15). La hoja
+  no puede decir si el 14,9 % es de encuadre o de detector.
+- Lo que SÍ dice:
+  - cuando hay candidata elegida, el selector acierta el **95-100 %** en todas las zonas;
+  - los falsos positivos son bajos (≤ 5 %);
+  - **de los 20 frames sin candidata, 10 tienen el balón visible**: el detector falla con el balón
+    a la vista la mitad de las veces que no da nada. Es una señal de DETECTOR, con n = 20.
+- ¿Qué podría estar inventando? 180 de 200 frames se eligieron por tener candidata, así que la
+  visibilidad está sesgada hacia arriba (declarado antes). Para decidir el 14,9 % hace falta una
+  hoja estratificada por la zona del JUEGO, con frames sin candidata.
+
+**Balón inventado (último intento): PROVISIONAL, falta el control.**
+- Con el GT: 9 de 180 frames con candidata = **5,0 % [2,7; 9,2]** (detalle en `balon.json`).
+- El control no está cubierto por los 200: solo hay un frame de cada tramo (f26610 = 14:47,9 /
+  16:20,9; f27394 = 15:14,0 / 16:47,0). Mini-hoja de 20 frames preparada:
+  `outputs/gt_balon_control/index.html`. **El número no se da por bueno hasta que Alex la marque.**
+
+## 3. Caja fundida: la hipótesis NO se confirma. 3b no se corre
+
+`<venv numpy 1.26>/bin/python scripts/diag28c_caja_fundida.py --salida outputs/diagnostico_28oct_c`
+→ `caja_fundida_cajas.json` y recortes en `outputs/diagnostico_28oct_c/recortes_caja_fundida/`
+(verde = producción, rojo = sin fusión).
+
+- **Control: pasa.** La CPU con los parámetros de producción reproduce el **100 %** de las cajas
+  del caché (107/107 a IoU ≥ 0,9 en los 6 frames).
+- Por instante (relojes archivo / reproductor):
+
+| instante | frame | producción | sin fusión (distintas) | lectura |
+|---|---|---|---|---|
+| 14:40,1 / 16:13,1 | f26376 | 1 | 1 | el detector ve UNA (el blanco, detrás) |
+| 14:40,3 / 16:13,3 | f26382 | 1 | 1 | ídem |
+| 14:43,8 / 16:16,8 | f26487 | **2** | 3 | ya hay dos cajas: el naranja sale como torso (33 px) |
+| 14:43,9 / 16:16,9 | f26490 | 1 | 2 | **el único caso**: GREEDYNMM se come un torso de 33 px |
+| 15:05,9 / 16:38,9 | f27150 | 1 | 1 | el detector ve UNA |
+| 15:06,1 / 16:39,1 | f27156 | **2** | 2 | ya hay dos cajas, y aun así se funden en el tracking |
+
+- **Veredicto: no confirmada.** En 3 de 6 frames el detector en crudo ya da una sola caja: no hay
+  nada que la fusión esconda. En 2 de 6 producción YA tiene las dos cajas: la mezcla la hace la
+  ASOCIACIÓN, no la detección. El único caso a favor (f26490) es un FRAGMENTO de torso, que es lo
+  que cerró BACKLOG 19: su «pie» queda 37 px por encima del pie real.
+- Por la regla fijada, **no se corre 3b** (NMS IoU 0,5 en el tramo de 60 s) y no se gasta el
+  intento.
+- ⚠️ **Un error mío cazado por el recorte**: el primer casado asignaba cada identidad a la caja de
+  pie más cercano en metros, y salía «una sola caja» en los seis frames. Las cajas de torso tienen
+  el pie proyectado lejos, así que las dos identidades caían en la caja grande. Recontado por
+  región de imagen, las cifras son las de la tabla.
+- ¿Qué podría estar inventando? Seis frames de tres instantes. Y una etapa no mirada: el NMS
+  INTERNO de YOLO (IoU 0,7, dentro de cada tesela, antes de SAHI). Una persona exactamente detrás
+  de otra con IoU > 0,7 se suprimiría ahí y tampoco aparecería «sin fusión». Si se quiere mirar,
+  es un plan nuevo.
+- **Lo que sí apunta**: en 14:44 y 15:06 el detector da las dos cajas y el tracking las mezcla.
+  Coincide con CLAUDE.md: la palanca es la asociación.
