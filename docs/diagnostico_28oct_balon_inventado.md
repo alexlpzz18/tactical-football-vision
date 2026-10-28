@@ -101,3 +101,47 @@ vio Alex:
 - «Sobre un jugador» incluye el balón REAL pegado al pie, que también cae dentro de la caja del
   jugador. Por eso el criterio exige que además sea un salto incompatible.
 - Y por eso se cuenta aparte la ida y vuelta: un regate largo real no vuelve al sitio de antes.
+
+---
+
+## Resultado, intento 1: el CONTROL FALLA. La medida no ve lo que vio Alex
+
+`python scripts/diag28_balon_inventado.py --captura outputs/diagnostico_26oct_b --salida outputs/diagnostico_28oct`.
+
+**Control: 0 de 2.** En 14:46-14:48 y en 15:12-15:15 la medida no marca ningún salto incompatible.
+Por la regla fijada antes, **los números del partido NO se leen**: son de una medida que no ve el
+fenómeno. Solo se anotan como lo que esa medida cuenta (305 huecos ≥ 0,3 s, 27 saltos incompatibles
+tras ellos, 22 sin hueco).
+
+**Por qué falla** (traza frame a frame del balón elegido en los dos tramos):
+- **14:46-14:48** (16:19-16:21 del reproductor):
+  - tras un hueco, el balón elegido reaparece en 886,35 s en (701, 619) px;
+  - en 886,62 salta a (751, 662) px, **66 px** pero 14,7 m porque es aéreo: es la mano de B711 que
+    vio Alex;
+  - desde ahí **se mueve con suavidad**, 3-26 px por paso, hasta 887,6;
+  - en 887,8 vuelve a (646, 627), la zona del balón real.
+  - Ningún paso pasa de 150 px.
+- **15:12-15:15** (16:45-16:48), la parada del portero:
+  - el elegido ALTERNA entre dos sitios separados **~90-100 px**: (984, 602)/(958, 602), detrás de
+    la línea de fondo, y (1.003, 691), en el campo;
+  - a 14-30 m por salto en metros, pero por debajo de los 150 px.
+- **Lo que significa**: el balón inventado no es un salto LARGO en la imagen.
+  - En el primer caso, el selector se pasa a una candidata cercana (la mano) y la sigue como si
+    fuera el balón: se comporta como un balón.
+  - En el segundo, se queda oscilando entre dos candidatas cercanas.
+  - En el fondo de la imagen, 100 px son muchos metros, y un umbral FIJO en píxeles no sirve: tiene
+    que ser local. Es la misma lección que el temblor del suavizado.
+
+**Lo que queda para un intento 2** (criterio NUEVO, fijado antes; es el segundo y último intento de
+esta medida):
+- **(a)** el salto incompatible con un umbral LOCAL en píxeles (los píxeles de 35 m/s × Δt en ese
+  punto de la imagen, con `escala_px_por_m`), más la **alternancia**: A → B → A entre dos sitios en
+  ≤ 1 s;
+- **(b)** o, mejor, esperar a la **hoja de GT del balón** (`outputs/gt_balon_rapido/`, 200 frames)
+  que Alex está marcando. Con ella, «inventado» = el elegido está a > 2 m del balón real marcado, sin
+  proxy. Es la única medida que no hay que validar contra sí misma.
+
+¿Qué podría estar inventando? El intento 1 era ciego por construcción: buscaba saltos largos, y lo
+que Alex vio son cambios CORTOS a una candidata que luego se comporta como un balón. Es la lección
+de las marcas pintadas otra vez: preguntar «¿se comporta como el objeto?» no basta, porque una mano
+con el balón cerca se mueve como un balón.
