@@ -88,3 +88,87 @@ Un balón inventado a menos de 2 m del real (la mano del jugador que lo lleva) n
 
 ¿Qué podría estar inventando? 60 frames de 15 episodios no son 60 casos independientes. El IC por
 frames será optimista, y se dará también el recuento por episodio.
+
+---
+
+# Resultados
+
+## 1. Balón inventado: el CONTROL FALLA. La medida no vale y se para
+
+`python scripts/diag28d.py control` → `outputs/diagnostico_28oct_d/control.json`.
+
+| ventana (archivo / reproductor) | frames | con candidata | respuestas | inventados |
+|---|---|---|---|---|
+| 14:46-14:48 / 16:19-16:21 | 10 | 6 | 6 acepta · 3 clic · 1 no_se | **0** |
+| 15:12-15:15 / 16:45-16:48 | 10 | 3 | 3 acepta · 3 clic · 4 no_se | **0** |
+
+- **Por la regla fijada: no se da ninguna cifra.** Era el último intento de esta medida; queda
+  cerrada.
+- Por qué falla, sin cambiar la medida:
+  - **las 9 candidatas elegidas que salen en el control son el balón REAL**, y Alex las acepta las
+    9. Ejemplos: f26586 (14:47,1 / 16:20,1), el balón en el césped; f27356 (15:12,8 / 16:45,8), el
+    balón en las manos del portero tras blocar (recortes en `outputs/diagnostico_28oct_d/`);
+  - los 6 `clic` son frames **sin candidata**: un balón perdido, no inventado;
+  - el balón inventado que Alex vio en el vídeo cae **entre** los frames muestreados (uno cada
+    ~0,3 s). En el 28-oct, la alternancia de 15:12-15:15 iba entre (984, 602) px, que según esta hoja
+    es el portero con el balón, y (1.003, 691), y esta no sale en ninguno de los 10 frames.
+- **Lo que significa**: un balón inventado dura décimas de segundo. Una hoja de frames sueltos
+  espaciados no lo ve, ni con el GT. Medirlo pide marcar SEGUIDOS los frames de balón de un tramo
+  (todos, uno de cada 2), y eso es un plan nuevo.
+- ⚠️ **Corrección al 28-oct**: allí se escribió que la candidata de (751, 662) px en 886,62 s era «la
+  mano de B711». En f26586 (887,1 s), la candidata de (756, 646) es el balón en el césped. Aquella
+  atribución no estaba comprobada.
+
+## 2. Oráculo con error de equipo inyectado: el error de equipo SÍ importa al instante
+
+`python scripts/diag28d.py oraculo` → `outputs/diagnostico_28oct_d/oraculo.json`.
+
+- GT: 60 frames, **814 filas**, **125 en cruce (15,4 %)**, frente al 16,6 % del partido. La inversión
+  media inyectada sale **5,4 % por fila** (0,73 filas por frame), en línea con el 5,5 % reponderado
+  del 28-oct (c).
+
+| métrica | media | p50 | **p95** | p99 | % sin cambio |
+|---|---|---|---|---|---|
+| centroide, instante | 0,92 m | 0,19 m | **3,62 m** | 5,26 m | 49 % |
+| anchura, instante | 0,35 m | 0,00 m | **2,58 m** | 5,88 m | 85 % |
+| centroide, media por repetición | 0,92 m | 0,92 m | 1,16 m | — | — |
+| anchura, media por repetición | 0,35 m | 0,33 m | 0,54 m | — | — |
+| ocupación 3 × 3 (por repetición) | 1,55 % | 1,47 % | 2,58 % | 2,95 % | — |
+
+- **Criterio: NO se cumple, y lo rompen LAS DOS métricas**:
+  - centroide: p95 3,62 m > 1 m;
+  - anchura: p95 2,58 m > 1,5 m.
+- La anchura cambia en pocos instantes (85 % sin cambio), pero cuando cambia lo hace mucho: un
+  jugador invertido en la banda estira el bloque del otro equipo. Mediana 1,7 m y p95 6,5 m en los
+  (frame, equipo) que se mueven.
+- El centroide se mueve en la mitad de los instantes. Un jugador mal etiquetado a ~10 m desplaza
+  el centroide de un equipo de 7 en ~1,5 m.
+- **Lo que aguanta es el agregado**: la ocupación de zonas (1,6 % de la masa mal repartida) y la
+  anchura media de la ventana (p95 0,54 m). El centroide medio de la ventana se queda en el límite
+  (p95 1,16 m).
+- ¿Qué podría estar inventando?
+  - La inversión es independiente por fila. Para el agregado eso es **optimista**: en el sistema
+    el error va en rachas y no se cancela entre frames.
+  - Solo se mide la etiqueta, con las posiciones perfectas. En el sistema este error se SUMA al de
+    asociación y presencia.
+  - Lectura para el producto: la **pizarra** (un instante) lo nota; un **informe de medias** por
+    tramo casi no. Encaja con lo que vio Alex en el vídeo: «en la pizarra se nota muchísimo».
+
+## 3. Hoja de balón del juego cercano: preparada
+
+`python scripts/diag28d.py hoja` → `outputs/gt_balon_cerca/index.html`. Se lee con
+`python scripts/diag28d.py leer ~/Downloads/respuestas_gt_balon_cerca.csv`.
+
+- Elegibles: 1.648 frames de balón con juego cercano, a ≥ 1 s de las hojas anteriores. **60
+  elegidos**, repartidos en **20 episodios**.
+- **Solo 4 de los 60 tienen candidata elegida.** No es mala suerte del muestreo: en todo el partido,
+  con juego cercano hay balón elegido en el **12,2 %** de los frames de balón (y alguna detección en
+  el 60,6 %), contra el **51,9 %** (83,2 %) del resto.
+  - Lo que sí puede pesar: al quitar los frames cerca de la hoja de 200, que se eligió CON
+    candidata, se quitan frames con balón.
+- Con tan pocas candidatas, la hoja se decidirá casi entera por **visible o no** (clic / R). Eso
+  es justo lo que separa encuadre de detector: si el balón se ve y no hay candidata, es del
+  detector; si no se ve, del encuadre.
+- ⚠️ La zona del juego se calcula con los jugadores VISIBLES. Con el juego pegado a la cámara,
+  muchos están fuera del plano (ver `outputs/diagnostico_28oct_d/muestra_hoja_cerca.jpg`), así que
+  «la mayoría en la zona cercana» se mide con los que quedan dentro.
