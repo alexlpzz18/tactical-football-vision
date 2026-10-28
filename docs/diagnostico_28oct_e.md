@@ -1,5 +1,8 @@
 # Diagnóstico 28-oct (e): balón en la zona cercana y oráculo de rachas
 
+> ⚠️ **CORRECCIÓN (28-oct f)**: los «10 s» del punto 2 son para un error de 16,7 % / 3,3 % que no existe (era la hoja mal casada). Con el error real (~1,7 %) se cumple ya a 3 s (`diagnostico_28oct_f.md`).
+
+
 Rama `medir-28oct-e`, sale de `medir-28oct-d`. **SOLO medir**: no se cambia ningún parámetro.
 Criterios escritos y commiteados ANTES de abrir `~/Downloads/respuestas_gt_balon_cerca.csv`. Commit
 solo con pytest en 0.

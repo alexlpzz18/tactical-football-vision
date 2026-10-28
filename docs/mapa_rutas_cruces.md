@@ -1,5 +1,8 @@
 # Mapa de rutas para los cruces (28-oct-2026)
 
+> ⚠️ **CORRECCIÓN (28-oct f)**: la premisa de este mapa, «16,7 % de error de equipo en cruce», era un artefacto de la hoja. El error real es **1/60 en cruce** (`diagnostico_28oct_f.md`). Lo que queda en los cruces es de ASOCIACIÓN y de POSICIÓN (la ficha suavizada cae cerca de otra persona), no de etiqueta. El paso previo de (a) dio **0 cambios de identidad** en los errores reales, y excluir las filas en cruce (ruta 1) empeora el centroide a 5-7 m de p95.
+
+
 Sin código nuevo y sin medir: es una lectura de lo que ya está en `docs/`. Cada cifra lleva su
 fichero.
 

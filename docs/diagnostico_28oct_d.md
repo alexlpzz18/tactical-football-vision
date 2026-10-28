@@ -1,5 +1,8 @@
 # Diagnóstico 28-oct (d): control del balón inventado, oráculo del error de equipo y hoja cercana
 
+> ⚠️ **CORRECCIÓN (28-oct f)**: el oráculo del punto 2 inyecta 16,7 % / 3,3 %, tasas que venían de una hoja mal casada. El error real es ~1,7 % (2 de 120). Con 1,7 % el instante y las ventanas cumplen ya a 3 s (`diagnostico_28oct_f.md`). El oráculo es correcto como «¿qué pasaría si…?», no como descripción del sistema.
+
+
 Rama `medir-28oct-d`, sale de `medir-28oct-c`. **SOLO medir**: no se cambia ningún parámetro y no se
 fusiona nada. Criterios escritos y commiteados ANTES de abrir la mini-hoja de control. Commit solo
 con pytest en 0.
