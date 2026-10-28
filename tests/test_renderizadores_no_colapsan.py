@@ -273,3 +273,19 @@ def test_todo_modulo_QUE_PINTA_esta_clasificado():
         f"clasificados pero ya no existen (o dejaron de pintar): {sorted(fantasmas)}. "
         "Quítalos de la lista para que no dé una falsa sensación de cobertura."
     )
+
+
+def test_la_histeresis_visual_no_es_la_moda():
+    """Color estable ≥ 1 s (docs/diagnostico_28oct_g.md): quita las rachas CORTAS, no las largas.
+
+    La identidad de la guarda (A 1 s, luego B 3 s) tiene que seguir viéndose con los dos colores;
+    un parpadeo de 0,3 s en medio de A tiene que desaparecer.
+    """
+    from src.report.replay_tactico import histeresis_visual
+
+    t = [round(i * 0.1, 2) for i in range(len(ETIQUETAS))]
+    assert histeresis_visual(ETIQUETAS, t, 1.0) == ETIQUETAS
+    parpadeo = ["A"] * 10 + ["B"] * 3 + ["A"] * 10
+    t2 = [round(i * 0.1, 2) for i in range(len(parpadeo))]
+    assert histeresis_visual(parpadeo, t2, 1.0) == ["A"] * 23
+    assert histeresis_visual(parpadeo, t2, 0.0) == parpadeo

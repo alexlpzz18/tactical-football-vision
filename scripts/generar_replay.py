@@ -86,6 +86,14 @@ def main() -> None:
         "(la moda de toda su vida) en vez de la del instante.",
     )
     parser.add_argument(
+        "--histeresis-visual-s",
+        type=float,
+        default=1.0,
+        help="Color estable: un cambio de color que dura menos de esto se DIBUJA con el "
+        "color anterior (docs/diagnostico_28oct_g.md). Solo el dibujo; la leyenda lo dice. "
+        "0 lo desactiva.",
+    )
+    parser.add_argument(
         "--suavizado-visual-ventana",
         type=int,
         default=3,
@@ -157,6 +165,7 @@ def main() -> None:
         etiqueta_por_identidad=args.etiqueta_por_identidad,
         suavizado_visual_ventana=args.suavizado_visual_ventana,
         recortar_balon_a_campo=recortar_balon,
+        histeresis_visual_s=args.histeresis_visual_s,
     )
     print(f"✓ Replay en {ruta}")
 

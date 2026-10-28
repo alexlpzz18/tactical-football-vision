@@ -426,13 +426,24 @@ def test_el_replay_pinta_el_parpadeo_suavizado_no_el_dato_crudo(tmp_path):
 
 
 def test_se_puede_desactivar_desde_generar_replay(tmp_path):
-    """Con ventana=1, el HTML sí pinta el parpadeo crudo."""
+    """Con ventana=1, el HTML sí pinta el parpadeo crudo.
+
+    Desde el 28-oct la histéresis de color (1 s) va activada por defecto y también se come un
+    parpadeo de 1 frame: aquí se apaga para probar SOLO la mediana
+    (docs/desglose_cambios_y_vistas.md).
+    """
     from src.report.replay_tactico import generar_replay
 
     csv = _csv_identidad_que_cambia(tmp_path, ["A"] * 5 + ["B"] + ["A"] * 5)
     salida = tmp_path / "r.html"
     generar_replay(
-        csv, salida, largo=62.0, ancho=40.0, min_vida_s=0.0, suavizado_visual_ventana=1
+        csv,
+        salida,
+        largo=62.0,
+        ancho=40.0,
+        min_vida_s=0.0,
+        suavizado_visual_ventana=1,
+        histeresis_visual_s=0.0,
     )
     datos, catalogo = _datos_del_html(salida.read_text())
     assert "ets" in datos[0], "sin suavizar, el parpadeo de 1 frame vuelve a estar"

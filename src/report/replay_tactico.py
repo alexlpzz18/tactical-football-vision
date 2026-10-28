@@ -295,6 +295,45 @@ def _suavizar_parpadeo_visual(etiquetas: list, ventana: int = 3) -> list:
     return salida
 
 
+def histeresis_visual(etiquetas: list, tiempos: list, min_s: float) -> list:
+    """Color estable ≥ `min_s` segundos — SOLO para lo que se PINTA (docs/diagnostico_28oct_g.md).
+
+    Una racha de una etiqueta nueva que dura MENOS de `min_s` (del primer frame de la racha al
+    primero de la siguiente) se pinta con el color que se venía pintando. Una racha que dura
+    `min_s` o más se pinta desde su PRIMER frame: el render es offline y ve el futuro, así que el
+    cambio no llega con retraso. La primera racha de la identidad se pinta tal cual.
+
+    Como `_suavizar_parpadeo_visual`, no toca la columna `etiqueta` ni nada que consuman las
+    métricas o el informe. ⚠️ Esconde a la vista los cruces que fallan (CLAUDE.md: el parpadeo es la
+    señal de la asociación fallando): por eso el dibujo lo dice en pantalla. No es la moda: una
+    identidad que pasa de A a B y se queda en B se sigue viendo con los dos colores.
+    """
+    n = len(etiquetas)
+    if min_s <= 0 or n < 2:
+        return list(etiquetas)
+    t = [float(x) for x in tiempos]
+    paso = float(np.median(np.diff(t))) if n > 1 else 0.0
+    # rachas: (inicio, fin exclusivo)
+    rachas, i = [], 0
+    while i < n:
+        j = i
+        while j + 1 < n and etiquetas[j + 1] == etiquetas[i]:
+            j += 1
+        rachas.append((i, j + 1))
+        i = j + 1
+    salida = list(etiquetas)
+    pintada = etiquetas[0]
+    for k, (a, b) in enumerate(rachas):
+        if k == 0:
+            continue
+        fin_t = t[b] if b < n else t[-1] + paso
+        if fin_t - t[a] >= min_s - 1e-9:
+            pintada = etiquetas[a]
+        for m in range(a, b):
+            salida[m] = pintada
+    return salida
+
+
 def generar_replay(
     csv_path: str | Path,
     salida_html: str | Path,
@@ -311,6 +350,7 @@ def generar_replay(
     etiqueta_por_identidad: bool = False,
     suavizado_visual_ventana: int = 3,
     recortar_balon_a_campo: bool = False,
+    histeresis_visual_s: float = 1.0,
 ) -> Path:
     """Genera el HTML del replay desde el CSV de posiciones.
 
@@ -350,6 +390,10 @@ def generar_replay(
             que decide qué color se PINTA por frame (ver
             `_suavizar_parpadeo_visual`). No toca el dato ni las métricas.
             1 o un número par la desactiva (se pinta la etiqueta cruda).
+        histeresis_visual_s: color estable — un cambio de color que dura menos
+            se pinta con el color anterior (ver `histeresis_visual`). Solo el
+            dibujo, y la leyenda lo dice. Activada por defecto (1 s,
+            docs/desglose_cambios_y_vistas.md); 0 la desactiva.
     """
     if espejar not in (None, "", "x", "y", "xy"):
         raise ValueError(f"espejar debe ser 'x', 'y' o 'xy' (recibido {espejar!r})")
@@ -435,6 +479,9 @@ def generar_replay(
         etiquetas_pintadas = _suavizar_parpadeo_visual(
             etiquetas_muestra, suavizado_visual_ventana
         )
+        etiquetas_pintadas = histeresis_visual(
+            etiquetas_pintadas, list(grupo["tiempo_s"]), histeresis_visual_s
+        )
         por_muestra = (
             [indice_de[e] for e in etiquetas_pintadas]
             if len(set(etiquetas_pintadas)) > 1 and not etiqueta_por_identidad
@@ -443,7 +490,19 @@ def generar_replay(
         identidades.append(
             {
                 "id": int(id_jugador),
-                "et": str(etiquetas.iloc[0]) if len(etiquetas) else "otro",
+                # con la histéresis, una identidad que se pinta de UN solo color se pinta del
+                # color que dice la histéresis, que puede no ser la moda (rachas cortas)
+                "et": (
+                    # solo si la ficha se pinta de UN color (sin `ets`) y no se pidió la
+                    # escotilla vieja: entonces su color es el de la histéresis, que puede no
+                    # ser la moda. Con `ets`, `et` sigue siendo la moda (respaldo y leyenda).
+                    str(etiquetas_pintadas[0])
+                    if histeresis_visual_s > 0
+                    and etiquetas_pintadas
+                    and por_muestra is None
+                    and not etiqueta_por_identidad
+                    else (str(etiquetas.iloc[0]) if len(etiquetas) else "otro")
+                ),
                 **({"ets": por_muestra} if por_muestra else {}),
                 "t": [round(float(v), 2) for v in grupo["tiempo_s"]],
                 "x": [round(float(v), 2) for v in grupo["x_m"]],
@@ -466,7 +525,16 @@ def generar_replay(
         .replace("__DATOS__", json.dumps(identidades, separators=(",", ":")))
         .replace("__COLORES__", json.dumps(paleta, separators=(",", ":")))
         .replace("__CATALOGO__", json.dumps(catalogo, separators=(",", ":")))
-        .replace("__LEYENDA__", _leyenda(paleta, set(df["etiqueta"].unique())))
+        .replace(
+            "__LEYENDA__",
+            _leyenda(paleta, set(df["etiqueta"].unique()))
+            + (
+                f"<div>color estable ≥ {histeresis_visual_s:g} s: solo dibujo, "
+                "los datos no cambian</div>"
+                if histeresis_visual_s > 0
+                else ""
+            ),
+        )
         .replace("__RADIO_M__", f"{radio_m:.2f}")
         .replace("__ESPEJO_X__", "true" if espejar and "x" in espejar else "false")
         .replace("__ESPEJO_Y__", "true" if espejar and "y" in espejar else "false")
