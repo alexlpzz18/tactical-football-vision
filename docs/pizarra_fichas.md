@@ -91,3 +91,29 @@ Sobre la pizarra de `main` sin suavizado visual (`outputs/pizarra_28oct_h/`):
   Se comprueba contra la vista en el navegador.
 
 **La pizarra para Alex**: el mismo tramo 14:00-15:30 con (A)+(B), al lado de la de `main`.
+
+---
+
+## Intento 1: NO CUMPLE nada (resultados abajo). Criterio del intento 2, escrito ANTES de correrlo
+
+**Diagnóstico del intento 1**:
+- de 2.465 fichas, el 60 % vive < 2 s;
+- **964 (39 %) renacen** donde una ficha del MISMO grupo murió hace < 1,6 s, a una mediana de
+  2,0 m;
+- solo 307 nacen junto a una ficha del otro equipo (cambio de etiqueta).
+- ⇒ No es el veto, es el SEGUIMIENTO dentro del grupo:
+  - la velocidad instantánea (diferencia de dos observaciones a 0,1 s, con el temblor del fondo de
+    0,42 m/px) es ruido amplificado, y al predecir tras un hueco la ficha deriva hasta 8 m/s × 1 s;
+  - la puerta fija en metros no sabe que en el fondo un píxel vale 0,4 m.
+- Es la lección «el umbral tiene que ser LOCAL» (CLAUDE.md, suavizado).
+
+**Intento 2, solo tres parámetros (todo lo demás igual)**:
+- **velocidad** = el desplazamiento de la ficha en su último ≥ 0,5 s de observaciones; 0 si lleva
+  menos de 0,5 s;
+- **la extrapolación** se corta a 0,3 s como máximo (después, la ficha se predice quieta);
+- **puerta LOCAL**: max(1,0 m, 3 × 3,5 px × metros por píxel en el punto predicho) + 7 m/s × Δt,
+  con un máximo de **4,0 m**. 3,5 px es el `jitter_px` medido.
+
+**Mismos criterios** que el intento 1, sin cambiar nada: IDF1 ≥ base en los dos equipos, tope de
+simultáneas (no sube el % con más de 7 y el p95 ≤ 7) en las dos ventanas, y eventos −50 % en el
+tramo. Es el último intento.
