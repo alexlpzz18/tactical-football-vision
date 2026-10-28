@@ -569,6 +569,7 @@ def etiquetar_por_observacion(
     clasificador,
     cfg_equipos: dict | None = None,
     ocluidas: set[tuple[int, int]] | None = None,
+    anormales: set[tuple[int, int]] | None = None,
 ) -> dict[tuple[int, int], str]:
     """{(id_identidad, frame_idx): etiqueta} decidida por VENTANA de color.
 
@@ -622,6 +623,17 @@ def etiquetar_por_observacion(
     forzar = bool(cfg.get("forzar_ab", True))
     excluir_ocluidas = bool(cfg.get("excluir_ocluidas", False)) and bool(ocluidas)
     ampliar_s = float(cfg.get("ampliar_ventana_s", 0.0)) if excluir_ocluidas else 0.0
+    # PUERTA DE CALIDAD DE CAJA (flag `excluir_cajas_anormales`, apagado por defecto;
+    # docs/diagnostico_28oct_g.md): `anormales` son las cajas demasiado altas, anchas o bajas
+    # para su posición (`calidad_caja.cajas_anormales`). Usan el MISMO camino que las ocluidas:
+    # no votan en la media de la ventana y, si la ventana entera es anormal, votan todas.
+    cfg_anormales = cfg.get("excluir_cajas_anormales") or {}
+    excluir_anormales = bool(cfg_anormales.get("activo", False)) and bool(anormales)
+    no_votan: set[tuple[int, int]] = set()
+    if excluir_ocluidas:
+        no_votan |= set(ocluidas)
+    if excluir_anormales:
+        no_votan |= set(anormales)
 
     # ── EL CATÁLOGO ARBITRAL, TAMBIÉN POR OBSERVACIÓN (28-ago-2026) ──
     #
@@ -699,9 +711,9 @@ def etiquetar_por_observacion(
             ]
             if not cerca:
                 continue
-            if excluir_ocluidas:
+            if no_votan:
                 cerca = _recortes_para_votar(
-                    cerca, pares, t_actual, colores, ocluidas, ampliar_s
+                    cerca, pares, t_actual, colores, no_votan, ampliar_s
                 )
             media = color_medio_limpio(cerca, None)
             if media is None:

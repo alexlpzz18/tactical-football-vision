@@ -137,3 +137,81 @@ nuevo, escrito antes.
 ## Fusión
 
 Solo lo que pase su criterio, con pytest en 0. Lo que no pase se queda en la rama, documentado.
+
+---
+
+# Resultados
+
+## 1. Puerta de calidad de caja: NO CUMPLE, y la premisa no se sostiene. Cerrada en el intento 1
+
+`python scripts/diag28g.py pasadas` y `python scripts/diag28g.py medir` → `outputs/diagnostico_28oct_g/`.
+
+- **Control**: con el flag apagado, el CSV de la parte entera sale **idéntico byte a byte** al de
+  `main`. Encendido, cambia (228 filas con otra etiqueta).
+- Los 11 errores de partida se reproducen: 9 del GT de 30 s sobre 723 casadas y 2 de la hoja de
+  120.
+
+| criterio | resultado | ¿cumple? |
+|---|---|---|
+| corrige ≥ 6 de los 11 | **0 de 11** | no |
+| excluye ≤ 3 % de las observaciones A/B | **3,26 %** | no |
+| 0 errores nuevos | 0 | sí |
+
+- **Por qué no corrige nada**: en las ventanas de 1,5 s de los 11 errores **no hay NI UN recorte
+  anormal**. Son 0 de 7-15 recortes en cada una. La puerta no podía tocarlos.
+  - Ni siquiera el caso del árbitro (18:23,9): su caja se alarga, pero el árbitro ya es alto y la
+    caja no llega a 1,4 × el alto esperado.
+  - El error de equipo que queda NO vive en cajas de forma rara.
+- **Lo que excluye**: el 10,6 % de TODAS las detecciones. Son sobre todo staff (13.763, fuera del
+  campo y en el banquillo), porteros de A (1.308, cortados por el borde inferior, como se avisó) y
+  detecciones sin identidad. De las A/B, el 3,26 %.
+- **Intento 2: no se hace.** Aflojar los umbrales sube el porcentaje excluido, que ya pasa del 3 %,
+  y no hay ningún recorte anormal que cazar en los casos de error. Es la lección de «comprobar la
+  premisa antes de construir»: bastaba la última tabla.
+- Poder estadístico, como se dijo: 11 casos. Aun así, 0 de 11 con 0 recortes anormales en sus
+  ventanas no es un problema de muestra, es de mecanismo.
+- **El código queda en la rama** (`src/team_classification/calidad_caja.py` y el flag
+  `excluir_cajas_anormales`, apagado), sin fusionar.
+
+## 2. Color estable ≥ 1 s en el dibujo: NO CUMPLE (3 de 10)
+
+`python scripts/diag28g.py eventos`. Clip renderizado con la histéresis y el rótulo en pantalla:
+`outputs/diagnostico_28oct_g/clip_1_color_estable.mp4`.
+
+| # | evento (clip) | rachas de color < 1 s: crudo → dibujado | ¿deja de verse como parpadeo? |
+|---|---|---|---|
+| 1 | 0:04 B689 y A683 naranjas | 0 → 0 | no: sin cambio de color en sus etiquetas |
+| 2 | 0:15 cambio de id (colores bien) | 0 → 0 | no: no es color |
+| 3 | 0:21 el blanco pierde la caja | — (ninguna identidad cambia) | no: es una caja que se pierde |
+| 4 | 0:40-0:41 A683 detrás de B708 | 0 → 0 | no |
+| 5 | 0:44 la caja se vuelve naranja | 0 → 0 | no |
+| 6 | 1:00-1:01 A683 pasa a B683 | 0 → 0 | no (dura ~1 s, no es corta) |
+| 7 | 1:06-1:07 A708 y B525 en una caja | **3 → 0** | **sí** |
+| 8 | 0:00-0:33 el portero de A | 0 → 0 | no: rachas largas |
+| 9 | 1:11 el árbitro desaparece | **2 → 0** | **sí** |
+| 10 | 1:30 el árbitro pasa a A | **1 → 0** | **sí** |
+
+- **Criterio: 3 de 10 < 8. No cumple.** La predicción decía 6-7; salió peor.
+- **El hallazgo**: en 7 de los 10 eventos, las etiquetas de las identidades implicadas **no tienen
+  ningún cambio de color corto**. Por ejemplo, en 0:04 la 689 es A y la 683 es B en las 40
+  observaciones de la ventana.
+  - Lo que Alex vio cambiar de color no es una identidad que cambia de etiqueta, sino una CAJA que
+    pasa a otra identidad (o una caja que se pierde).
+  - Eso es ASOCIACIÓN, y una histéresis de color por identidad no lo puede tapar.
+- **Intento 2: no se hace.** Falla por lo que no es color, no por la regla.
+- **Controles**:
+  - la guarda `test_renderizadores_no_colapsan.py` pasa, con un caso nuevo: A 1 s → B se sigue
+    viendo con los dos colores, y un parpadeo de 0,3 s desaparece;
+  - los CSV no se tocan: la histéresis vive solo en el render. El CSV de la rama sale idéntico al
+    de `main` (bloque 1).
+- **El código queda en la rama**, sin fusionar:
+  - `histeresis_visual` en `replay_tactico.py`, con `--histeresis-visual-s` (1,0 por defecto en
+    `generar_replay.py`);
+  - `HISTERESIS_VISUAL_S` en `render_clips_26oct.py`, con el rótulo.
+  - Si Alex lo quiere igual como decisión de producto (quita 3 de los 10 parpadeos), basta con
+    fusionarlo.
+
+## Fusión
+
+Ninguna de las dos mejoras pasa su criterio: a `main` va **solo este informe**. El código está en
+la rama `mejoras-28oct-g`.

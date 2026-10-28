@@ -94,6 +94,14 @@ agregacion:
     activo: true
     ventana_s: 1.5
     forzar_ab: true
+    # Puerta de calidad de caja (docs/diagnostico_28oct_g.md): las cajas demasiado altas,
+    # anchas o bajas para la posición de su pie (ajuste f(u, v) por partido) no votan el
+    # color de la ventana. APAGADA: está en medición.
+    excluir_cajas_anormales:
+      activo: false
+      alto_max: 1.4 # h / alto esperado: dos personas en vertical
+      ancho_max: 1.6 # w / ancho esperado: dos personas lado a lado
+      alto_min: 0.6 # h / alto esperado: un fragmento
   # Mínimo de observaciones para poder etiquetar 'otro'. Por debajo se
   # fuerza A/B. El prototipo 'otro' es un imán para las medias ruidosas de
   # identidades cortas: con 1, 7, 14 o 16 observaciones la media de color

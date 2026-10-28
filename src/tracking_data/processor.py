@@ -1053,12 +1053,31 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         ocluidas_obs = detecciones_ocluidas(
             datos["cache"], iou_max=float(cfg_por_obs.get("ocluidas_iou", 0.10))
         )
+    # Puerta de calidad de caja (flag apagado; docs/diagnostico_28oct_g.md): las cajas anormales
+    # para su posición no votan el color de la ventana.
+    anormales_obs = None
+    cfg_anormales = cfg_por_obs.get("excluir_cajas_anormales") or {}
+    if cfg_anormales.get("activo", False):
+        from src.team_classification.calidad_caja import cajas_anormales
+
+        anormales_obs = cajas_anormales(
+            datos["cache"],
+            alto_max=float(cfg_anormales["alto_max"]),
+            ancho_max=float(cfg_anormales["ancho_max"]),
+            alto_min=float(cfg_anormales["alto_min"]),
+        )
     if tope_activo:
         etiquetas_por_obs = etiquetas_tope  # vacío con `unidad: identidad`
     else:
         etiquetas_por_obs = (
             etiquetar_por_observacion(
-                identidades, equipos, colores, clasificador, cfg_equipos, ocluidas_obs
+                identidades,
+                equipos,
+                colores,
+                clasificador,
+                cfg_equipos,
+                ocluidas_obs,
+                anormales_obs,
             )
             if clasificador is not None
             else {}

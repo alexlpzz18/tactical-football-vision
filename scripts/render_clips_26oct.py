@@ -37,6 +37,8 @@ FPS = 29.97002997002997
 LARGO, ANCHO = 62.0, 40.0
 DURACION_S = 75.0  # ventanas 2 y 3
 ANCHO_SALIDA = 1280
+# color estable en el DIBUJO (docs/diagnostico_28oct_g.md): 0 lo desactiva. El dato no cambia.
+HISTERESIS_VISUAL_S = 1.0
 REGION_CAMPO_AL_LADO = (940.0, 603.0)  # cx <, cy < (23-oct e): SOLO para describir
 # BGR
 COLOR = {
@@ -97,7 +99,7 @@ def cargar(captura: Path) -> dict:
     csv = pd.read_csv(captura / "posiciones_main.csv")
     gv = _mod(R / "scripts/generar_video_detecciones.py", "gv")
     balon = gv.balon_activo(CACHE_BALON, captura / "posiciones_main.csv", CAMPO)
-    return {
+    d = {
         "filtrado": filtrado,
         "ident_de": ident_de,
         "voto": voto,
@@ -106,10 +108,33 @@ def cargar(captura: Path) -> dict:
         "csv": csv,
         "balon": balon,
     }
+    d["pintada"] = etiquetas_pintadas(d, cap["identidades"], HISTERESIS_VISUAL_S)
+    return d
 
 
 def etiqueta_obs(d: dict, i: int, f: int) -> str:
+    """La etiqueta del DATO en (identidad, frame): la de la ventana o, si no, la del voto."""
     return str(d["final"].get((i, f), d["voto"].get(i, "otro")))
+
+
+def etiquetas_pintadas(d: dict, identidades, min_s: float) -> dict:
+    """{(identidad, frame): etiqueta que se DIBUJA}, con el color estable ≥ `min_s`.
+
+    Solo el dibujo (docs/diagnostico_28oct_g.md): `etiqueta_obs` sigue siendo el dato.
+    """
+    from src.report.replay_tactico import histeresis_visual
+
+    salida = {}
+    for i, obs in enumerate(identidades, start=1):
+        frames = sorted({int(f) for f, _j in obs})
+        crudas = [etiqueta_obs(d, i, f) for f in frames]
+        pint = histeresis_visual(crudas, [f / FPS for f in frames], min_s)
+        salida.update({(i, f): e for f, e in zip(frames, pint)})
+    return salida
+
+
+def etiqueta_pintada(d: dict, i: int, f: int) -> str:
+    return d.get("pintada", {}).get((i, f)) or etiqueta_obs(d, i, f)
 
 
 def recuento(csv: pd.DataFrame) -> pd.DataFrame:
@@ -247,7 +272,7 @@ def dibujar(img, f: int, d: dict, cuenta, fuentes):
         if i is None:
             cv2.rectangle(img, (x1, y1), (x2, y2), (90, 90, 90), 1)
             continue
-        et = etiqueta_obs(d, i, f)
+        et = etiqueta_pintada(d, i, f)
         col = COLOR.get(et, (255, 255, 255))
         grosor = 3 if et.startswith("portero_") else 2
         cv2.rectangle(img, (x1, y1), (x2, y2), col, grosor)
@@ -279,6 +304,16 @@ def dibujar(img, f: int, d: dict, cuenta, fuentes):
     a, b, o = (int(cuenta.get(k, 0)) for k in ("A", "B", "otro"))
     cv2.rectangle(img, (0, 0), (img.shape[1], 52), (0, 0, 0), -1)
     textos.append((10, 10, f"f{f}   {reloj(f)}", (255, 255, 255), fuentes["med"]))
+    if HISTERESIS_VISUAL_S > 0:
+        textos.append(
+            (
+                10,
+                56,
+                f"color estable ≥ {HISTERESIS_VISUAL_S:g} s: SOLO VISUAL, los datos no cambian",
+                (255, 255, 0),
+                fuentes["peq"],
+            )
+        )
     textos.append(
         (900, 10, f"A {a}   B {b}   otro {o}", (255, 255, 255), fuentes["med"])
     )
