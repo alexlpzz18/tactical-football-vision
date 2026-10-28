@@ -202,6 +202,41 @@ def ventanas(d: dict) -> dict:
 # ── dibujo ────────────────────────────────────────────────────────────────────────────────────
 
 
+def _se_solapan(a, b) -> bool:
+    """¿Se tocan dos rectángulos (x1, y1, x2, y2)?"""
+    return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
+
+
+def colocar_etiqueta(
+    cx: int, cy: int, radio: int, ancho: int, alto: int, ocupadas
+) -> tuple:
+    """Esquina (x, y) para la etiqueta del balón que no pise ninguna de las `ocupadas`.
+
+    Antes iba siempre a la derecha del círculo y pisaba «ÁRBITRO» cuando el balón estaba a sus
+    pies. Se prueba, en orden: encima del círculo, a la derecha, a la izquierda y debajo; si las
+    cuatro chocan, se sube la de encima de alto en alto hasta encontrar hueco (máximo 10 pasos).
+    """
+    margen = 4
+    candidatas = [
+        (cx - ancho // 2, cy - radio - margen - alto),  # encima
+        (cx + radio + margen, cy - alto // 2),  # derecha
+        (cx - radio - margen - ancho, cy - alto // 2),  # izquierda
+        (cx - ancho // 2, cy + radio + margen),  # debajo
+    ]
+    x0, y0 = candidatas[0]
+    candidatas += [(x0, y0 - k * (alto + margen)) for k in range(1, 11)]
+    for x, y in candidatas:
+        if not any(_se_solapan((x, y, x + ancho, y + alto), o) for o in ocupadas):
+            return x, y
+    return candidatas[0]
+
+
+def _caja_texto(x, y, t, fuente) -> tuple:
+    """Rectángulo que ocupa un texto de PIL (con el borde de 2 px del trazo)."""
+    b = fuente.getbbox(t)
+    return (x + b[0] - 2, y + b[1] - 2, x + b[2] + 2, y + b[3] + 2)
+
+
 def dibujar(img, f: int, d: dict, cuenta, fuentes):
     textos = []  # (x, y, texto, color RGB, fuente) con PIL al final: tildes y «≠»
     dets = d["filtrado"].get(f, [])
@@ -235,15 +270,11 @@ def dibujar(img, f: int, d: dict, cuenta, fuentes):
         nombre = (
             "balón dentro del campo" if estado == "dentro" else "balón proyectado FUERA"
         )
-        textos.append(
-            (
-                cx + 18,
-                cy - 10,
-                f"{nombre} {conf:.2f}",
-                COLOR_BALON[estado][::-1],
-                fuentes["peq"],
-            )
-        )
+        t = f"{nombre} {conf:.2f}"
+        b = fuentes["peq"].getbbox(t)
+        ocupadas = [_caja_texto(x, y, tt, fu) for x, y, tt, _, fu in textos]
+        x, y = colocar_etiqueta(cx, cy, 16, b[2] - b[0] + 4, b[3] - b[1] + 4, ocupadas)
+        textos.append((x, y, t, COLOR_BALON[estado][::-1], fuentes["peq"]))
     # cabecera: reloj, contador, bandera B > 7, balón
     a, b, o = (int(cuenta.get(k, 0)) for k in ("A", "B", "otro"))
     cv2.rectangle(img, (0, 0), (img.shape[1], 52), (0, 0, 0), -1)
