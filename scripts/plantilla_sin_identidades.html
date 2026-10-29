@@ -1,0 +1,39 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pizarra sin identidades</title><style>
+body{margin:0;background:#111318;color:#e8e8e8;font-family:-apple-system,system-ui,sans-serif}
+.caja{max-width:1000px;margin:0 auto;padding:16px}canvas{width:100%;border-radius:10px}
+.ctl{display:flex;gap:12px;align-items:center;margin:10px 0}input[type=range]{flex:1}
+button{background:#3fbf6a;border:0;border-radius:8px;padding:8px 14px;font-size:16px}
+.ley{font-size:13px;opacity:.85;line-height:1.6}.p{display:inline-block;width:11px;height:11px;
+border-radius:50%;margin:0 5px 0 12px;vertical-align:middle}</style></head><body><div class="caja">
+<h2 style="margin:4px 0">__TITULO__</h2>
+<div class="ley">Cada punto es UNA detección, del color de su etiqueta en ese instante. Sin números
+ni fichas: la estela (0,4 s) une cada punto con el más cercano del instante anterior a menos de 1 m.
+<b>Solo dibujo; los datos no cambian.</b></div>
+<canvas id="c"></canvas>
+<div class="ctl"><button id="b">▶</button><input id="r" type="range" min="0" value="0">
+<span id="t"></span></div><div class="ley" id="l"></div></div><script>
+const FR=__FRAMES__, COL=__COLORES__, CAMPO=__CAMPO__, L=__LARGO__, A=__ANCHO__, FPS=__FPS__;
+const PAD=5,E=10,c=document.getElementById('c'),x=c.getContext('2d');
+c.width=(L+2*PAD)*E;c.height=(A+2*PAD)*E;
+const px=v=>(v+PAD)*E, py=v=>((A-v)+PAD)*E;  // espejado en y, como la pizarra del benjamín
+function campo(){x.fillStyle='#2b7445';x.fillRect(0,0,c.width,c.height);
+x.strokeStyle='rgba(255,255,255,.8)';x.lineWidth=1.4;
+for(const [[a,b],[d,e]] of CAMPO.lineas){x.beginPath();x.moveTo(px(a),py(b));x.lineTo(px(d),py(e));x.stroke();}
+for(const k of CAMPO.circulos){x.beginPath();x.arc(px(k.cx),py(k.cy),k.r*E,0,7);x.stroke();}}
+function cerca(P,q){let m=1e9,j=-1;for(let k=0;k<P.length;k++){const d=Math.hypot(P[k][0]-q[0],P[k][1]-q[1]);if(d<m){m=d;j=k;}}return m<1?j:-1;}
+function dibuja(i){campo();const P=FR[i][1];
+for(const p of P){let q=p;x.strokeStyle=COL[p[2]]||'#999';
+for(let s=1;s<=4&&i-s>=0;s++){const j=cerca(FR[i-s][1],q);if(j<0)break;const r=FR[i-s][1][j];
+x.globalAlpha=0.55*(1-s/5);x.lineWidth=3;x.beginPath();x.moveTo(px(q[0]),py(q[1]));x.lineTo(px(r[0]),py(r[1]));x.stroke();q=r;}
+x.globalAlpha=1;x.beginPath();x.arc(px(p[0]),py(p[1]),6,0,7);x.fillStyle=COL[p[2]]||'#999';x.fill();
+x.strokeStyle='rgba(0,0,0,.5)';x.lineWidth=1;x.stroke();}
+const t=FR[i][0]/FPS,rp=t+93;const f=s=>Math.floor(s/60)+':'+(s%60).toFixed(1).padStart(4,'0');
+document.getElementById('t').textContent='archivo '+f(t)+' · reproductor '+f(rp);}
+const r=document.getElementById('r');r.max=FR.length-1;r.oninput=()=>dibuja(+r.value);
+let on=false,h=null;document.getElementById('b').onclick=()=>{on=!on;
+document.getElementById('b').textContent=on?'❚❚':'▶';
+if(on){h=setInterval(()=>{let v=+r.value+1;if(v>=FR.length)v=0;r.value=v;dibuja(v);},100);}else clearInterval(h);};
+document.getElementById('l').innerHTML=Object.entries(COL).map(([k,v])=>'<span class="p" style="background:'+v+'"></span>'+k).join('');
+dibuja(0);</script></body></html>

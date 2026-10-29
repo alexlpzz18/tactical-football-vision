@@ -230,6 +230,9 @@ NO_PINTAN_POR_OBSERVACION = {
     "scripts/etiquetar_equipos_gt.py": "herramienta de etiquetado manual, no pinta el sistema",
     "scripts/poligonal_defensa.py": "pinta una POLIGONAL por equipo con la etiqueta de cada "
     "fila EN ESE FRAME (no la moda de la identidad); no hay ficha por observación",
+    "scripts/pizarra_sin_identidades.py": "pinta CADA DETECCIÓN con su etiqueta por observación "
+    "EN ESE FRAME, leída de la captura y no del CSV: no hay identidad ni moda que colapsar "
+    "(docs/pizarra_sin_identidades.md)",
     "scripts/hoja_revision_equipos.py": "pinta UN instante por imagen, con la etiqueta de cada "
     "observación EN ESE FRAME (la del CSV, no la moda de la identidad): no hay vida que colapsar",
     "scripts/lineas_tacticas.py": "pinta LÍNEAS por equipo calculadas con la etiqueta de cada fila "

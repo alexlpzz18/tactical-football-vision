@@ -65,3 +65,76 @@ ventana), y no queda más de un 10 % sin explicar.
 - Sin identidades no hay fichas que «cambien de persona», pero tampoco se ve quién es quién: es otra
   pizarra, no la misma con menos ruido. Que la juzgue Alex.
 - El pie sin suavizar tiembla (0,42 m/px en el fondo): los puntos vibrarán.
+
+---
+
+# Resultados
+
+`python scripts/pizarra_sin_identidades.py conciliar` y `… pizarra` →
+`outputs/pizarra_sin_identidades/`. Los CSV de datos salen con el mismo SHA-256.
+
+## 1. Conciliación: casi la mitad de los cambios de la pizarra son las filas INTERPOLADAS
+
+- **Control**:
+  - el simulador cuenta **131** cambios (87,3/min);
+  - las filas seguidas del CSV que pinta la pizarra (`base.csv` pasado por sus filtros: 14.701 →
+    13.644 filas) dan **132**. Cuadra (± 1 del borde).
+- **«Ficha que pasa a otra fila»: 0.** Cada ficha es una sola identidad.
+
+| origen de los 132 cambios de color | n | % |
+|---|---|---|
+| **islas de filas INTERPOLADAS**: una racha solo de filas `es_real = 0` (0,1-0,4 s) con una etiqueta distinta de sus DOS vecinas reales; cada isla son 2 cambios | **58** | **44 %** |
+| otros cambios con alguna fila interpolada de por medio (el cambio real cae en un hueco) | 16 | 12 % |
+| real → real, identidad A/B, **con `otro`** (el catálogo arbitral por observación saca la fila a `otro`) | 20 | 15 % |
+| real → real, identidad A/B, **A ↔ B** | 38 | 29 % |
+| identidades portero, staff u `otro` | 0 | 0 % |
+
+- **El mecanismo de las islas, medido**:
+  - el **100 % de las 5.861 filas interpoladas** de los 20 min lleva el **VOTO de su identidad**, no
+    la etiqueta por observación (en las reales, el voto coincide solo el 77,7 %);
+  - lo hace el escritor del CSV a propósito (`processor.py`: «las posiciones INTERPOLADAS no tienen
+    recorte, así que se quedan con la de su identidad»);
+  - en el tramo, 58 filas interpoladas no tienen la etiqueta ni de la real anterior ni de la
+    siguiente.
+  - ⇒ Una ficha cuyas observaciones dicen B pero cuyo voto es A destella A durante 0,1-0,4 s en
+    cada hueco.
+  - **Es el bug de `pizarra_colapsaba.md` en pequeño: la moda de la identidad colándose en el
+    dibujo, solo en los huecos.**
+- **El puente al 51**:
+  - 51 son los A ↔ B entre observaciones reales seguidas en los datos SIN filtrar;
+  - en el CSV pintado, 38 quedan como real → real;
+  - el resto cae con una fila interpolada de por medio (en los 16), o en filas que la pizarra quita
+    (fuera del campo, fichas de < 2 s).
+  - Sin explicar: 0.
+- **Lo que significa para la histéresis de 1 s**: las islas duran ≤ 0,4 s, así que la histéresis se
+  las come todas. Buena parte de su −64 % era esto.
+- **Un arreglo SOLO de dibujo** (no hecho, no pedido): que la pizarra pinte una fila interpolada con
+  la etiqueta de la fila REAL más cercana de su identidad, no con la del CSV. Quitaría hasta 58 de
+  132 cambios (−44 %) sin tocar los datos. Va como propuesta.
+
+## 2. Pizarra SIN identidades: NO CUMPLE (112,7 cambios visibles/min; criterio ≤ 17)
+
+| | resultado |
+|---|---|
+| puntos dibujados en 90 s | 14.964 (las 258 detecciones sin identidad no se pintan) |
+| **cambios visibles** (color distinto del más cercano del frame anterior a < 1 m) | **169 = 112,7/min** |
+| de ellos, con un punto de SU color también a < 1 m (casado con el vecino equivocado) | 51 (30 %) |
+| puntos sin pareja a < 1 m en el frame anterior | 666,7/min |
+
+- **Criterio: 112,7 > 17. NO CUMPLE, y sale PEOR que la pizarra de `main` (87,3).**
+- **Por qué**:
+  - **los cruces** se ven como un punto que cambia de color: dos personas de equipos distintos a
+    < 1 m y el más cercano salta entre ellas (al menos 51 de 169);
+  - **la etiqueta de la misma persona** sigue cambiando, porque el dato es el mismo;
+  - **el pie sin suavizar tiembla**: 667 puntos por minuto no tienen pareja a < 1 m 0,1 s antes, y
+    la estela se corta y se reengancha a otro.
+- Quitar las identidades no quita el parpadeo; lo cambia de sitio. El que había en las fichas era
+  sobre todo la etiqueta, más las islas interpoladas; aquí se suman los cruces.
+- **La pizarra para que la compare Alex**: `outputs/pizarra_sin_identidades/pizarra_sin_identidades.html`,
+  frente a `outputs/etiqueta_por_trozos_intento1/base.html`. Lleva el aviso «solo dibujo; los datos
+  no cambian».
+
+## Código
+
+`scripts/pizarra_sin_identidades.py` y su plantilla `scripts/plantilla_sin_identidades.html`, en la
+rama `pizarra-sin-identidades`, sin fusionar. A `main`, solo este informe.
