@@ -72,3 +72,57 @@ Para cada identidad de `main` (`captura_main.pkl`: sus observaciones, su etiquet
 - 9 + 2 errores es poca muestra para «no sube». Una subida de 1-2 casos puede ser ruido, y se dice
   con su número, no solo con el sí o el no.
 - Y el GT de 30 s es del minuto 5, con su proporción de cruces.
+
+---
+
+# Resultados (intento 1): NO CUMPLE la pizarra; la exactitud no cambia. Ruta cerrada sin intento 2
+
+`python scripts/etiqueta_por_trozos.py --intento 1` → `outputs/etiqueta_por_trozos_intento1/`.
+
+**Control**: los CSV de datos salen con el mismo SHA-256. Las etiquetas del CSV de `main` coinciden
+con las de la captura en 20.000 de 20.000 filas reales muestreadas.
+
+**Los trozos**:
+- en los 20 min, 23.637 observaciones A/B caen en un cruce (rival a ≤ 2 m) y hay 4.036 cortes por
+  salto imposible;
+- quedan 7.641 trozos, con una duración de **mediana 0,1 s** (p90 3,3 s, máximo 67 s): la mayoría
+  de los trozos es UNA observación;
+- cambian 1.034 observaciones (1.062 filas del CSV), y solo **54 en el tramo de Alex**.
+
+| | `main` | por trozos | criterio |
+|---|---|---|---|
+| GT de 30 s: equipo equivocado | 9 / 723 | **9 / 723** | no sube → **sí** |
+| episodios de error (GT) | 9, todos de 0,5 s (un frame del GT) | 9, todos de 0,5 s | (informativo) |
+| hoja de 120 (caja correcta) | 2 / 120 | **2 / 120** (los mismos: 09_1-16.0 y 113_18-23.9) | no sube → **sí** |
+| pizarra 14:00-15:30, sin histéresis: cambios/min | 87,3 | **87,3** | ≤ 17,5 → **NO** |
+| cambios entre filas reales del tramo (datos) | 74 | 73 | — |
+
+**Por qué no mueve la pizarra, medido en el tramo** (51 cambios A ↔ B entre observaciones seguidas
+de identidades A/B):
+- **18 tocan una observación EN CRUCE**, que el diseño deja como está a propósito;
+- **8 coinciden con un SALTO IMPOSIBLE** del pie sin suavizar, que es un punto de corte: el cambio
+  cae justo en la frontera entre dos trozos. Es el 15,7 % de los cambios, frente a un 4,0 % de saltos
+  imposibles en cualquier paso: **4× enriquecido**, la firma de una identidad que salta a otra
+  persona;
+- los 25 restantes caen en trozos tan cortos (mediana 0,1 s) que la mayoría es la propia
+  observación.
+- ⇒ **Por construcción, al menos 26 de 51 cambios (51 %) no los puede quitar ningún parámetro del
+  corte.** El techo queda por debajo del −80 %. Por eso no hay intento 2: la regla era hacerlo solo
+  si fallaba un parámetro, y esto es estructural.
+- Alargar los trozos (cortar menos) es el voto por identidad volviendo: `parpadeo.md` ya midió que
+  pasar de 1,5 s sube el error.
+
+**Lo que deja**:
+- la etiqueta por trozo no es la palanca de la pizarra. Una parte de los cambios de color vive en
+  los cruces, y otra coincide con saltos imposibles de la identidad, es decir, con que la ficha
+  cambia de persona (asociación);
+- es coherente con el desglose del 28-oct: 4 de las 5 fichas con más cambios pasan la mitad del tramo
+  de cada color;
+- **los episodios de error en el GT duran todos un frame del GT (0,5 s)**, antes y después: el error
+  de etiqueta que queda es suelto, no en rachas.
+
+**No se genera la pizarra «si cumple»** porque no cumple. La de prueba está en
+`outputs/etiqueta_por_trozos_intento1/por_trozos.html`, al lado de `base.html`.
+
+**Código**: `scripts/etiqueta_por_trozos.py` (y la copia del simulador `scripts/fichas_pizarra.py`),
+en la rama `etiqueta-por-trozos`, sin fusionar. A `main`, solo este informe.
