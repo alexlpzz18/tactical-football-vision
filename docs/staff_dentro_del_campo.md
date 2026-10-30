@@ -137,3 +137,24 @@ La mutación que ignora el filtro de velocidad hace fallar el test; se comprobó
 cambiado y se restauró.
 
 **No se fusiona a `main`**: es producción y no cumple todos los criterios.
+
+## Revisión de los 20 min antes de fusionar (30-oct, petición de Alex)
+
+`python scripts/staff_dentro.py clips` → `outputs/staff_dentro/clips/racha_N.mp4`. Cada clip cubre
+la racha con 1 s por cada lado; la caja amarilla es la detección PROPIA de la identidad en cada
+frame del caché, y los dos relojes van impresos.
+
+| racha | id | inicio (archivo · reproductor) | dura | filas | quién es |
+|---|---|---|---|---|---|
+| 0 | 545 | 10:54.5 · 12:27.5 | 2,9 s | 30 | **adulto con chaqueta oscura recogiendo un balón** → error |
+| 1 | 590 | 13:05.1 · 14:38.1 | 23,2 s | 233 | jugador blanco (el lateral derecho de A) |
+| 2 | 625 | 12:29.8 · 14:02.8 | 0,3 s | 3 | jugador blanco en la banda derecha |
+
+Solo sale el adulto de 10:54, que era la condición de Alex para fusionar. **Se fusiona a `main` con
+el interruptor activado en el benjamín** (`staff_dentro_del_campo.activo: true`).
+
+**ERROR CONOCIDO**:
+- de 10:54.5 a 10:57.4 del archivo (12:27.5-12:30.4 del reproductor), la identidad 545, un adulto de
+  oscuro que entra a recoger un balón en la banda lejana, sale como **A durante 3 s (30 filas)**;
+- es el caso de «alguien de otro color dentro del campo», y separarlo por color es la ruta cerrada
+  del tercer grupo.

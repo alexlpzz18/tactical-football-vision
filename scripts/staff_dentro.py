@@ -5,6 +5,7 @@
 Uso:
     python scripts/staff_dentro.py correr
     python scripts/staff_dentro.py medir --modulos <dir>
+    python scripts/staff_dentro.py clips    # un clip por racha, con la caja de SU detección
 
 `--modulos`: carpeta con `etiqueta_por_trozos.py` (GT de 30 s y hoja de 120, rama sin fusionar).
 """
@@ -221,14 +222,80 @@ def medir() -> dict:
     return res
 
 
+def clips() -> dict:
+    """Un clip por racha que pasa de staff a jugador, para que Alex confirme quién es.
+
+    La caja amarilla es la detección PROPIA de la identidad en cada frame del caché (no la más
+    cercana a la posición del CSV), y se mantiene en los frames intermedios. Se lee con el ffmpeg
+    de línea de comandos (`leer_frames_ffmpeg`), nunca con cv2.VideoCapture.
+    """
+    import cv2
+
+    from src.utils.video_ffmpeg import leer_frames_ffmpeg
+
+    rachas = pd.read_csv(SALIDA / "rachas.csv")
+    cap = pickle.load(open(CAPTURA, "rb"))
+    dets = {e["frame_idx"]: e["dets"] for e in cap["cache"]}
+    carpeta = SALIDA / "clips"
+    carpeta.mkdir(exist_ok=True)
+    tramos, cajas = [], {}
+    for n, r in rachas.iterrows():
+        f0, f1 = int((r.t0 - 1.0) * FPS), int((r.t1 + 1.0) * FPS)
+        tramos.append((n, f0, f1))
+        por_frame = {int(f): int(k) for f, k in cap["identidades"][int(r.id) - 1]}
+        caja, cajas[n] = None, {}
+        for f in range(f0, f1 + 1):
+            if f in por_frame:
+                caja = [int(v) for v in dets[f][por_frame[f]][2:6]]
+            cajas[n][f] = caja
+    escritores = {}
+    pedidos = [f for _n, f0, f1 in tramos for f in range(f0, f1 + 1)]
+    for f, img in leer_frames_ffmpeg(VIDEO, pedidos):
+        for n, f0, f1 in tramos:
+            if not f0 <= f <= f1:
+                continue
+            if n not in escritores:
+                escritores[n] = subprocess.Popen(
+                    ["ffmpeg", "-loglevel", "error", "-y", "-f", "rawvideo",
+                     "-pix_fmt", "bgr24", "-s", f"{img.shape[1]}x{img.shape[0]}",
+                     "-r", f"{FPS}", "-i", "-", "-vf", "scale=960:-2", "-c:v", "libx264",
+                     "-pix_fmt", "yuv420p", "-crf", "23", str(carpeta / f"racha_{n}.mp4")],
+                    stdin=subprocess.PIPE,
+                )  # fmt: skip
+            dib = img.copy()
+            c = cajas[n][f]
+            if c is not None:
+                cv2.rectangle(
+                    dib, (c[0] - 4, c[1] - 4), (c[2] + 4, c[3] + 4), (0, 255, 255), 3
+                )
+            texto = relojes(f / FPS).replace("·", "|")  # cv2 no pinta el «·»
+            cv2.putText(
+                dib, texto, (30, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (255, 255, 255), 3
+            )
+            escritores[n].stdin.write(dib.tobytes())
+            if f == f1:
+                escritores[n].stdin.close()
+                escritores[n].wait()
+    return {
+        int(n): {
+            "id": int(r.id),
+            "relojes": relojes(r.t0),
+            "duracion_s": round(r.t1 - r.t0, 1),
+            "filas": int(r.filas),
+            "clip": str(carpeta / f"racha_{n}.mp4"),
+        }
+        for n, r in rachas.iterrows()
+    }
+
+
 def main() -> None:
     global MODULOS
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("accion", choices=["correr", "medir"])
+    ap.add_argument("accion", choices=["correr", "medir", "clips"])
     ap.add_argument("--modulos", type=Path, default=None)
     args = ap.parse_args()
     MODULOS = args.modulos
-    out = correr() if args.accion == "correr" else medir()
+    out = {"correr": correr, "medir": medir, "clips": clips}[args.accion]()
     print(json.dumps(out, indent=1, ensure_ascii=False, default=str))
 
 
