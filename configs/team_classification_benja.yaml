@@ -94,6 +94,18 @@ agregacion:
     activo: true
     ventana_s: 1.5
     forzar_ab: true
+    # Staff que ENTRA en el campo (docs/staff_dentro_del_campo.md): la regla de staff decide
+    # por identidad entera, y una identidad que empieza en la banda (entrenador) y salta a un
+    # jugador pintaba de gris al lateral derecho de A en la salida de 13:20. Con esto, sus
+    # observaciones con el pie a ≥ margen_m DENTRO de las líneas se etiquetan como las de un
+    # jugador (ventana solo con observaciones de dentro). Fuera, sigue siendo staff.
+    staff_dentro_del_campo:
+      activo: true
+      margen_m: 1.0
+      # intento 2: solo trozos de dentro que se mueven ≥ staff.vel_max_lento (el entrenador
+      # pisa 1-2,5 m dentro, plantado)
+      solo_trozos_rapidos: true
+      hueco_trozo_s: 1.0
   # Mínimo de observaciones para poder etiquetar 'otro'. Por debajo se
   # fuerza A/B. El prototipo 'otro' es un imán para las medias ruidosas de
   # identidades cortas: con 1, 7, 14 o 16 observaciones la media de color
