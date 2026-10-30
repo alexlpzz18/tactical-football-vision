@@ -7,13 +7,19 @@ escribe en `data/`.
 
 Uso:
     python scripts/salida_balon.py candidatas
+    python scripts/salida_balon.py visor --ids A1 A2 B2 --modulos <dir>
+
+`--modulos`: carpeta con `fichas_pizarra.py` (rama `pizarra-sin-identidades`, sin fusionar), el
+simulador que reproduce `posicionEn` de la pizarra. Se carga como si estuviera en `scripts/`.
 """
 
 import argparse
 import base64
 import json
+import pickle
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +30,7 @@ sys.path.insert(0, str(R))
 SALIDA = R / "outputs/salida_balon"
 CSV_CONJUNTO = SALIDA / "conjunto.csv"  # jugadores (arreglo de interpoladas) + balón
 CONTACTOS = SALIDA / "contactos.csv"
+CACHE_BALON = R / "data/tracking_benja/cache_balon_p1.pkl"
 VIDEO = R / "data/raw/benja_gredos_p1_20min.mp4"
 FPS = 29.97002997002997
 DESFASE_REPRODUCTOR_S = 93.0
@@ -72,8 +79,10 @@ def candidatas() -> dict:
     jug = df[~es_balon]
     det = balon[(balon.es_real == 1) & (balon.etiqueta == "balon")]
     t_b, x_b, y_b = det.tiempo_s.to_numpy(), det.x_m.to_numpy(), det.y_m.to_numpy()
-    # frames del caché de balón (detectado o no): el denominador de la cobertura
-    t_todos = np.sort(balon.tiempo_s.unique())
+    # frames del caché de balón (detectado o no): el denominador de la cobertura.
+    # ⚠️ NO las filas de balón del CSV: solo existen donde hay pista de balón, y dividir por
+    # ellas daba 72-95 % donde la cobertura real era 35-44 % (docs/pizarra_salida_balon.md).
+    t_todos = np.array([e["t"] for e in pickle.load(open(CACHE_BALON, "rb"))["cache"]])
     con = pd.read_csv(CONTACTOS).dropna(subset=["equipo"]).sort_values("t")
     con["eq_contacto"] = con.equipo.map(equipo_de)
 
@@ -189,11 +198,170 @@ def candidatas() -> dict:
     return res
 
 
+# ── visor: vídeo y pizarra sincronizados ─────────────────────────────────────────────────────
+
+META = R / "outputs/fix_interpoladas/benja_despues_meta.json"
+CAMPO = R / "configs/campo_benja.yaml"
+HISTERESIS_S = 1.0
+PASO_VISOR_S = (
+    0.05  # la pizarra se precalcula a 20 Hz y se dibuja al instante del vídeo
+)
+BALON_CERCA_S = 0.07  # el caché de balón va a 15 Hz: una detección a ≤ 1 muestra
+PLANTILLA_VISOR = R / "scripts/plantilla_salida_balon.html"
+MODULOS: Path | None = None
+
+
+def _mod(nombre):
+    """Un script de `scripts/`, o de `--modulos` con `__file__` dentro de `scripts/`."""
+    ruta = R / f"scripts/{nombre}.py"
+    fuente = ruta if ruta.exists() else MODULOS / f"{nombre}.py"
+    m = types.ModuleType(nombre)
+    m.__file__ = str(ruta)
+    exec(compile(fuente.read_text(), str(fuente), "exec"), m.__dict__)
+    return m
+
+
+def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
+    """Fichas (lo que pinta la pizarra), balón y la calidad del tramo, muestreados a 20 Hz."""
+    fp = _mod("fichas_pizarra")
+    a, b = c["tramo"]
+    es_balon = df.etiqueta.astype(str).str.startswith("balon")
+    # (1) la pizarra de producción del tramo: arreglo de interpoladas + histéresis de 1 s
+    html = carpeta / f"pizarra_{c['id']}.html"
+    corte = df[~es_balon & (df.tiempo_s >= a - 5) & (df.tiempo_s <= b + 5)]
+    corte_csv = carpeta / f"pizarra_{c['id']}.csv"
+    corte.to_csv(corte_csv, index=False)
+    subprocess.run(
+        [
+            sys.executable, str(R / "scripts/generar_replay.py"),
+            "--csv", str(corte_csv), "--salida", str(html),
+            "--config-campo", str(CAMPO), "--meta", str(META),
+            "--suavizado-visual-ventana", "1",
+            "--histeresis-visual-s", str(HISTERESIS_S),
+            "--titulo", c["id"],
+        ],
+        check=True, capture_output=True,
+    )  # fmt: skip
+    datos, catalogo = fp.leer_pizarra(html)
+    Ts = np.arange(a, b, PASO_VISOR_S)
+    fichas = fp.simular(datos, catalogo, Ts)
+    # (2) el balón: solo DETECCIONES dentro del campo; si proyecta fuera no se pinta
+    bal = df[es_balon & (df.es_real == 1)].sort_values("tiempo_s")
+    dentro = bal.x_m.between(0, LARGO) & bal.y_m.between(0, ANCHO)
+    tb = bal.tiempo_s.to_numpy()
+    j = np.clip(np.searchsorted(tb, Ts), 1, len(tb) - 1)
+    k = np.where(np.abs(tb[j - 1] - Ts) <= np.abs(tb[j] - Ts), j - 1, j)
+    cerca = np.abs(tb[k] - Ts) <= BALON_CERCA_S
+    estado = np.where(
+        ~cerca, "no visible", np.where(dentro.to_numpy()[k], "detectado", "fuera")
+    )
+    aereo = bal.etiqueta.to_numpy()[k] == "balon_aereo"
+    balon = [
+        (
+            [
+                round(float(bal.x_m.iloc[kk]), 2),
+                round(float(bal.y_m.iloc[kk]), 2),
+                int(ae),
+            ]
+            if e == "detectado"
+            else e
+        )
+        for kk, e, ae in zip(k, estado, aereo)
+    ]
+    # (3) por instante: fichas visibles DENTRO del campo, por etiqueta pintada
+    muestras = []
+    por_equipo = {"A": [], "B": []}
+    for n in range(len(Ts)):
+        vis = []
+        cuenta = {"A": 0, "B": 0}
+        for f in fichas:
+            if not f["vis"][n]:
+                continue
+            x, y, et = float(f["x"][n]), float(f["y"][n]), str(f["col"][n])
+            if not (0 <= x <= LARGO and 0 <= y <= ANCHO):
+                continue
+            vis.append([round(x, 2), round(y, 2), et])
+            eq = equipo_de(et)
+            if eq:
+                cuenta[eq] += 1
+        for e in cuenta:
+            por_equipo[e].append(cuenta[e])
+        muestras.append(vis)
+    n_det = int((estado == "detectado").sum())
+    calidad = {
+        "balon_detectado_pct": round(100 * n_det / len(Ts), 1),
+        "balon_fuera_del_campo_pct": round(100 * float((estado == "fuera").mean()), 1),
+        "balon_no_visible_pct": round(100 * float((estado == "no visible").mean()), 1),
+        "fichas_media": {e: round(float(np.mean(v)), 2) for e, v in por_equipo.items()},
+        "fichas_p10_p90": {
+            e: [int(np.percentile(v, 10)), int(np.percentile(v, 90))]
+            for e, v in por_equipo.items()
+        },
+        "instantes_con_7_o_mas": {
+            e: round(100 * float(np.mean(np.array(v) >= 7)), 1)
+            for e, v in por_equipo.items()
+        },
+    }
+    return {
+        "id": c["id"],
+        "equipo": c["equipo"],
+        "t0": a,
+        "paso": PASO_VISOR_S,
+        "muestras": muestras,
+        "balon": balon,
+        "calidad": calidad,
+        "relojes": c["relojes_tramo"],
+        "video": f"clip_{c['id']}.mp4",
+    }
+
+
+def visor(ids: list[str]) -> dict:
+    carpeta = SALIDA / "visor"
+    carpeta.mkdir(parents=True, exist_ok=True)
+    cand = json.load(open(SALIDA / "elegidas_por_alex.json"))
+    por_id = {c["id"]: c for T in cand for c in cand[T]["propuestas"]}
+    df = pd.read_csv(CSV_CONJUNTO)
+    tramos = []
+    for i in ids:
+        c = por_id[i]
+        a, b = c["tramo"]
+        clip = carpeta / f"clip_{i}.mp4"
+        # -ss ANTES de -i con recodificación: corte exacto al frame (ffmpeg CLI, no cv2)
+        subprocess.run(
+            [
+                "ffmpeg", "-loglevel", "error", "-y", "-ss", f"{a:.3f}", "-i", str(VIDEO),
+                "-t", f"{b - a:.3f}", "-an", "-vf", "scale=960:-2",
+                "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
+                "-movflags", "+faststart", str(clip),
+            ],
+            check=True,
+        )  # fmt: skip
+        tramos.append(datos_de_un_tramo(c, df, carpeta))
+    colores = json.load(open(META)).get("colores_equipo", {})
+    html = carpeta / "salidas_de_balon.html"
+    html.write_text(
+        PLANTILLA_VISOR.read_text()
+        .replace("__TRAMOS__", json.dumps(tramos, separators=(",", ":")))
+        .replace("__COLORES__", json.dumps(colores))
+    )
+    res = {t["id"]: {"relojes": t["relojes"], **t["calidad"]} for t in tramos}
+    res["html"] = str(html)
+    json.dump(res, open(carpeta / "calidad.json", "w"), indent=1, ensure_ascii=False)
+    return res
+
+
 def main() -> None:
+    global MODULOS
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("accion", choices=["candidatas"])
+    ap.add_argument("accion", choices=["candidatas", "visor"])
+    ap.add_argument("--ids", nargs="+", default=["A1", "A2", "B2"])
+    ap.add_argument("--modulos", type=Path, default=None)
     args = ap.parse_args()
-    out = {"candidatas": candidatas}[args.accion]()
+    MODULOS = args.modulos
+    if args.accion == "candidatas":
+        out = candidatas()
+    else:
+        out = visor(args.ids)
     print(json.dumps(out, indent=1, ensure_ascii=False))
 
 

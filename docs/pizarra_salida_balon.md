@@ -53,3 +53,77 @@ miniatura por candidata y el balón marcado con un recuadro amarillo.
 - **A1 y B1 se solapan**: B saca, el balón acaba en el área de A y A sale desde ahí.
 - **Las salidas de B ocurren en el fondo**, donde 1 px vale hasta 0,42 m. Allí el balón y las
   fichas son menos fiables.
+
+## ⚠️ Corrección del paso 1: la cobertura de balón estaba mal calculada
+
+La «cobertura» dividía las detecciones de balón entre las FILAS de balón del CSV, y esas filas solo
+existen donde hay pista de balón. Tenía que dividir entre todos los frames del caché de balón
+(15 Hz). Lo cazó el visor, que daba 34-44 % de balón detectado donde las tarjetas decían 72-95 %.
+
+| | cobertura dada | real |
+|---|---|---|
+| A1 | 95 % | **36 %** |
+| A2 | 72 % | **44 %** |
+| B1 | 86 % | **56 %** |
+| B2 | 85 % | **35 %** |
+
+- **Con la regla bien aplicada (≥ 50 %) solo queda B1.** El script está corregido y
+  `candidatas.html` es ya la pasada buena.
+- Alex eligió **A1, A2 y B2** sobre la lista mala. El visor se hace con esas tres, guardadas en
+  `outputs/salida_balon/elegidas_por_alex.json`, y la cobertura real va escrita en cada una.
+- **Es la sexta vez que una herramienta que resume miente sobre lo que resume**: un denominador que
+  solo cuenta donde ya hay dato.
+
+## 2. El visor
+
+`python scripts/salida_balon.py visor --ids A1 A2 B2 --modulos <dir>` →
+`outputs/salida_balon/visor/salidas_de_balon.html`, con los clips al lado.
+
+- **Vídeo y pizarra lado a lado y sincronizados.** El clip se corta con el ffmpeg de línea de
+  comandos (`-ss` antes de `-i`, recodificado: exacto al frame). La pizarra se dibuja en el
+  instante del vídeo. Hay pausa y velocidad 0,5× / 1×, y la barra del vídeo permite saltar.
+- **Las fichas son las de la pizarra de producción**: `generar_replay.py` del tramo con el arreglo de
+  interpoladas y la histéresis de 1 s. Se leen sus datos y se reproducen con el simulador de
+  `posicionEn` (`fichas_pizarra.py`), muestreado a 20 Hz.
+- **El balón** solo se pinta si hay una detección a ≤ 0,07 s y dentro del campo. El estado se
+  escribe: «detectado», «detectado, por el aire», «proyecta fuera del campo (no se pinta)» o
+  «no visible». Los huecos del balón no se rellenan.
+- **Contorno** convexo de los jugadores de campo de cada equipo, sin el portero, y opción de la
+  línea del último defensor.
+- La pizarra va **orientada como la cámara**, con la portería de A abajo y la y creciendo hacia la
+  izquierda (comprobado proyectando con la homografía).
+- **Control de sincronía**: a 8 s de A1, el balón de la pizarra proyectado sobre el frame del clip
+  cae encima del balón del vídeo (desfase de 0,01 s).
+
+## 3. ¿Qué parte de la jugada es fiable?
+
+Instantes a 20 Hz del tramo de 30 s; fichas visibles dentro del campo:
+
+| tramo | balón detectado | no visible | fuera del campo | fichas A (p10-p90) | fichas B (p10-p90) | A ≥ 7 | B ≥ 7 |
+|---|---|---|---|---|---|---|---|
+| A1 | **37,7 %** | 62,3 % | 0 % | **4,34** (2-6) | 6,63 (6-7) | 2 % | 63 % |
+| A2 | **44,3 %** | 48,8 % | 6,8 % | 6,39 (5-8) | 6,97 (6-8) | 55 % | 75 % |
+| B2 | **34,5 %** | 60,3 % | 5,2 % | 5,53 (3-7) | 6,58 (6-7) | 52 % | 57 % |
+
+- **El balón se ve en un tercio del tramo, o algo más.** Sirve para saber por dónde va la jugada,
+  no para seguir cada pase.
+- **A1 (A saca desde su portero) es justo el caso que el encuadre no ve**: la cámara está detrás de
+  la portería de A y a x = 8 m solo ve 16 m de los 40 de ancho (CLAUDE.md). La salida de A se ve
+  con 4,3 de sus 7 fichas de media. La presión de B sí se ve entera (6,6).
+- **A2** es la más completa: 6,4 y 7,0 fichas.
+- **En B2 (B saca desde el fondo)** las fichas de B están (6,6), pero el balón y las posiciones son
+  del fondo, donde 1 px vale hasta 0,42 m.
+- Más de 7 en p90 (A2, 8) son fichas de más: una persona en dos identidades, o el árbitro con
+  etiqueta de equipo.
+
+**Para juzgarlo**: la pizarra sirve para la FORMA de la presión rival y de la salida (contornos,
+último defensor) cuando el juego está a x ≳ 20 m. En la salida de A desde su área faltan fichas por
+el encuadre, y eso no lo arregla el software.
+
+## Código
+
+En la rama `pizarra-salida-balon`, sin fusionar:
+- `scripts/salida_balon.py`
+- `scripts/plantilla_salida_balon.html`
+
+Las salidas van a `outputs/salida_balon/`. Los CSV de datos no se tocan.

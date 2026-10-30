@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salidas de balón</title>
+<style>
+  :root { --fondo:#111; --panel:#1c1c1c; --texto:#eee; --suave:#aaa; --aviso:#f5c542; }
+  body { margin:0; padding:12px 16px; background:var(--fondo); color:var(--texto);
+         font:14px system-ui, sans-serif; }
+  h1 { font-size:18px; margin:0 0 6px; }
+  .aviso { background:#3a2f00; color:var(--aviso); padding:6px 10px; border-radius:6px;
+           margin:6px 0 10px; font-weight:600; }
+  .pestanas button, .controles button { background:#2a2a2a; color:var(--texto);
+           border:1px solid #444; border-radius:6px; padding:6px 12px; margin:0 6px 6px 0;
+           cursor:pointer; font:inherit; }
+  .pestanas button.on, .controles button.on { background:#4a4a4a; border-color:#888; }
+  .lado { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; }
+  video { width:min(960px, 100%); background:#000; border-radius:6px; }
+  canvas { background:#2e7d32; border-radius:6px; max-width:100%; }
+  .info { color:var(--suave); margin:6px 0; }
+  .estado { font-weight:600; }
+  label { margin-right:12px; }
+</style>
+</head>
+<body>
+<h1>Salidas de balón: vídeo y pizarra sincronizados</h1>
+<div class="aviso">Solo dibujo: nada de lo que se ve aquí cambia los datos. Fichas con el arreglo de
+  interpoladas y color estable ≥ 1 s. El balón se pinta solo cuando está DETECTADO dentro del campo.</div>
+<div class="pestanas" id="pestanas"></div>
+<div class="controles">
+  <button id="play">▶ reproducir</button>
+  <button data-v="0.5">0,5×</button><button data-v="1" class="on">1×</button>
+  <label><input type="checkbox" id="contA" checked> contorno A</label>
+  <label><input type="checkbox" id="contB" checked> contorno B</label>
+  <label><input type="checkbox" id="lineas"> último defensor de cada equipo</label>
+</div>
+<div class="info" id="reloj"></div>
+<div class="lado">
+  <video id="video" controls muted playsinline preload="auto"></video>
+  <div>
+    <canvas id="pizarra" width="400" height="620"></canvas>
+    <div class="info">Orientada como la cámara: la portería de A, abajo.<br>
+      <span class="estado" id="estadoBalon"></span></div>
+  </div>
+</div>
+<div class="info" id="calidad"></div>
+<script>
+const TRAMOS = __TRAMOS__;
+const COLORES = __COLORES__;
+const LARGO = 62, ANCHO = 40, MARGEN = 10;
+const COLOR = {
+  A: COLORES.A || "#b7bbeb", B: COLORES.B || "#eb2d06",
+  portero_A: "#111111", portero_B: "#7f1d1d",
+  otro: "rgba(160,160,160,0.5)", staff: "rgba(120,120,120,0.3)",
+};
+const video = document.getElementById("video");
+const cv = document.getElementById("pizarra");
+const ctx = cv.getContext("2d");
+let actual = 0;
+const esc = (cv.height - 2 * MARGEN) / LARGO;
+
+// La cámara mira a lo largo de x desde detrás de la portería de A, y la y crece hacia la izquierda.
+function px(x, y) { return [MARGEN + (ANCHO - y) * esc, cv.height - MARGEN - x * esc]; }
+
+function campo() {
+  ctx.fillStyle = "#2e7d32"; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.lineWidth = 1.5;
+  const rect = (x0, y0, x1, y1) => {
+    const [a, b] = px(x0, y1), [c, d] = px(x1, y0);
+    ctx.strokeRect(a, d, c - a, b - d);
+  };
+  rect(0, 0, LARGO, ANCHO);
+  rect(0, (ANCHO - 26) / 2, 12, (ANCHO + 26) / 2);
+  rect(LARGO - 12, (ANCHO - 26) / 2, LARGO, (ANCHO + 26) / 2);
+  ctx.beginPath(); let [a, b] = px(LARGO / 2, 0), [c, d] = px(LARGO / 2, ANCHO);
+  ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke();
+  ctx.beginPath(); [a, b] = px(LARGO / 2, ANCHO / 2); ctx.arc(a, b, 6 * esc, 0, 2 * Math.PI); ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.font = "12px system-ui"; ctx.fillText("A", ...px(-0.5, ANCHO / 2 + 1));
+  ctx.fillText("B", ...px(LARGO + 0.3, ANCHO / 2 + 1));
+}
+
+function envolvente(p) {  // cadena monótona: el contorno convexo
+  p = p.slice().sort((u, v) => u[0] - v[0] || u[1] - v[1]);
+  if (p.length < 3) return p;
+  const cruz = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const ab = [], ar = [];
+  for (const q of p) { while (ab.length >= 2 && cruz(ab[ab.length - 2], ab[ab.length - 1], q) <= 0) ab.pop(); ab.push(q); }
+  for (const q of p.slice().reverse()) { while (ar.length >= 2 && cruz(ar[ar.length - 2], ar[ar.length - 1], q) <= 0) ar.pop(); ar.push(q); }
+  return ab.slice(0, -1).concat(ar.slice(0, -1));
+}
+
+function dibujar() {
+  const tr = TRAMOS[actual];
+  const n = Math.min(tr.muestras.length - 1, Math.max(0, Math.floor(video.currentTime / tr.paso)));
+  const fichas = tr.muestras[n];
+  campo();
+  for (const eq of ["A", "B"]) {
+    const campoJ = fichas.filter(f => f[2] === eq);
+    if (document.getElementById("cont" + eq).checked && campoJ.length >= 3) {
+      const h = envolvente(campoJ.map(f => px(f[0], f[1])));
+      ctx.beginPath(); h.forEach((q, i) => i ? ctx.lineTo(...q) : ctx.moveTo(...q)); ctx.closePath();
+      ctx.fillStyle = COLOR[eq] + "33"; ctx.strokeStyle = COLOR[eq]; ctx.lineWidth = 1.5;
+      ctx.fill(); ctx.stroke();
+    }
+    if (document.getElementById("lineas").checked && campoJ.length) {
+      const xs = campoJ.map(f => f[0]);
+      const x = eq === "A" ? Math.min(...xs) : Math.max(...xs);
+      const [a, b] = px(x, 0), [c] = px(x, ANCHO);
+      ctx.setLineDash([6, 4]); ctx.strokeStyle = COLOR[eq]; ctx.beginPath();
+      ctx.moveTo(c, b); ctx.lineTo(a, b); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  for (const [x, y, et] of fichas) {
+    const [u, v] = px(x, y);
+    ctx.beginPath(); ctx.arc(u, v, 7, 0, 2 * Math.PI);
+    ctx.fillStyle = COLOR[et] || "#888"; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = et.startsWith("portero") ? "#fff" : "#000"; ctx.stroke();
+  }
+  const b = tr.balon[n];
+  const estado = document.getElementById("estadoBalon");
+  if (Array.isArray(b)) {
+    const [u, v] = px(b[0], b[1]);
+    ctx.beginPath(); ctx.arc(u, v, 4.5, 0, 2 * Math.PI);
+    ctx.fillStyle = b[2] ? "rgba(255,255,255,0.4)" : "#fff"; ctx.fill();
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5; ctx.stroke();
+    estado.textContent = b[2] ? "balón: detectado, por el aire (posición no fiable)" : "balón: detectado";
+  } else if (b === "fuera") {
+    estado.textContent = "balón: detectado, pero proyecta fuera del campo (no se pinta)";
+  } else {
+    estado.textContent = "balón: no visible";
+  }
+  const t = tr.t0 + video.currentTime, r = t + 93;
+  const mmss = s => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+  document.getElementById("reloj").textContent =
+    `${tr.id} · ${mmss(t)} archivo · ${mmss(r)} reproductor · velocidad ${video.playbackRate}×`;
+}
+
+function bucle() { dibujar(); requestAnimationFrame(bucle); }
+
+function cargar(i) {
+  actual = i;
+  const tr = TRAMOS[i], q = tr.calidad;
+  const vel = video.playbackRate;
+  video.src = tr.video; video.playbackRate = vel;
+  document.querySelectorAll(".pestanas button").forEach((b, k) => b.classList.toggle("on", k === i));
+  document.getElementById("calidad").innerHTML =
+    `<b>Fiabilidad del tramo ${tr.id}</b> (${tr.relojes}): balón detectado en el ` +
+    `${q.balon_detectado_pct} % de los instantes (no visible ${q.balon_no_visible_pct} %, ` +
+    `fuera del campo ${q.balon_fuera_del_campo_pct} %) · fichas de media: A ${q.fichas_media.A}, ` +
+    `B ${q.fichas_media.B} de 7 (p10-p90: A ${q.fichas_p10_p90.A.join("-")}, ` +
+    `B ${q.fichas_p10_p90.B.join("-")}).`;
+}
+
+TRAMOS.forEach((tr, i) => {
+  const b = document.createElement("button");
+  b.textContent = `${tr.id} · sale ${tr.equipo}`;
+  b.onclick = () => cargar(i);
+  document.getElementById("pestanas").appendChild(b);
+});
+document.getElementById("play").onclick = () => video.paused ? video.play() : video.pause();
+video.addEventListener("play", () => document.getElementById("play").textContent = "⏸ pausa");
+video.addEventListener("pause", () => document.getElementById("play").textContent = "▶ reproducir");
+document.querySelectorAll("[data-v]").forEach(b => b.onclick = () => {
+  video.playbackRate = +b.dataset.v;
+  document.querySelectorAll("[data-v]").forEach(o => o.classList.toggle("on", o === b));
+});
+video.addEventListener("loadedmetadata", () => {
+  video.playbackRate = +document.querySelector("[data-v].on").dataset.v;
+});
+cargar(0);
+bucle();
+</script>
+</body>
+</html>

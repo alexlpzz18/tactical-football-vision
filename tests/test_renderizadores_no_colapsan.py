@@ -222,6 +222,8 @@ RENDERIZADORES = (
 NO_PINTAN_POR_OBSERVACION = {
     "src/report/informe_v2.py": "agrega en heatmaps y medias, no pinta una ficha por observación",
     "scripts/generar_replay.py": "es la CLI de replay_tactico, no pinta nada por su cuenta",
+    "scripts/salida_balon.py": "no decide colores: copia, instante a instante, la etiqueta que "
+    "pinta replay_tactico (`ets` de la pizarra que genera generar_replay, ya vigilada aquí)",
     "scripts/gt_a_replay.py": "pinta el GROUND TRUTH, que no lleva etiqueta del sistema",
     "scripts/comparar_instante.py": "pinta UN instante: no hay vida de identidad que colapsar",
     "scripts/deriva_parte_entera.py": "banco de medida; solo lee los colores del fit para informar",
