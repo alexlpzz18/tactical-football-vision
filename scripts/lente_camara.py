@@ -408,10 +408,10 @@ def lineas_del_campo(largo=LARGO, ancho=ANCHO) -> list[np.ndarray]:
 
 
 def dibujar_campo(
-    cam: Camara, img: np.ndarray, clics: Clics | None = None
+    cam: Camara, img: np.ndarray, clics: Clics | None = None, largo=LARGO, ancho=ANCHO
 ) -> np.ndarray:
     out = img.copy()
-    for ln in lineas_del_campo():
+    for ln in lineas_del_campo(largo, ancho):
         px = cam.proyectar(ln)
         for a, b in zip(px[:-1], px[1:]):
             if np.isfinite(a).all() and np.isfinite(b).all():
@@ -489,15 +489,255 @@ def ajustar_y_comparar(ruta_clics: Path, salida: Path) -> dict:
     return res
 
 
+# marcas con las que se ajustó la calibración actual (data/calibracion/puntos_marcados.json)
+MARCAS_DE_LA_ACTUAL = {
+    "center", "circulo_top", "circulo_bottom", "halfway_top", "halfway_bottom", "box_left_top",
+    "box_left_bottom", "box_right_top", "box_right_bottom", "penalty_left", "penalty_right",
+    "corner_top_left", "corner_top_right",
+}  # fmt: skip
+
+
+def cargar_camara(ruta: Path) -> Camara:
+    d = np.load(ruta)
+    return Camara(
+        str(d["tipo"]), float(d["f"]), float(d["cx"]), float(d["cy"]),
+        d["coefs"], d["rvec"], d["tvec"],
+    )  # fmt: skip
+
+
+def comparar_marcas(ruta_clics: Path, salida: Path) -> dict:
+    """Medida A: error en las marcas por zona, nueva (validación cruzada) frente a actual."""
+    aj = json.load(open(salida / "ajuste.json"))
+    tipo = aj["elegido"]
+    clics = Clics.desde_json(ruta_clics)
+    cam = cargar_camara(salida / f"camara_{tipo}.npz")
+    # zona de cada marca: metros por píxel de FONDO (y) con la cámara elegida, en terciles
+    p = clics.cruces_px
+    m_px = np.linalg.norm(
+        cam.pixel_a_metros(p + [0, 1.0]) - cam.pixel_a_metros(p), axis=1
+    )
+    c1, c2 = np.quantile(m_px, [1 / 3, 2 / 3])
+    zona = np.where(m_px <= c1, "cerca", np.where(m_px <= c2, "media", "lejos"))
+    nueva = {
+        f["nombre"]: f["error_m"] for f in aj["modelos"][tipo]["validacion"]["filas"]
+    }
+    actual = {f["nombre"]: f["error_m"] for f in aj["actual"]["filas"]}
+
+    def tabla(sel):
+        ids = [i for i, n in enumerate(clics.nombres) if sel(i, n)]
+        rep = [i for i in ids if actual[clics.nombres[i]] is not None]
+        med = lambda v: round(float(np.median(v)), 3) if len(v) else None  # noqa: E731
+        return {
+            "marcas": len(ids),
+            "nueva_mediana_m": med([nueva[clics.nombres[i]] for i in ids]),
+            "nueva_mediana_m_en_las_representables": med(
+                [nueva[clics.nombres[i]] for i in rep]
+            ),
+            "actual_mediana_m_en_las_representables": med(
+                [actual[clics.nombres[i]] for i in rep]
+            ),
+            "actual_no_representables": len(ids) - len(rep),
+        }
+
+    res = {
+        "modelo": tipo,
+        "cortes_m_por_px": [round(float(c1), 3), round(float(c2), 3)],
+    }
+    res["todas"] = tabla(lambda i, n: True)
+    for z in ("cerca", "media", "lejos"):
+        res[z] = tabla(lambda i, n, z=z: zona[i] == z)
+    res["marcas_que_la_actual_nunca_vio"] = tabla(
+        lambda i, n: n not in MARCAS_DE_LA_ACTUAL
+    )
+    res["marcas_con_las_que_se_ajusto_la_actual"] = tabla(
+        lambda i, n: n in MARCAS_DE_LA_ACTUAL
+    )
+    # informativo: validación cruzada con largo y ancho libres
+    _c, info = ajustar(tipo, clics, medidas_libres=True, inicial=cam)
+    L, W = info["medidas_estimadas_m"]
+    res["medidas_libres"] = {
+        "largo_ancho_m": [L, W],
+        "residuo_px": info["residuo_px_mediana"],
+    }
+    e = []
+    for i in range(len(clics.nombres)):
+        c_i, inf_i = ajustar(tipo, clics.sin_cruce(i), medidas_libres=True, inicial=cam)
+        l_i, w_i = inf_i["medidas_estimadas_m"]
+        real = ajustar_medidas(clics.cruces_m[[i]], l_i, w_i)[0]
+        e.append(float(np.hypot(*(c_i.pixel_a_metros(clics.cruces_px[[i]])[0] - real))))
+    res["medidas_libres"]["validacion_mediana_m"] = round(float(np.nanmedian(e)), 3)
+    res["medidas_libres"]["validacion_no_predichos"] = int(np.isnan(e).sum())
+    res["medidas_libres"]["validacion_p90_m"] = round(float(np.nanpercentile(e, 90)), 3)
+    json.dump(res, open(salida / "medida_a.json", "w"), indent=1, ensure_ascii=False)
+    return res
+
+
+def sin_linea(clics: Clics, nombre: str) -> Clics:
+    q = np.array([n != nombre for n in clics.lineas_nombre], bool)
+    return Clics(
+        clics.cruces_px,
+        clics.cruces_m,
+        clics.nombres,
+        clics.lineas_px[q],
+        clics.lineas_a[q],
+        clics.lineas_b[q],
+        [n for n, k in zip(clics.lineas_nombre, q) if k],
+    )
+
+
+def validar_con_medidas_libres(
+    ruta_clics: Path, salida: Path, tipo: str = "racional", n_ruido: int = 40
+) -> dict:
+    """Largo y ancho LIBRES: validación cruzada por zona e incertidumbre (docs/lente_f11.md)."""
+    clics = Clics.desde_json(ruta_clics)
+    inicio = cargar_camara(salida / f"camara_{tipo}.npz")
+    cam, info = ajustar(tipo, clics, medidas_libres=True, inicial=inicio)
+    L, W = info["medidas_estimadas_m"]
+    np.savez(
+        salida / f"camara_{tipo}_libre.npz",
+        tipo=tipo, f=cam.f, cx=cam.cx, cy=cam.cy, coefs=cam.coefs, rvec=cam.rvec, tvec=cam.tvec,
+        largo=L, ancho=W,
+    )  # fmt: skip
+    if FRAME_ALEVIN.exists():
+        cv2.imwrite(
+            str(salida / f"campo_{tipo}_libre.jpg"),
+            dibujar_campo(cam, cv2.imread(str(FRAME_ALEVIN)), clics, L, W),
+        )
+    # zona de cada marca: mismos cortes de metros por píxel de fondo que la medida A
+    # (de la cámara con medidas fijas, que no se dobla: con una que se dobla, una marca sin escala
+    # caería en «lejos» sin serlo).
+    p = clics.cruces_px
+    m_px = np.linalg.norm(
+        inicio.pixel_a_metros(p + [0, 1.0]) - inicio.pixel_a_metros(p), axis=1
+    )
+    c1, c2 = json.load(open(salida / "medida_a.json"))["cortes_m_por_px"]
+    zona = np.where(m_px <= c1, "cerca", np.where(m_px <= c2, "media", "lejos"))
+    # 1. dejando fuera cada cruce (un NaN = no predicho: cuenta como fallo)
+    e, medidas_jk, filas = [], [], []
+    for i, n in enumerate(clics.nombres):
+        c_i, inf = ajustar(tipo, clics.sin_cruce(i), medidas_libres=True, inicial=cam)
+        l_i, w_i = inf["medidas_estimadas_m"]
+        medidas_jk.append((l_i, w_i))
+        real = ajustar_medidas(clics.cruces_m[[i]], l_i, w_i)[0]
+        err = float(np.hypot(*(c_i.pixel_a_metros(p[[i]])[0] - real)))
+        e.append(err)
+        filas.append(
+            {
+                "nombre": n,
+                "zona": str(zona[i]),
+                "error_m": None if np.isnan(err) else round(err, 3),
+            }
+        )
+    e = np.array(e)
+    # 2. dejando fuera cada línea
+    for nombre in sorted(set(clics.lineas_nombre)):
+        _c, inf = ajustar(
+            tipo, sin_linea(clics, nombre), medidas_libres=True, inicial=cam
+        )
+        medidas_jk.append(tuple(inf["medidas_estimadas_m"]))
+    jk = np.array(medidas_jk)
+    # 3. remuestreo: clics con ruido del tamaño de los residuos (MAD por eje)
+    real_todo = ajustar_medidas(clics.cruces_m, L, W)
+    r = (cam.proyectar(real_todo) - p).ravel()
+    sigma = float(1.4826 * np.median(np.abs(r)))
+    g = np.random.default_rng(0)
+    ruido = []
+    for _ in range(n_ruido):
+        c_r = Clics(
+            p + g.normal(0, sigma, p.shape),
+            clics.cruces_m,
+            clics.nombres,
+            clics.lineas_px + g.normal(0, sigma, clics.lineas_px.shape),
+            clics.lineas_a,
+            clics.lineas_b,
+            clics.lineas_nombre,
+        )
+        _c, inf = ajustar(tipo, c_r, medidas_libres=True, inicial=cam)
+        ruido.append(inf["medidas_estimadas_m"])
+    ruido = np.array(ruido)
+    # sin dejar fuera (informativo: no decide)
+    dentro = np.hypot(*(cam.pixel_a_metros(p) - real_todo).T)
+    actual = {
+        f["nombre"]: f["error_m"]
+        for f in json.load(open(salida / "ajuste.json"))["actual"]["filas"]
+    }
+
+    def resumen(q):
+        v = np.where(np.isnan(e[q]), np.inf, e[q])  # no predicho = fallo
+        repr_ = [n for n, k in zip(clics.nombres, q) if k and actual[n] is not None]
+        idx = [clics.nombres.index(n) for n in repr_]
+        return {
+            "marcas": int(q.sum()),
+            "no_predichas": int(np.isnan(e[q]).sum()),
+            "mediana_m": round(float(np.median(v)), 3),
+            "p95_m": round(float(np.percentile(v, 95, method="higher")), 3),
+            "sin_dejar_fuera_mediana_m": round(float(np.nanmedian(dentro[q])), 3),
+            "sin_dejar_fuera_p95_m": round(float(np.nanpercentile(dentro[q], 95)), 3),
+            "actual_mediana_m_representables": (
+                round(float(np.median([actual[n] for n in repr_])), 3)
+                if repr_
+                else None
+            ),
+            "nueva_mediana_m_mismas_marcas": (
+                round(float(np.median(np.where(np.isnan(e[idx]), np.inf, e[idx]))), 3)
+                if repr_
+                else None
+            ),
+            "actual_no_representables": int(q.sum()) - len(repr_),
+        }
+
+    res = {
+        "modelo": tipo,
+        "largo_ancho_m": [L, W],
+        "residuo_px_mediana": info["residuo_px_mediana"],
+        "monotona": info["monotona"],
+        "radio_alcanzable_px": info["radio_alcanzable_px"],
+        "incertidumbre": {
+            "jackknife_rango_largo": [float(jk[:, 0].min()), float(jk[:, 0].max())],
+            "jackknife_rango_ancho": [float(jk[:, 1].min()), float(jk[:, 1].max())],
+            "ruido_sigma_px": round(sigma, 2),
+            "ruido_ic95_largo": [
+                round(float(q), 2) for q in np.percentile(ruido[:, 0], [2.5, 97.5])
+            ],
+            "ruido_ic95_ancho": [
+                round(float(q), 2) for q in np.percentile(ruido[:, 1], [2.5, 97.5])
+            ],
+        },
+        "todas": resumen(np.ones(len(e), bool)),
+        "filas": filas,
+    }
+    for z in ("cerca", "media", "lejos"):
+        res[z] = resumen(zona == z)
+    t = res["todas"]
+    res["criterio"] = {
+        "mediana_<=_0,5": t["mediana_m"] <= 0.5,
+        "p95_<=_1,5": t["p95_m"] <= 1.5,
+        "sin_doblarse": bool(info["monotona"]),
+        "ninguna_zona_empeora_frente_a_la_actual": all(
+            res[z]["nueva_mediana_m_mismas_marcas"]
+            <= res[z]["actual_mediana_m_representables"]
+            for z in ("cerca", "media", "lejos")
+        ),
+    }
+    res["criterio"]["cumple"] = all(res["criterio"].values())
+    json.dump(
+        res, open(salida / "medida_libres.json", "w"), indent=1, ensure_ascii=False
+    )
+    return res
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("accion", choices=["ajustar"])
+    ap.add_argument("accion", choices=["ajustar", "comparar", "libres"])
     ap.add_argument("--clics", type=Path, required=True)
     ap.add_argument("--salida", type=Path, default=R / "outputs/lente_f11")
     a = ap.parse_args()
-    print(
-        json.dumps(ajustar_y_comparar(a.clics, a.salida), indent=1, ensure_ascii=False)
-    )
+    f = {
+        "ajustar": ajustar_y_comparar,
+        "comparar": comparar_marcas,
+        "libres": validar_con_medidas_libres,
+    }[a.accion]
+    print(json.dumps(f(a.clics, a.salida), indent=1, ensure_ascii=False))
 
 
 if __name__ == "__main__":

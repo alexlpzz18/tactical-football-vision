@@ -108,3 +108,83 @@ medida B deja de decidir y la **A manda**. Criterio nuevo, fijado ANTES de calcu
 
 ⚠️ La validación cruzada es pesimista en las marcas de los extremos, porque dejarlas fuera es
 extrapolar. Se informa también el error SIN dejar fuera, pero no decide.
+
+---
+
+# Resultados
+
+Salidas en `outputs/lente_f11/` (`ajuste.json`, `medida_a.json`, `medida_b/`, `recall.json`,
+`medida_libres.json`, `campo_*.jpg`). Clics de Alex: 23 cruces y 55 puntos de línea.
+
+## Punto 4: misma cámara
+
+Cadete y alevín: misma resolución y < 0,5 px de desplazamiento en 1.612 puntos fijos. La cámara
+ajustada en el alevín encaja a ojo en el cadete (`campo_cadete.jpg`), sin reajustar la pose.
+
+## Punto 2: modelo (medidas fijas 100 × 64)
+
+| | residuo mediano | validación cruzada, mediana | ¿se dobla? |
+|---|---|---|---|
+| **racional** (elegido) | 1,16 px | **1,115 m** (p95 4,81 m) | no: llega a 2.412 px |
+| ojo de pez | 1,27 px | 1,371 m | sí, a 1.267 px → rechazado |
+
+El campo dibujado cae sobre las líneas pintadas en todo el fotograma, con las dos esquinas cercanas
+(`campo_racional.jpg`). En píxeles, la validación cruzada da 3,9 px de mediana y 15 px de p95 (dejar
+fuera una esquina cercana es extrapolar).
+
+## Punto 3: marcas del campo, medidas fijas, frente a la actual
+
+| zona | nueva (mismas marcas) | actual | la actual no llega a |
+|---|---|---|---|
+| todas | 1,115 m | 3,302 m | 4 de 23 |
+| cerca | 0,409 m | 0,974 m | 3 |
+| media | 0,883 m | 4,595 m | 1 |
+| lejos | 2,337 m | 2,675 m | 0 |
+| las 10 que la actual nunca vio | 1,349 m | 5,498 m | 4 |
+
+- La homografía actual falla hasta 5 m en los mismos puntos con que se ajustó, y los clics de Alex
+  coinciden con los antiguos a 2-8 px: **no es de los clics, es que esa lente no deja encajar**.
+
+**Sistema contra GT** (no decide, es circular): posición 0,726 → 0,727 m; centroide 4,37 → 4,23 m,
+IC de la diferencia [−0,49; +0,27]; escala 1,017. Control: la actual reproduce el CSV de producción
+byte a byte. Un pie del GT se mueve 1,1-2,0 m de mediana entre las dos calibraciones.
+
+## Punto 5: recall por zona, cumple
+
+| zona | GT | corregida | original | diferencia (IC 95 %) |
+|---|---|---|---|---|
+| cerca | 707 | 99,2 % | 99,3 % | +0,1 (0,0; +0,4) |
+| media | 705 | 96,0 % | 97,9 % | +1,8 (+0,7; +3,0) |
+| lejos | 706 | 65,9 % | 65,7 % | −0,1 (−2,1; +1,9) |
+| total | 2.118 | 87,0 % | 87,6 % | +0,6 (0,0; +1,3) |
+
+Control: la CPU reproduce la caché al 100 % (27/27, 22/22, 27/27). Detectar sobre el original no
+pierde en ninguna zona. No mide lo que está fuera de la corregida, donde el GT no anota nada: allí
+sale una detección por frame de mediana, sin saber si acierta.
+
+## Criterio de Alex con largo y ancho libres: NO CUMPLE
+
+| zona | marcas | mediana | p95 | actual, mediana | nueva, mismas marcas |
+|---|---|---|---|---|---|
+| **todas** | 23 | **1,134 m** (≤ 0,5) | **no predichas 2** (≤ 1,5) | 3,302 m | 1,101 m |
+| cerca | 8 | 1,203 m | no predichas 2 | 0,974 m | 0,583 m |
+| media | 7 | 0,900 m | 1,376 m | 4,595 m | 0,953 m |
+| lejos | 8 | 3,151 m | 5,419 m | 2,675 m | **3,151 m: empeora** |
+
+- **Se dobla**: el reajuste libre solo llega a 1.098 px, justo antes de las esquinas cercanas, que
+  quedan sin predecir.
+- **No mejora al de medidas fijas** (1,134 frente a 1,115 m), y la zona lejana empeora frente a la
+  actual. Liberar las medidas no era la palanca.
+- **Largo y ancho estimados: 96,1 × 64,3 m.** Con ruido de clic (σ = 2,2 px): largo 93,9-97,8 y ancho
+  63,5-65,5. Dejando fuera cada cruce o línea: largo 93,3-97,1 y ancho 63,6-65,3. El 100 queda fuera
+  del intervalo, **pero solo si las áreas están a reglamento**: con 96 m el círculo dibujado sale más
+  ancho que el pintado (`campo_racional_libre.jpg`), así que puede estar mal el supuesto y no el
+  largo. Hace falta medirlo.
+- **Por qué el criterio no se alcanza con clics a mano**: en la zona lejana 1 px de fondo vale más de
+  1,09 m y el ruido de clic es de 2,2 px. Un p95 ≤ 1,5 m pide ~1 px en la banda lejana.
+
+**Veredicto**: dos intentos (medidas fijas y libres), ninguno cumple. **No se propone para
+producción.** Reabrirlo exige un plan nuevo. Lo que queda abierto, para decidir:
+1. medir de verdad el campo (largo, ancho, profundidad del área y círculo);
+2. afinar los clics al píxel sobre la raya pintada, en vez de confiar en la mano;
+3. un criterio por zona, si la lejana no puede bajar de ~1 px por física.
