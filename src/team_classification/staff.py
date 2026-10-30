@@ -145,6 +145,15 @@ def velocidad_media(identidad: list[Tracklet]) -> float | None:
         ((t, p) for tr in identidad for t, p in zip(tr.ts, tr.pos)),
         key=lambda o: o[0],
     )
+    return velocidad_media_de_observaciones(obs)
+
+
+def velocidad_media_de_observaciones(obs: list[tuple]) -> float | None:
+    """Lo mismo que `velocidad_media`, sobre [(t, pos), ...] ordenadas por tiempo.
+
+    Existe para medir un TROZO de una identidad con exactamente la misma definición (y por tanto
+    el mismo umbral `vel_max_lento`) que la identidad entera (docs/staff_dentro_del_campo.md).
+    """
     if len(obs) < 2:
         return None
     duracion = obs[-1][0] - obs[0][0]
