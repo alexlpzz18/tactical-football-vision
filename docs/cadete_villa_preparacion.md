@@ -27,9 +27,10 @@ ficheros nuevos (`configs/*_villa_cadete.yaml`, `scripts/colab_villa_cadete.py`)
 Villaviciosa de Odón):
 - con su corrección de lente (k1 = −1,5, k2 = 0,5), los 13 clics de `data/calibracion/` caen sobre
   las mismas marcas en este vídeo;
-- aquel vídeo venía a 1920 × 798 y se trabajaba reescalado a 2560 × 1064. Este viene nativo a
-  2560 × 1064: **los jugadores miden los mismos píxeles, pero con más detalle real**;
-- **expectativa**: la de Villaviciosa, algo mejor. Allí el recall por zona era 99 % cerca, 96 % en
+- ⚠️ **Corregido el 30-oct**: el vídeo antiguo (`alevinA_casarrubuelos_f11_fijo_p1.mp4`) también es
+  2560 × 1064 nativo, y aquí se decía que venía a 1920 × 798 (eso es Bazán, otro campo). **No hay más
+  detalle que en el antiguo.** Medido: < 0,5 px de desplazamiento entre los dos vídeos;
+- **expectativa**: la de Villaviciosa. Allí el recall por zona era 99 % cerca, 96 % en
   la zona media y **65 % lejos**, con los jugadores de menos de 20 px
   (`docs/diagnostico_23oct_e.md`).
 
@@ -149,3 +150,17 @@ FILA** (`hoja_otro_v3.con_caja_de_la_fila`), nunca la más cercana a la posició
 3. **Copiar el vídeo a Drive** como `data/raw/cadete_villa_techniteam.mp4`, sin espacios.
 4. Si lo mide, el largo y el ancho del campo.
 5. Los umbrales del plan de calidad, si no le valen los propuestos.
+
+## Cortes de las dos partes (30-oct)
+
+`scripts/cortar_cadete.py`, sin recomprimir y sin audio. Tiempos del ARCHIVO:
+
+| | pedido | empieza en | desplazamiento | tamaño | frames |
+|---|---|---|---|---|---|
+| 1ª | 6:49-47:18 | 6:48,03 | −0,97 s | 1,27 GB | 60.750 |
+| 2ª | 59:08-1:40:05 | 59:08,03 | +0,03 s | 1,29 GB | 61.424 |
+
+**Comprobado bit a bit** con el lector común, en 8 frames repartidos de cada corte (hasta el 50.000):
+idénticos al original; el frame 0 de cada parte es el 10.201 y el 88.701 del original.
+
+**El MVP pasa del cadete A al alevín B** (decisión de Alex, 30-oct): esta preparación se traslada.
