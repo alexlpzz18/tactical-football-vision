@@ -29,3 +29,27 @@ candidatas.
   en un cruce puede dar el equipo equivocado.
 - **El balón detectado en la mitad lejana** (x > 40) tiene más error: a 0,42 m/px, la «progresión»
   allí es menos fiable.
+
+---
+
+# Resultados del paso 1: solo 2 candidatas por equipo cumplen la regla
+
+`python scripts/salida_balon.py candidatas` → `outputs/salida_balon/candidatas.html`, con una
+miniatura por candidata y el balón marcado con un recuadro amarillo.
+
+- **El balón**: `procesar_balon.py` sobre el CSV del arreglo. En los 20 min hay balón detectado en
+  el 50 % de los frames del caché de balón, y 644 contactos, 497 de ellos con jugador atribuido.
+- **Equipos**: A es el blanco, con su portero de negro en la portería de la cámara; B es el naranja.
+
+| id | sale | tramo (archivo · reproductor) | inicio | avance | balón detectado |
+|---|---|---|---|---|---|
+| A1 | A | 13:15.7 → 13:45.7 · 14:48.7 → 15:18.7 | área (el portero, con el balón en la mano) | 25,6 m | 95 % |
+| A2 | A | 4:59.8 → 5:29.8 · 6:32.8 → 7:02.8 | área | 27,5 m | 72 % |
+| B1 | B | 13:06.7 → 13:36.7 · 14:39.7 → 15:09.7 | área | 41,1 m | 86 % |
+| B2 | B | 18:18.3 → 18:48.3 · 19:51.3 → 20:21.3 | portero | 24,6 m | 85 % |
+
+- **Solo 2 de cada equipo cumplen la regla** y no se ha relajado para llegar a 3: eso queda para
+  Alex.
+- **A1 y B1 se solapan**: B saca, el balón acaba en el área de A y A sale desde ahí.
+- **Las salidas de B ocurren en el fondo**, donde 1 px vale hasta 0,42 m. Allí el balón y las
+  fichas son menos fiables.
