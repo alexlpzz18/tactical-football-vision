@@ -208,6 +208,12 @@ PASO_VISOR_S = (
 )
 BALON_CERCA_S = 0.07  # el caché de balón va a 15 Hz: una detección a ≤ 1 muestra
 PLANTILLA_VISOR = R / "scripts/plantilla_salida_balon.html"
+# líneas de pase (docs/pizarra_salida_balon.md), fijadas antes de dibujarlas
+POSEEDOR_M = 1.5
+RECEPTOR_MAX_M = 25.0
+CORREDOR_LIBRE_M = 1.5
+MAX_LINEAS = 4
+PUNTOS_VISIBILIDAD = 11
 MODULOS: Path | None = None
 
 
@@ -219,6 +225,47 @@ def _mod(nombre):
     m.__file__ = str(ruta)
     exec(compile(fuente.read_text(), str(fuente), "exec"), m.__dict__)
     return m
+
+
+def _dist_a_segmento(p, a, b) -> float:
+    """Distancia (m) del punto p al segmento a-b."""
+    p, a, b = (np.asarray(q, float) for q in (p, a, b))
+    ab = b - a
+    u = float(np.clip(np.dot(p - a, ab) / max(float(np.dot(ab, ab)), 1e-9), 0.0, 1.0))
+    return float(np.linalg.norm(p - (a + u * ab)))
+
+
+def lineas_de_pase(fichas_vis: list, balon, en_camara, Hinv) -> list:
+    """[[x0, y0, x1, y1, dudosa], ...] del poseedor a sus compañeros con el pase libre."""
+    if not isinstance(balon, list) or balon[2]:  # sin balón detectado, o por el aire
+        return []
+    con_equipo = [f for f in fichas_vis if equipo_de(f[2])]
+    if not con_equipo:
+        return []
+    d = [np.hypot(f[0] - balon[0], f[1] - balon[1]) for f in con_equipo]
+    poseedor = con_equipo[int(np.argmin(d))]
+    if min(d) > POSEEDOR_M:
+        return []
+    mio = equipo_de(poseedor[2])
+    rivales = [f for f in con_equipo if equipo_de(f[2]) != mio]
+    candidatos = []
+    for f in con_equipo:
+        if f is poseedor or equipo_de(f[2]) != mio:
+            continue
+        largo = float(np.hypot(f[0] - poseedor[0], f[1] - poseedor[1]))
+        if largo > RECEPTOR_MAX_M:
+            continue
+        if any(
+            _dist_a_segmento(r[:2], poseedor[:2], f[:2]) < CORREDOR_LIBRE_M
+            for r in rivales
+        ):
+            continue
+        s_ = np.linspace(0, 1, PUNTOS_VISIBILIDAD)
+        xs = poseedor[0] + s_ * (f[0] - poseedor[0])
+        ys = poseedor[1] + s_ * (f[1] - poseedor[1])
+        dudosa = int(not bool(en_camara(xs, ys, Hinv).all()))
+        candidatos.append((largo, [poseedor[0], poseedor[1], f[0], f[1], dudosa]))
+    return [linea for _l, linea in sorted(candidatos, key=lambda c: c[0])[:MAX_LINEAS]]
 
 
 def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
@@ -269,7 +316,8 @@ def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
         for kk, e, ae in zip(k, estado, aereo)
     ]
     # (3) por instante: fichas visibles DENTRO del campo, por etiqueta pintada
-    muestras = []
+    muestras, lineas = [], []
+    Hinv = np.linalg.inv(np.load(R / "data/calibracion_benja/homografia_benja.npy"))
     por_equipo = {"A": [], "B": []}
     for n in range(len(Ts)):
         vis = []
@@ -287,8 +335,19 @@ def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
         for e in cuenta:
             por_equipo[e].append(cuenta[e])
         muestras.append(vis)
+        lineas.append(lineas_de_pase(vis, balon[n], fp.en_camara, Hinv))
     n_det = int((estado == "detectado").sum())
+    con_lineas = [len(v) for v in lineas if v]
     calidad = {
+        "instantes_con_lineas_pct": round(100 * len(con_lineas) / len(Ts), 1),
+        "lineas_media_cuando_hay": (
+            round(float(np.mean(con_lineas)), 2) if con_lineas else 0.0
+        ),
+        "lineas_dudosas_pct": (
+            round(100 * float(np.mean([ln[4] for v in lineas for ln in v])), 1)
+            if con_lineas
+            else 0.0
+        ),
         "balon_detectado_pct": round(100 * n_det / len(Ts), 1),
         "balon_fuera_del_campo_pct": round(100 * float((estado == "fuera").mean()), 1),
         "balon_no_visible_pct": round(100 * float((estado == "no visible").mean()), 1),
@@ -308,6 +367,7 @@ def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
         "t0": a,
         "paso": PASO_VISOR_S,
         "muestras": muestras,
+        "lineas": lineas,
         "balon": balon,
         "calidad": calidad,
         "relojes": c["relojes_tramo"],
@@ -315,12 +375,12 @@ def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
     }
 
 
-def visor(ids: list[str]) -> dict:
+def visor(ids: list[str], conjunto: Path, nombre: str, nota: str) -> dict:
     carpeta = SALIDA / "visor"
     carpeta.mkdir(parents=True, exist_ok=True)
     cand = json.load(open(SALIDA / "elegidas_por_alex.json"))
     por_id = {c["id"]: c for T in cand for c in cand[T]["propuestas"]}
-    df = pd.read_csv(CSV_CONJUNTO)
+    df = pd.read_csv(conjunto)
     tramos = []
     for i in ids:
         c = por_id[i]
@@ -338,15 +398,18 @@ def visor(ids: list[str]) -> dict:
         )  # fmt: skip
         tramos.append(datos_de_un_tramo(c, df, carpeta))
     colores = json.load(open(META)).get("colores_equipo", {})
-    html = carpeta / "salidas_de_balon.html"
+    html = carpeta / f"{nombre}.html"
     html.write_text(
         PLANTILLA_VISOR.read_text()
         .replace("__TRAMOS__", json.dumps(tramos, separators=(",", ":")))
         .replace("__COLORES__", json.dumps(colores))
+        .replace("__NOTA__", nota)
     )
     res = {t["id"]: {"relojes": t["relojes"], **t["calidad"]} for t in tramos}
     res["html"] = str(html)
-    json.dump(res, open(carpeta / "calidad.json", "w"), indent=1, ensure_ascii=False)
+    json.dump(
+        res, open(carpeta / f"calidad_{nombre}.json", "w"), indent=1, ensure_ascii=False
+    )
     return res
 
 
@@ -356,12 +419,15 @@ def main() -> None:
     ap.add_argument("accion", choices=["candidatas", "visor"])
     ap.add_argument("--ids", nargs="+", default=["A1", "A2", "B2"])
     ap.add_argument("--modulos", type=Path, default=None)
+    ap.add_argument("--conjunto", type=Path, default=CSV_CONJUNTO)
+    ap.add_argument("--nombre", default="salidas_de_balon")
+    ap.add_argument("--nota", default="")
     args = ap.parse_args()
     MODULOS = args.modulos
     if args.accion == "candidatas":
         out = candidatas()
     else:
-        out = visor(args.ids)
+        out = visor(args.ids, args.conjunto, args.nombre, args.nota)
     print(json.dumps(out, indent=1, ensure_ascii=False))
 
 

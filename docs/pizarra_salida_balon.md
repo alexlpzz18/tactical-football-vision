@@ -151,3 +151,26 @@ Alex las aprueba con la condición de que no salgan «2.000 líneas».
 - **Sin balón detectado no hay líneas.** En A1 hay balón en el 38 % del tramo, así que habrá ratos
   sin líneas: es la verdad del dato, no un fallo del dibujo.
 - **Se informa** en cuántos instantes del tramo hay líneas y cuántas de media.
+
+## Resultado de las líneas de pase, y el visor con la regla de staff
+
+Hay dos visores en `outputs/salida_balon/visor/`:
+- `salidas_de_balon.html`: `main`;
+- `salidas_de_balon_staff.html`: con la regla de staff dentro del campo (intento 2 de
+  `docs/staff_dentro_del_campo.md`, **SIN adoptar**; lo dice el aviso). Es el que pone al lateral
+  derecho de A en su equipo.
+
+| tramo | líneas: instantes con alguna | media cuando hay | dudosas | fichas A (main → staff) |
+|---|---|---|---|---|
+| A1 | 11,8 % (staff: 12,8 %) | 2,9 (3,1) | 14 % (17 %) | 4,34 → **4,76** |
+| A2 | 18,8 % | 2,7 | 6,5 % | 6,39 → 6,39 |
+| B2 | 15,2 % | 3,1 | 0 % | 5,53 → 5,53 |
+
+- **No hay «2.000 líneas»**: de media hay 3 cuando las hay, y nunca más de 4.
+- **Pero solo hay líneas en el 12-19 % del tramo.** Hacen falta balón detectado (35-44 %) y un
+  poseedor a ≤ 1,5 m. Es el límite del dato de balón, no del dibujo.
+- **A ojo**:
+  - a 1,0 s de A1, el blanco con el balón junto a la banda izquierda tiene 2 pases libres (al centro
+    y atrás, a su portero);
+  - a 7,3 s, con la regla de staff, el lateral derecho (30,4 m, 7,4 m) es A y el contorno de A llega
+    a la banda derecha.

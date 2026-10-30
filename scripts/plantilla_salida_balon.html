@@ -26,7 +26,9 @@
 <body>
 <h1>Salidas de balón: vídeo y pizarra sincronizados</h1>
 <div class="aviso">Solo dibujo: nada de lo que se ve aquí cambia los datos. Fichas con el arreglo de
-  interpoladas y color estable ≥ 1 s. El balón se pinta solo cuando está DETECTADO dentro del campo.</div>
+  interpoladas y color estable ≥ 1 s. El balón se pinta solo cuando está DETECTADO dentro del campo.
+  Líneas de pase: discontinuas si cruzan una zona que la cámara no ve (puede haber un rival sin ficha).
+  __NOTA__</div>
 <div class="pestanas" id="pestanas"></div>
 <div class="controles">
   <button id="play">▶ reproducir</button>
@@ -34,6 +36,7 @@
   <label><input type="checkbox" id="contA" checked> contorno A</label>
   <label><input type="checkbox" id="contB" checked> contorno B</label>
   <label><input type="checkbox" id="lineas"> último defensor de cada equipo</label>
+  <label><input type="checkbox" id="pases" checked> líneas de pase</label>
 </div>
 <div class="info" id="reloj"></div>
 <div class="lado">
@@ -112,6 +115,13 @@ function dibujar() {
       ctx.moveTo(c, b); ctx.lineTo(a, b); ctx.stroke(); ctx.setLineDash([]);
     }
   }
+  if (document.getElementById("pases").checked && tr.lineas) {
+    for (const [x0, y0, x1, y1, dudosa] of tr.lineas[n]) {
+      const [a, b] = px(x0, y0), [c, d] = px(x1, y1);
+      ctx.setLineDash(dudosa ? [5, 5] : []); ctx.strokeStyle = "#ffeb3b"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
   for (const [x, y, et] of fichas) {
     const [u, v] = px(x, y);
     ctx.beginPath(); ctx.arc(u, v, 7, 0, 2 * Math.PI);
@@ -150,7 +160,8 @@ function cargar(i) {
     `${q.balon_detectado_pct} % de los instantes (no visible ${q.balon_no_visible_pct} %, ` +
     `fuera del campo ${q.balon_fuera_del_campo_pct} %) · fichas de media: A ${q.fichas_media.A}, ` +
     `B ${q.fichas_media.B} de 7 (p10-p90: A ${q.fichas_p10_p90.A.join("-")}, ` +
-    `B ${q.fichas_p10_p90.B.join("-")}).`;
+    `B ${q.fichas_p10_p90.B.join("-")}) · líneas de pase en el ${q.instantes_con_lineas_pct} % ` +
+    `de los instantes (${q.lineas_media_cuando_hay} de media; dudosas ${q.lineas_dudosas_pct} %).`;
 }
 
 TRAMOS.forEach((tr, i) => {
