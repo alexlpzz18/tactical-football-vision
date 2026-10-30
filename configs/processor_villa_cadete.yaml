@@ -1,0 +1,75 @@
+# ════════════════════════════════════════════════════════════════════
+# Procesador: Villaviciosa cadete A (F11), vídeo CadeteA_Techniteam.mp4
+# ════════════════════════════════════════════════════════════════════
+#
+# Partido NUEVO, solo preparación (docs/cadete_villa_preparacion.md). No es producción: las rutas
+# no pisan nada del Villaviciosa de siempre (configs/processor.yaml) ni del benjamín.
+#
+# Vídeo: 2560×1064 nativo, 25 fps, 1:54:59 (6.899 s), ojo de pez desde la tribuna principal.
+# MISMA cámara y MISMA posición que el Villaviciosa de producción → misma corrección de lente.
+#
+# ⚠️ Se procesa POR PARTES (el tramo lo pone la celda de Colab, scripts/colab_villa_cadete.py):
+#   - salta el descanso y lo que no es partido;
+#   - en el descanso los equipos cambian de portería, y la regla de porteros deduce los lados POR
+#     PASADA (`porteros.deducir_lados`): mezclar las dos partes en una pasada la confundiría;
+#   - el fit de color es POR PASADA: la letra A/B de cada equipación puede cambiar entre partes.
+#     Se casa por `colores_equipo` del meta, no por la letra.
+# ────────────────────────────────────────────────────────────────────
+
+pipeline: nuevo
+modo: full # vídeo → cachés → CSV (Colab, GPU). En local: --modo desde_cache.
+
+deteccion:
+  chaleco_banda: null # la pista del árbitro es F7; en F11 está apagada por formato
+  # El MISMO detector que el benjamín y que las cachés de Villaviciosa de producción (v4pre).
+  modelo: models/weights/best_v4pre.pt
+  confianza: 0.3
+  max_area_caja: 0.05 # el público de la grada cercana sale grande: este filtro lo quita
+  sahi:
+    filas: 2
+    columnas: 4
+    solape: 0.2
+  device: cuda
+
+# Lente de la cámara de Villaviciosa (k1, k2 normalizados por el ancho: valen a 1920 y a 2560).
+distorsion:
+  k1: -1.5
+  k2: 0.5
+
+muestreo:
+  sample_every: 3 # 25 fps → 8,33 Hz, como el Villaviciosa de producción
+  tramo: null # lo fija la celda de Colab por parte; null aquí = vídeo entero (NO usar así)
+
+checkpoint:
+  cada_frames: 500
+  reanudar: true
+
+tracking:
+  perfil: bytetrack
+config_tracking: configs/tracking.yaml # el de Villaviciosa
+
+equipos:
+  activo: true
+  tope_cardinalidad:
+    activo: false
+    tope: 11
+    tope_otro: 1
+    lambda_holgura: 1.0
+config_equipos: configs/team_classification_villa_cadete.yaml
+
+campo_m:
+  largo: 100.0 # los de configs/campo_villa_cadete.yaml (sin medir)
+  ancho: 64.0
+  margen: 8.0
+
+exportacion:
+  etiqueta_interpoladas: vecina_real
+
+rutas:
+  # Alex copia el vídeo de Drive a esta ruta (en Colab, con data/ montado). Sin espacios en el nombre.
+  video: data/raw/cadete_villa_techniteam.mp4
+  cache: data/tracking_villa_cadete/cache_detecciones.pkl
+  cache_colores: data/tracking_villa_cadete/cache_colores.pkl
+  homografia: data/calibracion_villa_cadete/homografia_villa_cadete.npy
+  salida_csv: data/tracking_villa_cadete/posiciones.csv
+  salida_meta: data/tracking_villa_cadete/posiciones_meta.json

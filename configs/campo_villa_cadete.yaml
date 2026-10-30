@@ -1,0 +1,19 @@
+# Campo del partido Villaviciosa cadete A (vídeo CadeteA_Techniteam.mp4, 24-oct-2026).
+#
+# MISMO ESTADIO Y MISMA CÁMARA que el Villaviciosa F11 de producción (configs/processor.yaml):
+# con la corrección de lente de siempre, los 13 clics de data/calibracion/puntos_marcados.json caen
+# sobre las mismas marcas del campo en este vídeo (docs/cadete_villa_preparacion.md).
+#
+# ⚠️ largo y ancho son los del Villaviciosa de producción (100 × 64), que NUNCA se midieron en el
+# campo. Si Alex los mide, se sustituyen aquí.
+
+campo:
+  nombre: villaviciosa_cadete
+  tipo: f11 # marcas interiores del reglamento F11 (área 40,32 × 16,5, círculo r 9,15…)
+  largo: 100.0 # el de producción de Villaviciosa, sin medir
+  ancho: 64.0 # ídem
+
+rutas:
+  imagen: data/calibracion_villa_cadete/frame.png # frame CORREGIDO de distorsión
+  puntos: data/calibracion_villa_cadete/puntos_marcados_villa_cadete.json
+  homografia: data/calibracion_villa_cadete/homografia_villa_cadete.npy
