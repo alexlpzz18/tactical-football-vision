@@ -174,3 +174,35 @@ Hay dos visores en `outputs/salida_balon/visor/`:
     y atrás, a su portero);
   - a 7,3 s, con la regla de staff, el lateral derecho (30,4 m, 7,4 m) es A y el contorno de A llega
     a la banda derecha.
+
+---
+
+# Escala del visor (30-oct): A + B + C (reglas fijadas antes de dibujar)
+
+**El diagnóstico**:
+- el hueco que Alex marcó a las 5:13.3 del archivo (6:46.3 del reproductor) mide 4,6 m de ancho en
+  la imagen y en la pizarra. La homografía cuadra con las líneas pintadas;
+- lo que cambia la impresión son las fichas de 1,45 m de diámetro, cuando un niño mide ~0,4 m de
+  ancho, y la perspectiva: allí, 1 m de ancho son 35 px de imagen y 1 m de fondo solo 10.
+
+**A. Fichas a escala real**:
+- 0,7 m de diámetro en la escala del campo, con un borde de 1 px;
+- sin número dentro: el número (id e etiqueta) sale al pasar el ratón por encima;
+- el balón, a 0,4 m (un balón de 0,2 m sería invisible), con un mínimo de 2 px de radio.
+
+**B. Cuadrícula** tenue cada 5 m, a lo largo y a lo ancho.
+
+**C. Huecos en la línea del rival**:
+- rival = el equipo que NO sale (en A1 y A2, B; en B2, A); solo jugadores de campo, sin el portero;
+- **líneas**: las fichas rivales se agrupan por profundidad (x), encadenando las que están a ≤ 5 m de
+  fondo de la anterior. Una línea necesita ≥ 2 jugadores;
+- **dentro de cada línea**, ordenadas a lo ancho (y), se dibuja la distancia entre vecinos si pasa
+  de **4 m**: un segmento fino y el número en metros, con una cifra decimal;
+- **casilla** para mostrarlo u ocultarlo.
+
+¿Qué podría estar inventando?
+- **Un hueco puede serlo solo porque falta la ficha de un rival** (sin detectar, o fuera del encuadre
+  cerca de la cámara). El hueco se dibuja igual: el visor ya da las fichas de media de cada equipo
+  en el tramo.
+- **El encadenado a 5 m es un parámetro**: dos líneas a 4 m de fondo se fundirían en una. Se fija
+  antes de verlo y no se retoca mirando el resultado.
