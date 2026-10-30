@@ -675,20 +675,70 @@ def etiquetar_por_observacion(
     ) or {}
     requiere = catalogo and bool(cfg_req.get("activo", False))
 
+    # ── STAFF QUE ENTRA EN EL CAMPO (flag `por_observacion.staff_dentro_del_campo`) ──
+    # docs/staff_dentro_del_campo.md. La regla de staff decide por IDENTIDAD ENTERA, así que
+    # una identidad que empieza siendo el entrenador en la banda y luego salta a un jugador
+    # (una quimera: es la asociación) pinta de gris al jugador. Con el flag, las observaciones
+    # de una identidad de staff con el pie DENTRO del campo (a ≥ margen_m de las líneas) se
+    # etiquetan como las de un jugador, y su ventana solo promedia observaciones de dentro:
+    # los recortes del entrenador no votan por el lateral. Fuera, sigue siendo staff.
+    cfg_staff_dentro = cfg.get("staff_dentro_del_campo") or {}
+    staff_dentro = bool(cfg_staff_dentro.get("activo", False))
+    if staff_dentro:
+        modelo_campo, _eje = _profundidad_configurada(cfg_equipos)
+        margen_dentro = float(cfg_staff_dentro.get("margen_m", 1.0))
+
+        def _dentro(pos) -> bool:
+            return (
+                margen_dentro <= pos[0] <= modelo_campo.largo - margen_dentro
+                and margen_dentro <= pos[1] <= modelo_campo.ancho - margen_dentro
+            )
+
+        # Intento 2: solo los TROZOS de dentro que se mueven como un jugador. Un trozo lento
+        # dentro del campo es alguien plantado junto a la banda (el entrenador pisa 1-2,5 m
+        # dentro). Mismo umbral y misma función que el staff lento: `staff.vel_max_lento`.
+        solo_rapidos = bool(cfg_staff_dentro.get("solo_trozos_rapidos", False))
+        hueco_trozo = float(cfg_staff_dentro.get("hueco_trozo_s", 1.0))
+        vel_min = float((cfg_equipos.get("staff") or {}).get("vel_max_lento", 0.0))
+
+        def _trozos_rapidos(obs_dentro: list[tuple]) -> list[tuple]:
+            """De [(t, par, k, pos)] ordenadas, las de trozos con velocidad ≥ vel_min."""
+            from src.team_classification.staff import velocidad_media_de_observaciones
+
+            if not solo_rapidos or vel_min <= 0:
+                return obs_dentro
+            salida, trozo = [], []
+            for o in obs_dentro + [None]:
+                if trozo and (o is None or o[0] - trozo[-1][0] > hueco_trozo):
+                    v = velocidad_media_de_observaciones([(q[0], q[3]) for q in trozo])
+                    if v is not None and v >= vel_min:
+                        salida.extend(trozo)
+                    trozo = []
+                if o is not None:
+                    trozo.append(o)
+            return salida
+
     # Fase 1: por cada observación de una identidad A/B, ¿dispara el catálogo? y su A/B.
     por_identidad: dict[int, list[tuple]] = {}
     for id_identidad, identidad in enumerate(identidades, start=1):
         etiqueta = str(equipos.get(id_identidad, "otro"))
-        if etiqueta not in ("A", "B"):
+        es_staff_dentro = staff_dentro and etiqueta == "staff"
+        if etiqueta not in ("A", "B") and not es_staff_dentro:
             continue  # portero, staff y 'otro' los decide la posición
         obs = sorted(
             (
-                (t, tuple(par), k)
+                (t, tuple(par), k, pos)
                 for k, tracklet in enumerate(identidad)
-                for t, par in zip(tracklet.ts, tracklet.det_idxs)
+                for t, par, pos in zip(tracklet.ts, tracklet.det_idxs, tracklet.pos)
+                if not es_staff_dentro or _dentro(pos)
             ),
             key=lambda o: o[0],
         )
+        if es_staff_dentro:
+            obs = _trozos_rapidos(obs)
+        obs = [(t, par, k) for t, par, k, _pos in obs]
+        if not obs:
+            continue
         pares = [(t, p) for t, p, _k in obs]
         decididas = []
         for t_actual, par, k_trozo in obs:

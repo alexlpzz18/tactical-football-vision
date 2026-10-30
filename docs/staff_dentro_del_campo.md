@@ -102,3 +102,38 @@ El margen de 1 m no los separa: el entrenador pisa dentro (o la proyección lo m
   dirá.
 - `velocidad_media` incluye el temblor de la proyección, que infla la velocidad del que está
   quieto. Por eso se usa el umbral ya medido con esa misma función.
+
+## Resultado del intento 2: el lateral, bien; el entrenador junto a la banda, fuera; queda UN caso de 3 s
+
+Las salidas del intento 1 se guardaron en `outputs/staff_dentro/intento1/`.
+
+**Controles**: con el flag apagado, igual byte a byte a `main`; Villaviciosa, idéntico byte a byte.
+
+| criterio | intento 1 | intento 2 |
+|---|---|---|
+| 1. lateral 590 en A (filas dentro, [785, 808,3] s) | 233/233 | **233/233 (100 %)** → sí |
+| 3. GT de 30 s / hoja de 120 | 9 / 2 | **9 / 2** → sí |
+| 3. solo cambian filas de staff; resto idéntico | sí (441) | **sí (266)** |
+| 2. rachas que pasan a A/B y NO son jugadores | 4 identidades, ~174 filas | **1: la 545, 30 filas (3 s)** → **no** |
+
+- **Se van**: 323, 353 y 442. Eran el entrenador plantado a 1-2,5 m dentro de la banda.
+- **Se pierde** la 93, un naranja junto a la banda (31 filas), que vuelve a staff porque su trozo es
+  lento. Es dejar de acertar, no inventar.
+- **Quedan**: 590 (el lateral, bien), 625 (un blanco pegado a la banda, 3 filas, bien) y **545: un
+  adulto con chaqueta oscura que entra en el campo a recoger un balón** en la banda lejana, a las
+  10:54.5-10:57.4 del archivo (12:27.5-12:30.4 del reproductor). Camina deprisa, así que pasa el
+  filtro, y sale A durante 3 s.
+- **Por la letra del criterio 2, el intento 2 NO CUMPLE**, por un caso de 3 s en 20 min.
+- **Ese es el caso que Alex describía**: alguien de otro color dentro del campo. Separarlo por color
+  es la ruta cerrada del tercer grupo. No se intenta aquí.
+- **Regla de dos intentos**: no hay intento 3 sin un plan nuevo. La decisión es de Alex: adoptar
+  sabiendo que esos 3 s salen mal, o cerrar.
+
+`tests/test_staff_dentro_del_campo.py`:
+- con el flag apagado, el staff no se toca;
+- encendido, solo se etiqueta el trozo que corre dentro, y ni el de fuera ni el plantado.
+
+La mutación que ignora el filtro de velocidad hace fallar el test; se comprobó que el fichero había
+cambiado y se restauró.
+
+**No se fusiona a `main`**: es producción y no cumple todos los criterios.
