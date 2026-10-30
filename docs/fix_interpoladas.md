@@ -171,3 +171,21 @@ que el fichero había cambiado, **2 tests fallan**, y se restauró.
 
 **Lo que NO arregla**: los 58 cambios real → real (38 A ↔ B y 20 con `otro`) siguen. Son la
 etiqueta por observación y la asociación (`etiqueta_por_trozos.md`).
+
+## La pizarra para Alex: arreglo + histéresis de 1 s
+
+`python scripts/fix_interpoladas.py pizarra` → `outputs/fix_interpoladas/pizarra_arreglo_histeresis_1s.html`.
+Al lado, para comparar, `outputs/fix_interpoladas/pizarra_main_histeresis_1s.html`: `main` antes
+del arreglo, con la misma histéresis.
+
+| simulador, 14:00-15:30 | sin histéresis | con histéresis de 1 s |
+|---|---|---|
+| `main` (`pre-fix-interpoladas`) | 87,3 | 31,3 |
+| arreglo | 48,0 | **32,7** |
+
+⚠️ **Con la histéresis puesta, el arreglo no baja lo que se ve: +1,4/min, unos 2 cambios más en 90 s.**
+- Las islas duran ≤ 0,4 s, y la histéresis de 1 s ya se las comía. Es lo que se avisó el 29-oct.
+- La diferencia de +2 es del orden del redondeo de rachas, no una regresión que se haya buscado.
+- **Lo que gana el arreglo** está en los DATOS: el informe y cualquier otro consumidor de las filas
+  interpoladas ya no reciben la moda de la identidad. En el GT, esas filas pasan del 40 % al 20 % de
+  error (n = 10). Y la pizarra ya no depende de la histéresis para no destellar.
