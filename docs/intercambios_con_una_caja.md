@@ -62,3 +62,76 @@ Si no se cumplen, **la vía se cierra**.
 - **El NMS INTERNO de YOLO** (IoU 0,7, dentro de cada tesela) actúa antes que SAHI. Una persona justo
   detrás de otra se suprimiría ahí y tampoco aparecería «sin fusión». Esta medida no lo separa del
   modelo: si sale «una caja», es el detector entero (modelo + su NMS), y se dice así.
+
+---
+
+# Resultados: NO CUMPLE el criterio 2 → la vía de etiquetar se cierra
+
+```bash
+python scripts/intercambios_una_caja.py contar
+VENV/bin/python scripts/intercambios_una_caja.py cajas
+python scripts/intercambios_una_caja.py recortes
+```
+
+Salidas en `outputs/intercambios_una_caja/`; la hoja para mirar a ojo es `recortes.html`.
+
+## 1. Cuántos: 200 intercambios → el criterio 1 se cumple, pero con matiz
+
+| | n |
+|---|---|
+| episodios «dos personas, una caja» entre rivales (20 min) | 789 |
+| sin datos para decidir después | 104 |
+| **con intercambio** | **200** (29,2 % de los 685 decidibles) |
+| control: el caso de 5:11 (272/291) | **contado** |
+
+**Matiz** (medida informativa, no estaba en el criterio): con la MISMA definición, pero en rivales
+a ≤ 3 m que tienen **dos cajas**, la etiqueta se cruza en **198 de 811 (24,4 %)**.
+- La caja única añade unos 5 puntos, del orden de 30-35 intercambios en el partido.
+- **La mayoría de los «intercambios» pasan igual con dos cajas: son de la asociación**, no de la
+  detección.
+- Criterio 1 por la letra (200 ≥ 15): **sí**. Incluso contando solo el exceso que se atribuye a la
+  caja única (~30-35), también.
+
+## 2. ¿Una caja o dos en crudo? → el criterio 2 NO se cumple
+
+- **Muestra**: 20 de los 200, al azar con semilla fija, y siempre el de 5:11.
+- **Control**: la CPU con el postproceso de producción reproduce el **100 %** de las cajas del caché
+  en los 20 frames.
+- **El recuento automático no sirve**, como se avisó: con NMS a IoU 0,99 quedan 2-10 cajas por caso,
+  casi todas duplicados de la misma persona de teselas solapadas.
+- Veredicto **a ojo**, con todas las cajas de producción en azul y las de sin fusión en rojo:
+
+| clase | casos | n |
+|---|---|---|
+| producción **ya tenía dos cajas** y hubo intercambio igual (asociación) | 3 (el de 5:11), 4, 13, 14, 17 | 5 |
+| en la caja hay **una sola persona** (no hay «dos en una caja») | 5, 9, 10, 11 | 4 |
+| **dos en crudo**: el modelo ve a las dos y la fusión de SAHI las junta | 6, 12, 15 claros; 7, 16, 19 dudosos (fragmento de torso o cabeza) | 3-6 |
+| **una sola caja también en crudo** | 1, 2, 8 claros; 18 dudoso | 3-4 |
+| no se distingue | 0 | 1 |
+
+- **Una sola caja en crudo: 3-4 de 20 (15-20 %)**. Criterio: ≥ 50 %. **NO CUMPLE.**
+- **Robustez**: aunque todos los dudosos (0, 7, 16, 18, 19) fueran «una caja», saldrían 8 de 20
+  (40 %).
+  - Solo quitando del denominador los 4 casos sin dos personas se llegaría a 8 de 16 (50 %), justo
+    en el umbral. Es el peor caso posible, y no la lectura.
+- **Lo que se aprende**:
+  1. **en 5 de 20 la detección ya estaba bien** (dos cajas) y el intercambio lo hizo el seguimiento,
+     incluido el de 5:11 en ese frame;
+  2. **en 4 de 20 no hay dos personas en la caja**: la identidad se perdió por otra cosa;
+  3. cuando sí hay dos personas en una caja, **el modelo ve las dos con más frecuencia que una**
+     (3-6 frente a 3-4), y la caja que falta la junta la fusión de SAHI. Muchas son fragmentos
+     (torso o cabeza del de detrás), y separar fragmentos ya se cerró (`ios_vs_iou_jugadores.md`).
+- Coincide con el 28-oct (c): **la palanca es la asociación, no la detección.**
+
+## Veredicto
+
+**Etiquetar ~100 imágenes de jugadores pegados NO compensa** (criterio 2: 15-20 % frente a ≥ 50 %).
+**Vía cerrada.**
+
+Para CLAUDE.md (rutas cerradas), si Alex da el OK:
+
+> **Reentrenar el detector con jugadores pegados (dos cajas en vez de una)** (30-oct, solo medida):
+> en 20 intercambios entre rivales con una sola caja, el modelo en crudo da una sola caja en 3-4
+> (15-20 %; criterio ≥ 50 %). En 5 producción ya tenía las dos cajas y en 4 no había dos personas.
+> Con dos cajas, la etiqueta de rivales a ≤ 3 m se cruza igual (24,4 % frente a 29,2 %): es la
+> asociación (`docs/intercambios_con_una_caja.md`).
