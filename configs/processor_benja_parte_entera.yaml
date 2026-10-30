@@ -104,6 +104,13 @@ campo_m:
   ancho: 40.0
   margen: 5.0
 
+# Etiqueta de las filas INTERPOLADAS del CSV (no tienen recorte propio):
+#   vecina_real: la de la fila real más cercana de su identidad (empate: la anterior)
+#   identidad:   el voto de la identidad (método antiguo; pintaba "islas" en la pizarra)
+# docs/fix_interpoladas.md
+exportacion:
+  etiqueta_interpoladas: vecina_real
+
 # ── Rutas: NINGUNA pisa las del tramo de 60 s ────────────────────────
 rutas:
   video: data/raw/benja_gredos_p1_20min.mp4

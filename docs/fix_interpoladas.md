@@ -78,3 +78,96 @@ en la MISMA pasada de `desde_cache`:
   20 minutos.
 - **El informe sí lee las filas interpoladas** (si el punto 1 lo confirma). Sus recuentos por equipo
   pueden moverse: se dice cuánto.
+
+---
+
+# Resultados: CUMPLE todo
+
+```bash
+python scripts/fix_interpoladas.py correr --modulos <scripts de las ramas sin fusionar>
+python scripts/fix_interpoladas.py medir  --modulos <…>
+```
+
+Las salidas van a `outputs/fix_interpoladas/`.
+
+**Controles**:
+- el CSV de `main` de esta pasada es el mismo byte a byte que `posiciones_main.csv` del 26-oct;
+- **Villaviciosa sale idéntico byte a byte** con el arreglo;
+- los CSV de datos tienen el mismo SHA-256.
+
+## 1. Medida previa (20 min del benjamín, `main`)
+
+| | |
+|---|---|
+| filas interpoladas | **5.861 de 180.479 (3,25 %)** |
+| con la etiqueta = VOTO de su identidad | **5.861 (100 %)** |
+| de ellas: igual a sus DOS vecinas reales | 4.024 |
+| igual a una sola vecina | 695 |
+| **distinta de las dos** (la «isla») | **1.139 (19 %)** |
+| sin dos vecinas reales | 3 |
+
+**Quién las usa** (leyendo el código):
+
+| | ¿lee filas interpoladas? |
+|---|---|
+| GT de 30 s (`comparar_escalas`, `etiqueta_por_trozos.errores_gt`) | **no**: filtra `es_real == 1` |
+| hoja de 120 (`auditar_hojas`, `errores_hoja`) | **no**: filtra `es_real == 1` |
+| vistas agregadas (`vistas_agregadas.py`, rama sin fusionar) | **no**: filtra `es_real == 1` |
+| oráculos (`oraculos.py`) | **no**: trabaja sobre los cachés, no sobre el CSV |
+| `desglose_del_error.py` | solo para clasificar por qué falta una persona («solo hay fila rellenada») |
+| **informe** (`informe_v2.py`, `metricas_informe.py`) | **sí**: todas las filas, por `equipo` y `etiqueta` |
+| **pizarra** (`replay_tactico.py`) | **sí**: es de donde salían las islas |
+
+⇒ **Las dos evaluaciones no pueden ver este arreglo por construcción.** Su «no sube» es seguro,
+no evidencia de acierto, como se avisó antes de medir.
+
+**El GT de 30 s casado con TODAS las filas** (1-a-1, 2 m): solo 10 personas del GT caen en una fila
+interpolada. Con la etiqueta de `main`, **4 de 10 mal (40 %)**; con el arreglo, **2 de 10 (20 %)**.
+Las filas reales, 9 de 723 en los dos casos. La muestra es mínima, pero va en el sentido del arreglo,
+y el 40 % de antes era 30 veces el error de las reales.
+
+## 2. El arreglo
+
+- Cambian **1.486 filas interpoladas** (el 25 %): las 1.139 islas y 347 que coincidían con una sola
+  vecina, pero no con la más cercana.
+- **0 filas reales cambian.** `frame`, `tiempo_s`, `id_jugador`, `x_m`, `y_m` y `es_real` son
+  idénticas, en el mismo orden.
+- Tras el arreglo, **0 interpoladas tienen una etiqueta distinta de sus dos vecinas** en los 20 min.
+
+**Lo que mueve en el informe** (filas por etiqueta, todas las filas): A 61.022 → 60.807 (−215),
+B 71.837 → 71.857 (+20), `otro` 15.871 → 16.066 (+195). Porteros y staff, igual.
+- Los +195 de `otro` son huecos junto a filas reales que la pista del árbitro o el catálogo arbitral
+  mandan a `otro`. Antes, esos huecos se pintaban con el voto de la identidad, normalmente A.
+
+## 3. Guarda
+
+`tests/test_etiqueta_interpoladas.py`:
+- falla si una fila interpolada del CSV escrito lleva una etiqueta distinta de sus dos vecinas
+  reales;
+- incluye una prueba de mutación PERMANENTE: con `etiqueta_interpoladas: identidad` la guarda tiene
+  que saltar, y salta;
+- un test de comportamiento comprueba que la clave del YAML cambia el CSV y solo en las filas
+  interpoladas.
+
+**Mutación a mano**: la línea `etiquetas[k] = etiquetas[vecina]` se cambió por el voto. Se comprobó
+que el fichero había cambiado, **2 tests fallan**, y se restauró.
+
+## Criterios
+
+| | `main` | arreglo | criterio |
+|---|---|---|---|
+| islas en la pizarra 14:00-15:30 | 30 | **0** | = 0 → **sí** |
+| cambios de color/min (simulador, sin histéresis) | 87,3 | **48,0 (−45 %)** | ≤ 52,4 → **sí** |
+| GT de 30 s, equipo equivocado | 9 / 723 | **9 / 723** | no sube → **sí** (por construcción) |
+| hoja de 120 | 2 / 120 | **2 / 120** (las mismas) | no sube → **sí** (por construcción) |
+| solo cambia la etiqueta | — | **sí** | — |
+
+- **Islas: 30, no 29.** Aquí una isla es una racha de interpoladas con ALGUNA fila distinta de sus
+  dos vecinas; el 29-oct se contaron por cambios (58 = 2 × 29). Hay una racha que solo lo es en parte.
+- **El recuento de cambios** entre filas seguidas del CSV pintado baja de 132 a 73. De los 74 que
+  tenían alguna interpolada de por medio quedan 15: un cambio real A → B que ahora cae a mitad del
+  hueco, una vez en vez de dos. Es la predicción: 131 − 58 ≈ 73.
+- `pytest`: 792 passed.
+
+**Lo que NO arregla**: los 58 cambios real → real (38 A ↔ B y 20 con `otro`) siguen. Son la
+etiqueta por observación y la asociación (`etiqueta_por_trozos.md`).

@@ -56,6 +56,13 @@ campo_m:
   ancho: 64.0
   margen: 8.0            # generoso: el error de proyección del fondo es real
 
+# Etiqueta de las filas INTERPOLADAS del CSV (no tienen recorte propio):
+#   vecina_real: la de la fila real más cercana de su identidad (empate: la anterior)
+#   identidad:   el voto de la identidad (método antiguo; pintaba "islas" en la pizarra)
+# docs/fix_interpoladas.md
+exportacion:
+  etiqueta_interpoladas: vecina_real
+
 rutas:
   video: data/raw/partido.mp4                      # solo modo full
   # Cachés del modelo v4pre (mAP50 ~0.90; validados 08-ago-2026). Los del

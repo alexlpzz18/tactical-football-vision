@@ -1166,6 +1166,72 @@ def viterbi_activo(cfg_equipos: dict | None) -> bool:
     return bool(defecto_de_formato(formato_del_partido(cfg_equipos), "arbitro_viterbi"))
 
 
+def etiquetas_de_la_identidad(
+    obs_identidad: list,
+    id_identidad: int,
+    etiqueta_ident: str,
+    etiquetas_por_obs: dict,
+    modo: str = "vecina_real",
+) -> list[str]:
+    """Etiqueta de cada fila (real o interpolada) de UNA identidad, en su orden.
+
+    - Fila REAL: su etiqueta por observación si la tiene; si no (porteros,
+      staff), el voto de la identidad.
+    - Fila INTERPOLADA: no tiene recorte, así que no tiene etiqueta propia.
+      * `vecina_real`: la de la fila real más cercana en el tiempo de la
+        MISMA identidad (en empate, la anterior). Así una fila interpolada
+        nunca lleva una etiqueta distinta de sus dos vecinas reales.
+      * `identidad`: el voto de la identidad (el método antiguo). Pintaba
+        "islas" de 0,1-0,4 s con la moda de la identidad en cada hueco
+        (docs/pizarra_sin_identidades.md, docs/fix_interpoladas.md).
+
+    Las vecinas se buscan en la trayectoria ENTERA, antes del filtro de
+    margen del campo: una fila real que el export quita sigue siendo la
+    observación más cercana.
+
+    Args:
+        obs_identidad: [(frame_idx, pos, es_real), ...] ordenada por frame.
+        id_identidad: id (base 1) de la identidad en el CSV.
+        etiqueta_ident: voto de la identidad.
+        etiquetas_por_obs: {(id_identidad, frame_idx): etiqueta}.
+        modo: "vecina_real" o "identidad".
+    """
+    if modo not in ("vecina_real", "identidad"):
+        raise ValueError(
+            f"exportacion.etiqueta_interpoladas desconocido: {modo!r} "
+            "(vecina_real | identidad)"
+        )
+    etiquetas = [
+        etiquetas_por_obs.get((id_identidad, frame_idx)) or etiqueta_ident
+        for frame_idx, _pos, _es_real in obs_identidad
+    ]
+    if modo == "identidad":
+        return etiquetas
+
+    reales = [k for k, (_f, _p, es_real) in enumerate(obs_identidad) if es_real]
+    if not reales:
+        return etiquetas
+    # Recorrido único: `j` apunta a la primera fila real con índice > k.
+    j = 0
+    for k, (frame_idx, _pos, es_real) in enumerate(obs_identidad):
+        while j < len(reales) and reales[j] <= k:
+            j += 1
+        if es_real or (id_identidad, frame_idx) in etiquetas_por_obs:
+            continue
+        anterior = reales[j - 1] if j > 0 else None
+        siguiente = reales[j] if j < len(reales) else None
+        if siguiente is None:
+            vecina = anterior
+        elif anterior is None:
+            vecina = siguiente
+        else:
+            d_ant = frame_idx - obs_identidad[anterior][0]
+            d_sig = obs_identidad[siguiente][0] - frame_idx
+            vecina = anterior if d_ant <= d_sig else siguiente  # empate: la anterior
+        etiquetas[k] = etiquetas[vecina]
+    return etiquetas
+
+
 def exportar_posiciones(
     identidades,
     equipos: dict[int, str],
@@ -1203,16 +1269,24 @@ def exportar_posiciones(
             for identidad in identidades
         ]
 
+    # De dónde sacan la etiqueta las filas INTERPOLADAS (no tienen recorte):
+    # de la fila real más cercana de su identidad (`vecina_real`) o del voto
+    # de la identidad (`identidad`, el método antiguo). docs/fix_interpoladas.md
+    modo_interpoladas = (cfg.get("exportacion") or {}).get(
+        "etiqueta_interpoladas", "vecina_real"
+    )
+
     filas = []
     for id_identidad, obs_identidad in enumerate(observaciones, start=1):
         etiqueta_ident = equipos.get(id_identidad, "otro")
-        for frame_idx, pos, es_real in obs_identidad:
-            # La etiqueta por observación, si la hay, manda sobre la de la
-            # identidad. Las posiciones INTERPOLADAS no tienen recorte, así
-            # que se quedan con la de su identidad.
-            etiqueta = (etiquetas_por_obs or {}).get(
-                (id_identidad, frame_idx)
-            ) or etiqueta_ident
+        etiquetas = etiquetas_de_la_identidad(
+            obs_identidad,
+            id_identidad,
+            etiqueta_ident,
+            etiquetas_por_obs or {},
+            modo_interpoladas,
+        )
+        for (frame_idx, pos, es_real), etiqueta in zip(obs_identidad, etiquetas):
             entero = EQUIPO_A_ENTERO.get(etiqueta, 2)
             mx, my = float(pos[0]), float(pos[1])
             if not (-margen <= mx <= largo + margen):
@@ -1254,6 +1328,7 @@ def exportar_posiciones(
         "pipeline_version": "v2",
         "perfil_tracking": cfg["tracking"]["perfil"],
         "interpolacion": trayectorias is not None,
+        "etiqueta_interpoladas": modo_interpoladas,
         # Color de camiseta de cada equipo, derivado del clasificador
         "colores_equipo": colores_equipo or {},
         "n_identidades": len(identidades),
