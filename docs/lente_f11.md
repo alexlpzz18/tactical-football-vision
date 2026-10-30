@@ -89,3 +89,22 @@ dos medidas, y manda la primera:
   pesimista a propósito.
 - **Las marcas pintadas pueden no estar a reglamento.** El error de una marca puede ser de la pintura,
   no de la lente: por eso el ajuste con largo y ancho libres se informa.
+
+---
+
+# Decisión de Alex (30-oct): deciden las marcas, y con largo y ancho libres
+
+El GT es circular para juzgar la calibración: sus metros salen de la misma calibración. Por eso la
+medida B deja de decidir y la **A manda**. Criterio nuevo, fijado ANTES de calcularlo:
+
+- **reajuste con largo y ancho del campo LIBRES** (áreas y círculo a reglamento), modelo racional;
+- **validación cruzada en metros, por zona**: cada cruce dejado fuera se predice con el resto, contra
+  su marca en el campo con las medidas estimadas en ESE reajuste;
+- **pasa si: mediana ≤ 0,5 m y p95 ≤ 1,5 m en las marcas, sin empeorar en ninguna zona respecto a la
+  calibración actual;**
+- **incertidumbre del largo y el ancho**: el rango de los reajustes dejando fuera cada cruce y cada
+  línea (jackknife), y remuestreando los clics con ruido del tamaño de los residuos;
+- el recall (punto 5) se mira antes de proponer nada en producción.
+
+⚠️ La validación cruzada es pesimista en las marcas de los extremos, porque dejarlas fuera es
+extrapolar. Se informa también el error SIN dejar fuera, pero no decide.
