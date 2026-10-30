@@ -15,6 +15,7 @@ models/weights/
 data/tracking/
 # cachés y CSVs del benjamín (viven en Drive)
 data/tracking_benja/
+data/tracking_alevinb/
 data/ablacion_1a1/
 data/annotations/
 
@@ -42,6 +43,8 @@ data/calibracion/*.png
 data/calibracion/*.jpg
 data/calibracion_benja/*.png
 data/calibracion_benja/*.jpg
+data/calibracion_villa_cadete/*.png
+data/calibracion_alevinb/*.png
 
 # Modelos entrenados (van por DVC, no a GitHub)
 *.pt

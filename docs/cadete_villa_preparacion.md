@@ -164,3 +164,6 @@ FILA** (`hoja_otro_v3.con_caja_de_la_fila`), nunca la más cercana a la posició
 idénticos al original; el frame 0 de cada parte es el 10.201 y el 88.701 del original.
 
 **El MVP pasa del cadete A al alevín B** (decisión de Alex, 30-oct): esta preparación se traslada.
+
+⚠️ Los ficheros de configuración y la celda de este documento se renombraron a los del alevín B
+(`docs/alevinb_preparacion.md`). Queda como registro de lo que se midió del cadete.

@@ -182,3 +182,41 @@ def test_medidas_libres_recupera_un_campo_que_no_mide_100x64():
     _cam, info = lc.ajustar("ojo_pez", real, medidas_libres=True)
     assert abs(info["medidas_estimadas_m"][0] - 96) < 1.5
     assert abs(info["medidas_estimadas_m"][1] - 60) < 1.5
+
+
+def test_ajustar_pose_recupera_un_movimiento_pequeno_sin_tocar_la_lente():
+    verdad = _verdad()
+    m = _clics(verdad).cruces_m
+    movida = lc.Camara(
+        verdad.tipo, verdad.f, verdad.cx, verdad.cy, verdad.coefs,
+        verdad.rvec + [0.002, -0.001, 0.0015], verdad.tvec + [0.05, -0.03, 0.04],
+    )  # fmt: skip
+    cam = lc.ajustar_pose(verdad, movida.proyectar(m), m)
+    assert cam.f == verdad.f and (cam.coefs == verdad.coefs).all()
+    assert np.abs(cam.proyectar(m) - movida.proyectar(m)).max() < 0.05
+
+
+def test_movimiento_entre_fotogramas_mide_un_desplazamiento_conocido():
+    g = np.random.default_rng(0)
+    base = cv2.GaussianBlur(
+        g.integers(0, 255, (1064, 2560, 3), dtype=np.uint8), (5, 5), 0
+    )
+    movida = cv2.warpAffine(base, np.float32([[1, 0, 3], [0, 1, -2]]), (2560, 1064))
+    T = lc.movimiento_entre_fotogramas(base, movida)
+    assert abs(T[0, 2] - 3) < 0.3 and abs(T[1, 2] + 2) < 0.3
+
+
+def test_pose_desde_movimiento_sin_movimiento_no_cambia_nada():
+    """Control: si la imagen no se mueve, la pose no puede cambiar (un artefacto ya visto)."""
+    cam = _verdad()
+    nueva = lc.pose_desde_movimiento(cam, np.float64([[1, 0, 0], [0, 1, 0]]))
+    xy = np.array([[10.0, 5.0], [50.0, 32.0], [90.0, 60.0]])
+    assert np.abs(nueva.proyectar(xy) - cam.proyectar(xy)).max() < 1e-3
+
+
+def test_pose_desde_movimiento_reproduce_el_desplazamiento():
+    cam = _verdad()
+    nueva = lc.pose_desde_movimiento(cam, np.float64([[1, 0, 2.0], [0, 1, -1.0]]))
+    xy = np.array([[50.0, 32.0], [40.0, 30.0], [60.0, 20.0]])
+    d = nueva.proyectar(xy) - cam.proyectar(xy)
+    assert np.abs(d - [2.0, -1.0]).max() < 0.5

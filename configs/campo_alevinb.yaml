@@ -1,0 +1,19 @@
+# Campo del Alevín B de Villaviciosa (vídeo AlevinB_Dux.mp4, 24-oct-2026). docs/alevinb_preparacion.md
+#
+# F11 en campo COMPLETO (medido: 20-26 personas en el campo, posiciones de x = 1 a 99 m) y solo se ve
+# el marcaje de F11. Misma cámara y mismo campo que el Villaviciosa de producción y el cadete.
+#
+# ⚠️ 100 × 64 son las medidas de producción, NUNCA medidas en el campo. Con los clics de Alex y las
+# áreas a reglamento, el ajuste pide 96,1 × 64,3 m (largo 93-98, ancho 63,5-65,5;
+# docs/lente_f11.md). No se cambia hasta medirlo.
+
+campo:
+  nombre: villaviciosa_alevinb
+  tipo: f11
+  largo: 100.0
+  ancho: 64.0
+
+rutas:
+  imagen: data/calibracion_alevinb/frame.png
+  puntos: data/calibracion_alevinb/clics_lente_villaviciosa.json
+  homografia: data/calibracion/homografia.npy

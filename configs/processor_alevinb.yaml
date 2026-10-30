@@ -1,19 +1,19 @@
 # ════════════════════════════════════════════════════════════════════
-# Procesador: Villaviciosa cadete A (F11), vídeo CadeteA_Techniteam.mp4
+# Procesador: Alevín B de Villaviciosa (F11), vídeo AlevinB_Dux.mp4
 # ════════════════════════════════════════════════════════════════════
 #
-# Partido NUEVO, solo preparación (docs/cadete_villa_preparacion.md). No es producción: las rutas
-# no pisan nada del Villaviciosa de siempre (configs/processor.yaml) ni del benjamín.
+# Partido del MVP, solo preparación (docs/alevinb_preparacion.md). No es producción: las rutas no
+# pisan nada del Villaviciosa de siempre ni del benjamín.
 #
-# Vídeo: 2560×1064 nativo, 25 fps, 1:54:59 (6.899 s), ojo de pez desde la tribuna principal.
-# MISMA cámara y MISMA posición que el Villaviciosa de producción → misma corrección de lente.
+# Vídeo: 2560×1064 nativo, 25 fps, 1:35:00. MISMA cámara y posición que el cadete.
 #
-# ⚠️ Se procesa POR PARTES (el tramo lo pone la celda de Colab, scripts/colab_villa_cadete.py):
-#   - salta el descanso y lo que no es partido;
+# ⚠️ Se procesa POR PARTES, una por fichero cortado (scripts/cortar_partido.py), que la celda
+# scripts/colab_alevinb.py pone en `rutas.video`:
 #   - en el descanso los equipos cambian de portería, y la regla de porteros deduce los lados POR
-#     PASADA (`porteros.deducir_lados`): mezclar las dos partes en una pasada la confundiría;
-#   - el fit de color es POR PASADA: la letra A/B de cada equipación puede cambiar entre partes.
-#     Se casa por `colores_equipo` del meta, no por la letra.
+#     PASADA (`porteros.deducir_lados`);
+#   - el fit de color es POR PASADA: la letra A/B de cada equipación puede cambiar entre partes. Se
+#     casa por `colores_equipo` del meta, no por la letra.
+#   - los frame_idx de la caché son los del CORTE, no los del vídeo entero.
 # ────────────────────────────────────────────────────────────────────
 
 pipeline: nuevo
@@ -38,7 +38,7 @@ distorsion:
 
 muestreo:
   sample_every: 3 # 25 fps → 8,33 Hz, como el Villaviciosa de producción
-  tramo: null # lo fija la celda de Colab por parte; null aquí = vídeo entero (NO usar así)
+  tramo: null # cada parte es su propio fichero cortado
 
 checkpoint:
   cada_frames: 500
@@ -55,10 +55,10 @@ equipos:
     tope: 11
     tope_otro: 1
     lambda_holgura: 1.0
-config_equipos: configs/team_classification_villa_cadete.yaml
+config_equipos: configs/team_classification_alevinb.yaml
 
 campo_m:
-  largo: 100.0 # los de configs/campo_villa_cadete.yaml (sin medir)
+  largo: 100.0 # los de configs/campo_alevinb.yaml (sin medir)
   ancho: 64.0
   margen: 8.0
 
@@ -66,10 +66,10 @@ exportacion:
   etiqueta_interpoladas: vecina_real
 
 rutas:
-  # Alex copia el vídeo de Drive a esta ruta (en Colab, con data/ montado). Sin espacios en el nombre.
-  video: data/raw/cadete_villa_techniteam.mp4
-  cache: data/tracking_villa_cadete/cache_detecciones.pkl
-  cache_colores: data/tracking_villa_cadete/cache_colores.pkl
-  homografia: data/calibracion_villa_cadete/homografia_villa_cadete.npy
-  salida_csv: data/tracking_villa_cadete/posiciones.csv
-  salida_meta: data/tracking_villa_cadete/posiciones_meta.json
+  # Lo fija la celda por parte: data/raw/alevinb_p1.mp4 y data/raw/alevinb_p2.mp4
+  video: data/raw/alevinb_p1.mp4
+  cache: data/tracking_alevinb/cache_detecciones.pkl
+  cache_colores: data/tracking_alevinb/cache_colores.pkl
+  homografia: data/calibracion/homografia.npy
+  salida_csv: data/tracking_alevinb/posiciones.csv
+  salida_meta: data/tracking_alevinb/posiciones_meta.json

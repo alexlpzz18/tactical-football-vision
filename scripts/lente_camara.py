@@ -726,6 +726,96 @@ def validar_con_medidas_libres(
     return res
 
 
+def ajustar_pose(cam: Camara, px: np.ndarray, xy: np.ndarray) -> Camara:
+    """Misma lente, misma focal y mismo centro: solo se reajusta la posición de la cámara."""
+
+    def resid(v):
+        c = Camara(cam.tipo, cam.f, cam.cx, cam.cy, cam.coefs, v[:3], v[3:])
+        return (c.proyectar(xy) - px).ravel()
+
+    sol = least_squares(
+        resid,
+        np.concatenate([cam.rvec, cam.tvec]),
+        loss="soft_l1",
+        f_scale=ESCALA_PERDIDA_PX,
+        x_scale="jac",
+    )
+    return Camara(cam.tipo, cam.f, cam.cx, cam.cy, cam.coefs, sol.x[:3], sol.x[3:])
+
+
+def movimiento_entre_fotogramas(ref: np.ndarray, img: np.ndarray) -> np.ndarray:
+    """Transformación (2×3) de `ref` a `img` con puntos de la ESTRUCTURA FIJA (no el césped)."""
+    a, b = [cv2.cvtColor(x, cv2.COLOR_BGR2GRAY) for x in (ref, img)]
+    m = np.zeros(a.shape, np.uint8)
+    m[80:520, :] = 255  # cubierta, anuncios y edificios; sin césped ni público
+    m[:90, :560] = 0  # sin el reloj impreso
+    orb = cv2.ORB_create(20000)
+    ka, da = orb.detectAndCompute(a, m)
+    kb, db = orb.detectAndCompute(b, m)
+    pares = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True).match(da, db)
+    pa = np.float32([ka[x.queryIdx].pt for x in pares])
+    pb = np.float32([kb[x.trainIdx].pt for x in pares])
+    T, _inl = cv2.estimateAffinePartial2D(
+        pa, pb, method=cv2.RANSAC, ransacReprojThreshold=3.0
+    )
+    return T
+
+
+def pose_desde_movimiento(cam: Camara, T: np.ndarray) -> Camara:
+    """Pose tras un movimiento de la imagen `T` (2×3), con la misma lente.
+
+    ⚠️ El objetivo es la PROYECCIÓN de la propia cámara movida con T, no los clics crudos: contra
+    los clics aparece la diferencia entre dos ajustes y parece que la cámara se ha movido sin
+    moverse. Con T = identidad, la pose no cambia.
+    """
+    xs, ys = np.meshgrid(np.linspace(0, LARGO, 21), np.linspace(0, ANCHO, 14))
+    malla = np.column_stack([xs.ravel(), ys.ravel()])
+    p0 = cam.proyectar(malla)
+    q = np.isfinite(p0).all(axis=1)
+    objetivo = np.column_stack([p0[q], np.ones(int(q.sum()))]) @ T.T
+    return ajustar_pose(cam, objetivo, malla[q])
+
+
+def pose_por_partido(
+    salida: Path, ref: Path, fotogramas: list, nombre: str, tipo="racional"
+) -> dict:
+    """Reutiliza la lente; reajusta la pose con la estructura fija (docs/alevinb_preparacion.md)."""
+    cam = cargar_camara(salida / f"camara_{tipo}.npz")
+    r = cv2.imread(str(ref))
+    Ts = np.array(
+        [movimiento_entre_fotogramas(r, cv2.imread(str(f))) for f in fotogramas]
+    )
+    T = np.median(Ts, axis=0)
+    nueva = pose_desde_movimiento(cam, T)
+    # cuánto cambia: un pie a lo largo del campo, en píxeles y en metros
+    xs, ys = np.meshgrid(np.linspace(2, 98, 25), np.linspace(2, 62, 16))
+    malla = np.column_stack([xs.ravel(), ys.ravel()])
+    p_ref = cam.proyectar(malla)
+    d_px = np.linalg.norm(nueva.proyectar(malla) - p_ref, axis=1)
+    d_m = np.linalg.norm(nueva.pixel_a_metros(p_ref) - malla, axis=1)
+    np.savez(
+        salida / f"camara_{nombre}.npz",
+        tipo=tipo, f=nueva.f, cx=nueva.cx, cy=nueva.cy, coefs=nueva.coefs,
+        rvec=nueva.rvec, tvec=nueva.tvec,
+    )  # fmt: skip
+    res = {
+        "fotogramas": len(fotogramas),
+        "traslacion_px_por_fotograma": Ts[:, :, 2].round(2).tolist(),
+        "traslacion_mediana_px": T[:, 2].round(2).tolist(),
+        "giro_y_escala": T[:, :2].round(5).tolist(),
+        "pose_cambia_px_mediana_max": [
+            round(float(np.nanmedian(d_px)), 2),
+            round(float(np.nanmax(d_px)), 2),
+        ],
+        "pose_cambia_m_mediana_max": [
+            round(float(np.nanmedian(d_m)), 3),
+            round(float(np.nanmax(d_m)), 3),
+        ],
+    }
+    json.dump(res, open(salida / f"pose_{nombre}.json", "w"), indent=1)
+    return res
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("accion", choices=["ajustar", "comparar", "libres"])

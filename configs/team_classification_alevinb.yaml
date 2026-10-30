@@ -1,14 +1,7 @@
 # ════════════════════════════════════════════════════════════════════
-# Equipos: Villaviciosa cadete A (F11). COPIA de configs/team_classification.yaml (Villaviciosa
-# de producción, mismo estadio y misma cámara) para poder tocarla sin mover producción.
-# docs/cadete_villa_preparacion.md
-#
-# Equipaciones vistas en el vídeo: BLANCO contra RAYAS ROJINEGRAS; porteros por ver; árbitro por
-# ver. El fit de color es automático (KMeans), así que no hay que decirle los colores.
-#
-# Diferencias con el de producción: NINGUNA todavía. Riesgos del sol (sombras duras, contraluz) en
-# el documento: si la hoja de 120 filas sale mal, lo primero que se mira es esta máscara de césped
-# (`verde_*`) y el torso (`torso_*`), con su propio plan.
+# Equipos: Alevín B de Villaviciosa (F11). COPIA SIN CAMBIOS de configs/team_classification.yaml
+# (Villaviciosa de producción, misma cámara) para poder tocarla sin mover producción.
+# docs/alevinb_preparacion.md. El fit de color es automático (KMeans): no hay que darle colores.
 # ════════════════════════════════════════════════════════════════════
 # Parámetros del clasificador de equipos por color (TeamClassifierColor).
 # Valores validados en Colab (briefing 2.3). El script de evaluación los
