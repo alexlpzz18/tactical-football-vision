@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lente de la cámara F11</title>
+<style>
+  :root { --fondo:#111; --panel:#1d1d1d; --texto:#eee; --suave:#aaa; --acento:#ffeb3b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--fondo); color:var(--texto); font:14px system-ui,sans-serif;
+         height:100vh; display:flex; flex-direction:column; }
+  header { padding:8px 12px; background:var(--panel); display:flex; gap:10px; flex-wrap:wrap;
+           align-items:center; }
+  #pide { font-size:16px; font-weight:600; color:var(--acento); flex:1 1 320px; }
+  button { background:#2c2c2c; color:var(--texto); border:1px solid #555; border-radius:6px;
+           padding:6px 10px; cursor:pointer; font:inherit; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.prim { background:#3b5d2e; border-color:#6a9c55; }
+  main { flex:1; display:flex; min-height:0; }
+  #vista { flex:1; position:relative; overflow:hidden; cursor:crosshair; background:#000; }
+  #lienzo { position:absolute; left:0; top:0; }
+  aside { width:260px; padding:10px; background:var(--panel); overflow:auto; flex:none; }
+  #dibujo { width:100%; display:block; background:#2e7d32; border-radius:4px; }
+  .info { color:var(--suave); margin:8px 0; line-height:1.35; }
+  ol { padding-left:18px; margin:6px 0; color:var(--suave); }
+  li.hecho { color:#7bd47b; } li.saltado { color:#777; text-decoration:line-through; }
+  li.ahora { color:var(--acento); font-weight:600; }
+  @media (max-width:800px) { aside { display:none; } }
+</style>
+</head>
+<body>
+<header>
+  <div id="pide"></div>
+  <button id="saltar">Saltar (no se ve)</button>
+  <button id="deshacer">Deshacer</button>
+  <button id="sigLinea">Siguiente línea</button>
+  <button id="cambiar">Otro partido (tecla C)</button>
+  <button id="reset">Ver entero (tecla V)</button>
+  <button id="exportar" class="prim" disabled>Exportar</button>
+</header>
+<main>
+  <div id="vista"><canvas id="lienzo"></canvas></div>
+  <aside>
+    <canvas id="dibujo" width="240" height="154"></canvas>
+    <div class="info" id="estado"></div>
+    <div class="info">Rueda: zoom. Arrastrar: mover. Clic: marcar. Se guarda solo en este navegador.</div>
+    <ol id="lista"></ol>
+  </aside>
+</main>
+<script>
+const FRAMES = __FRAMES__;
+const CRUCES = __CRUCES__;
+const LINEAS = __LINEAS__;
+const LARGO = __LARGO__, ANCHO = __ANCHO__, GEOMETRIA = __GEOMETRIA__;
+const MIN_CRUCES = __MIN_CRUCES__, MIN_POR_LINEA = __MIN_POR_LINEA__, MAX_POR_LINEA = __MAX_POR_LINEA__;
+const CLAVE = "lente_f11_clics_v1";
+const lienzo = document.getElementById("lienzo"), vista = document.getElementById("vista");
+const ctx = lienzo.getContext("2d");
+const imagenes = FRAMES.map(f => { const i = new Image(); i.src = f.dato; return i; });
+let frameActual = 0, zoom = 1, ox = 0, oy = 0;
+// cruces[i] = {pixel} | {saltado:true} | undefined; lineas[j] = {puntos:[...]}
+let datos = { cruces: CRUCES.map(() => null), lineas: LINEAS.map(() => ({ puntos: [] })), hechos: LINEAS.map(() => false) };
+let historial = [];
+function cargar() {
+  try {
+    const t = localStorage.getItem(CLAVE);
+    if (t) { const d = JSON.parse(t);
+      if (d.cruces.length === CRUCES.length && d.lineas.length === LINEAS.length) datos = d; }
+  } catch (e) { /* sin almacenamiento: se trabaja igual */ }
+}
+function guardar() { try { localStorage.setItem(CLAVE, JSON.stringify(datos)); } catch (e) {} }
+
+function paso() {
+  const c = datos.cruces.findIndex(x => x === null);
+  if (c >= 0) return { tipo: "cruce", i: c };
+  const l = datos.hechos.findIndex(x => !x);
+  if (l >= 0) return { tipo: "linea", i: l };
+  return { tipo: "fin" };
+}
+function ajustarVista() {
+  const r = vista.getBoundingClientRect();
+  lienzo.width = r.width; lienzo.height = r.height;
+}
+function verEntero() {
+  const r = vista.getBoundingClientRect(), im = imagenes[frameActual];
+  zoom = Math.min(r.width / im.width, r.height / im.height);
+  ox = (r.width - im.width * zoom) / 2; oy = (r.height - im.height * zoom) / 2; dibujar();
+}
+function aImagen(cx, cy) { return [(cx - ox) / zoom, (cy - oy) / zoom]; }
+function marca(p, color, radio) {
+  const x = p[0] * zoom + ox, y = p[1] * zoom + oy;
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x - radio, y); ctx.lineTo(x + radio, y);
+  ctx.moveTo(x, y - radio); ctx.lineTo(x, y + radio); ctx.stroke();
+}
+function dibujar() {
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+  const im = imagenes[frameActual];
+  if (im.complete) { ctx.imageSmoothingEnabled = zoom < 2; ctx.drawImage(im, ox, oy, im.width * zoom, im.height * zoom); }
+  datos.cruces.forEach(c => { if (c && c.pixel) marca(c.pixel, "#ff3b3b", 7); });
+  const act = paso();
+  datos.lineas.forEach((l, j) => l.puntos.forEach(p =>
+    marca(p, act.tipo === "linea" && act.i === j ? "#ffeb3b" : "#ff4dff", 5)));
+  refrescar(act);
+}
+function campoDibujo(act) {
+  const c = document.getElementById("dibujo"), g = c.getContext("2d");
+  const m = 8, e = Math.min((c.width - 2 * m) / LARGO, (c.height - 2 * m) / ANCHO);
+  const P = (x, y) => [m + x * e, c.height - m - y * e];
+  g.fillStyle = "#2e7d32"; g.fillRect(0, 0, c.width, c.height);
+  g.strokeStyle = "rgba(255,255,255,.75)"; g.lineWidth = 1;
+  for (const [a, b] of GEOMETRIA.lineas) {
+    g.beginPath(); g.moveTo(...P(a[0], a[1])); g.lineTo(...P(b[0], b[1])); g.stroke();
+  }
+  g.beginPath(); g.arc(...P(LARGO / 2, ANCHO / 2), 9.15 * e, 0, 2 * Math.PI); g.stroke();
+  g.fillStyle = "#ffeb3b"; g.strokeStyle = "#ffeb3b"; g.lineWidth = 3;
+  if (act.tipo === "cruce") {
+    const m0 = CRUCES[act.i].metros;
+    g.beginPath(); g.arc(...P(m0[0], m0[1]), 4, 0, 2 * Math.PI); g.fill();
+  } else if (act.tipo === "linea") {
+    const l = LINEAS[act.i];
+    g.beginPath(); g.moveTo(...P(l.a[0], l.a[1])); g.lineTo(...P(l.b[0], l.b[1])); g.stroke();
+  }
+}
+function nCruces() { return datos.cruces.filter(c => c && c.pixel).length; }
+function nLineaPts() { return datos.lineas.reduce((s, l) => s + l.puntos.length, 0); }
+function refrescar(act) {
+  const pide = document.getElementById("pide");
+  if (act.tipo === "cruce") pide.textContent = `Cruce ${act.i + 1}/${CRUCES.length}: ${CRUCES[act.i].texto}`;
+  else if (act.tipo === "linea") {
+    const n = datos.lineas[act.i].puntos.length;
+    pide.textContent = `Línea ${act.i + 1}/${LINEAS.length}: ${LINEAS[act.i].texto}. Marca ${MIN_POR_LINEA}-${MAX_POR_LINEA} puntos repartidos (llevas ${n})`;
+  } else pide.textContent = "Terminado: pulsa Exportar";
+  document.getElementById("saltar").disabled = act.tipo === "fin";
+  document.getElementById("sigLinea").disabled = act.tipo !== "linea";
+  document.getElementById("exportar").disabled = nCruces() < MIN_CRUCES;
+  document.getElementById("estado").textContent =
+    `${FRAMES[frameActual].nombre} · ${nCruces()} cruces · ${nLineaPts()} puntos de línea · zoom ${zoom.toFixed(1)}×`;
+  const li = document.getElementById("lista"); li.innerHTML = "";
+  LINEAS.forEach((l, j) => {
+    const e = document.createElement("li");
+    e.textContent = `${l.texto} (${datos.lineas[j].puntos.length})`;
+    e.className = act.tipo === "linea" && act.i === j ? "ahora" : datos.hechos[j] ? (datos.lineas[j].puntos.length ? "hecho" : "saltado") : "";
+    li.appendChild(e);
+  });
+  campoDibujo(act);
+}
+function clic(p) {
+  const act = paso();
+  if (act.tipo === "cruce") { datos.cruces[act.i] = { pixel: p }; historial.push({ t: "c", i: act.i }); }
+  else if (act.tipo === "linea") {
+    const l = datos.lineas[act.i];
+    l.puntos.push(p); historial.push({ t: "l", i: act.i });
+    if (l.puntos.length >= MAX_POR_LINEA) datos.hechos[act.i] = true;
+  } else return;
+  guardar(); dibujar();
+}
+// ── ratón ──
+let arrastre = null;
+vista.addEventListener("mousedown", e => { arrastre = { x: e.clientX, y: e.clientY, ox, oy, movido: false }; });
+window.addEventListener("mousemove", e => {
+  if (!arrastre) return;
+  const dx = e.clientX - arrastre.x, dy = e.clientY - arrastre.y;
+  if (Math.hypot(dx, dy) > 4) arrastre.movido = true;
+  if (arrastre.movido) { ox = arrastre.ox + dx; oy = arrastre.oy + dy; dibujar(); }
+});
+window.addEventListener("mouseup", e => {
+  if (!arrastre) return;
+  const movido = arrastre.movido; arrastre = null;
+  if (movido || !vista.contains(e.target)) return;
+  const r = vista.getBoundingClientRect();
+  const p = aImagen(e.clientX - r.left, e.clientY - r.top);
+  const im = imagenes[frameActual];
+  if (p[0] < 0 || p[1] < 0 || p[0] >= im.width || p[1] >= im.height) return;
+  clic([+p[0].toFixed(2), +p[1].toFixed(2)]);
+});
+vista.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = vista.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
+  const [ix, iy] = aImagen(cx, cy);
+  zoom = Math.max(0.2, Math.min(16, zoom * Math.exp(-e.deltaY * 0.0015)));
+  ox = cx - ix * zoom; oy = cy - iy * zoom; dibujar();
+}, { passive: false });
+// ── botones ──
+document.getElementById("saltar").onclick = () => {
+  const act = paso();
+  if (act.tipo === "cruce") { datos.cruces[act.i] = { saltado: true }; historial.push({ t: "c", i: act.i }); }
+  else if (act.tipo === "linea") { datos.hechos[act.i] = true; historial.push({ t: "h", i: act.i }); }
+  guardar(); dibujar();
+};
+document.getElementById("sigLinea").onclick = () => {
+  const act = paso();
+  if (act.tipo !== "linea") return;
+  const n = datos.lineas[act.i].puntos.length;
+  if (n && n < MIN_POR_LINEA && !confirm(`Solo ${n} puntos en esta línea (mejor ${MIN_POR_LINEA}). ¿Pasar a la siguiente?`)) return;
+  datos.hechos[act.i] = true; historial.push({ t: "h", i: act.i }); guardar(); dibujar();
+};
+document.getElementById("deshacer").onclick = () => {
+  const h = historial.pop();
+  if (h) {
+    if (h.t === "c") datos.cruces[h.i] = null;
+    if (h.t === "h") datos.hechos[h.i] = false;
+    if (h.t === "l") { datos.lineas[h.i].puntos.pop(); datos.hechos[h.i] = false; }
+  } else {
+    // tras recargar no hay historial: se deshace lo último que haya según el paso actual
+    const act = paso();
+    if (act.tipo === "linea" && datos.lineas[act.i].puntos.length) datos.lineas[act.i].puntos.pop();
+    else if (act.tipo === "linea" && act.i > 0) datos.hechos[act.i - 1] = false;
+    else if (act.tipo === "linea") datos.cruces[datos.cruces.length - 1] = null;
+    else if (act.tipo === "cruce" && act.i > 0) datos.cruces[act.i - 1] = null;
+    else if (act.tipo === "fin") datos.hechos[datos.hechos.length - 1] = false;
+  }
+  guardar(); dibujar();
+};
+function cambiar() { frameActual = (frameActual + 1) % FRAMES.length; dibujar(); }
+document.getElementById("cambiar").onclick = cambiar;
+document.getElementById("reset").onclick = verEntero;
+window.addEventListener("keydown", e => {
+  if (e.key === "c" || e.key === "C") cambiar();
+  if (e.key === "v" || e.key === "V") verEntero();
+});
+document.getElementById("exportar").onclick = () => {
+  const salida = {
+    resolucion: [imagenes[0].width, imagenes[0].height],
+    cruces: CRUCES.flatMap((c, i) => datos.cruces[i] && datos.cruces[i].pixel
+      ? [{ nombre: c.nombre, pixel: datos.cruces[i].pixel, metros: c.metros }] : []),
+    lineas: LINEAS.flatMap((l, j) => datos.lineas[j].puntos.length
+      ? [{ nombre: l.nombre, a: l.a, b: l.b, puntos: datos.lineas[j].puntos }] : []),
+  };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(salida, null, 1)], { type: "application/json" }));
+  a.download = "clics_lente_villaviciosa.json"; a.click();
+};
+window.addEventListener("resize", () => { ajustarVista(); dibujar(); });
+cargar(); ajustarVista();
+imagenes[0].onload = () => { verEntero(); };
+if (imagenes[0].complete) verEntero();
+imagenes.forEach(i => i.addEventListener("load", dibujar));
+</script>
+</body>
+</html>
