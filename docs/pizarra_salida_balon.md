@@ -127,3 +127,27 @@ En la rama `pizarra-salida-balon`, sin fusionar:
 - `scripts/plantilla_salida_balon.html`
 
 Las salidas van a `outputs/salida_balon/`. Los CSV de datos no se tocan.
+
+---
+
+# Líneas de pase (30-oct, solo dibujo; reglas fijadas antes de dibujarlas)
+
+Alex las aprueba con la condición de que no salgan «2.000 líneas».
+
+- **Solo con poseedor**:
+  - el balón está DETECTADO y no va por el aire;
+  - la ficha más cercana al balón es de un equipo (A, B o su portero) y está a ≤ 1,5 m. Al ser la
+    más cercana, ningún rival está más cerca del balón que ella.
+- **Receptores**: los compañeros a ≤ 25 m del poseedor, incluido el portero.
+- **Pase libre**: ningún rival a < 1,5 m del segmento poseedor-receptor.
+- **Como mucho 4 líneas**, las más cortas.
+- **Línea discontinua = dudosa**: el segmento cruza una zona que la cámara no ve (el trapecio,
+  comprobado con la homografía inversa), así que un rival podría estar ahí sin ficha.
+- Botón para mostrarlas u ocultarlas.
+
+¿Qué podría estar inventando?
+- **Un pase «libre» puede serlo solo porque el rival que lo corta no está detectado**: en A1 se ven
+  4,3 de las 7 fichas de A, y algo menos de 7 de B.
+- **Sin balón detectado no hay líneas.** En A1 hay balón en el 38 % del tramo, así que habrá ratos
+  sin líneas: es la verdad del dato, no un fallo del dibujo.
+- **Se informa** en cuántos instantes del tramo hay líneas y cuántas de media.
