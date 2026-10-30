@@ -214,6 +214,9 @@ RECEPTOR_MAX_M = 25.0
 CORREDOR_LIBRE_M = 1.5
 MAX_LINEAS = 4
 PUNTOS_VISIBILIDAD = 11
+# huecos en la línea del rival (docs/pizarra_salida_balon.md, «Escala del visor»)
+LINEA_FONDO_M = 5.0
+HUECO_MIN_M = 4.0
 MODULOS: Path | None = None
 
 
@@ -268,6 +271,33 @@ def lineas_de_pase(fichas_vis: list, balon, en_camara, Hinv) -> list:
     return [linea for _l, linea in sorted(candidatos, key=lambda c: c[0])[:MAX_LINEAS]]
 
 
+def huecos_del_rival(fichas_vis: list, rival: str) -> list:
+    """[[x0, y0, x1, y1, metros], ...] entre vecinos de una línea rival separados > HUECO_MIN_M.
+
+    Líneas: jugadores de campo del rival (sin portero) ordenados por profundidad y encadenados
+    mientras el siguiente esté a ≤ LINEA_FONDO_M de fondo del anterior.
+    """
+    jug = sorted((f for f in fichas_vis if f[2] == rival), key=lambda f: f[0])
+    lineas, actual = [], []
+    for f in jug:
+        if actual and f[0] - actual[-1][0] > LINEA_FONDO_M:
+            lineas.append(actual)
+            actual = []
+        actual.append(f)
+    if actual:
+        lineas.append(actual)
+    huecos = []
+    for linea in lineas:
+        if len(linea) < 2:
+            continue
+        por_ancho = sorted(linea, key=lambda f: f[1])
+        for a, b in zip(por_ancho[:-1], por_ancho[1:]):
+            d = float(np.hypot(a[0] - b[0], a[1] - b[1]))
+            if d > HUECO_MIN_M:
+                huecos.append([a[0], a[1], b[0], b[1], round(d, 1)])
+    return huecos
+
+
 def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
     """Fichas (lo que pinta la pizarra), balón y la calidad del tramo, muestreados a 20 Hz."""
     fp = _mod("fichas_pizarra")
@@ -316,7 +346,7 @@ def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
         for kk, e, ae in zip(k, estado, aereo)
     ]
     # (3) por instante: fichas visibles DENTRO del campo, por etiqueta pintada
-    muestras, lineas = [], []
+    muestras, lineas, huecos = [], [], []
     Hinv = np.linalg.inv(np.load(R / "data/calibracion_benja/homografia_benja.npy"))
     por_equipo = {"A": [], "B": []}
     for n in range(len(Ts)):
@@ -328,7 +358,7 @@ def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
             x, y, et = float(f["x"][n]), float(f["y"][n]), str(f["col"][n])
             if not (0 <= x <= LARGO and 0 <= y <= ANCHO):
                 continue
-            vis.append([round(x, 2), round(y, 2), et])
+            vis.append([round(x, 2), round(y, 2), et, str(f["id"])])
             eq = equipo_de(et)
             if eq:
                 cuenta[eq] += 1
@@ -336,6 +366,7 @@ def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
             por_equipo[e].append(cuenta[e])
         muestras.append(vis)
         lineas.append(lineas_de_pase(vis, balon[n], fp.en_camara, Hinv))
+        huecos.append(huecos_del_rival(vis, "B" if c["equipo"] == "A" else "A"))
     n_det = int((estado == "detectado").sum())
     con_lineas = [len(v) for v in lineas if v]
     calidad = {
@@ -368,6 +399,7 @@ def datos_de_un_tramo(c: dict, df: pd.DataFrame, carpeta: Path) -> dict:
         "paso": PASO_VISOR_S,
         "muestras": muestras,
         "lineas": lineas,
+        "huecos": huecos,
         "balon": balon,
         "calidad": calidad,
         "relojes": c["relojes_tramo"],

@@ -206,3 +206,19 @@ Hay dos visores en `outputs/salida_balon/visor/`:
   en el tramo.
 - **El encadenado a 5 m es un parámetro**: dos líneas a 4 m de fondo se fundirían en una. Se fija
   antes de verlo y no se retoca mirando el resultado.
+
+## Resultado de A + B + C
+
+`outputs/salida_balon/visor/salidas_de_balon_escala.html`, con los datos de `main` (que ya incluyen
+la regla de staff dentro del campo).
+
+- **En el instante de Alex** (A2, 5:13.3 archivo / 6:46.3 reproductor), la línea rival de B da
+  huecos de **4,6 m** (el que Alex marcó), 8,0 m y 13,2 m. Con las fichas a 0,7 m, el hueco de
+  4,6 m deja ~3,9 m libres a la vista, donde antes se veía ~1,7 m.
+- **Huecos de más de 4 m**: hay en el 96-100 % de los instantes, 2,5-2,9 de media.
+  - Es lo que manda el F7: 6 jugadores de campo en 40 m de ancho dejan de media ~6-8 m entre
+    vecinos.
+  - Si se quieren ver solo los pasillos de verdad, el umbral tendría que subir (p. ej. a 6 m), pero
+    con un criterio nuevo: este se fijó en 4 m y no se retoca mirando el resultado.
+- El número de cada ficha sale al pasar el ratón: «id 62 · B», por ejemplo.
+- La cuadrícula, al 22 % de opacidad: al 12 % no se veía.
