@@ -45,7 +45,14 @@ un test exige que sin movimiento no cambie nada.
 - **Cortes**: `scripts/cortar_partido.py cortar --video … --nombre alevinb --partes INI-FIN,INI-FIN`,
   tiempos del archivo. Busca solo el fotograma clave más cercano e informa del desplazamiento; `comprobar`
   verifica bit a bit con el lector común. Probado en dos cortes cortos de este vídeo: idénticos.
-  **Faltan los tiempos de Alex.**
+  **Hechos (5-nov)** con los tiempos de Alex, `5:01-35:22,47:44-1:18:12`:
+  - p1: empieza en el clave de 300,0 s (1 s antes de lo pedido; frame 7.500 del original), 45.550
+    frames, 30:22, 956 MB;
+  - p2: empieza en 2.864,04 s (frame 71.601), 45.700 frames, 30:28, 958 MB;
+  - `comprobar`: frames 0, 1, 2, 25, 250, 2.500 y 25.000 de cada parte IDÉNTICOS bit a bit al original.
+  - Reloj impreso: p1 09:30:01-10:00:23, p2 10:12:45-10:43:13. El destello de 855, 1.425 y
+    1.995 s del archivo cae en la p1 a 555, 1.125 y 1.695 s del corte.
+  - Decisión de Alex: `--imagen original`.
 - **Colab**: `scripts/colab_alevinb.py --imagen <corregida|original> --salida …`, una pasada por fichero
   cortado. Chequeo previo de 3 frames probado en CPU por las dos vías, sobre un corte de este vídeo:
   - `corregida`: 22, 22 y 21 detecciones en el campo;
