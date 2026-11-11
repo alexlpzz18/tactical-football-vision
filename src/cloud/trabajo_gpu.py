@@ -27,6 +27,7 @@ import json
 import logging
 import pickle
 import re
+import shlex
 import subprocess
 import threading
 import time
@@ -34,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from src.cloud.colab_cli import ColabCLI, ErrorColab
+from src.cloud.colab_cli import ColabCLI, ErrorColab, sha256
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,17 @@ def commit_subido(raiz: Path, git: Callable = subprocess.run) -> str:
         return r.stdout.strip()
 
     commit = run("rev-parse", "HEAD")
-    run("fetch", "-q", "origin")
+    # refrescar lo que se sabe de GitHub; si la red falla, valen las referencias del último push
+    # (11-nov: un corte de ssh a github.com abortó un lanzamiento que no tenía nada mal)
+    r = git(
+        ["git", "-C", str(raiz), "fetch", "-q", "origin"],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0:
+        logger.warning(
+            "git fetch falló (%s): se usan las referencias locales", r.stderr.strip()
+        )
     if not run("branch", "-r", "--contains", commit):
         raise TrabajoAbortado(
             f"El commit {commit[:8]} no está en GitHub. Súbelo (git push) antes de lanzar: la "
@@ -139,15 +150,61 @@ class Orquestador:
         self.informe: dict = {"sesion": self.sesion, "partes": {}}
 
     # ── utilidades remotas ────────────────────────────────────────────
-    def _shell(self, comando: str, inactividad_s: int = 900) -> str:
-        """Un comando de shell en la máquina, vía el kernel (no hace falta configurar ssh)."""
+    def _shell(self, comando: str, limite_s: int = 120) -> str:
+        """Un comando CORTO de shell en la máquina, vía el kernel (sin configurar ssh)."""
         codigo = (
             "import subprocess, sys\n"
             f"r = subprocess.run({comando!r}, shell=True, capture_output=True, text=True)\n"
             "print(r.stdout[-4000:]); print(r.stderr[-4000:], file=sys.stderr)\n"
             "assert r.returncode == 0, f'código {r.returncode}'\n"
         )
-        return self.cli.python(self.sesion, codigo, inactividad_s)
+        return self.cli.python(self.sesion, codigo, limite_s)
+
+    def _en_segundo_plano(self, nombre: str, comando: str, cwd: str) -> None:
+        """Lanza `comando` suelto en la máquina, SI NO ESTÁ YA CORRIENDO.
+
+        Idempotente a propósito: `colab exec` puede colgarse y reintentarse (ColabCLI.python), y
+        un reintento no puede lanzar dos detecciones ni dos vigías. Deja `<nombre>.pid`, el log
+        en `<nombre>.log` y, al acabar, el código de salida en `<nombre>.rc`.
+        """
+        d = self.r_salida
+        envoltorio = f"{comando}; echo $? > {d}/{nombre}.rc"
+        self.cli.python(
+            self.sesion,
+            "import os, subprocess\n"
+            f"pidf = '{d}/{nombre}.pid'\n"
+            "def vivo(pid):\n"
+            "    try:\n        return open(f'/proc/{pid}/stat').read().split()[2] != 'Z'\n"
+            "    except OSError:\n        return False\n"
+            "if os.path.exists(pidf) and vivo(int(open(pidf).read())):\n"
+            "    print('ya corre')\n"
+            "else:\n"
+            f"    if os.path.exists('{d}/{nombre}.rc'): os.remove('{d}/{nombre}.rc')\n"
+            f"    p = subprocess.Popen(['bash', '-c', {envoltorio!r}], cwd={cwd!r},\n"
+            f"        start_new_session=True, stdout=open('{d}/{nombre}.log', 'ab'),\n"
+            "        stderr=subprocess.STDOUT)\n"
+            "    open(pidf, 'w').write(str(p.pid))\n",
+        )
+
+    def _esperar(self, nombre: str, limite_s: float, cada_s: float = 15) -> None:
+        """Espera a que acabe un `_en_segundo_plano`; si sale con error, lanza con su log."""
+        t0 = self.reloj()
+        while self.reloj() - t0 < limite_s:
+            self.dormir(cada_s)
+            out = self.cli.python(
+                self.sesion,
+                "import os\n"
+                f"rc = open('{self.r_salida}/{nombre}.rc').read().strip() "
+                f"if os.path.exists('{self.r_salida}/{nombre}.rc') else ''\n"
+                "print('RC=' + rc)\n",
+            )
+            rc = out.split("RC=")[-1].strip()
+            if rc == "0":
+                return
+            if rc:
+                log = self._shell(f"tail -c 3000 {self.r_salida}/{nombre}.log")
+                raise TrabajoAbortado(f"`{nombre}` salió con {rc}:\n{log}")
+        raise TrabajoAbortado(f"`{nombre}` no terminó en {limite_s:.0f} s")
 
     def _subir_comprobado(self, local: Path, remoto: str) -> None:
         """Sube en trozos y compara la huella: un vídeo truncado no da error, da basura."""
@@ -194,25 +251,24 @@ class Orquestador:
             f"rm -rf {self.r_repo} && git clone -q {repo['url']} {self.r_repo} && "
             f"git -C {self.r_repo} checkout -q {commit} && "
             f"mkdir -p {self.r_datos} {self.r_salida} && nvidia-smi -L",
-            inactividad_s=600,
+            limite_s=300,
         )
-        self._shell(
-            f"cd {self.r_repo} && pip install -q -r {repo['requisitos']}",
-            inactividad_s=1200,
+        # instalar tarda minutos: en segundo plano, y el modelo sube mientras tanto
+        self._en_segundo_plano(
+            "instalar", f"pip install -q -r {repo['requisitos']}", self.r_repo
         )
         rel = self.t.modelo.resolve().relative_to(self.raiz.resolve())
         self._subir_comprobado(self.t.modelo, f"{self.r_repo}/{rel}")
+        self._esperar("instalar", limite_s=1500)
         self._arrancar_vigia()
 
     def _arrancar_vigia(self) -> None:
         tras = self.cfg["vigilancia"]["huerfana_tras_s"]
-        self.cli.python(
-            self.sesion,
-            "import subprocess, sys\n"
-            f"subprocess.Popen([sys.executable, 'scripts/vigia_colab.py', '--pid-fichero', "
-            f"'{self.r_salida}/trabajo.pid', '--latido', '{self.r_salida}/latido', "
-            f"'--tras-s', '{tras}'], cwd='{self.r_repo}', start_new_session=True, "
-            f"stdout=open('{self.r_salida}/vigia.log', 'ab'), stderr=subprocess.STDOUT)\n",
+        self._en_segundo_plano(
+            "vigia",
+            f"python scripts/vigia_colab.py --pid-fichero {self.r_salida}/trabajo.pid "
+            f"--latido {self.r_salida}/latido --tras-s {tras}",
+            self.r_repo,
         )
 
     # ── 3-5. una parte ────────────────────────────────────────────────
@@ -232,14 +288,11 @@ class Orquestador:
         ]  # fmt: skip
         if not con_chequeo:
             argv.append("--sin-chequeo")
-        self.cli.python(
-            self.sesion,
-            "import subprocess\n"
-            f"p = subprocess.Popen({argv!r}, cwd='{self.r_repo}', start_new_session=True, "
-            f"stdout=open('{r['log']}', 'ab'), stderr=subprocess.STDOUT)\n"
-            f"open('{self.r_salida}/trabajo.pid', 'w').write(str(p.pid))\n"
-            "print(p.pid)\n",
-        )
+        # el log de la parte es el que lee el sondeo; `trabajo.pid` es el que mira el vigía
+        self._en_segundo_plano(
+            "trabajo", " ".join(shlex.quote(a) for a in argv) + f" >> {r['log']} 2>&1",
+            self.r_repo,
+        )  # fmt: skip
 
     def _sondear(self, parte: Parte) -> dict:
         """Una pregunta a la máquina: ¿vive el proceso?, cola del log. Y toca el latido."""
@@ -257,7 +310,6 @@ class Orquestador:
             "gpu = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used',"
             " '--format=csv,noheader'], capture_output=True, text=True).stdout.strip()\n"
             "print(json.dumps({'vivo': vivo, 'log': log, 'gpu': gpu}))\n",
-            inactividad_s=120,
         )
         return json.loads(salida.strip().splitlines()[-1])
 
@@ -368,6 +420,11 @@ class Orquestador:
         self.cli.nueva(self.sesion, self.cfg["maquina"]["gpu"])
         tarifa = 0.0
         try:
+            if self._drive():
+                logger.info(
+                    "Montando Drive: ACEPTA el permiso en el navegador y pulsa Enter aquí"
+                )
+                self.cli.montar_drive(self.sesion)
             self.preparar(commit)
             tarifa = self.cli.saldo().tarifa_hora
             self.informe["tarifa_cu_hora"] = tarifa
@@ -412,13 +469,46 @@ class Orquestador:
                 logger.info("Máquina %s apagada (%.2f h encendida)", self.sesion, horas)
         return self.informe
 
+    def _drive(self) -> bool:
+        return (self.cfg.get("video") or {}).get("origen") == "drive"
+
+    def _copiar_de_drive(self, parte: Parte, destino: str) -> bool:
+        """Copia el vídeo de Drive al disco de la máquina. False si en Drive no está.
+
+        Medido el 11-nov: la máquina lee de Drive a ~57 MB/s y desde el Mac se sube a ~6 MB/s. Se
+        copia al disco local (no se lee de Drive en directo) para que la ruta del vídeo sea la
+        misma que si se hubiera subido: la firma del checkpoint la incluye, y así se puede
+        reanudar venga de donde venga. Y se compara la huella con la del Mac: el de Drive tiene
+        que ser EL MISMO fichero que se cortó y verificó, no otro con el mismo nombre.
+        """
+        origen = f"{self.cfg['video']['carpeta_drive']}/{parte.video.name}"
+        t0 = self.reloj()
+        out = self._shell(
+            f"if [ -f {shlex.quote(origen)} ]; then cp {shlex.quote(origen)} "
+            f"{shlex.quote(destino)} && echo COPIADO; else echo NO_ESTA; fi",
+            limite_s=600,
+        )
+        if "COPIADO" not in out:
+            logger.info("%s no está en Drive: se sube desde el Mac", parte.video.name)
+            return False
+        if self.cli.sha_remoto(self.sesion, destino) != sha256(parte.video):
+            raise TrabajoAbortado(
+                f"{parte.video.name}: el de Drive NO es el mismo fichero que el del Mac"
+            )
+        logger.info(
+            "Copiado de Drive %s (%.0f MB en %.0f s)",
+            parte.video.name, parte.video.stat().st_size / 1e6, self.reloj() - t0,
+        )  # fmt: skip
+        return True
+
     def _subir_parte_en_hilo(self, parte: Parte) -> threading.Thread:
         """Sube el vídeo (y el checkpoint del Mac, si lo hay) sin bloquear la vigilancia."""
 
         def subir():
             try:
                 r = self._rutas(parte)
-                self._subir_comprobado(parte.video, r["video"])
+                if not (self._drive() and self._copiar_de_drive(parte, r["video"])):
+                    self._subir_comprobado(parte.video, r["video"])
                 cache = self.t.destino / f"cache_{parte.nombre}.pkl"
                 colores = self.t.destino / f"colores_{parte.nombre}.pkl"
                 if cache.exists() and colores.exists():

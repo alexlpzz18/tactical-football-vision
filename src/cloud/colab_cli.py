@@ -19,6 +19,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,10 +31,15 @@ logger = logging.getLogger(__name__)
 MARCA_FIN = "__TFV_FIN_OK__"  # ver ColabCLI.python
 TROZO_MB = 40  # el servidor rechaza una subida de 100 MB y acepta 50 (medido el 11-nov)
 PARALELO = 4
+PAUSA_ENTRE_EXEC_S = 3  # deja que el cliente del exec anterior termine de cerrarse
 
 
 class ErrorColab(RuntimeError):
     """La CLI devolvió un código distinto de 0. Lleva el comando y lo que imprimió."""
+
+
+class SinRespuesta(ErrorColab):
+    """La llamada no terminó en su tiempo máximo (la CLI se quedó colgada)."""
 
 
 @dataclass(frozen=True)
@@ -71,10 +78,14 @@ class ColabCLI:
         ruta: str | Path,
         auth: str = "oauth2",
         ejecutar: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        dormir: Callable[[float], None] = time.sleep,
     ):
         self.ruta = str(Path(ruta).expanduser())
         self.auth = auth
         self._ejecutar = ejecutar
+        self._dormir = dormir
+        # una sola conexión al kernel a la vez (ver `python`)
+        self._kernel = threading.Lock()
 
     # ── base ──────────────────────────────────────────────────────────
     def _cmd(
@@ -82,9 +93,15 @@ class ColabCLI:
     ) -> str:
         cmd = [self.ruta, "--auth", self.auth, *args]
         logger.debug("colab %s", " ".join(args))
-        r = self._ejecutar(
-            cmd, input=entrada, capture_output=True, text=True, timeout=timeout
-        )
+        try:
+            r = self._ejecutar(
+                cmd, input=entrada, capture_output=True, text=True, timeout=timeout
+            )
+        except subprocess.TimeoutExpired as err:
+            # una llamada colgada no puede dejar la máquina encendida esperando para siempre
+            raise SinRespuesta(
+                f"`colab {' '.join(args)}` no respondió en {timeout} s"
+            ) from err
         if r.returncode != 0:
             raise ErrorColab(
                 f"`colab {' '.join(args)}` salió con {r.returncode}:\n"
@@ -111,21 +128,57 @@ class ColabCLI:
     def parar(self, sesion: str) -> str:
         return self._cmd("stop", "-s", sesion, timeout=300)
 
+    def montar_drive(self, sesion: str, ruta: str = "/content/drive") -> None:
+        """Monta el Drive de Alex en la máquina. INTERACTIVO, y una vez por máquina.
+
+        La CLI abre en el navegador del Mac la página de permiso de Google y espera un Enter en la
+        terminal (medido el 11-nov). Por eso NO se captura la salida: se hereda la terminal desde
+        la que se lanzó, para que Alex vea el aviso y pueda responder.
+        """
+        cmd = [self.ruta, "--auth", self.auth, "drivemount", "-s", sesion, ruta]
+        r = self._ejecutar(cmd, timeout=900)
+        if r.returncode != 0:
+            raise ErrorColab(f"`colab drivemount` salió con {r.returncode}")
+
     # ── ejecución y ficheros ──────────────────────────────────────────
-    def python(self, sesion: str, codigo: str, inactividad_s: int = 600) -> str:
+    def python(
+        self, sesion: str, codigo: str, limite_s: int = 120, reintentos: int = 3
+    ) -> str:
         """Ejecuta `codigo` en el kernel de la máquina y devuelve lo que imprime.
 
-        ⚠️ `colab exec` sale con 0 AUNQUE EL CÓDIGO LANCE (medido el 11-nov con un `assert False`).
-        Por eso se añade una marca al final: si no aparece en la salida, el código no llegó al
-        final y se lanza aquí. Sin esto, un `git clone` fallido pasaba por bueno.
+        Tres cosas medidas el 11-nov, que no dice la documentación de la CLI:
 
-        `inactividad_s` es el `--timeout` de la CLI: falla tras ese tiempo SIN salida, no tras ese
-        tiempo en total. Para trabajos largos no se usa esto: se lanzan en segundo plano.
+        1. `colab exec` sale con 0 AUNQUE EL CÓDIGO LANCE (con un `assert False`). Por eso se añade
+           una marca al final: si no aparece en la salida, el código no llegó al final y se lanza.
+        2. DOS `colab exec` A LA VEZ se bloquean los dos (4,5 min con la L4 parada, kernel IDLE).
+           El candado las pone en fila.
+        3. UNO DETRÁS DE OTRO TAMBIÉN PUEDE COLGARSE: el cliente del exec anterior aún se está
+           cerrando, el nuevo da «Kernel startup timeout», reintenta, se conecta y NUNCA envía el
+           código (colab.log; 7 min con el kernel IDLE). Por eso: una pausa entre llamadas, un
+           tiempo máximo corto y reintento si no responde.
+
+        De ahí la regla: TODO lo que se ejecuta así es CORTO (segundos) y se puede repetir sin
+        daño. Lo largo (instalar, detectar) se lanza en segundo plano en la máquina y se consulta.
         """
-        salida = self._cmd(
-            "exec", "-s", sesion, "--timeout", str(inactividad_s),
-            entrada=f"{codigo}\nprint({MARCA_FIN!r})\n",
-        )  # fmt: skip
+        for intento in range(1, reintentos + 1):
+            with self._kernel:
+                try:
+                    salida = self._cmd(
+                        "exec", "-s", sesion, "--timeout", str(limite_s),
+                        entrada=f"{codigo}\nprint({MARCA_FIN!r})\n",
+                        timeout=limite_s + 30,
+                    )  # fmt: skip
+                    break
+                except SinRespuesta:
+                    if intento == reintentos:
+                        raise
+                    logger.warning(
+                        "colab exec sin respuesta (intento %d/%d): se repite",
+                        intento,
+                        reintentos,
+                    )
+                finally:
+                    self._dormir(PAUSA_ENTRE_EXEC_S)
         if MARCA_FIN not in salida:
             raise ErrorColab(f"El código remoto no terminó bien:\n{salida[-3000:]}")
         return salida.replace(MARCA_FIN, "").rstrip() + "\n"

@@ -41,6 +41,14 @@ vigilancia:
   # Y el trabajo ya terminó, la máquina se libera sola. Mientras el trabajo avance, sigue.
   huerfana_tras_s: 3600
 
+video:
+  # drive: la máquina copia el vídeo de Drive (~57 MB/s) en vez de subirlo desde el Mac (~6 MB/s).
+  # Cuesta un permiso de Google por máquina (se abre solo en el navegador; aceptar y Enter), así que
+  # se lanza desde una terminal visible. Si un vídeo no está en Drive, se sube desde el Mac.
+  # mac: todo se sube desde el Mac, sin intervención.
+  origen: drive
+  carpeta_drive: /content/drive/MyDrive/tactical-football-vision-data/videos/raw
+
 rutas_remotas:
   repo: /content/tfv
   datos: /content/datos

@@ -48,8 +48,9 @@ def _log(hechos, total=1000, ms=500):
 class FalsaCLI:
     """Imita la CLI: guarda lo que «está» en la máquina y responde a los sondeos con un guion."""
 
-    def __init__(self, guion, saldo=100.0, tarifa=1.5):
+    def __init__(self, guion, saldo=100.0, tarifa=1.5, en_drive=None):
         self.guion = list(guion)  # una respuesta de sondeo por llamada: (vivo, log)
+        self.en_drive = en_drive or {}  # nombre de vídeo → bytes que hay en Drive
         self.llamadas, self.remoto = [], {}
         self._saldo, self._tarifa = saldo, tarifa
 
@@ -67,6 +68,12 @@ class FalsaCLI:
         self.llamadas.append(f"upload {remoto}")
         self.remoto[remoto] = Path(local).read_bytes()
 
+    def montar_drive(self, sesion):
+        self.llamadas.append("drivemount")
+
+    def sha_remoto(self, sesion, remoto):
+        return hashlib.sha256(self.remoto[remoto]).hexdigest()
+
     def subir_grande(self, sesion, local, remoto):
         self.subir(sesion, local, remoto)
 
@@ -80,7 +87,18 @@ class FalsaCLI:
         Path(local).parent.mkdir(parents=True, exist_ok=True)
         Path(local).write_bytes(datos)
 
-    def python(self, sesion, codigo, inactividad_s=600):
+    def python(self, sesion, codigo, limite_s=120):
+        if "print('RC=' + rc)" in codigo:  # `_esperar`: lo lanzado terminó bien
+            return "RC=0\n"
+        if "echo COPIADO" in codigo:  # copiar de Drive al disco de la máquina
+            nombre = codigo.split("/")[-1].split(" ")[0].strip("'")
+            nombre = next((n for n in self.en_drive if n in codigo), None)
+            if nombre is None:
+                return "NO_ESTA\n"
+            destino = codigo.split(" cp ")[1].split(" ")[1].strip("'")
+            self.remoto[destino] = self.en_drive[nombre]
+            self.llamadas.append(f"drive {nombre}")
+            return "COPIADO\n"
         if "sha256sum" in codigo:
             ruta = codigo.split("sha256sum ")[1].split("'")[0].split('"')[0].strip()
             return hashlib.sha256(self.remoto[ruta]).hexdigest() + "  x\n"
@@ -164,7 +182,9 @@ def test_la_cli_pone_auth_y_sesion_explicitas():
         vistos.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, MARCA_FIN, "")
 
-    ColabCLI("/bin/colab", "oauth2", falso).python("tfv-x", "print(1)")
+    ColabCLI("/bin/colab", "oauth2", falso, dormir=lambda s: None).python(
+        "tfv-x", "print(1)"
+    )
     assert vistos[0][:4] == ["/bin/colab", "--auth", "oauth2", "exec"]
     assert vistos[0][4:6] == ["-s", "tfv-x"]
 
@@ -296,7 +316,9 @@ def test_exec_que_lanza_se_detecta_aunque_la_cli_salga_con_0():
         return subprocess.CompletedProcess(cmd, 0, "AssertionError: x\n", "")
 
     with pytest.raises(ErrorColab, match="no terminó bien"):
-        ColabCLI("/bin/colab", "oauth2", falso).python("tfv-x", "assert False")
+        ColabCLI("/bin/colab", "oauth2", falso, dormir=lambda s: None).python(
+            "tfv-x", "assert False"
+        )
 
 
 def test_exec_bueno_devuelve_la_salida_sin_la_marca():
@@ -304,7 +326,9 @@ def test_exec_bueno_devuelve_la_salida_sin_la_marca():
         marca = input.strip().splitlines()[-1].split("(")[1].rstrip(")").strip("'")
         return subprocess.CompletedProcess(cmd, 0, f"hola\n{marca}\n", "")
 
-    out = ColabCLI("/bin/colab", "oauth2", falso).python("tfv-x", "print('hola')")
+    out = ColabCLI("/bin/colab", "oauth2", falso, dormir=lambda s: None).python(
+        "tfv-x", "print('hola')"
+    )
     assert out == "hola\n"
 
 
@@ -317,3 +341,127 @@ def test_trocear_y_unir_reconstruye_el_fichero(tmp_path):
     trozos = trocear(f, tmp_path / "t", 100_000)
     assert [t.stat().st_size for t in trozos] == [100_000, 100_000, 56_000]
     assert b"".join(t.read_bytes() for t in sorted(trozos)) == f.read_bytes()
+
+
+def test_dos_exec_a_la_vez_van_en_fila():
+    """Dos `colab exec` simultáneos se bloquean en la máquina (medido): tienen que ir en fila."""
+    import threading
+    import time as _t
+
+    dentro, solapes = [0], []
+    cerrojo = threading.Lock()
+
+    def falso(cmd, input=None, **kw):
+        with cerrojo:
+            dentro[0] += 1
+            solapes.append(dentro[0])
+        _t.sleep(0.05)
+        with cerrojo:
+            dentro[0] -= 1
+        return subprocess.CompletedProcess(cmd, 0, MARCA_FIN, "")
+
+    cli = ColabCLI("/bin/colab", "oauth2", falso, dormir=lambda s: None)
+    hilos = [
+        threading.Thread(target=cli.python, args=("tfv-x", "print(1)"))
+        for _ in range(4)
+    ]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+    assert max(solapes) == 1
+
+
+def test_exec_colgado_se_corta_por_tiempo():
+    def falso(cmd, timeout=None, **kw):
+        raise subprocess.TimeoutExpired(cmd, timeout)
+
+    with pytest.raises(ErrorColab, match="no respondió"):
+        ColabCLI("/bin/colab", "oauth2", falso, dormir=lambda s: None).python(
+            "tfv-x", "print(1)", 60
+        )
+
+
+def test_exec_colgado_se_reintenta_y_sigue():
+    """Un exec que se cuelga sin enviar el código (medido en colab.log) se repite."""
+    llamadas = []
+
+    def falso(cmd, timeout=None, **kw):
+        llamadas.append(cmd)
+        if len(llamadas) == 1:
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        return subprocess.CompletedProcess(cmd, 0, f"ok\n{MARCA_FIN}\n", "")
+
+    cli = ColabCLI("/bin/colab", "oauth2", falso, dormir=lambda s: None)
+    assert cli.python("tfv-x", "print('ok')") == "ok\n"
+    assert len(llamadas) == 2
+
+
+def test_exec_que_falla_de_verdad_no_se_reintenta():
+    """Un error del CÓDIGO no se arregla repitiéndolo: solo se repite lo que no respondió."""
+    llamadas = []
+
+    def falso(cmd, **kw):
+        llamadas.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "Traceback ...\n", "")
+
+    cli = ColabCLI("/bin/colab", "oauth2", falso, dormir=lambda s: None)
+    with pytest.raises(ErrorColab):
+        cli.python("tfv-x", "assert False")
+    assert len(llamadas) == 1
+
+
+def test_sin_red_a_github_vale_el_ultimo_push(tmp_path):
+    def git_sin_red(cmd, **kw):
+        if "fetch" in cmd:
+            return subprocess.CompletedProcess(
+                cmd, 128, "", "ssh: connect to host github.com"
+            )
+        return _git_ok(cmd)
+
+    t = _trabajo(tmp_path)
+    cli = FalsaCLI([])
+    assert _orq(cli, tmp_path, t, git=git_sin_red).comprobar_antes() == "abc123"
+
+
+# ── vídeo desde Drive ────────────────────────────────────────────────
+def _cfg_drive():
+    import copy
+
+    cfg = copy.deepcopy(CFG)
+    cfg["video"] = {"origen": "drive", "carpeta_drive": "/content/drive/MyDrive/v"}
+    return cfg
+
+
+def _orq_drive(cli, tmp_path, t):
+    reloj = iter(range(0, 10**9, 60))
+    return Orquestador(
+        cli, _cfg_drive(), t, tmp_path, dormir=lambda s: None,
+        reloj=lambda: next(reloj), git=_git_ok,
+    )  # fmt: skip
+
+
+def test_drive_monta_copia_y_solo_sube_lo_que_falta(tmp_path):
+    t = _trabajo(tmp_path, n_partes=2)
+    p1 = t.partes[0].video
+    cli = FalsaCLI(
+        [
+            (True, _log(1000) + "✓ deteccion x_p1: 1 min\n"),
+            (True, _log(1000) + "✓ deteccion x_p2: 1 min\n"),
+        ],
+        en_drive={p1.name: p1.read_bytes()},
+    )
+    _orq_drive(cli, tmp_path, t).lanzar()
+    assert cli.llamadas.index("drivemount") < cli.llamadas.index(f"drive {p1.name}")
+    assert "upload /d/x_p1.mp4" not in cli.llamadas  # la 1 vino de Drive
+    assert "upload /d/x_p2.mp4" in cli.llamadas  # la 2 no estaba: desde el Mac
+    assert cli.llamadas[-1] == "stop tfv-x"
+
+
+def test_drive_con_otro_fichero_del_mismo_nombre_para(tmp_path):
+    t = _trabajo(tmp_path)
+    p1 = t.partes[0].video
+    cli = FalsaCLI([], en_drive={p1.name: b"OTRO VIDEO"})
+    with pytest.raises(TrabajoAbortado, match="NO es el mismo"):
+        _orq_drive(cli, tmp_path, t).lanzar()
+    assert cli.llamadas[-1] == "stop tfv-x"
