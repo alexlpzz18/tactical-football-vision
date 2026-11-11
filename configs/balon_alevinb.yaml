@@ -1,0 +1,15 @@
+# Balón del Alevín B (F11, cámara de Villaviciosa, imagen ORIGINAL). docs/alevinb_balon.md.
+# Se mezcla con configs/processor_alevinb.yaml en scripts/colab_alevinb_balon.py.
+balon:
+  modelo: models/weights/best_balon_v1.pt
+  confianza: 0.35 # la de producción (barrido del benjamín: P 0,958 / R 0,836)
+  imgsz: 1280
+  sample_every: 2 # el de producción: el balón cambia de dirección entre muestras
+  # `sahi` y no `mixto`: el mixto deriva su franja de la homografía y aquí no la hay (imagen
+  # original). Y en esta cámara el balón mide 2-4 px en casi todo el campo. Prueba CPU, 30 frames:
+  # sahi con candidatas en 11, frame entero en 4.
+  esquema: sahi
+  sahi:
+    filas: 3
+    columnas: 5
+    solape: 0.15

@@ -50,7 +50,21 @@ def trabajos() -> dict[str, Trabajo]:
             destino=destino,
             # frames PROCESADOS por parte (45.550 y 45.700 originales, 1 de cada 3)
             frames_por_parte={"alevinb_p1": 15184, "alevinb_p2": 15234},
-        )
+        ),
+        # BALÓN: mismo vídeo, otro detector, 1 de cada 2 (docs/alevinb_balon.md)
+        "alevinb_balon": Trabajo(
+            nombre="alevinb_balon",
+            partes=[
+                Parte("alevinb_p1_balon", R / "data/raw/alevinb_p1.mp4"),
+                Parte("alevinb_p2_balon", R / "data/raw/alevinb_p2.mp4"),
+            ],
+            script="scripts/colab_alevinb_balon.py",
+            args=["--imagen", "original"],
+            modelo=R / "models/weights/best_balon_v1.pt",
+            destino=destino,
+            frames_por_parte={"alevinb_p1_balon": 22775, "alevinb_p2_balon": 22850},
+            ficheros=("cache",),  # el balón no tiene caché de colores
+        ),
     }
 
 
@@ -67,12 +81,31 @@ def cmd_saldo(cfg: dict) -> None:
         print(cli.sesiones())
 
 
-def cmd_lanzar(cfg: dict, nombre: str, mantener: bool) -> None:
-    trabajo = trabajos()[nombre]
+def filtrar_partes(trabajo: Trabajo, partes: str | None) -> Trabajo:
+    if partes:
+        pedidas = partes.split(",")
+        desconocidas = set(pedidas) - {p.nombre for p in trabajo.partes}
+        if desconocidas:
+            raise SystemExit(f"Partes desconocidas: {sorted(desconocidas)}")
+        trabajo.partes = [p for p in trabajo.partes if p.nombre in pedidas]
+    return trabajo
+
+
+def cmd_lanzar(
+    cfg: dict,
+    nombre: str,
+    mantener: bool,
+    partes: str | None,
+    adjuntar: bool,
+    video_desde: str | None = None,
+) -> None:
+    trabajo = filtrar_partes(trabajos()[nombre], partes)
+    if video_desde:  # p. ej. «mac» cuando nadie va a estar para dar el permiso de Drive
+        cfg = {**cfg, "video": {**cfg.get("video", {}), "origen": video_desde}}
     orq = Orquestador(cli_desde_config(cfg), cfg, trabajo, R)
     informe = {}
     try:
-        informe = orq.lanzar(mantener=mantener)
+        informe = orq.adjuntar(mantener) if adjuntar else orq.lanzar(mantener=mantener)
     finally:
         informe = informe or orq.informe
         informe["fin"] = datetime.now().isoformat(timespec="seconds")
@@ -82,8 +115,8 @@ def cmd_lanzar(cfg: dict, nombre: str, mantener: bool) -> None:
         logger.info("Informe: %s", ruta)
 
 
-def cmd_seguimiento(nombre: str) -> None:
-    t = trabajos()[nombre]
+def cmd_seguimiento(nombre: str, partes: str | None = None) -> None:
+    t = filtrar_partes(trabajos()[nombre], partes)
     subprocess.run(
         [sys.executable, str(R / t.script), *t.args, "--fase", "seguimiento",
          "--salida", str(t.destino), "--videos", ",".join(str(p.video) for p in t.partes),
@@ -115,8 +148,16 @@ def main() -> None:
     p = sub.add_parser("lanzar")
     p.add_argument("trabajo", choices=sorted(trabajos()))
     p.add_argument("--mantener", action="store_true", help="no apagar al terminar")
+    p.add_argument("--partes", default=None, help="solo estas partes, por comas")
+    p.add_argument("--video-desde", choices=["drive", "mac"], default=None)
+    p.add_argument(
+        "--adjuntar",
+        action="store_true",
+        help="engancharse a la máquina que YA está detectando (no enciende ni sube nada)",
+    )
     p = sub.add_parser("seguimiento")
     p.add_argument("trabajo", choices=sorted(trabajos()))
+    p.add_argument("--partes", default=None, help="solo estas partes, por comas")
     sub.add_parser("parar")
     a = ap.parse_args()
     logging.basicConfig(
@@ -128,9 +169,9 @@ def main() -> None:
     if a.cmd == "saldo":
         cmd_saldo(cfg)
     elif a.cmd == "lanzar":
-        cmd_lanzar(cfg, a.trabajo, a.mantener)
+        cmd_lanzar(cfg, a.trabajo, a.mantener, a.partes, a.adjuntar, a.video_desde)
     elif a.cmd == "seguimiento":
-        cmd_seguimiento(a.trabajo)
+        cmd_seguimiento(a.trabajo, a.partes)
     else:
         cmd_parar(cfg)
 

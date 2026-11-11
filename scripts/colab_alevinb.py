@@ -216,6 +216,13 @@ def main() -> None:
     ap.add_argument("--dispositivo", default=None)
     ap.add_argument("--videos", default=None, help="rutas separadas por comas")
     a = ap.parse_args()
+    # sin esto, las líneas de progreso del procesador (logging.INFO) no salen en el log y nadie
+    # distingue «va bien» de «colgado» (11-nov, primera pasada vigilada desde el Mac)
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     a.salida.mkdir(parents=True, exist_ok=True)
     videos = (
         [Path(v) for v in a.videos.split(",")]

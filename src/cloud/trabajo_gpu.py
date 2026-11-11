@@ -129,6 +129,8 @@ class Trabajo:
     frames_por_parte: dict[str, int] = field(
         default_factory=dict
     )  # para el presupuesto
+    # cachés que produce cada parte, en el orden de descarga (el ancla de reanudación, AL FINAL)
+    ficheros: tuple[str, ...] = ("colores", "cache")
 
 
 class Orquestador:
@@ -148,6 +150,7 @@ class Orquestador:
         r = cfg["rutas_remotas"]
         self.r_repo, self.r_datos, self.r_salida = r["repo"], r["datos"], r["salida"]
         self.informe: dict = {"sesion": self.sesion, "partes": {}}
+        self._ultimo_ck: dict[str, tuple[int, float]] = {}
 
     # ── utilidades remotas ────────────────────────────────────────────
     def _shell(self, comando: str, limite_s: int = 120) -> str:
@@ -223,6 +226,11 @@ class Orquestador:
         if faltan:
             raise TrabajoAbortado(f"Faltan en el Mac: {faltan}")
         commit = commit_subido(self.raiz, self.git)
+        self._fijar_tope()
+        self.informe["commit"] = commit
+        return commit
+
+    def _fijar_tope(self) -> None:
         saldo = self.cli.saldo()
         reserva = self.cfg["presupuesto"]["reserva_cu"]
         if saldo.unidades - self.cfg["presupuesto"]["max_cu"] < reserva:
@@ -239,10 +247,7 @@ class Orquestador:
             raise TrabajoAbortado(
                 f"Saldo {saldo.unidades:.1f} CU: no llega a la reserva ({reserva} CU)"
             )
-        self.informe.update(
-            commit=commit, saldo_inicial_cu=saldo.unidades, tope_cu=self.tope_cu
-        )
-        return commit
+        self.informe.update(saldo_inicial_cu=saldo.unidades, tope_cu=self.tope_cu)
 
     # ── 2. preparar la máquina ────────────────────────────────────────
     def preparar(self, commit: str) -> None:
@@ -309,7 +314,15 @@ class Orquestador:
             "import subprocess\n"
             "gpu = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used',"
             " '--format=csv,noheader'], capture_output=True, text=True).stdout.strip()\n"
-            "print(json.dumps({'vivo': vivo, 'log': log, 'gpu': gpu}))\n",
+            # el progreso se lee del CHECKPOINT en disco, no solo del log: el script remoto no
+            # tenía `logging` configurado y las líneas de progreso del procesador no salían
+            "import pickle, time\n"
+            f"ck = '{r['cache']}'\n"
+            "try:\n    n = len(pickle.load(open(ck, 'rb'))['cache']); mt = os.path.getmtime(ck)\n"
+            "except Exception:\n    n, mt = 0, 0.0\n"
+            f"inicio = os.path.getmtime('{self.r_salida}/trabajo.pid')\n"
+            "print(json.dumps({'vivo': vivo, 'log': log, 'gpu': gpu, 'n': n, 'mt': mt,"
+            " 'inicio': inicio}))\n",
         )
         return json.loads(salida.strip().splitlines()[-1])
 
@@ -317,7 +330,7 @@ class Orquestador:
         r = self._rutas(parte)
         # colores primero y detecciones al final: el mismo orden que el procesador (el ancla de
         # la reanudación es el caché de detecciones, que tiene que ser lo último en llegar)
-        for clave in ("colores", "cache"):
+        for clave in self.t.ficheros:
             destino = self.t.destino / Path(r[clave]).name
             tmp = destino.with_suffix(".descargando")
             self.cli.bajar_grande(self.sesion, r[clave], tmp)  # comprueba la huella
@@ -348,7 +361,7 @@ class Orquestador:
                     f"{parte.nombre}: el proceso murió sin terminar. Cola del log:\n"
                     + s["log"][-2000:]
                 )
-            p = leer_progreso(s["log"])
+            p = leer_progreso(s["log"]) or self._progreso_checkpoint(parte, s)
             if p and p.hechos != hechos_antes:
                 hechos_antes, ultimo_avance = p.hechos, self.reloj()
                 logger.info(
@@ -367,6 +380,27 @@ class Orquestador:
                 logger.info("Respaldo del checkpoint de %s en el Mac", parte.nombre)
                 self._bajar_caches(parte)
                 ultimo_respaldo = self.reloj()
+
+    def _progreso_checkpoint(self, parte: Parte, s: dict) -> Progreso | None:
+        """Progreso a partir del checkpoint en disco: frames cacheados y su hora de escritura.
+
+        El ritmo sale de dos checkpoints seguidos (diferencia de frames y de hora, ambas de la
+        máquina); con uno solo, desde el arranque del proceso (incluye cargar el modelo: algo
+        pesimista, que para un presupuesto es el lado bueno).
+        """
+        n, mt = int(s.get("n") or 0), float(s.get("mt") or 0)
+        if n <= 0:
+            return None
+        previo = self._ultimo_ck.get(parte.nombre)
+        if previo and n > previo[0] and mt > previo[1]:
+            ms = (mt - previo[1]) / (n - previo[0]) * 1000
+        else:
+            inicio = s.get("inicio")
+            ms = (mt - float(mt if inicio is None else inicio)) / n * 1000
+        if not previo or n != previo[0]:
+            self._ultimo_ck[parte.nombre] = (n, mt)
+        total = self.t.frames_por_parte.get(parte.nombre, n)
+        return Progreso(n, total, max(ms, 0.0))
 
     def _comprobar_presupuesto(
         self, parte: Parte, p: Progreso, ya_gastado_cu: float, tarifa: float
@@ -549,6 +583,52 @@ class Orquestador:
         )  # fmt: skip
         return True
 
+    def adjuntar(self, mantener: bool = False) -> dict:
+        """Se engancha a una máquina que YA está detectando: vigila, descarga y apaga.
+
+        Para cuando el vigilante del Mac se cae (o hay que cambiarlo) sin querer perder lo que la
+        GPU lleva hecho: el proceso remoto sigue solo y el vigía de la máquina la mantiene
+        encendida mientras corra. Aquí no se enciende, no se prepara ni se sube nada.
+        """
+        pendientes = [
+            p for p in self.t.partes
+            if not cache_completo(self.t.destino / f"cache_{p.nombre}.pkl")
+        ]  # fmt: skip
+        self.t.destino.mkdir(parents=True, exist_ok=True)
+        self._fijar_tope()
+        tarifa = self.cli.saldo().tarifa_hora
+        t0 = self.reloj()
+        logger.info(
+            "Enganchado a %s; vigilando %s", self.sesion, [p.nombre for p in pendientes]
+        )
+        try:
+            for parte in pendientes:
+                self._vigilar(parte, 0.0, tarifa)
+                self._bajar_caches(parte)
+                destino = self.t.destino / f"cache_{parte.nombre}.pkl"
+                if not cache_completo(destino):
+                    raise TrabajoAbortado(f"{destino.name} llegó sin marca de completo")
+                self.informe["partes"][parte.nombre] = {"descargada": True}
+        except BaseException:
+            for parte in pendientes:
+                try:
+                    self._bajar_caches(parte)
+                    logger.info("Checkpoint de %s guardado en el Mac", parte.nombre)
+                except Exception:  # noqa: BLE001
+                    pass
+            raise
+        finally:
+            horas = (self.reloj() - t0) / 3600
+            self.informe["horas_vigiladas"] = round(horas, 2)
+            if mantener:
+                logger.warning(
+                    "La máquina %s SIGUE ENCENDIDA (--mantener)", self.sesion
+                )
+            else:
+                self._apagar()
+                logger.info("Máquina %s apagada", self.sesion)
+        return self.informe
+
     def _subir_parte_en_hilo(self, parte: Parte) -> threading.Thread:
         """Sube el vídeo (y el checkpoint del Mac, si lo hay) sin bloquear la vigilancia."""
 
@@ -557,14 +637,13 @@ class Orquestador:
                 r = self._rutas(parte)
                 if not (self._drive() and self._copiar_de_drive(parte, r["video"])):
                     self._subir_comprobado(parte.video, r["video"])
-                cache = self.t.destino / f"cache_{parte.nombre}.pkl"
-                colores = self.t.destino / f"colores_{parte.nombre}.pkl"
-                if cache.exists() and colores.exists():
+                locales = {k: self.t.destino / Path(r[k]).name for k in self.t.ficheros}
+                if all(f.exists() for f in locales.values()):
                     logger.info(
                         "Hay checkpoint de %s en el Mac: se REANUDA", parte.nombre
                     )
-                    self._subir_comprobado(colores, r["colores"])
-                    self._subir_comprobado(cache, r["cache"])
+                    for k, f in locales.items():  # mismo orden: el ancla al final
+                        self._subir_comprobado(f, r[k])
             except (
                 BaseException
             ) as err:  # noqa: BLE001 — se relanza en el hilo principal

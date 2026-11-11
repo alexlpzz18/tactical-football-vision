@@ -110,7 +110,8 @@ class FalsaCLI:
             ruta = codigo.split("sha256sum ")[1].split("'")[0].split('"')[0].strip()
             return hashlib.sha256(self.remoto[ruta]).hexdigest() + "  x\n"
         if "latido" in codigo and "json.dumps" in codigo:
-            vivo, log = self.guion.pop(0)
+            vivo, log, *ck = self.guion.pop(0)
+            n, mt = ck if ck else (0, 0.0)
             if isinstance(vivo, Exception):
                 raise vivo
             if "✓ deteccion" in log:  # el procesador termina: su caché queda completo
@@ -118,7 +119,10 @@ class FalsaCLI:
                     self.remoto[ruta] = pickle.dumps({"completo": True, "cache": []})
             import json
 
-            return json.dumps({"vivo": vivo, "log": log}) + "\n"
+            return (
+                json.dumps({"vivo": vivo, "log": log, "n": n, "mt": mt, "inicio": 0.0})
+                + "\n"
+            )
         return ""
 
 
@@ -494,3 +498,44 @@ def test_apagar_reintenta_si_falla_la_red(tmp_path):
     cli.fallos_al_parar = 2
     _orq(cli, tmp_path, t).lanzar()
     assert cli.llamadas[-1] == "stop tfv-x"
+
+
+# ── progreso por checkpoint y enganche ───────────────────────────────
+def test_progreso_por_checkpoint_sin_lineas_en_el_log(tmp_path):
+    """El log remoto no tenía progreso (sin `logging`): se lee del checkpoint en disco."""
+    t = _trabajo(tmp_path)
+    t.frames_por_parte = {"x_p1": 10**6}
+    # 500 frames en 250 s desde el arranque = 500 ms/frame; 10^6 frames ≈ 139 h > tope
+    cli = FalsaCLI([(True, "sin progreso en el log\n", 500, 250.0)])
+    with pytest.raises(TrabajoAbortado, match="Proyección"):
+        _orq(cli, tmp_path, t).lanzar()
+    assert cli.llamadas[-1] == "stop tfv-x"
+
+
+def test_ritmo_entre_dos_checkpoints(tmp_path):
+    t = _trabajo(tmp_path)
+    orq = _orq(FalsaCLI([]), tmp_path, t)
+    parte = t.partes[0]
+    p1 = orq._progreso_checkpoint(parte, {"n": 500, "mt": 300.0, "inicio": 0.0})
+    p2 = orq._progreso_checkpoint(parte, {"n": 1000, "mt": 500.0, "inicio": 0.0})
+    assert p1.ms_por_frame == pytest.approx(600)  # 300 s / 500 desde el arranque
+    assert p2.ms_por_frame == pytest.approx(400)  # 200 s / 500 entre checkpoints
+
+
+def test_adjuntar_no_enciende_ni_sube_y_apaga(tmp_path):
+    t = _trabajo(tmp_path)
+    cli = FalsaCLI([(True, "", 500, 250.0), (True, "✓ deteccion x_p1: 9 min\n")])
+    _orq(cli, tmp_path, t).adjuntar()
+    assert not any(c.startswith(("new", "upload", "drivemount")) for c in cli.llamadas)
+    assert (t.destino / "cache_x_p1.pkl").exists()
+    assert cli.llamadas[-1] == "stop tfv-x"
+
+
+def test_trabajo_sin_colores_solo_baja_el_cache(tmp_path):
+    """El balón no tiene caché de colores: no se puede pedir un fichero que no existe."""
+    t = _trabajo(tmp_path)
+    t.ficheros = ("cache",)
+    cli = FalsaCLI([(True, _log(1000) + "✓ deteccion x_p1: 1 min\n")])
+    _orq(cli, tmp_path, t).lanzar()
+    bajadas = [c for c in cli.llamadas if c.startswith("download")]
+    assert bajadas == ["download /s/cache_x_p1.pkl"]
