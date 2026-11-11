@@ -1,0 +1,459 @@
+"""Orquestador de un trabajo de GPU en Colab, vigilado desde el Mac. docs/gpu_colab.md.
+
+Un trabajo = detectar varias partes de un partido. El ciclo, y por qué cada paso:
+
+1. **Antes de encender nada** (gratis): el commit del Mac está subido a GitHub (la máquina
+   clona ESE commit: lo que corre en la GPU es lo que hay en el historial), los vídeos y el modelo
+   existen, y el saldo de unidades de cómputo (CU) da para el trabajo dejando la reserva.
+2. **Se enciende la GPU** y se prepara: clon del repo en el commit exacto, dependencias, modelo.
+3. **Por cada parte**: se sube el vídeo (con huella sha256 comprobada en los dos lados) y se
+   lanza la detección EN SEGUNDO PLANO en la máquina. La subida del vídeo siguiente se solapa con la
+   detección del anterior: la GPU no espera a la red más que en la primera parte.
+4. **Vigilancia**: cada `sondeo_s`, el Mac lee el progreso (el log del procesador da frames y
+   ms/frame), toca el latido del interruptor de hombre muerto y, cada `respaldo_cada_s`, se trae el
+   checkpoint. Tras el primer checkpoint se PROYECTA el coste total; si pasa el presupuesto, se
+   para.
+5. **Al terminar cada parte** se descargan los cachés y se comprueba que están completos.
+6. **Siempre** se apaga la máquina al final (`finally`), haya ido bien o mal.
+
+Si algo se corta (el Mac, la red, la máquina), se vuelve a lanzar lo mismo: las partes con caché
+completo en el Mac se saltan, y una parte con checkpoint en el Mac se sube y se REANUDA (el
+procesador lo admite si la firma coincide: mismo vídeo, mismo modelo, misma configuración).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import pickle
+import re
+import shlex
+import subprocess
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable
+
+from src.cloud.colab_cli import ColabCLI, ErrorColab
+
+logger = logging.getLogger(__name__)
+
+# Línea de progreso que escribe `detectar_y_cachear` en cada checkpoint (processor.py).
+RE_PROGRESO = re.compile(r"(\d+)/(\d+) frames \(\s*\d+ %\) · (\d+) ms/frame")
+MARCA_FIN_PARTE = "✓ deteccion "
+
+
+class TrabajoAbortado(RuntimeError):
+    """Se para a propósito (presupuesto, colgado, entrada mala). La máquina se apaga igual."""
+
+
+@dataclass(frozen=True)
+class Progreso:
+    hechos: int  # frames procesados (con el muestreo: 1 de cada 3 originales)
+    total: int
+    ms_por_frame: float
+
+
+def leer_progreso(log: str) -> Progreso | None:
+    """La ÚLTIMA línea de progreso del log, o None si aún no hay checkpoint."""
+    encontradas = RE_PROGRESO.findall(log)
+    if not encontradas:
+        return None
+    h, t, ms = encontradas[-1]
+    return Progreso(int(h), int(t), float(ms))
+
+
+def proyectar_cu(
+    frames_pendientes: int, ms_por_frame: float, tarifa_hora: float
+) -> float:
+    """CU que costará lo que falta, al ritmo medido y con la tarifa real de la cuenta."""
+    horas = frames_pendientes * ms_por_frame / 1000 / 3600
+    return horas * tarifa_hora
+
+
+def sha256(ruta: Path, bloque: int = 1 << 24) -> str:
+    h = hashlib.sha256()
+    with open(ruta, "rb") as f:
+        while trozo := f.read(bloque):
+            h.update(trozo)
+    return h.hexdigest()
+
+
+def commit_subido(raiz: Path, git: Callable = subprocess.run) -> str:
+    """El commit actual, solo si está en GitHub. Si no, la máquina no podría clonarlo."""
+
+    def run(*args):
+        r = git(["git", "-C", str(raiz), *args], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise TrabajoAbortado(f"git {' '.join(args)} falló: {r.stderr}")
+        return r.stdout.strip()
+
+    commit = run("rev-parse", "HEAD")
+    run("fetch", "-q", "origin")
+    if not run("branch", "-r", "--contains", commit):
+        raise TrabajoAbortado(
+            f"El commit {commit[:8]} no está en GitHub. Súbelo (git push) antes de lanzar: la "
+            "máquina clona el repo y tiene que correr exactamente este código."
+        )
+    return commit
+
+
+def cache_completo(ruta: Path) -> bool:
+    """¿El caché de detecciones del Mac es el FINAL (no un checkpoint)?"""
+    try:
+        with open(ruta, "rb") as f:
+            return bool(pickle.load(f).get("completo"))
+    except (OSError, pickle.UnpicklingError, EOFError):
+        return False
+
+
+@dataclass
+class Parte:
+    nombre: str  # alevinb_p1
+    video: Path  # en el Mac
+
+
+@dataclass
+class Trabajo:
+    """Lo que cambia de un partido a otro. El resto (ciclo, vigilancia, apagado) es común."""
+
+    nombre: str
+    partes: list[Parte]
+    script: str  # script del repo que detecta, con `--fase deteccion`
+    args: list[str]  # argumentos fijos del script (p. ej. --imagen original)
+    modelo: Path  # pesos del detector en el Mac (no están en el repo)
+    destino: Path  # carpeta del Mac donde quedan los cachés
+    frames_por_parte: dict[str, int] = field(
+        default_factory=dict
+    )  # para el presupuesto
+
+
+class Orquestador:
+    def __init__(
+        self,
+        cli: ColabCLI,
+        cfg: dict,
+        trabajo: Trabajo,
+        raiz: Path,
+        dormir: Callable[[float], None] = time.sleep,
+        reloj: Callable[[], float] = time.time,
+        git: Callable = subprocess.run,
+    ):
+        self.cli, self.cfg, self.t, self.raiz = cli, cfg, trabajo, raiz
+        self.dormir, self.reloj, self.git = dormir, reloj, git
+        self.sesion = f"{cfg['maquina']['prefijo_sesion']}-{trabajo.nombre}"
+        r = cfg["rutas_remotas"]
+        self.r_repo, self.r_datos, self.r_salida = r["repo"], r["datos"], r["salida"]
+        self.informe: dict = {"sesion": self.sesion, "partes": {}}
+
+    # ── utilidades remotas ────────────────────────────────────────────
+    def _shell(self, comando: str, inactividad_s: int = 900) -> str:
+        """Un comando de shell en la máquina, vía el kernel (no hace falta configurar ssh)."""
+        codigo = (
+            "import subprocess, sys\n"
+            f"r = subprocess.run({comando!r}, shell=True, capture_output=True, text=True)\n"
+            "print(r.stdout[-4000:]); print(r.stderr[-4000:], file=sys.stderr)\n"
+            "assert r.returncode == 0, f'código {r.returncode}'\n"
+        )
+        return self.cli.python(self.sesion, codigo, inactividad_s)
+
+    def _sha_remoto(self, ruta: str) -> str:
+        return self._shell(f"sha256sum {shlex.quote(ruta)}").split()[0]
+
+    def _subir_comprobado(self, local: Path, remoto: str) -> None:
+        """Sube y compara la huella en los dos lados: un vídeo truncado no da error, da basura."""
+        t0 = self.reloj()
+        self.cli.subir(self.sesion, local, remoto)
+        if self._sha_remoto(remoto) != sha256(local):
+            raise TrabajoAbortado(f"{local.name}: la huella no coincide tras subirlo")
+        mb = local.stat().st_size / 1e6
+        logger.info(
+            "Subido %s (%.0f MB en %.0f s)", local.name, mb, self.reloj() - t0 or 1
+        )
+
+    # ── 1. antes de encender ──────────────────────────────────────────
+    def comprobar_antes(self) -> str:
+        faltan = [str(p.video) for p in self.t.partes if not p.video.exists()]
+        if not self.t.modelo.exists():
+            faltan.append(str(self.t.modelo))
+        if faltan:
+            raise TrabajoAbortado(f"Faltan en el Mac: {faltan}")
+        commit = commit_subido(self.raiz, self.git)
+        saldo = self.cli.saldo()
+        reserva = self.cfg["presupuesto"]["reserva_cu"]
+        if saldo.unidades - self.cfg["presupuesto"]["max_cu"] < reserva:
+            logger.warning(
+                "Saldo %.1f CU: con el tope de %.0f quedaría por debajo de la reserva (%.0f). "
+                "El tope efectivo baja a %.1f CU.",
+                saldo.unidades,
+                self.cfg["presupuesto"]["max_cu"],
+                reserva,
+                max(saldo.unidades - reserva, 0),
+            )
+        self.tope_cu = min(self.cfg["presupuesto"]["max_cu"], saldo.unidades - reserva)
+        if self.tope_cu <= 0:
+            raise TrabajoAbortado(
+                f"Saldo {saldo.unidades:.1f} CU: no llega a la reserva ({reserva} CU)"
+            )
+        self.informe.update(
+            commit=commit, saldo_inicial_cu=saldo.unidades, tope_cu=self.tope_cu
+        )
+        return commit
+
+    # ── 2. preparar la máquina ────────────────────────────────────────
+    def preparar(self, commit: str) -> None:
+        repo = self.cfg["repo"]
+        self._shell(
+            f"rm -rf {self.r_repo} && git clone -q {repo['url']} {self.r_repo} && "
+            f"git -C {self.r_repo} checkout -q {commit} && "
+            f"mkdir -p {self.r_datos} {self.r_salida} && nvidia-smi -L",
+            inactividad_s=600,
+        )
+        self._shell(
+            f"cd {self.r_repo} && pip install -q -r {repo['requisitos']}",
+            inactividad_s=1200,
+        )
+        rel = self.t.modelo.resolve().relative_to(self.raiz.resolve())
+        self._subir_comprobado(self.t.modelo, f"{self.r_repo}/{rel}")
+        self._arrancar_vigia()
+
+    def _arrancar_vigia(self) -> None:
+        tras = self.cfg["vigilancia"]["huerfana_tras_s"]
+        self.cli.python(
+            self.sesion,
+            "import subprocess, sys\n"
+            f"subprocess.Popen([sys.executable, 'scripts/vigia_colab.py', '--pid-fichero', "
+            f"'{self.r_salida}/trabajo.pid', '--latido', '{self.r_salida}/latido', "
+            f"'--tras-s', '{tras}'], cwd='{self.r_repo}', start_new_session=True, "
+            f"stdout=open('{self.r_salida}/vigia.log', 'ab'), stderr=subprocess.STDOUT)\n",
+        )
+
+    # ── 3-5. una parte ────────────────────────────────────────────────
+    def _rutas(self, parte: Parte) -> dict:
+        return {
+            "video": f"{self.r_datos}/{parte.nombre}.mp4",
+            "cache": f"{self.r_salida}/cache_{parte.nombre}.pkl",
+            "colores": f"{self.r_salida}/colores_{parte.nombre}.pkl",
+            "log": f"{self.r_salida}/{parte.nombre}.log",
+        }
+
+    def _lanzar_en_segundo_plano(self, parte: Parte, con_chequeo: bool) -> None:
+        r = self._rutas(parte)
+        argv = [
+            "python", self.t.script, *self.t.args, "--fase", "deteccion",
+            "--salida", self.r_salida, "--videos", r["video"], "--nombres", parte.nombre,
+        ]  # fmt: skip
+        if not con_chequeo:
+            argv.append("--sin-chequeo")
+        self.cli.python(
+            self.sesion,
+            "import subprocess\n"
+            f"p = subprocess.Popen({argv!r}, cwd='{self.r_repo}', start_new_session=True, "
+            f"stdout=open('{r['log']}', 'ab'), stderr=subprocess.STDOUT)\n"
+            f"open('{self.r_salida}/trabajo.pid', 'w').write(str(p.pid))\n"
+            "print(p.pid)\n",
+        )
+
+    def _sondear(self, parte: Parte) -> dict:
+        """Una pregunta a la máquina: ¿vive el proceso?, cola del log. Y toca el latido."""
+        r = self._rutas(parte)
+        salida = self.cli.python(
+            self.sesion,
+            "import json, os, pathlib\n"
+            f"pathlib.Path('{self.r_salida}/latido').touch()\n"
+            f"pid = int(open('{self.r_salida}/trabajo.pid').read())\n"
+            "try:\n    os.kill(pid, 0); est = open(f'/proc/{pid}/stat').read().split()[2]\n"
+            "    vivo = est != 'Z'\nexcept OSError:\n    vivo = False\n"
+            f"log = open('{r['log']}', errors='replace').read()[-6000:]\n"
+            # uso de la GPU en este instante: si va baja, la GPU espera a la CPU (vídeo, color)
+            "import subprocess\n"
+            "gpu = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used',"
+            " '--format=csv,noheader'], capture_output=True, text=True).stdout.strip()\n"
+            "print(json.dumps({'vivo': vivo, 'log': log, 'gpu': gpu}))\n",
+            inactividad_s=120,
+        )
+        return json.loads(salida.strip().splitlines()[-1])
+
+    def _bajar_caches(self, parte: Parte) -> None:
+        r = self._rutas(parte)
+        # colores primero y detecciones al final: el mismo orden que el procesador (el ancla de
+        # la reanudación es el caché de detecciones, que tiene que ser lo último en llegar)
+        for clave in ("colores", "cache"):
+            destino = self.t.destino / Path(r[clave]).name
+            tmp = destino.with_suffix(".descargando")
+            self.cli.bajar(self.sesion, r[clave], tmp)
+            if self._sha_remoto(r[clave]) != sha256(tmp):
+                raise TrabajoAbortado(
+                    f"{destino.name}: la huella no coincide al bajarlo"
+                )
+            tmp.replace(destino)
+
+    def _vigilar(self, parte: Parte, ya_gastado_cu: float, tarifa: float) -> None:
+        vig = self.cfg["vigilancia"]
+        ultimo_respaldo = ultimo_avance = self.reloj()
+        hechos_antes, proyectado = -1, False
+        while True:
+            self.dormir(vig["sondeo_s"])
+            try:
+                s = self._sondear(parte)
+            except (
+                ErrorColab
+            ) as err:  # un sondeo fallido no mata el trabajo; tres seguidos sí
+                logger.warning("Sondeo fallido: %s", str(err)[:300])
+                self._fallos = getattr(self, "_fallos", 0) + 1
+                if self._fallos >= 3:
+                    raise
+                continue
+            self._fallos = 0
+            if MARCA_FIN_PARTE + parte.nombre in s["log"]:
+                logger.info("%s: detección terminada", parte.nombre)
+                return
+            if not s["vivo"]:
+                raise TrabajoAbortado(
+                    f"{parte.nombre}: el proceso murió sin terminar. Cola del log:\n"
+                    + s["log"][-2000:]
+                )
+            p = leer_progreso(s["log"])
+            if p and p.hechos != hechos_antes:
+                hechos_antes, ultimo_avance = p.hechos, self.reloj()
+                logger.info(
+                    "%s: %d/%d frames · %.0f ms/frame · GPU %s",
+                    parte.nombre, p.hechos, p.total, p.ms_por_frame, s.get("gpu", "?"),
+                )  # fmt: skip
+                self.informe.setdefault("uso_gpu", []).append(s.get("gpu"))
+                if not proyectado:
+                    proyectado = True
+                    self._comprobar_presupuesto(parte, p, ya_gastado_cu, tarifa)
+            if self.reloj() - ultimo_avance > vig["sin_progreso_s"]:
+                raise TrabajoAbortado(
+                    f"{parte.nombre}: {vig['sin_progreso_s']} s sin avanzar el checkpoint"
+                )
+            if self.reloj() - ultimo_respaldo > vig["respaldo_cada_s"] and p:
+                logger.info("Respaldo del checkpoint de %s en el Mac", parte.nombre)
+                self._bajar_caches(parte)
+                ultimo_respaldo = self.reloj()
+
+    def _comprobar_presupuesto(
+        self, parte: Parte, p: Progreso, ya_gastado_cu: float, tarifa: float
+    ) -> None:
+        """Con el ritmo REAL del primer checkpoint: ¿cabe todo lo que queda en el tope?"""
+        pendientes = p.total - p.hechos
+        siguientes = False
+        for otra in self.t.partes:
+            if otra.nombre == parte.nombre:
+                siguientes = True
+                continue
+            if siguientes and not cache_completo(
+                self.t.destino / f"cache_{otra.nombre}.pkl"
+            ):
+                pendientes += self.t.frames_por_parte.get(otra.nombre, p.total)
+        cu = ya_gastado_cu + proyectar_cu(pendientes, p.ms_por_frame, tarifa)
+        horas = pendientes * p.ms_por_frame / 3.6e6
+        self.informe["proyeccion"] = {
+            "ms_por_frame": p.ms_por_frame,
+            "frames_pendientes": pendientes,
+            "horas": round(horas, 2),
+            "cu_total": round(cu, 1),
+            "tarifa_cu_hora": tarifa,
+        }
+        logger.info(
+            "PROYECCIÓN: %.0f ms/frame · %d frames pendientes · %.1f h · %.1f CU (tope %.1f)",
+            p.ms_por_frame, pendientes, horas, cu, self.tope_cu,
+        )  # fmt: skip
+        if cu > self.tope_cu:
+            raise TrabajoAbortado(
+                f"Proyección {cu:.1f} CU > tope {self.tope_cu:.1f} CU. Se para y se guarda el "
+                "checkpoint; sube `presupuesto.max_cu` si lo quieres igualmente."
+            )
+
+    # ── el ciclo entero ───────────────────────────────────────────────
+    def lanzar(self, mantener: bool = False) -> dict:
+        self.t.destino.mkdir(parents=True, exist_ok=True)
+        pendientes = [
+            p
+            for p in self.t.partes
+            if not cache_completo(self.t.destino / f"cache_{p.nombre}.pkl")
+        ]
+        hechas = [p.nombre for p in self.t.partes if p not in pendientes]
+        if hechas:
+            logger.info("Ya completas en el Mac, se saltan: %s", hechas)
+        if not pendientes:
+            return self.informe
+        commit = self.comprobar_antes()
+        t_encendido = self.reloj()
+        logger.info("Encendiendo %s (%s)", self.sesion, self.cfg["maquina"]["gpu"])
+        self.cli.nueva(self.sesion, self.cfg["maquina"]["gpu"])
+        tarifa = 0.0
+        try:
+            self.preparar(commit)
+            tarifa = self.cli.saldo().tarifa_hora
+            self.informe["tarifa_cu_hora"] = tarifa
+            subida = self._subir_parte_en_hilo(pendientes[0])
+            for i, parte in enumerate(pendientes):
+                subida.join()
+                if subida.error:
+                    raise subida.error
+                if i + 1 < len(pendientes):  # la siguiente sube mientras esta detecta
+                    subida = self._subir_parte_en_hilo(pendientes[i + 1])
+                gastado = (self.reloj() - t_encendido) / 3600 * tarifa
+                self._lanzar_en_segundo_plano(parte, con_chequeo=(i == 0))
+                t0 = self.reloj()
+                self._vigilar(parte, gastado, tarifa)
+                self._bajar_caches(parte)
+                destino = self.t.destino / f"cache_{parte.nombre}.pkl"
+                if not cache_completo(destino):
+                    raise TrabajoAbortado(f"{destino.name} llegó sin marca de completo")
+                self.informe["partes"][parte.nombre] = {
+                    "minutos": round((self.reloj() - t0) / 60, 1)
+                }
+            subida.join()
+        except BaseException:
+            # lo que haya avanzado queda en el Mac para reanudar
+            for parte in pendientes:
+                try:
+                    self._bajar_caches(parte)
+                    logger.info("Checkpoint de %s guardado en el Mac", parte.nombre)
+                except Exception:  # noqa: BLE001 — puede no haber empezado esa parte
+                    pass
+            raise
+        finally:
+            horas = (self.reloj() - t_encendido) / 3600
+            self.informe["horas_encendida"] = round(horas, 2)
+            self.informe["cu_estimadas"] = round(horas * tarifa, 2)
+            if mantener:
+                logger.warning(
+                    "La máquina %s SIGUE ENCENDIDA (--mantener)", self.sesion
+                )
+            else:
+                self.cli.parar(self.sesion)
+                logger.info("Máquina %s apagada (%.2f h encendida)", self.sesion, horas)
+        return self.informe
+
+    def _subir_parte_en_hilo(self, parte: Parte) -> threading.Thread:
+        """Sube el vídeo (y el checkpoint del Mac, si lo hay) sin bloquear la vigilancia."""
+
+        def subir():
+            try:
+                r = self._rutas(parte)
+                self._subir_comprobado(parte.video, r["video"])
+                cache = self.t.destino / f"cache_{parte.nombre}.pkl"
+                colores = self.t.destino / f"colores_{parte.nombre}.pkl"
+                if cache.exists() and colores.exists():
+                    logger.info(
+                        "Hay checkpoint de %s en el Mac: se REANUDA", parte.nombre
+                    )
+                    self._subir_comprobado(colores, r["colores"])
+                    self._subir_comprobado(cache, r["cache"])
+            except (
+                BaseException
+            ) as err:  # noqa: BLE001 — se relanza en el hilo principal
+                hilo.error = err
+
+        hilo = threading.Thread(
+            target=subir, name=f"subida-{parte.nombre}", daemon=True
+        )
+        hilo.error = None
+        hilo.start()
+        return hilo

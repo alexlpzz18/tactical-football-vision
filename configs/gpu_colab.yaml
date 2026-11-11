@@ -1,0 +1,45 @@
+# GPU de Colab desde la terminal del Mac, con la Colab CLI oficial de Google. docs/gpu_colab.md.
+#
+# La CLI crea una máquina con GPU, el trabajo corre en ella SIN navegador y el Mac la vigila,
+# descarga lo que produce y la APAGA. Cada minuto encendida gasta unidades de cómputo (CU), así que
+# todo lo de aquí está pensado para que la GPU solo esté encendida mientras detecta.
+
+cli:
+  # Instalada aparte, en un entorno propio (Python 3.13), para no tocar el entorno del proyecto:
+  #   python3.13 -m venv ~/.venvs/colab-cli && ~/.venvs/colab-cli/bin/pip install google-colab-cli
+  ruta: ~/.venvs/colab-cli/bin/colab
+  auth: oauth2 # el inicio de sesión lo hace Alex una vez; el token queda en el llavero de macOS
+
+maquina:
+  # T4: la más barata por hora. El detector es YOLOv8 sobre recortes pequeños de SAHI y no llena
+  # una GPU grande: una A100 cuesta ~7× más por hora y no va 7× más rápido en este bucle.
+  # Se cambia aquí, nunca a mano en mitad de un trabajo.
+  gpu: T4
+  prefijo_sesion: tfv # las sesiones se llaman tfv-<trabajo>; `parar` solo toca las que empiezan así
+
+repo:
+  # La máquina clona el repo PÚBLICO y se pone en el commit EXACTO del Mac. Si ese commit no está
+  # subido a GitHub, no se lanza: lo que corre en la GPU tiene que ser lo que hay en el historial.
+  url: https://github.com/alexlpzz18/tactical-football-vision.git
+  requisitos: requirements-colab.txt
+
+presupuesto:
+  # Tope de CU por lanzamiento. Tras el primer checkpoint se conoce el ritmo real (ms/frame) y se
+  # proyecta el coste total con la tarifa que da `colab usage`: si pasa el tope, se para, se guarda
+  # el checkpoint en el Mac y se apaga la máquina. Nada se gasta a ciegas.
+  max_cu: 40
+  # Saldo que hay que dejar siempre en la cuenta (para no quedarse sin GPU para otra cosa).
+  reserva_cu: 10
+
+vigilancia:
+  sondeo_s: 120 # cada cuánto pregunta el Mac cómo va
+  respaldo_cada_s: 1800 # cada cuánto se trae el checkpoint al Mac (por si la máquina muere)
+  sin_progreso_s: 1500 # si el checkpoint no avanza en este tiempo, el trabajo se da por colgado
+  # Interruptor de hombre muerto EN LA MÁQUINA: si el Mac deja de dar señales durante este tiempo
+  # Y el trabajo ya terminó, la máquina se libera sola. Mientras el trabajo avance, sigue.
+  huerfana_tras_s: 3600
+
+rutas_remotas:
+  repo: /content/tfv
+  datos: /content/datos
+  salida: /content/salida

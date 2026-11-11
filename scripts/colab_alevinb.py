@@ -165,11 +165,53 @@ def chequeo_previo(salida: Path, video: Path, imagen: str, dispositivo) -> dict:
     }
 
 
+def deteccion(
+    salida: Path, videos: list[Path], nombres: list[str], imagen, dispositivo
+):
+    """Solo la parte de GPU: detección y colores de cada parte, con checkpoint."""
+    from src.tracking_data.processor import detectar_y_cachear
+
+    for nombre, video in zip(nombres, videos):
+        t0 = time.time()
+        detectar_y_cachear(
+            yaml.safe_load(open(config(salida, nombre, video, imagen, dispositivo)))
+        )
+        print(
+            f"✓ deteccion {nombre}: {round((time.time() - t0) / 60, 1)} min", flush=True
+        )
+
+
+def seguimiento(salida: Path, videos: list[Path], nombres: list[str], imagen):
+    """La parte de CPU, en el Mac: metros con la lente (si toca) y `desde_cache`.
+
+    Se hace aquí y no en Colab por dos razones: no ocupa GPU, y la versión de supervision canónica
+    para medir es la del Mac (CLAUDE.md: Colab 0.25.1 y Mac 0.28.0 no dan el mismo CSV).
+    """
+    from src.tracking_data.processor import procesar_desde_cache
+
+    for nombre, video in zip(nombres, videos):
+        if imagen == "original":
+            a_metros_con_lente(salida / f"cache_{nombre}.pkl")
+        cfg = yaml.safe_load(open(config(salida, nombre, video, imagen, None)))
+        cfg["modo"] = "desde_cache"
+        procesar_desde_cache(cfg)
+        print(
+            f"✓ seguimiento {nombre}: {salida / f'posiciones_{nombre}.csv'}", flush=True
+        )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--imagen", choices=["corregida", "original"], required=True)
     ap.add_argument("--salida", type=Path, required=True)
     ap.add_argument("--solo-chequeo", action="store_true")
+    # todo: la celda de siempre. deteccion: solo GPU (scripts/gpu_colab.py). seguimiento: en el Mac
+    ap.add_argument(
+        "--fase", choices=["todo", "deteccion", "seguimiento"], default="todo"
+    )
+    ap.add_argument("--nombres", default=None, help="nombre de cada parte, por comas")
+    # el orquestador (scripts/gpu_colab.py) hace el chequeo con la primera parte y no lo repite
+    ap.add_argument("--sin-chequeo", action="store_true")
     # solo para probar en local; en Colab no se pasan
     ap.add_argument("--dispositivo", default=None)
     ap.add_argument("--videos", default=None, help="rutas separadas por comas")
@@ -180,29 +222,44 @@ def main() -> None:
         if a.videos
         else [R / "data/raw/alevinb_p1.mp4", R / "data/raw/alevinb_p2.mp4"]
     )
+    nombres = (
+        a.nombres.split(",")
+        if a.nombres
+        else [f"parte{n}" for n in range(1, len(videos) + 1)]
+    )
+    if len(nombres) != len(videos):
+        raise SystemExit(f"{len(nombres)} nombres para {len(videos)} vídeos")
+    if a.fase == "seguimiento":
+        seguimiento(a.salida, videos, nombres, a.imagen)
+        return
     comprobar_entradas(videos, a.imagen)
-    previo = chequeo_previo(a.salida, videos[0], a.imagen, a.dispositivo)
-    print(f"✓ chequeo previo: {previo}", flush=True)
+    previo = None
+    if not a.sin_chequeo:
+        previo = chequeo_previo(a.salida, videos[0], a.imagen, a.dispositivo)
+        print(f"✓ chequeo previo: {previo}", flush=True)
     if a.solo_chequeo:
+        return
+    if a.fase == "deteccion":
+        deteccion(a.salida, videos, nombres, a.imagen, a.dispositivo)
         return
     from src.tracking_data.processor import detectar_y_cachear, procesar_desde_cache
 
     resultados = {"imagen": a.imagen, "chequeo_previo": previo, "partes": {}}
-    for n, video in enumerate(videos, start=1):
-        ruta = config(a.salida, f"parte{n}", video, a.imagen, a.dispositivo)
+    for nombre, video in zip(nombres, videos):
+        ruta = config(a.salida, nombre, video, a.imagen, a.dispositivo)
         cfg = yaml.safe_load(open(ruta))
         t0 = time.time()
         detectar_y_cachear(cfg)
         if a.imagen == "original":
-            a_metros_con_lente(a.salida / f"cache_parte{n}.pkl")
+            a_metros_con_lente(a.salida / f"cache_{nombre}.pkl")
         cfg["modo"] = "desde_cache"
         procesar_desde_cache(cfg)
-        resultados["partes"][f"parte{n}"] = {
+        resultados["partes"][nombre] = {
             "video": str(video),
             "minutos": round((time.time() - t0) / 60, 1),
-            "csv": str(a.salida / f"posiciones_parte{n}.csv"),
+            "csv": str(a.salida / f"posiciones_{nombre}.csv"),
         }
-        print(f"✓ parte {n}: {resultados['partes'][f'parte{n}']}", flush=True)
+        print(f"✓ {nombre}: {resultados['partes'][nombre]}", flush=True)
     (a.salida / "resumen.json").write_text(
         json.dumps(resultados, indent=1, ensure_ascii=False)
     )
