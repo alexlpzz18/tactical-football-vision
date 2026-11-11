@@ -54,22 +54,38 @@ sube y se reanuda.
    avance, sigue (el gasto es útil).
 8. **Respaldo del checkpoint cada 30 min** en el Mac: si la máquina muere, se pierde como mucho
    media hora, no la parte entera.
-9. **T4 por defecto**: la más barata por hora. SAHI corta el fotograma en 8 recortes pequeños y
-   YOLOv8 no llena una GPU grande, así que una A100 (~7× la tarifa) no va 7× más rápido aquí. Es
-   una hipótesis: el sondeo registra el **uso de la GPU** (`nvidia-smi`) y el informe lo guarda, y
-   con eso se decide si compensa otra.
+9. **L4 por defecto** (Alex tiene Colab Pro). Para YOLOv8 en inferencia va ~2-3× más rápida que
+   una T4 por menos del doble de tarifa (~1,94 CU/h, medida en la cuenta), así que sale más barata
+   por frame. Una A100 cuesta varias veces más, y SAHI (8 recortes pequeños por fotograma, uno
+   detrás de otro) no la llenaría. Es una hipótesis: el sondeo registra el **uso de la GPU**
+   (`nvidia-smi`), el informe lo guarda, y con eso se decide si compensa otra.
+
+## Lo que se midió de la CLI el 11-nov (en una máquina CPU, ~0,08 CU/h)
+
+Cada una cambió el código; ninguna estaba en la documentación de la CLI:
+
+| medida | resultado | consecuencia |
+|---|---|---|
+| `colab exec` con un `assert False` | **sale con 0** | marca de fin en cada ejecución; sin ella el primer lanzamiento dio por bueno un paso fallido |
+| subida de 50 / 100 / 300 MB | 50 sí; 100 y 300 → **400 Bad Request** | trozos de 40 MB, unidos en la máquina |
+| 1 trozo / 4 trozos a la vez | ~1,9 / ~6 MB/s | 4 en paralelo: un vídeo de 956 MB en ~3 min |
+| reconstruir 4 trozos | huella sha256 idéntica | se comprueba siempre la huella del fichero entero |
+| bajada de 160 MB | funciona, ~3,3 MB/s | también en trozos (colores ≈ 400 MB) |
+| subir a una carpeta que no existe | **500** | `models/weights/` no está en el repo: se crea antes |
+| `runtime.unassign()` desde un proceso suelto | **la máquina se libera** | el interruptor de hombre muerto funciona |
+
+El primer lanzamiento (L4 no, T4, 11:58) cayó en la subida del modelo y **la máquina se apagó sola
+a los 36 s** (0,01 h): el `finally` hizo su trabajo.
 
 ## Qué queda medido y qué no
 
-- **Medido en el Mac**: 18 tests (`tests/test_gpu_colab.py`) con una CLI falsa: se apaga siempre
+- **Medido en el Mac**: 21 tests (`tests/test_gpu_colab.py`) con una CLI falsa: se apaga siempre
   (también si revienta, si fallan tres sondeos seguidos o si se pasa del presupuesto), no se enciende
   sin commit subido ni sin saldo, salta lo completo y reanuda lo empezado, y el interruptor de
   hombre muerto solo actúa sin trabajo Y sin Mac.
 - **Leer el vídeo** cuesta 18 ms por frame procesado en el Mac (decodifica los 3 originales; con
   `grab()` en los dos que se saltan, 10 ms). Si la GPU sale poco usada en el primer lanzamiento, esa
   es la primera pieza a tocar, detrás de un interruptor y comprobando que el caché sale idéntico.
-- **NO probado todavía contra Colab**: nada de lo anterior ha tocado una máquina real, porque falta
-  el inicio de sesión. En particular, sin comprobar: el formato exacto de `colab usage` (el lector
-  lanza si no lo entiende, en vez de adivinar), la velocidad de subida de 1 GB por la CLI, y si
-  `google.colab.runtime.unassign()` funciona en una máquina creada por la CLI. **El primer
-  lanzamiento real es la prueba**, y se hace con el tope de presupuesto puesto.
+- **Contra Colab**: el formato de `colab usage` (se lee bien: 207,97 CU, 1,94/h), subidas,
+  bajadas, huellas y autoapagado, medidos arriba. Falta el ritmo real de detección en una L4: lo da
+  el primer checkpoint del primer lanzamiento completo.

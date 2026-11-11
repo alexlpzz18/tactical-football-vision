@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from src.cloud.colab_cli import ColabCLI, ErrorColab, Saldo, leer_saldo
+from src.cloud.colab_cli import MARCA_FIN, ColabCLI, ErrorColab, Saldo, leer_saldo
 from src.cloud.trabajo_gpu import (
     Orquestador,
     Parte,
@@ -66,6 +66,12 @@ class FalsaCLI:
     def subir(self, sesion, local, remoto):
         self.llamadas.append(f"upload {remoto}")
         self.remoto[remoto] = Path(local).read_bytes()
+
+    def subir_grande(self, sesion, local, remoto):
+        self.subir(sesion, local, remoto)
+
+    def bajar_grande(self, sesion, remoto, local):
+        self.bajar(sesion, remoto, local)
 
     def bajar(self, sesion, remoto, local):
         self.llamadas.append(f"download {remoto}")
@@ -156,7 +162,7 @@ def test_la_cli_pone_auth_y_sesion_explicitas():
 
     def falso(cmd, **kw):
         vistos.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, "", "")
+        return subprocess.CompletedProcess(cmd, 0, MARCA_FIN, "")
 
     ColabCLI("/bin/colab", "oauth2", falso).python("tfv-x", "print(1)")
     assert vistos[0][:4] == ["/bin/colab", "--auth", "oauth2", "exec"]
@@ -279,3 +285,35 @@ def _vigia():
 )
 def test_vigia_solo_sin_trabajo_y_sin_mac(vivo, edad, esperado):
     assert _vigia().huerfana(vivo, edad, 3600) is esperado
+
+
+# ── la CLI real, con un `ejecutar` falso ─────────────────────────────
+def test_exec_que_lanza_se_detecta_aunque_la_cli_salga_con_0():
+    """`colab exec` sale con 0 aunque el código lance (medido): manda la marca de fin."""
+
+    def falso(cmd, input=None, **kw):
+        # la traza de un error: el código no llega a imprimir la marca
+        return subprocess.CompletedProcess(cmd, 0, "AssertionError: x\n", "")
+
+    with pytest.raises(ErrorColab, match="no terminó bien"):
+        ColabCLI("/bin/colab", "oauth2", falso).python("tfv-x", "assert False")
+
+
+def test_exec_bueno_devuelve_la_salida_sin_la_marca():
+    def falso(cmd, input=None, **kw):
+        marca = input.strip().splitlines()[-1].split("(")[1].rstrip(")").strip("'")
+        return subprocess.CompletedProcess(cmd, 0, f"hola\n{marca}\n", "")
+
+    out = ColabCLI("/bin/colab", "oauth2", falso).python("tfv-x", "print('hola')")
+    assert out == "hola\n"
+
+
+def test_trocear_y_unir_reconstruye_el_fichero(tmp_path):
+    from src.cloud.colab_cli import trocear
+
+    f = tmp_path / "v.mp4"
+    f.write_bytes(bytes(range(256)) * 1000)  # 256.000 bytes
+    (tmp_path / "t").mkdir()
+    trozos = trocear(f, tmp_path / "t", 100_000)
+    assert [t.stat().st_size for t in trozos] == [100_000, 100_000, 56_000]
+    assert b"".join(t.read_bytes() for t in sorted(trozos)) == f.read_bytes()

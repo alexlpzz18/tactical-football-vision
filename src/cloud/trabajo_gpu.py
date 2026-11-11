@@ -23,12 +23,10 @@ procesador lo admite si la firma coincide: mismo vídeo, mismo modelo, misma con
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import pickle
 import re
-import shlex
 import subprocess
 import threading
 import time
@@ -71,14 +69,6 @@ def proyectar_cu(
     """CU que costará lo que falta, al ritmo medido y con la tarifa real de la cuenta."""
     horas = frames_pendientes * ms_por_frame / 1000 / 3600
     return horas * tarifa_hora
-
-
-def sha256(ruta: Path, bloque: int = 1 << 24) -> str:
-    h = hashlib.sha256()
-    with open(ruta, "rb") as f:
-        while trozo := f.read(bloque):
-            h.update(trozo)
-    return h.hexdigest()
 
 
 def commit_subido(raiz: Path, git: Callable = subprocess.run) -> str:
@@ -159,19 +149,14 @@ class Orquestador:
         )
         return self.cli.python(self.sesion, codigo, inactividad_s)
 
-    def _sha_remoto(self, ruta: str) -> str:
-        return self._shell(f"sha256sum {shlex.quote(ruta)}").split()[0]
-
     def _subir_comprobado(self, local: Path, remoto: str) -> None:
-        """Sube y compara la huella en los dos lados: un vídeo truncado no da error, da basura."""
+        """Sube en trozos y compara la huella: un vídeo truncado no da error, da basura."""
         t0 = self.reloj()
-        self.cli.subir(self.sesion, local, remoto)
-        if self._sha_remoto(remoto) != sha256(local):
-            raise TrabajoAbortado(f"{local.name}: la huella no coincide tras subirlo")
-        mb = local.stat().st_size / 1e6
+        self.cli.subir_grande(self.sesion, local, remoto)
         logger.info(
-            "Subido %s (%.0f MB en %.0f s)", local.name, mb, self.reloj() - t0 or 1
-        )
+            "Subido %s (%.0f MB en %.0f s)",
+            local.name, local.stat().st_size / 1e6, self.reloj() - t0,
+        )  # fmt: skip
 
     # ── 1. antes de encender ──────────────────────────────────────────
     def comprobar_antes(self) -> str:
@@ -283,11 +268,7 @@ class Orquestador:
         for clave in ("colores", "cache"):
             destino = self.t.destino / Path(r[clave]).name
             tmp = destino.with_suffix(".descargando")
-            self.cli.bajar(self.sesion, r[clave], tmp)
-            if self._sha_remoto(r[clave]) != sha256(tmp):
-                raise TrabajoAbortado(
-                    f"{destino.name}: la huella no coincide al bajarlo"
-                )
+            self.cli.bajar_grande(self.sesion, r[clave], tmp)  # comprueba la huella
             tmp.replace(destino)
 
     def _vigilar(self, parte: Parte, ya_gastado_cu: float, tarifa: float) -> None:

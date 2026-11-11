@@ -13,14 +13,22 @@ docs/gpu_colab.md.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+import shutil
 import subprocess
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 logger = logging.getLogger(__name__)
+
+MARCA_FIN = "__TFV_FIN_OK__"  # ver ColabCLI.python
+TROZO_MB = 40  # el servidor rechaza una subida de 100 MB y acepta 50 (medido el 11-nov)
+PARALELO = 4
 
 
 class ErrorColab(RuntimeError):
@@ -107,16 +115,118 @@ class ColabCLI:
     def python(self, sesion: str, codigo: str, inactividad_s: int = 600) -> str:
         """Ejecuta `codigo` en el kernel de la máquina y devuelve lo que imprime.
 
+        ⚠️ `colab exec` sale con 0 AUNQUE EL CÓDIGO LANCE (medido el 11-nov con un `assert False`).
+        Por eso se añade una marca al final: si no aparece en la salida, el código no llegó al
+        final y se lanza aquí. Sin esto, un `git clone` fallido pasaba por bueno.
+
         `inactividad_s` es el `--timeout` de la CLI: falla tras ese tiempo SIN salida, no tras ese
         tiempo en total. Para trabajos largos no se usa esto: se lanzan en segundo plano.
         """
-        return self._cmd(
-            "exec", "-s", sesion, "--timeout", str(inactividad_s), entrada=codigo
-        )
+        salida = self._cmd(
+            "exec", "-s", sesion, "--timeout", str(inactividad_s),
+            entrada=f"{codigo}\nprint({MARCA_FIN!r})\n",
+        )  # fmt: skip
+        if MARCA_FIN not in salida:
+            raise ErrorColab(f"El código remoto no terminó bien:\n{salida[-3000:]}")
+        return salida.replace(MARCA_FIN, "").rstrip() + "\n"
 
     def subir(self, sesion: str, local: str | Path, remoto: str) -> str:
-        return self._cmd("upload", "-s", sesion, str(local), remoto, timeout=7200)
+        """Un fichero de hasta ~50 MB (más, el servidor responde 400). Para más: `subir_grande`."""
+        return self._cmd("upload", "-s", sesion, str(local), remoto, timeout=1800)
 
     def bajar(self, sesion: str, remoto: str, local: str | Path) -> str:
         Path(local).parent.mkdir(parents=True, exist_ok=True)
-        return self._cmd("download", "-s", sesion, remoto, str(local), timeout=7200)
+        return self._cmd("download", "-s", sesion, remoto, str(local), timeout=1800)
+
+    def sha_remoto(self, sesion: str, remoto: str) -> str:
+        out = self.python(
+            sesion,
+            "import hashlib\nh = hashlib.sha256()\n"
+            f"with open({remoto!r}, 'rb') as f:\n"
+            "    for b in iter(lambda: f.read(1 << 24), b''):\n        h.update(b)\n"
+            "print(h.hexdigest())\n",
+        )
+        return out.split()[-1]
+
+    def subir_grande(
+        self, sesion: str, local: str | Path, remoto: str,
+        trozo_mb: int = TROZO_MB, paralelo: int = PARALELO,
+    ) -> None:  # fmt: skip
+        """Sube cualquier tamaño: en trozos, varios a la vez, y comprueba la huella del total.
+
+        Medido el 11-nov: 50 MB suben y 100 MB no (400). Un trozo suelto va a ~1,9 MB/s y cuatro
+        a la vez a ~6 MB/s, así que un vídeo de 956 MB tarda ~3 min en vez de ~8.
+        """
+        local = Path(local)
+        dir_r = f"{remoto}.trozos"
+        self.python(sesion, f"import os\nos.makedirs({dir_r!r}, exist_ok=True)\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            trozos = trocear(local, Path(tmp), trozo_mb * 1_000_000)
+            with ThreadPoolExecutor(paralelo) as ex:
+                list(
+                    ex.map(lambda t: self.subir(sesion, t, f"{dir_r}/{t.name}"), trozos)
+                )
+        nombres = [t.name for t in trozos]
+        self.python(
+            sesion,
+            "import os, shutil\n"
+            f"with open({remoto!r}, 'wb') as out:\n"
+            f"    for n in {nombres!r}:\n"
+            f"        with open(os.path.join({dir_r!r}, n), 'rb') as f:\n"
+            "            shutil.copyfileobj(f, out, 1 << 24)\n"
+            f"shutil.rmtree({dir_r!r})\n",
+        )
+        if self.sha_remoto(sesion, remoto) != sha256(local):
+            raise ErrorColab(f"{local.name}: la huella no coincide tras subirlo")
+
+    def bajar_grande(
+        self, sesion: str, remoto: str, local: str | Path,
+        trozo_mb: int = TROZO_MB, paralelo: int = PARALELO,
+    ) -> None:  # fmt: skip
+        """Lo mismo al revés: se trocea en la máquina, se bajan los trozos y se une en el Mac."""
+        local = Path(local)
+        dir_r = f"{remoto}.trozos"
+        out = self.python(
+            sesion,
+            "import os, shutil\n"
+            f"shutil.rmtree({dir_r!r}, ignore_errors=True); os.makedirs({dir_r!r})\n"
+            "n = 0\n"
+            f"with open({remoto!r}, 'rb') as f:\n"
+            f"    while b := f.read({trozo_mb * 1_000_000}):\n"
+            f"        open(os.path.join({dir_r!r}, f'{{n:05d}}'), 'wb').write(b); n += 1\n"
+            "print(n)\n",
+        )
+        n = int(out.split()[-1])
+        local.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=local.parent) as tmp:
+            nombres = [f"{i:05d}" for i in range(n)]
+            with ThreadPoolExecutor(paralelo) as ex:
+                list(ex.map(
+                    lambda nm: self.bajar(sesion, f"{dir_r}/{nm}", Path(tmp) / nm), nombres
+                ))  # fmt: skip
+            with open(local, "wb") as salida:
+                for nm in nombres:
+                    with open(Path(tmp) / nm, "rb") as f:
+                        shutil.copyfileobj(f, salida, 1 << 24)
+        self.python(sesion, f"import shutil\nshutil.rmtree({dir_r!r})\n")
+        if self.sha_remoto(sesion, remoto) != sha256(local):
+            raise ErrorColab(f"{local.name}: la huella no coincide tras bajarlo")
+
+
+def sha256(ruta: Path, bloque: int = 1 << 24) -> str:
+    h = hashlib.sha256()
+    with open(ruta, "rb") as f:
+        while b := f.read(bloque):
+            h.update(b)
+    return h.hexdigest()
+
+
+def trocear(ruta: Path, carpeta: Path, tamano: int) -> list[Path]:
+    """Parte un fichero en trozos de `tamano` bytes, con nombres que ordenan bien (00000…)."""
+    trozos = []
+    with open(ruta, "rb") as f:
+        while b := f.read(tamano):
+            t = carpeta / f"{len(trozos):05d}"
+            t.write_bytes(b)
+            trozos.append(t)
+    return trozos

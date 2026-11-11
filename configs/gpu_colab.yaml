@@ -11,10 +11,12 @@ cli:
   auth: oauth2 # el inicio de sesión lo hace Alex una vez; el token queda en el llavero de macOS
 
 maquina:
-  # T4: la más barata por hora. El detector es YOLOv8 sobre recortes pequeños de SAHI y no llena
-  # una GPU grande: una A100 cuesta ~7× más por hora y no va 7× más rápido en este bucle.
-  # Se cambia aquí, nunca a mano en mitad de un trabajo.
-  gpu: T4
+  # L4 (Alex tiene Colab Pro: T4, L4, A100… disponibles). Tarifa medida en la cuenta: ~1,94 CU/h.
+  # Para YOLOv8 en inferencia una L4 va ~2-3× más rápida que una T4 por bastante menos del doble
+  # de tarifa, así que sale más barata POR FRAME; una A100 cuesta varias veces más y SAHI (8 recortes
+  # pequeños por fotograma, uno detrás de otro) no la llenaría. Es una hipótesis hasta medirla: el
+  # informe guarda ms/frame y el uso de la GPU de cada lanzamiento.
+  gpu: L4
   prefijo_sesion: tfv # las sesiones se llaman tfv-<trabajo>; `parar` solo toca las que empiezan así
 
 repo:
