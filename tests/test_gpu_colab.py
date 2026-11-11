@@ -51,6 +51,8 @@ class FalsaCLI:
     def __init__(self, guion, saldo=100.0, tarifa=1.5, en_drive=None):
         self.guion = list(guion)  # una respuesta de sondeo por llamada: (vivo, log)
         self.en_drive = en_drive or {}  # nombre de vídeo → bytes que hay en Drive
+        self.montado = True
+        self.fallos_al_parar = 0
         self.llamadas, self.remoto = [], {}
         self._saldo, self._tarifa = saldo, tarifa
 
@@ -62,6 +64,9 @@ class FalsaCLI:
         self.llamadas.append(f"new {sesion} {gpu}")
 
     def parar(self, sesion):
+        if self.fallos_al_parar:
+            self.fallos_al_parar -= 1
+            raise ErrorColab("NameResolutionError")
         self.llamadas.append(f"stop {sesion}")
 
     def subir(self, sesion, local, remoto):
@@ -90,6 +95,8 @@ class FalsaCLI:
     def python(self, sesion, codigo, limite_s=120):
         if "print('RC=' + rc)" in codigo:  # `_esperar`: lo lanzado terminó bien
             return "RC=0\n"
+        if "MONTADO=" in codigo:
+            return f"MONTADO={self.montado}\n"
         if "echo COPIADO" in codigo:  # copiar de Drive al disco de la máquina
             nombre = codigo.split("/")[-1].split(" ")[0].strip("'")
             nombre = next((n for n in self.en_drive if n in codigo), None)
@@ -464,4 +471,26 @@ def test_drive_con_otro_fichero_del_mismo_nombre_para(tmp_path):
     cli = FalsaCLI([], en_drive={p1.name: b"OTRO VIDEO"})
     with pytest.raises(TrabajoAbortado, match="NO es el mismo"):
         _orq_drive(cli, tmp_path, t).lanzar()
+    assert cli.llamadas[-1] == "stop tfv-x"
+
+
+def test_drive_que_no_monta_cae_a_subir_desde_el_mac(tmp_path):
+    t = _trabajo(tmp_path)
+    p1 = t.partes[0].video
+    cli = FalsaCLI(
+        [(True, _log(1000) + "✓ deteccion x_p1: 1 min\n")],
+        en_drive={p1.name: p1.read_bytes()},
+    )
+    cli.montado = False
+    _orq_drive(cli, tmp_path, t).lanzar()
+    assert cli.llamadas.count("drivemount") == 2  # un reintento del permiso
+    assert "upload /d/x_p1.mp4" in cli.llamadas
+    assert cli.llamadas[-1] == "stop tfv-x"
+
+
+def test_apagar_reintenta_si_falla_la_red(tmp_path):
+    t = _trabajo(tmp_path)
+    cli = FalsaCLI([(True, _log(1000) + "✓ deteccion x_p1: 1 min\n")])
+    cli.fallos_al_parar = 2
+    _orq(cli, tmp_path, t).lanzar()
     assert cli.llamadas[-1] == "stop tfv-x"

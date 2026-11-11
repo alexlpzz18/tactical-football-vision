@@ -421,10 +421,7 @@ class Orquestador:
         tarifa = 0.0
         try:
             if self._drive():
-                logger.info(
-                    "Montando Drive: ACEPTA el permiso en el navegador y pulsa Enter aquí"
-                )
-                self.cli.montar_drive(self.sesion)
+                self._montar_drive()
             self.preparar(commit)
             tarifa = self.cli.saldo().tarifa_hora
             self.informe["tarifa_cu_hora"] = tarifa
@@ -465,9 +462,60 @@ class Orquestador:
                     "La máquina %s SIGUE ENCENDIDA (--mantener)", self.sesion
                 )
             else:
-                self.cli.parar(self.sesion)
+                self._apagar()
                 logger.info("Máquina %s apagada (%.2f h encendida)", self.sesion, horas)
         return self.informe
+
+    def _apagar(self, intentos: int = 5) -> None:
+        """Apaga la máquina, reintentando: un corte de red en este momento la dejaba encendida.
+
+        11-nov: el Mac perdió la red unos minutos, el `stop` se colgó y la L4 siguió gastando hasta
+        apagarla a mano. Se reintenta con esperas crecientes; si aun así no se puede, se avisa a
+        gritos con el comando exacto, porque ya solo queda el interruptor de hombre muerto.
+        """
+        for i in range(1, intentos + 1):
+            try:
+                self.cli.parar(self.sesion)
+                return
+            except ErrorColab as err:
+                logger.warning(
+                    "No se pudo apagar (intento %d/%d): %s", i, intentos, err
+                )
+                self.dormir(30 * i)
+        logger.error(
+            "LA MÁQUINA %s PUEDE SEGUIR ENCENDIDA. Apágala con: "
+            "python scripts/gpu_colab.py parar",
+            self.sesion,
+        )
+
+    def _montar_drive(self, intentos: int = 2) -> bool:
+        """Monta Drive y COMPRUEBA que quedó montado (la CLI sale bien aunque falle).
+
+        11-nov: «mount failed» dentro de la máquina y la CLI siguió como si nada (el Enter llegó
+        después del tiempo de espera de Google). Si tras dos intentos no está, no se para: los
+        vídeos se suben desde el Mac, que es más lento pero no depende de nadie.
+        """
+        for i in range(1, intentos + 1):
+            logger.info(
+                "Montando Drive (%d/%d): ACEPTA el permiso en el navegador y pulsa Enter "
+                "AQUÍ en cuanto lo aceptes (si tardas, Google da el montaje por caducado)",
+                i,
+                intentos,
+            )
+            try:
+                self.cli.montar_drive(self.sesion)
+            except ErrorColab as err:
+                logger.warning("drivemount falló: %s", err)
+            out = self.cli.python(
+                self.sesion,
+                "import os\nprint('MONTADO=' + str(os.path.ismount('/content/drive')))\n",
+            )
+            if "MONTADO=True" in out:
+                logger.info("Drive montado")
+                return True
+        logger.warning("Drive no se montó: los vídeos se subirán desde el Mac")
+        self.cfg = {**self.cfg, "video": {**self.cfg["video"], "origen": "mac"}}
+        return False
 
     def _drive(self) -> bool:
         return (self.cfg.get("video") or {}).get("origen") == "drive"
