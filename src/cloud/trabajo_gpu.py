@@ -327,14 +327,23 @@ class Orquestador:
         return json.loads(salida.strip().splitlines()[-1])
 
     def _bajar_caches(self, parte: Parte) -> None:
+        """Trae los cachés de una parte al Mac, como PAREJA coherente aunque el detector siga.
+
+        El procesador escribe colores primero y detecciones al final (el ancla). Para que la pareja
+        bajada no tenga detecciones POR DELANTE de los colores (frames sin color al reanudar), la
+        foto se toma en orden inverso: primero el ancla, luego los colores, que solo pueden ser
+        iguales o más nuevos. Y se colocan en el orden del procesador: el ancla, la última.
+        """
         r = self._rutas(parte)
-        # colores primero y detecciones al final: el mismo orden que el procesador (el ancla de
-        # la reanudación es el caché de detecciones, que tiene que ser lo último en llegar)
-        for clave in self.t.ficheros:
+        temporales = {}
+        for clave in reversed(self.t.ficheros):  # foto: el ancla primero
             destino = self.t.destino / Path(r[clave]).name
-            tmp = destino.with_suffix(".descargando")
-            self.cli.bajar_grande(self.sesion, r[clave], tmp)  # comprueba la huella
-            tmp.replace(destino)
+            temporales[clave] = destino.with_suffix(".descargando")
+            self.cli.bajar_grande(
+                self.sesion, r[clave], temporales[clave]
+            )  # con huella
+        for clave in self.t.ficheros:  # colocar: el ancla al final
+            temporales[clave].replace(self.t.destino / Path(r[clave]).name)
 
     def _vigilar(self, parte: Parte, ya_gastado_cu: float, tarifa: float) -> None:
         vig = self.cfg["vigilancia"]

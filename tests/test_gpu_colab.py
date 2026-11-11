@@ -539,3 +539,38 @@ def test_trabajo_sin_colores_solo_baja_el_cache(tmp_path):
     _orq(cli, tmp_path, t).lanzar()
     bajadas = [c for c in cli.llamadas if c.startswith("download")]
     assert bajadas == ["download /s/cache_x_p1.pkl"]
+
+
+def test_bajar_grande_compara_con_la_foto_no_con_el_fichero_de_despues(tmp_path):
+    """El detector reescribe el checkpoint mientras se descarga: manda la huella de la FOTO."""
+    trozos = {"/s/c.pkl.trozos/00000": b"abc", "/s/c.pkl.trozos/00001": b"def"}
+    sha_foto = hashlib.sha256(b"abcdef").hexdigest()
+
+    def falso(cmd, input=None, **kw):
+        if "download" in cmd:
+            remoto, local = cmd[-2], cmd[-1]
+            Path(local).write_bytes(trozos[remoto])
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        if input and "h.hexdigest()" in input:
+            return subprocess.CompletedProcess(
+                cmd, 0, f"2 {sha_foto}\n{MARCA_FIN}\n", ""
+            )
+        # cualquier otra consulta vería el fichero YA cambiado: no se puede usar para comparar
+        return subprocess.CompletedProcess(cmd, 0, f"{'0' * 64}\n{MARCA_FIN}\n", "")
+
+    cli = ColabCLI("/bin/colab", "oauth2", falso, dormir=lambda s: None)
+    destino = tmp_path / "c.pkl"
+    cli.bajar_grande("tfv-x", "/s/c.pkl", destino)
+    assert destino.read_bytes() == b"abcdef"
+
+
+def test_pareja_de_caches_se_fotografia_ancla_primero(tmp_path):
+    """Foto del ancla (detecciones) ANTES que los colores: así los colores nunca van por detrás."""
+    t = _trabajo(tmp_path)
+    cli = FalsaCLI([(True, _log(1000) + "✓ deteccion x_p1: 1 min\n")])
+    _orq(cli, tmp_path, t).lanzar()
+    bajadas = [c for c in cli.llamadas if c.startswith("download")]
+    assert bajadas[:2] == ["download /s/cache_x_p1.pkl", "download /s/colores_x_p1.pkl"]
+    assert (t.destino / "cache_x_p1.pkl").exists() and (
+        t.destino / "colores_x_p1.pkl"
+    ).exists()

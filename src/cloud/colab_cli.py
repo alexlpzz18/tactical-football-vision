@@ -236,20 +236,29 @@ class ColabCLI:
         self, sesion: str, remoto: str, local: str | Path,
         trozo_mb: int = TROZO_MB, paralelo: int = PARALELO,
     ) -> None:  # fmt: skip
-        """Lo mismo al revés: se trocea en la máquina, se bajan los trozos y se une en el Mac."""
+        """Lo mismo al revés: se trocea en la máquina, se bajan los trozos y se une en el Mac.
+
+        ⚠️ La huella se calcula sobre los MISMOS bytes que se trocean, en la misma llamada: el
+        fichero remoto puede cambiar mientras se descarga (un checkpoint nuevo del detector) y
+        comparar con el fichero de después daba «la huella no coincide» sobre una descarga buena
+        (11-nov: así se apagó la detección de jugadores a mitad). El checkpoint se escribe con
+        `os.replace`, así que el fichero abierto aquí es una foto fija aunque cambie el nombre.
+        """
         local = Path(local)
         dir_r = f"{remoto}.trozos"
         out = self.python(
             sesion,
-            "import os, shutil\n"
+            "import hashlib, os, shutil\n"
             f"shutil.rmtree({dir_r!r}, ignore_errors=True); os.makedirs({dir_r!r})\n"
-            "n = 0\n"
+            "n = 0; h = hashlib.sha256()\n"
             f"with open({remoto!r}, 'rb') as f:\n"
             f"    while b := f.read({trozo_mb * 1_000_000}):\n"
             f"        open(os.path.join({dir_r!r}, f'{{n:05d}}'), 'wb').write(b); n += 1\n"
-            "print(n)\n",
+            "        h.update(b)\n"
+            "print(n, h.hexdigest())\n",
         )
-        n = int(out.split()[-1])
+        n_txt, sha_foto = out.split()[-2:]
+        n = int(n_txt)
         local.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=local.parent) as tmp:
             nombres = [f"{i:05d}" for i in range(n)]
@@ -262,7 +271,7 @@ class ColabCLI:
                     with open(Path(tmp) / nm, "rb") as f:
                         shutil.copyfileobj(f, salida, 1 << 24)
         self.python(sesion, f"import shutil\nshutil.rmtree({dir_r!r})\n")
-        if self.sha_remoto(sesion, remoto) != sha256(local):
+        if sha_foto != sha256(local):
             raise ErrorColab(f"{local.name}: la huella no coincide tras bajarlo")
 
 
