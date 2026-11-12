@@ -39,6 +39,13 @@ profundidad:
 # bajarlo. Revisa SIEMPRE en el log que los tamaños de A y B queden
 # parecidos.
 entrenamiento:
+  # Ajustar el color SOLO con lo que está DENTRO del campo (12-nov-2026, OK de Alex,
+  # docs/plan_equipos_medias.md). «Cercano» es profundidad, y por delante de la banda cercana
+  # también hay banquillos, entrenadores y público: el 23 % de las detecciones con color en el
+  # alevín B (4 % benjamín, 5 % Villaviciosa). Sin esto el ajuste aprendía «gente de fuera
+  # contra jugadores». Medido: benjamín idéntico, Villaviciosa 22,2 -> 17,5 %, alevín B mejor.
+  solo_dentro_del_campo: true
+  margen_campo_m: 1.0
   solo_cercanos: true
   umbral_profundidad_m: 25.0
   min_features: 300

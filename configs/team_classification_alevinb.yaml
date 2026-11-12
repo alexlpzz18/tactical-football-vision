@@ -152,6 +152,13 @@ staff:
 # Con my<34: A=1242/B=1233 (equilibrio 0.99) y cobertura 0.376 → 0.456.
 # Si hay menos de min_features cercanas, se usa todo (con aviso en log).
 entrenamiento:
+  # Ajustar el color SOLO con lo que está DENTRO del campo (12-nov-2026, OK de Alex,
+  # docs/plan_equipos_medias.md). «Cercano» es profundidad, y por delante de la banda cercana
+  # también hay banquillos, entrenadores y público: el 23 % de las detecciones con color en el
+  # alevín B (4 % benjamín, 5 % Villaviciosa). Sin esto el ajuste aprendía «gente de fuera
+  # contra jugadores». Medido: benjamín idéntico, Villaviciosa 22,2 -> 17,5 %, alevín B mejor.
+  solo_dentro_del_campo: true
+  margen_campo_m: 1.0
   solo_cercanos: true
   umbral_my: 34.0
   min_features: 300
@@ -161,6 +168,14 @@ entrenamiento:
 # esos para el color medio; si no tiene, usar todos. Medido: 0.559 → 0.603
 # de accuracy de campo (un recorte limpio vale más que muchos ruidosos).
 agregacion:
+  # Voto de equipo por VENTANA de 1,5 s, no por identidad entera (12-nov-2026, OK de Alex,
+  # docs/plan_equipos_medias.md). Junto con el ajuste solo dentro del campo, Villaviciosa pasa de
+  # 22,2 % a 17,5 % de equipo equivocado (4,69 -> 4,01 m) y el alevín B de 66 a 73 % en su
+  # mini-GT: una identidad que salta de un jugador a otro en un cruce ya no arrastra a los dos
+  # al mismo equipo. ⚠️ En Villaviciosa el recuento correcto de B por fotograma baja (26 -> 12 %).
+  por_observacion:
+    activo: true
+    ventana_s: 1.5
   # Mínimo de observaciones para poder etiquetar 'otro'. Por debajo se
   # fuerza A/B. El prototipo 'otro' es un imán para las medias ruidosas de
   # identidades cortas: con 1, 7, 14 o 16 observaciones la media de color
