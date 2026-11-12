@@ -48,7 +48,20 @@ Lanzado detrás de los jugadores con el vídeo subido desde el Mac (`--video-des
 permiso por máquina y no iba a haber nadie para darlo. Probado en CPU de punta a punta (12 frames:
 caché completo, `completo: True`).
 
+## Resultado (11-nov, parte 1)
+
+- L4, 2,72 h encendida, ~410 ms/frame, 22.775 frames; la máquina se apagó sola.
+- Candidatas en 10.069 frames (44 %), 13.303 en total. En el tramo del visor (10:00-15:00 del
+  corte), 1.511 de 3.750 frames con alguna.
+- **Marcas fijas**: celdas de 8 px con candidatas en ≥ 20 SEGUNDOS DISTINTOS (p99 de las celdas; la
+  mediana es 1 s, las marcas llegan a 80-152): 21 celdas. El primer criterio (tramo de tiempo > 60 s)
+  marcaba 532 y dejaba 111 frames pintados: borraba el balón real que vuelve a la misma zona.
+- Tras quitar fijas y lo que cae fuera del campo con la lente: **253 frames con balón pintado de
+  3.750** (6,7 %). Sin GT no se sabe cuántos son balón.
+- El caché se pasa a METROS en el Mac (`colab_alevinb_balon.py --fase metros`): los cachés de
+  `data/` van en metros y lo vigila `tests/test_validar_cache_contenido.py`, que lo cazó.
+
 ## Pendiente
 
-- Pasar el caché a metros con la lente y por `tracking_balon` (balón activo, fases aéreas, contactos).
+- Pasar el caché (ya en metros) por `tracking_balon` (balón activo, fases aéreas, contactos).
 - Medir qué es balón: hoja de recortes con la caja de la fila, y la regla «¿se mueve como un balón?».

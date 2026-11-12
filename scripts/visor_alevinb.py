@@ -7,8 +7,8 @@ docs/alevinb_visor.md. Solo DIBUJO: lee el CSV del tracking y el caché de baló
 - Jugadores: el CSV de `gpu_colab.py seguimiento` (imagen original + lente), con su clasificación.
 - Balón PROVISIONAL (no es el `tracking_balon` de producción, que mide el balón con una homografía
   y aquí hay lente): por fotograma, la candidata de más confianza que NO sea fija, llevada a metros
-  con la lente. «Fija» = una celda de 8 px con candidatas repartidas por más de `FIJA_S` segundos
-  de la parte (marcas, conos: no se mueven como un balón). Donde no se detecta, no se pinta.
+  con la lente. «Fija» = una celda de 8 px con candidatas en `FIJA_SEGUNDOS` segundos distintos o
+  más de la parte (marcas, conos: no se mueven como un balón). Donde no se detecta, no se pinta.
 - Vídeo: el tramo recodificado a 1280 px (H.264) para que pese poco; la pizarra sigue al vídeo.
 
 Uso:
@@ -40,7 +40,10 @@ INICIO_CORTE_ARCHIVO_S = (
     300.0  # la p1 empieza en el fotograma clave de 300,0 s del archivo
 )
 CELDA_PX = 8
-FIJA_S = 60.0  # una celda con candidatas repartidas por más de 1 min de la parte: no es el balón
+# «fija» = celda con candidatas en al menos 20 SEGUNDOS DISTINTOS de la parte (p99 de las celdas;
+# la mediana es 1 s y las marcas llegan a 80-152). Medir el TRAMO de tiempo, como al principio,
+# mataba el balón real que vuelve a la misma zona: 532 celdas fijas y 111 frames pintados de 3.750.
+FIJA_SEGUNDOS = 20
 MARGEN_CAMPO_M = 2.0
 LARGO, ANCHO = 100.0, 64.0
 
@@ -54,14 +57,22 @@ def _lente():
     return m
 
 
-def celdas_fijas(cache: list, celda: int = CELDA_PX, fija_s: float = FIJA_S) -> set:
-    """Celdas de píxeles donde aparecen candidatas durante más de `fija_s` (marcas, conos)."""
-    tiempos: dict[tuple, list] = {}
+def celdas_fijas(
+    cache: list, celda: int = CELDA_PX, minimo: int = FIJA_SEGUNDOS
+) -> set:
+    """Celdas de píxeles con candidatas en `minimo` segundos distintos o más (marcas, conos).
+
+    Una marca está ahí todo el partido; el balón pasa unos fotogramas cada vez. Por eso se cuentan
+    SEGUNDOS DISTINTOS, no cuánto tiempo hay entre la primera y la última aparición.
+    """
+    segundos: dict[tuple, set] = {}
     for e in cache:
         for d in e["dets"]:
             cx, cy = (d[2] + d[4]) / 2, (d[3] + d[5]) / 2
-            tiempos.setdefault((int(cx // celda), int(cy // celda)), []).append(e["t"])
-    return {c for c, ts in tiempos.items() if max(ts) - min(ts) > fija_s}
+            segundos.setdefault((int(cx // celda), int(cy // celda)), set()).add(
+                int(e["t"])
+            )
+    return {c for c, ss in segundos.items() if len(ss) >= minimo}
 
 
 def balon_provisional(
@@ -139,6 +150,10 @@ iframe { height: min(82vh, 760px); background: var(--fondo); }
   PROVISIONAL: la detección de más confianza de cada fotograma, sin las marcas fijas; donde no se
   detecta, no se pinta (en esta cámara el balón mide 2-4 px en casi todo el campo). La pizarra sigue
   al vídeo: dale al play o arrastra el vídeo.</p>
+  <p class="nota"><b>⚠️ Colores de equipo NO fiables en este partido:</b> una equipación es clara
+  (blanca/celeste) y la otra oscura, y la feature de color de producción (tono y saturación, sin
+  brillo) no separa el negro de la sombra. Sale ~4 de A y ~15 de B por fotograma, cuando deberían
+  ser ~10 y ~10. Las POSICIONES sí valen; el color de cada ficha, no todavía.</p>
 </header>
 <div class="reloj" id="reloj">--</div>
 <main>

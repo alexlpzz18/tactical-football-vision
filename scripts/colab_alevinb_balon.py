@@ -62,7 +62,9 @@ def config(
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--imagen", choices=["original"], required=True)
-    ap.add_argument("--fase", choices=["deteccion"], default="deteccion")
+    # metros: en el Mac, tras descargar. Los cachés de `data/` van en METROS (lo vigila
+    # tests/test_validar_cache_contenido.py) y la máquina los deja en píxeles del original.
+    ap.add_argument("--fase", choices=["deteccion", "metros"], default="deteccion")
     ap.add_argument("--salida", type=Path, required=True)
     ap.add_argument("--videos", required=True)
     ap.add_argument("--nombres", required=True)
@@ -74,6 +76,19 @@ def main() -> None:
     ap.add_argument("--max-frames", type=int, default=None)
     a = ap.parse_args()
     a.salida.mkdir(parents=True, exist_ok=True)
+    if a.fase == "metros":
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "ca", R / "scripts/colab_alevinb.py"
+        )
+        ca = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ca)
+        for nombre in a.nombres.split(","):
+            # mismo paso que los jugadores: punto de apoyo de la caja → metros con la lente
+            ca.a_metros_con_lente(a.salida / f"cache_{nombre}.pkl")
+            print(f"✓ metros {nombre}", flush=True)
+        return
     for nombre, video in zip(a.nombres.split(","), a.videos.split(",")):
         t0 = time.time()
         ruta = config(a.salida, nombre, Path(video), a.dispositivo, a.max_frames)
