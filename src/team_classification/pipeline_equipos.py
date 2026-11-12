@@ -72,6 +72,46 @@ def formato_del_partido(cfg_equipos: dict | None) -> str:
     return modelo.formato
 
 
+def medias_por_ventana(
+    identidades, colores: dict, ventana_s: float, minimo: int = 3
+) -> dict:
+    """Feature de cada observación = media de las de SU identidad a ±`ventana_s`/2.
+
+    docs/plan_equipos_medias.md. Un recorte suelto de 21-29 px con neblina es ruido (el alevín B: el
+    ajuste sobre recortes sueltos acertaba el 66 % de un mini-GT a ojo; sobre medias de 1,5 s, el
+    89 %). Promediar una docena de recortes del MISMO jugador quita lo que cambia entre recortes
+    (luz, postura, césped) y deja la equipación. La ventana es corta a propósito: una identidad que
+    salta a otra persona en un cruce mezclaría dos equipaciones en una media que no es de nadie.
+
+    Una observación con menos de `minimo` vecinas con feature se queda con la suya (no se pierde).
+    """
+    salida = dict(colores)
+    medio = ventana_s / 2.0
+    for identidad in identidades:
+        obs = [
+            (t, par)
+            for tracklet in identidad
+            for t, par in zip(tracklet.ts, tracklet.det_idxs)
+            if par in colores
+        ]
+        if len(obs) < minimo:
+            continue
+        obs.sort(key=lambda o: o[0])
+        ts = np.array([o[0] for o in obs])
+        vectores = np.array([np.asarray(colores[o[1]], dtype=np.float64) for o in obs])
+        acumulado = np.vstack(
+            [np.zeros(vectores.shape[1]), np.cumsum(vectores, axis=0)]
+        )
+        ini = np.searchsorted(ts, ts - medio, side="left")
+        fin = np.searchsorted(ts, ts + medio, side="right")
+        for n, (_t, par) in enumerate(obs):
+            if fin[n] - ini[n] >= minimo:
+                salida[par] = (acumulado[fin[n]] - acumulado[ini[n]]) / (
+                    fin[n] - ini[n]
+                )
+    return salida
+
+
 def entrenar_clasificador(
     colores: dict,
     cfg_equipos: dict | None = None,
@@ -141,6 +181,43 @@ def entrenar_clasificador(
         logger.info(
             "Fit recortado a t >= %.0f s: %d recortes de %d",
             float(desde_s),
+            len(colores),
+            antes,
+        )
+
+    # ── Ajustar SOLO con lo que está DENTRO del campo (entrenamiento.solo_dentro_del_campo) ──
+    #
+    # docs/plan_equipos_medias.md. «Cercano» es profundidad, y por delante de la banda cercana
+    # también es cercano: banquillos, entrenadores y público pegado a la cámara. En el alevín B
+    # eran el 23 % de TODAS las detecciones con color (4 % en el benjamín, 5 % en Villaviciosa), y
+    # el ajuste aprendía «gente de fuera contra jugadores» en vez de las dos equipaciones. Los
+    # jugadores están dentro del campo: es conocimiento del dominio, no un umbral de un partido.
+    # Apagado por defecto (hoy).
+    if cfg_fit.get("solo_dentro_del_campo", False):
+        if cache is None:
+            raise ValueError(
+                "entrenamiento.solo_dentro_del_campo necesita el caché de detecciones "
+                "para saber dónde está cada recorte"
+            )
+        margen = float(cfg_fit.get("margen_campo_m", 1.0))
+        pos_de = {
+            (e["frame_idx"], k): (d[0], d[1])
+            for e in cache
+            for k, d in enumerate(e["dets"])
+        }
+
+        def _dentro(clave) -> bool:
+            p = pos_de.get(clave)
+            return p is not None and (
+                -margen <= p[0] <= modelo.largo + margen
+                and -margen <= p[1] <= modelo.ancho + margen
+            )
+
+        antes = len(colores)
+        colores = {c: f for c, f in colores.items() if _dentro(c)}
+        logger.info(
+            "Fit solo con recortes DENTRO del campo (margen %.1f m): %d de %d",
+            margen,
             len(colores),
             antes,
         )

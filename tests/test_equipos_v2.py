@@ -153,3 +153,34 @@ def test_colores_para_equipos(tmp_path):
     assert list(salida) == [(1, 0)] and len(salida[(1, 0)]) == 256 + 768
     with pytest.raises(ValueError, match="cache_embeddings"):
         colores_para_equipos(colores, {"rutas": {}}, eq)
+
+
+# ── ajuste sobre medias por ventana (docs/plan_equipos_medias.md) ────
+class _Trozo:
+    def __init__(self, ts, pares):
+        self.ts, self.det_idxs = list(ts), list(pares)
+
+
+def test_medias_por_ventana_promedia_su_ventana_y_no_mezcla_identidades():
+    from src.team_classification.pipeline_equipos import medias_por_ventana
+
+    # identidad 0: 5 observaciones cada 0,4 s con valores 0..4; identidad 1, aparte, con 100
+    a = _Trozo([0.0, 0.4, 0.8, 1.2, 1.6], [(f, 0) for f in range(5)])
+    b = _Trozo([0.0, 0.4, 0.8], [(f, 1) for f in range(3)])
+    colores = {(f, 0): np.array([float(f)]) for f in range(5)}
+    colores.update({(f, 1): np.array([100.0]) for f in range(3)})
+    m = medias_por_ventana([[a], [b]], colores, ventana_s=1.0)
+    # ±0,5 s alrededor de t = 0,8 → t ∈ {0,4; 0,8; 1,2} → media de 1, 2, 3
+    assert m[(2, 0)][0] == 2.0
+    # t = 0: solo {0; 0,4} → 2 < mínimo 3 → se queda con la suya
+    assert m[(0, 0)][0] == 0.0
+    # la otra identidad no contamina
+    assert all(m[(f, 1)][0] == 100.0 for f in range(3))
+
+
+def test_medias_por_ventana_no_pierde_observaciones():
+    from src.team_classification.pipeline_equipos import medias_por_ventana
+
+    colores = {(0, 0): np.array([1.0]), (9, 9): np.array([7.0])}  # (9, 9): de nadie
+    m = medias_por_ventana([[_Trozo([0.0], [(0, 0)])]], colores, ventana_s=1.5)
+    assert set(m) == set(colores)

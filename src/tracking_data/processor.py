@@ -951,6 +951,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         clasificar_identidades,
         entrenar_clasificador,
         etiquetar_por_observacion,
+        medias_por_ventana,
     )
     from src.tracking.cache_io import cargar_cache
     from src.tracking.filtro_confianza import filtrar_por_confianza
@@ -1034,9 +1035,19 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             cfg.get("config_equipos", "configs/team_classification.yaml")
         )
         colores_equipos = colores_para_equipos(colores, cfg, cfg_equipos)
-        clasificador = entrenar_clasificador(
-            colores_equipos, cfg_equipos, datos["cache"]
-        )
+        # AJUSTE SOBRE MEDIAS POR VENTANA (docs/plan_equipos_medias.md), apagado por defecto: el
+        # ajuste necesita las identidades, así que se hace DESPUÉS del tracking. En `bytetrack`
+        # (producción) el tracking no usa el clasificador; con otro perfil sí, y se para.
+        medias_s = (cfg_equipos.get("entrenamiento") or {}).get("medias_por_ventana_s")
+        if medias_s and cfg["tracking"]["perfil"] != "bytetrack":
+            raise ValueError(
+                "entrenamiento.medias_por_ventana_s solo vale con el perfil bytetrack "
+                f"(este usa el clasificador durante el tracking: {cfg['tracking']['perfil']})"
+            )
+        if not medias_s:
+            clasificador = entrenar_clasificador(
+                colores_equipos, cfg_equipos, datos["cache"]
+            )
 
     identidades = correr_perfil(
         datos["cache"],
@@ -1049,6 +1060,18 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         cfg_equipos=cfg_equipos,
         embeddings=embeddings,
     )
+
+    medias_s = (cfg_equipos.get("entrenamiento") or {}).get("medias_por_ventana_s")
+    if medias_s and colores_equipos is not None:
+        colores_equipos = medias_por_ventana(
+            identidades, colores_equipos, float(medias_s)
+        )
+        clasificador = entrenar_clasificador(
+            colores_equipos, cfg_equipos, datos["cache"]
+        )
+        logger.info(
+            "Equipos ajustados sobre medias de %.1f s por identidad", float(medias_s)
+        )
 
     equipos: dict[int, str] = {}
     if clasificador is not None:

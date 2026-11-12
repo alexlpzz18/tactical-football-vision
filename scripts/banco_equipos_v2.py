@@ -113,6 +113,138 @@ def correr_representacion(pata: str, rep: str, peso: float = 1.0) -> Path:
     return csv
 
 
+# Tercer intento (docs/plan_equipos_medias.md): ajuste sobre MEDIAS por ventana de identidad.
+# Las tres patas con su caché v2 (el bloque HS es idéntico al de producción, así que el control
+# «hs, k 8» es el de siempre).
+PATAS_MEDIAS = {
+    "benja": PATAS["benja"],
+    "villa": PATAS["villa"],
+    "alevinb": {
+        **PATAS["alevinb"],
+        "cache_colores": "data/tracking_alevinb/colores_v2_alevinb_p1.pkl",
+    },
+}
+BRAZOS = {
+    "control": {},
+    "M-v2-k2": {
+        "medias": 1.5,
+        "peso_v_pecho": 1.0,
+        "peso_pantalon": 1.0,
+        "k_clusters": 2,
+    },
+    "M-v2-k8": {"medias": 1.5, "peso_v_pecho": 1.0, "peso_pantalon": 1.0},
+    "M-hs-k2": {"medias": 1.5, "k_clusters": 2},
+    # con el VOTO POR VENTANA (agregacion.por_observacion), como en la prueba de premisa: votar por
+    # identidad entera vuelve a mezclar equipos cuando la identidad es una quimera
+    "control-obs": {"obs": True},  # solo el voto por ventana, sin medias ni v2
+    # ajuste solo con lo de DENTRO del campo (fuera: banquillos, público; 23 % en el alevín B)
+    "M-v025-k2-obs-dentro": {
+        "medias": 1.5,
+        "peso_v_pecho": 0.25,
+        "peso_pantalon": 0.25,
+        "k_clusters": 2,
+        "obs": True,
+        "dentro": True,
+    },
+    "M-v05-k2-obs-dentro": {
+        "medias": 1.5,
+        "peso_v_pecho": 0.5,
+        "peso_pantalon": 0.5,
+        "k_clusters": 2,
+        "obs": True,
+        "dentro": True,
+    },
+    "M-v05-k8-obs-dentro": {
+        "medias": 1.5,
+        "peso_v_pecho": 0.5,
+        "peso_pantalon": 0.5,
+        "obs": True,
+        "dentro": True,
+    },
+    "dentro": {"dentro": True},
+    "dentro-obs": {"dentro": True, "obs": True},
+    "M-v2-k2-obs-dentro": {
+        "medias": 1.5,
+        "peso_v_pecho": 1.0,
+        "peso_pantalon": 1.0,
+        "k_clusters": 2,
+        "obs": True,
+        "dentro": True,
+    },
+    "M-v2-k8-obs-dentro": {
+        "medias": 1.5,
+        "peso_v_pecho": 1.0,
+        "peso_pantalon": 1.0,
+        "obs": True,
+        "dentro": True,
+    },
+    "M-v2-k2-obs": {
+        "medias": 1.5,
+        "peso_v_pecho": 1.0,
+        "peso_pantalon": 1.0,
+        "k_clusters": 2,
+        "obs": True,
+    },
+    "M-v2-k2-obs-todos": {
+        "medias": 1.5,
+        "peso_v_pecho": 1.0,
+        "peso_pantalon": 1.0,
+        "k_clusters": 2,
+        "obs": True,
+        "todos": True,
+    },
+    "M-v05-k2-obs": {
+        "medias": 1.5,
+        "peso_v_pecho": 0.5,
+        "peso_pantalon": 0.5,
+        "k_clusters": 2,
+        "obs": True,
+    },
+}
+
+
+def correr_brazo(pata: str, brazo: str) -> Path:
+    """`desde_cache` de producción con los cambios de un brazo del tercer intento."""
+    from src.tracking_data.processor import procesar_desde_cache
+
+    d = PATAS_MEDIAS[pata]
+    cfg = yaml.safe_load(open(R / d["config"]))
+    cfg["modo"] = "desde_cache"
+    for clave in ("cache", "cache_colores", "cache_chaleco"):
+        if clave in d:
+            cfg["rutas"][clave] = str(R / d[clave])
+    eq = copy.deepcopy(
+        yaml.safe_load(
+            open(R / cfg.get("config_equipos", "configs/team_classification.yaml"))
+        )
+    )
+    cambios = dict(BRAZOS[brazo])
+    medias = cambios.pop("medias", None)
+    eq.setdefault("entrenamiento", {})["medias_por_ventana_s"] = medias
+    if cambios.pop("obs", False):
+        po = eq.setdefault("agregacion", {}).setdefault("por_observacion", {})
+        po.update(activo=True, ventana_s=po.get("ventana_s", 1.5))
+    if cambios.pop(
+        "todos", False
+    ):  # el ajuste con TODOS los recortes, no solo los cercanos
+        eq["entrenamiento"]["solo_cercanos"] = False
+    if cambios.pop("dentro", False):  # el ajuste solo con lo que está DENTRO del campo
+        eq["entrenamiento"]["solo_dentro_del_campo"] = True
+    eq.setdefault("clasificador_color", {}).update(cambios)
+    carpeta = SALIDA / pata
+    carpeta.mkdir(parents=True, exist_ok=True)
+    nombre = f"brazo_{brazo}"
+    (carpeta / f"equipos_{nombre}.yaml").write_text(
+        yaml.safe_dump(eq, allow_unicode=True)
+    )
+    cfg["config_equipos"] = str(carpeta / f"equipos_{nombre}.yaml")
+    csv = carpeta / f"posiciones_{nombre}.csv"
+    cfg["rutas"]["salida_csv"] = str(csv)
+    cfg["rutas"]["salida_meta"] = str(carpeta / f"meta_{nombre}.json")
+    procesar_desde_cache(cfg)
+    return csv
+
+
 def correr(pata: str, pv: float, pp: float) -> Path:
     """`desde_cache` de producción con los pesos dados. Devuelve el CSV."""
     from src.tracking_data.processor import procesar_desde_cache
@@ -212,11 +344,30 @@ def main() -> None:
         help="segundo intento: hs embedding hs+embedding (ignora los pesos v2)",
     )
     ap.add_argument("--pesos-embedding", type=float, nargs="+", default=[1.0])
+    ap.add_argument(
+        "--brazos", nargs="+", default=None, help=f"tercer intento: {list(BRAZOS)}"
+    )
     a = ap.parse_args()
     logging.basicConfig(level=logging.WARNING)
     SALIDA.mkdir(parents=True, exist_ok=True)
     ruta = SALIDA / "resultados.json"
     res = json.loads(ruta.read_text()) if ruta.exists() else {}
+    if a.brazos:
+        for brazo in a.brazos:
+            clave = f"brazo_{brazo}"
+            for pata in a.patas:
+                if clave in res.get(pata, {}):
+                    continue
+                csv = correr_brazo(pata, brazo)
+                r = (
+                    medir_sin_gt(csv, *PATAS_MEDIAS[pata]["campo"])
+                    if pata == "alevinb"
+                    else medir_con_gt(pata, csv)
+                )
+                res.setdefault(pata, {})[clave] = r
+                ruta.write_text(json.dumps(res, indent=1, ensure_ascii=False))
+                print(pata, clave, json.dumps(r, ensure_ascii=False), flush=True)
+        return
     if a.representaciones:
         for rep in a.representaciones:
             for w in a.pesos_embedding if rep == "hs+embedding" else [1.0]:

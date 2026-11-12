@@ -28,10 +28,12 @@ sys.path.insert(0, str(R / "scripts"))
 GT = R / "outputs/gt_equipos_alevinb/detecciones_120.csv"
 
 
-def correr_capturando(rep: str, peso: float) -> tuple[Path, list, dict]:
+def correr_capturando(
+    rep: str, peso: float, brazo: str | None = None
+) -> tuple[Path, list, dict]:
     """CSV del brazo + identidades [(frame, j)] + caché filtrado {frame: dets} del tracker."""
     import src.tracking.perfiles as perfiles
-    from banco_equipos_v2 import correr_representacion
+    from banco_equipos_v2 import correr_brazo, correr_representacion
 
     cap = {}
     orig_correr, orig_post = perfiles.correr_perfil, perfiles.postprocesar
@@ -49,7 +51,11 @@ def correr_capturando(rep: str, peso: float) -> tuple[Path, list, dict]:
 
     perfiles.correr_perfil, perfiles.postprocesar = espia_correr, espia_post
     try:
-        csv = correr_representacion("alevinb", rep, peso)
+        csv = (
+            correr_brazo("alevinb", brazo)
+            if brazo
+            else correr_representacion("alevinb", rep, peso)
+        )
     finally:
         perfiles.correr_perfil, perfiles.postprocesar = orig_correr, orig_post
     return csv, cap["identidades"], cap["cache"]
@@ -104,15 +110,19 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--representacion", default="hs")
     ap.add_argument("--peso", type=float, default=1.0)
+    ap.add_argument(
+        "--brazo", default=None, help="brazo del tercer intento (banco_equipos_v2)"
+    )
     a = ap.parse_args()
     import logging
 
     logging.basicConfig(level=logging.ERROR)
-    csv, identidades, cache = correr_capturando(a.representacion, a.peso)
+    csv, identidades, cache = correr_capturando(a.representacion, a.peso, a.brazo)
     r = medir(csv, identidades, cache)
     print(
         json.dumps(
-            {"brazo": f"{a.representacion}_w{a.peso:g}", **r}, ensure_ascii=False
+            {"brazo": a.brazo or f"{a.representacion}_w{a.peso:g}", **r},
+            ensure_ascii=False,
         )
     )
 
