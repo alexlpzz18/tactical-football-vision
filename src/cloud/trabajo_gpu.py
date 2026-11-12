@@ -114,6 +114,9 @@ def cache_completo(ruta: Path) -> bool:
 class Parte:
     nombre: str  # alevinb_p1
     video: Path  # en el Mac
+    # otros ficheros que necesita la parte en la máquina: (en el Mac, nombre en la carpeta de
+    # salida remota). P. ej. el caché de detecciones sobre el que se calculan los embeddings.
+    extras: list[tuple[Path, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -124,7 +127,9 @@ class Trabajo:
     partes: list[Parte]
     script: str  # script del repo que detecta, con `--fase deteccion`
     args: list[str]  # argumentos fijos del script (p. ej. --imagen original)
-    modelo: Path  # pesos del detector en el Mac (no están en el repo)
+    modelo: (
+        Path | None
+    )  # pesos en el Mac (no están en el repo); None si el modelo se descarga
     destino: Path  # carpeta del Mac donde quedan los cachés
     frames_por_parte: dict[str, int] = field(
         default_factory=dict
@@ -221,7 +226,8 @@ class Orquestador:
     # ── 1. antes de encender ──────────────────────────────────────────
     def comprobar_antes(self) -> str:
         faltan = [str(p.video) for p in self.t.partes if not p.video.exists()]
-        if not self.t.modelo.exists():
+        faltan += [str(f) for p in self.t.partes for f, _ in p.extras if not f.exists()]
+        if self.t.modelo is not None and not self.t.modelo.exists():
             faltan.append(str(self.t.modelo))
         if faltan:
             raise TrabajoAbortado(f"Faltan en el Mac: {faltan}")
@@ -262,8 +268,9 @@ class Orquestador:
         self._en_segundo_plano(
             "instalar", f"pip install -q -r {repo['requisitos']}", self.r_repo
         )
-        rel = self.t.modelo.resolve().relative_to(self.raiz.resolve())
-        self._subir_comprobado(self.t.modelo, f"{self.r_repo}/{rel}")
+        if self.t.modelo is not None:
+            rel = self.t.modelo.resolve().relative_to(self.raiz.resolve())
+            self._subir_comprobado(self.t.modelo, f"{self.r_repo}/{rel}")
         self._esperar("instalar", limite_s=1500)
         self._arrancar_vigia()
 
@@ -646,6 +653,8 @@ class Orquestador:
                 r = self._rutas(parte)
                 if not (self._drive() and self._copiar_de_drive(parte, r["video"])):
                     self._subir_comprobado(parte.video, r["video"])
+                for local, nombre in parte.extras:
+                    self._subir_comprobado(local, f"{self.r_salida}/{nombre}")
                 locales = {k: self.t.destino / Path(r[k]).name for k in self.t.ficheros}
                 if all(f.exists() for f in locales.values()):
                     logger.info(

@@ -574,3 +574,16 @@ def test_pareja_de_caches_se_fotografia_ancla_primero(tmp_path):
     assert (t.destino / "cache_x_p1.pkl").exists() and (
         t.destino / "colores_x_p1.pkl"
     ).exists()
+
+
+def test_extras_se_suben_y_sin_modelo_no_se_sube_nada(tmp_path):
+    """Embeddings: cada parte sube su caché de detecciones; DINOv2 se descarga en la máquina."""
+    t = _trabajo(tmp_path)
+    det = tmp_path / "det.pkl"
+    det.write_bytes(b"cajas")
+    t.partes[0].extras = [(det, "det_x_p1.pkl")]
+    t.modelo = None
+    cli = FalsaCLI([(True, _log(1000) + "✓ deteccion x_p1: 1 min\n")])
+    _orq(cli, tmp_path, t).lanzar()
+    assert "upload /s/det_x_p1.pkl" in cli.llamadas
+    assert not any("models/" in c for c in cli.llamadas)

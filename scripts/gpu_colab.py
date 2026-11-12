@@ -65,6 +65,48 @@ def trabajos() -> dict[str, Trabajo]:
             frames_por_parte={"alevinb_p1_balon": 22775, "alevinb_p2_balon": 22850},
             ficheros=("cache",),  # el balón no tiene caché de colores
         ),
+        # EMBEDDINGS DINOv2 de cada detección de producción de las tres patas
+        # (docs/plan_equipos_embeddings.md). DINOv2 se descarga en la máquina: no hay pesos propios.
+        "embeddings_equipos": Trabajo(
+            nombre="embeddings_equipos",
+            partes=[
+                Parte(
+                    "emb_benja",
+                    R / "data/raw/benja_gredos_p1_20min.mp4",
+                    [
+                        (
+                            R / "data/tracking_benja/cache_detecciones_benja.pkl",
+                            "det_emb_benja.pkl",
+                        )
+                    ],
+                ),
+                Parte(
+                    "emb_villa",
+                    R / "data/raw/partido.mp4",
+                    [
+                        (
+                            R / "data/tracking/cache_detecciones_v4pre.pkl",
+                            "det_emb_villa.pkl",
+                        )
+                    ],
+                ),
+                Parte(
+                    "emb_alevinb_p1",
+                    R / "data/raw/alevinb_p1.mp4",
+                    [(destino / "cache_alevinb_p1.pkl", "det_emb_alevinb_p1.pkl")],
+                ),
+            ],
+            script="scripts/colab_embeddings_equipos.py",
+            args=[],
+            modelo=None,
+            destino=R / "data/embeddings_equipos",
+            frames_por_parte={
+                "emb_benja": 600,
+                "emb_villa": 500,
+                "emb_alevinb_p1": 15184,
+            },
+            ficheros=("cache",),
+        ),
     }
 
 

@@ -16,6 +16,7 @@ data/tracking/
 # cachés y CSVs del benjamín (viven en Drive)
 data/tracking_benja/
 data/tracking_alevinb/
+data/embeddings_equipos/
 data/ablacion_1a1/
 data/annotations/
 
