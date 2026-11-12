@@ -78,6 +78,12 @@ class ParametrosClasificadorColor:
     # de B por fotograma); el pantalón separa camisetas iguales con pantalón distinto.
     peso_v_pecho: float = 0.0
     peso_pantalon: float = 0.0
+    # Representación con la que se decide el EQUIPO (docs/plan_equipos_embeddings.md):
+    #   "hs" (hoy) · "embedding" (DINOv2 de cada recorte) · "hs+embedding" (concatenados).
+    # Con embedding, la feature que llega es [HS del pecho (256), embedding]: el processor la monta
+    # desde `rutas.cache_embeddings` solo para equipos; el tracking sigue con el color de siempre.
+    representacion: str = "hs"
+    peso_embedding: float = 1.0
 
     @classmethod
     def desde_dict(cls, d: dict) -> "ParametrosClasificadorColor":
@@ -200,6 +206,8 @@ def _feature_trabajo(feature, params) -> np.ndarray:
 
     f = np.asarray(feature, dtype=np.float64)
     hs = _solo_hs(f)
+    if params.representacion != "hs":
+        return _con_embedding(f, hs, params)
     if not (params.peso_v_pecho or params.peso_pantalon):
         return hs
     if es_v2(f):
@@ -210,6 +218,36 @@ def _feature_trabajo(feature, params) -> np.ndarray:
     vector = np.concatenate(
         [hs, params.peso_v_pecho * v, params.peso_pantalon * pantalon]
     )
+    norma = np.linalg.norm(vector)
+    return vector / norma if norma > 0 else vector
+
+
+def tiene_embedding(feature) -> bool:
+    """¿Trae la feature un embedding detrás del color? (más larga que la v2)."""
+    from src.team_classification.feature_v2 import LONGITUD_V2
+
+    return len(feature) > LONGITUD_V2
+
+
+def _con_embedding(f: np.ndarray, hs: np.ndarray, params) -> np.ndarray:
+    """Feature de trabajo cuando la representación usa el embedding.
+
+    La feature es [HS (256), embedding]. El embedding se normaliza a norma 1 (las distancias en la
+    escala de los umbrales calibrados) y, con "hs+embedding", se concatena al HS con su peso y se
+    vuelve a normalizar.
+    """
+    from src.team_classification.feature_v2 import LONGITUD_V1
+
+    if params.representacion not in ("embedding", "hs+embedding"):
+        raise ValueError(
+            f"clasificador_color.representacion desconocida: {params.representacion}"
+        )
+    emb = f[LONGITUD_V1:]
+    norma = np.linalg.norm(emb)
+    emb = emb / norma if norma > 0 else emb
+    if params.representacion == "embedding":
+        return emb
+    vector = np.concatenate([hs, params.peso_embedding * emb])
     norma = np.linalg.norm(vector)
     return vector / norma if norma > 0 else vector
 
@@ -419,7 +457,10 @@ class TeamClassifierColor:
                 "El clasificador no está entrenado: llama a fit primero."
             )
         pr = self._prototipos
-        if pr.trabajo is not None:
+        # Un vector SIN embedding (p. ej. una media de color del tracking) se decide con los
+        # prototipos de tono y saturación: no se puede comparar con prototipos de embedding.
+        sin_embedding = self.params.representacion != "hs" and not tiene_embedding(feat)
+        if pr.trabajo is not None and not sin_embedding:
             feat = _feature_trabajo(feat, self.params)
             protos = pr.trabajo
         else:  # prototipos de antes del cambio (p. ej. un clasificador serializado)

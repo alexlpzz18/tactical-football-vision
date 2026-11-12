@@ -100,3 +100,56 @@ def test_config_acepta_los_pesos():
         {"peso_v_pecho": 0.5, "peso_pantalon": 0.25}
     )
     assert (p.peso_v_pecho, p.peso_pantalon) == (0.5, 0.25)
+
+
+# ── representación con embedding (docs/plan_equipos_embeddings.md) ───
+def _con_embeddings(n=200, semilla=1):
+    """Dos equipos con el MISMO color HS y embeddings distintos (lo que el HS no ve)."""
+    feats, verdad = _features_blanco_negro(n, semilla)
+    rng = np.random.default_rng(semilla)
+    base = {e: _norm(rng.normal(size=768)) for e in ("blanco", "negro")}
+    emb = np.array([_norm(base[v] + 0.3 * rng.normal(size=768) / 28) for v in verdad])
+    return np.hstack([feats[:, :LONGITUD_V1], emb]), verdad
+
+
+def test_embedding_separa_lo_que_el_color_no():
+    feats, verdad = _con_embeddings()
+    con = TeamClassifierColor(ParametrosClasificadorColor(representacion="embedding"))
+    con.fit_features(feats)
+    assert _acierto(con, feats, verdad) > 0.95
+    sin = TeamClassifierColor(ParametrosClasificadorColor())
+    sin.fit_features(feats)
+    assert _acierto(sin, feats, verdad) < 0.8
+
+
+def test_vector_sin_embedding_se_decide_con_el_color():
+    """El tracking puede pasar una media de COLOR: no puede romper ni compararse con embeddings."""
+    feats, _ = _con_embeddings()
+    clf = TeamClassifierColor(ParametrosClasificadorColor(representacion="embedding"))
+    clf.fit_features(feats)
+    assert clf.predict_color(feats[0][:LONGITUD_V1]) in ("A", "B", "otro")
+    assert len(clf._prototipos.a) == LONGITUD_V1  # árbitro y pizarra, en su escala
+
+
+def test_colores_para_equipos(tmp_path):
+    import pickle
+
+    import pytest
+
+    from src.tracking_data.processor import colores_para_equipos
+
+    colores = {(1, 0): np.ones(256) / 16, (1, 1): np.ones(256) / 16}
+    eq_hs = {"clasificador_color": {"representacion": "hs"}}
+    assert colores_para_equipos(colores, {}, eq_hs) is colores  # hoy: ni se toca
+    ruta = tmp_path / "emb.pkl"
+    pickle.dump(
+        {"claves": [(1, 0)], "embeddings": np.ones((1, 768)), "completo": True},
+        open(ruta, "wb"),
+    )
+    eq = {"clasificador_color": {"representacion": "embedding"}}
+    salida = colores_para_equipos(
+        colores, {"rutas": {"cache_embeddings": str(ruta)}}, eq
+    )
+    assert list(salida) == [(1, 0)] and len(salida[(1, 0)]) == 256 + 768
+    with pytest.raises(ValueError, match="cache_embeddings"):
+        colores_para_equipos(colores, {"rutas": {}}, eq)

@@ -901,6 +901,49 @@ def detectar_y_cachear(cfg: dict) -> tuple[dict, dict]:
     return datos, colores
 
 
+def colores_para_equipos(colores, cfg: dict, cfg_equipos: dict):
+    """Las features que ve la parte de EQUIPOS: el color de siempre o [HS, embedding].
+
+    docs/plan_equipos_embeddings.md. Con `clasificador_color.representacion` distinta de "hs" se
+    lee `rutas.cache_embeddings` (salida de scripts/colab_embeddings_equipos.py, claves
+    `(frame, det)` del MISMO caché de detecciones) y se monta, por detección, el bloque HS del pecho
+    seguido del embedding. Solo para equipos: el tracking (cosido, cortes, reentrada) sigue con el
+    color de siempre, porque meterle el embedding cambiaría la asociación sin pedirlo. Una
+    detección sin embedding se queda fuera de la parte de equipos, como hoy una sin color.
+    """
+    representacion = (cfg_equipos.get("clasificador_color") or {}).get(
+        "representacion", "hs"
+    )
+    if colores is None or representacion == "hs":
+        return colores
+    ruta = (cfg.get("rutas") or {}).get("cache_embeddings")
+    if not ruta or not Path(ruta).exists():
+        raise ValueError(
+            f"clasificador_color.representacion = {representacion!r} necesita "
+            f"rutas.cache_embeddings (no existe: {ruta})"
+        )
+    from src.team_classification.feature_v2 import parte_camiseta_hs
+
+    with open(ruta, "rb") as f:
+        emb = pickle.load(f)
+    if not emb.get("completo", True):
+        raise ValueError(f"{ruta} es un checkpoint a medias, no el caché final")
+    vectores = np.asarray(emb["embeddings"], dtype=np.float32)
+    salida = {}
+    for clave, v in zip(map(tuple, emb["claves"]), vectores):
+        if clave in colores:
+            salida[clave] = np.concatenate(
+                [parte_camiseta_hs(np.asarray(colores[clave])), v]
+            )
+    logger.info(
+        "Equipos con %s: %d de %d detecciones con color tienen embedding",
+        representacion,
+        len(salida),
+        len(colores),
+    )
+    return salida
+
+
 def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     """Modo DESDE-CACHÉ (local, CPU): cachés → tracking → equipos → CSV+meta."""
     from src.team_classification.pipeline_equipos import (
@@ -981,13 +1024,19 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
 
     clasificador = None
     cfg_equipos = {}
+    colores_equipos = (
+        colores  # lo que ve la parte de EQUIPOS (con embedding si se pide)
+    )
     if colores is not None and cfg.get("equipos", {}).get("activo", True):
         # Ruta configurable: cada campo tiene su propia config de equipos
         # (áreas de portería, eje de profundidad, dimensiones).
         cfg_equipos = cargar_config_equipos(
             cfg.get("config_equipos", "configs/team_classification.yaml")
         )
-        clasificador = entrenar_clasificador(colores, cfg_equipos, datos["cache"])
+        colores_equipos = colores_para_equipos(colores, cfg, cfg_equipos)
+        clasificador = entrenar_clasificador(
+            colores_equipos, cfg_equipos, datos["cache"]
+        )
 
     identidades = correr_perfil(
         datos["cache"],
@@ -1004,7 +1053,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     equipos: dict[int, str] = {}
     if clasificador is not None:
         equipos = clasificar_identidades(
-            identidades, colores, clasificador, cfg_equipos
+            identidades, colores_equipos, clasificador, cfg_equipos
         )
     # TOPE DE CARDINALIDAD (docs/diagnostico_22oct_e.md, bloque 1), APAGADO por defecto: las
     # identidades se etiquetan juntas respetando «≤ 7 por equipo y ≤ 1 árbitro» en cada frame.
@@ -1016,7 +1065,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         from src.team_classification.tope_cardinalidad import etiquetar_con_tope
 
         equipos, etiquetas_tope = etiquetar_con_tope(
-            identidades, equipos, colores, clasificador, cfg_equipos, cfg_tope
+            identidades, equipos, colores_equipos, clasificador, cfg_equipos, cfg_tope
         )
 
     # Fase post-clasificación (consolidación + interpolación), compartida
@@ -1058,7 +1107,12 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     else:
         etiquetas_por_obs = (
             etiquetar_por_observacion(
-                identidades, equipos, colores, clasificador, cfg_equipos, ocluidas_obs
+                identidades,
+                equipos,
+                colores_equipos,
+                clasificador,
+                cfg_equipos,
+                ocluidas_obs,
             )
             if clasificador is not None
             else {}
@@ -1097,7 +1151,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             equipos,
             etiquetas_por_obs,
             pista,
-            colores,
+            colores_equipos,
             clasificador,
             params_vit,
         )

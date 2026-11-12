@@ -51,3 +51,47 @@ con él.
 
 Una pasada de GPU corta: ~16.000 fotogramas y ~510.000 recortes en total (el alevín B es casi todo).
 Estimado < 40 min de L4 (< 1,5 CU), con el tope de presupuesto del orquestador.
+
+---
+
+## Resultado (12-nov): NO CUMPLE en el alevín B. Segundo intento cerrado (no se adopta).
+
+Embeddings DINOv2 de las tres patas en una pasada de L4 (1,00 h, ~2 CU), sobre los cachés de
+detecciones de PRODUCCIÓN. Control: `representacion: hs` reproduce producción en el benjamín
+(1,245 % sobre 723).
+
+| brazo | benjamín: eq. mal · centroide | Villaviciosa (producción): eq. mal · centroide | alevín B: equilibrio · mini-GT a ojo |
+|---|---|---|---|
+| hs (hoy) | 1,2 % · 0,47 m | 23,6 % · 4,37 m | 0,25 · 65,8 % |
+| embedding | **29,9 %** · 3,70 m (361 casadas) | 18,8 % · 3,77 m | 0,12 · 64,6 % |
+| hs+embedding 0,5 | 1,2 % · 0,47 m | 24,1 % · 4,09 m | 0,00 · — |
+| hs+embedding 1 | 1,7 % · 0,49 m | **15,8 % · 3,30 m** | 0,00 · 55,7 % |
+| hs+embedding 2 | 29,9 % · 3,70 m | 15,5 % · 4,80 m | 0,00 · — |
+
+- **Benjamín y Villaviciosa con `hs+embedding 1` cumplen** sus criterios (benjamín justo: +0,4 y
+  −1,7 puntos; Villaviciosa, mucho mejor). **El alevín B no**: ningún brazo pasa del 66 % en el
+  mini-GT, que es casi lo que da «todos al mismo equipo» (62 % son blancos). Sin las tres, no se
+  adopta (criterio 5).
+- El embedding solo separa otra cosa en el benjamín (la mitad de los jugadores a `otro`): el riesgo
+  del criterio 6 (postura, tamaño, fondo).
+
+### Mini-GT del alevín B (nuevo, reutilizable)
+
+`outputs/gt_equipos_alevinb/detecciones_120.csv`: 120 detecciones al azar del tramo 10-15 min, 40
+por franja de profundidad, etiquetadas a ojo ANTES de ver ningún brazo (49 blancos, 30 verdes, 6
+árbitro, 4 portero, 31 dudosas). Indexado por caja y frame. Se mide con
+`scripts/medir_gt_equipos_alevinb.py`, que lee la etiqueta de la fila de ESA detección.
+
+### Comprobación de premisa para la tercera vía: CON ETIQUETAS, sí se separan
+
+Regresión logística sobre los 79 jugadores claros del mini-GT, por recorte suelto:
+
+| features | 5 particiones (~63 de entreno) | 10 etiquetas por equipo (50 repeticiones) |
+|---|---|---|
+| HS (hoy) | 76 % | 70 % |
+| DINOv2 | 84 % | 76 % |
+| DINOv2 + v2 (brillo y pantalón) | 90 % | 87 % (p10 81 %) |
+
+La información está en las features: lo que falla es el agrupado SIN etiquetas, que encuentra otro
+eje (luz, postura). Con unas pocas etiquetas por partido, y el voto por ventana que ya hace el
+sistema, la tercera vía tiene base medida.

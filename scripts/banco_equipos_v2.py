@@ -56,6 +56,63 @@ PATAS = {
 }
 
 
+# Segundo intento (docs/plan_equipos_embeddings.md): cachés de PRODUCCIÓN de cada pata y los
+# embeddings DINOv2 calculados sobre esas mismas detecciones (scripts/colab_embeddings_equipos.py).
+EMB = "data/embeddings_equipos"
+PATAS_EMB = {
+    "benja": {
+        **PATAS["benja"],
+        "cache_embeddings": f"{EMB}/cache_emb_benja.pkl",
+    },
+    "villa": {
+        **{
+            k: v
+            for k, v in PATAS["villa"].items()
+            if k not in ("cache", "cache_colores")
+        },
+        "config": "configs/processor.yaml",  # producción: cache_detecciones_v4pre + colores v4pre
+        "cache_embeddings": f"{EMB}/cache_emb_villa.pkl",
+    },
+    "alevinb": {
+        "config": "data/tracking_alevinb/config_alevinb_p1.yaml",  # colores v1 de producción
+        "campo": (100.0, 64.0),
+        "cache_embeddings": f"{EMB}/cache_emb_alevinb_p1.pkl",
+    },
+}
+
+
+def correr_representacion(pata: str, rep: str, peso: float = 1.0) -> Path:
+    """`desde_cache` de producción con `clasificador_color.representacion = rep`."""
+    from src.tracking_data.processor import procesar_desde_cache
+
+    d = PATAS_EMB[pata]
+    cfg = yaml.safe_load(open(R / d["config"]))
+    cfg["modo"] = "desde_cache"
+    for clave in ("cache", "cache_colores", "cache_chaleco", "cache_embeddings"):
+        if clave in d:
+            cfg["rutas"][clave] = str(R / d[clave])
+    eq = copy.deepcopy(
+        yaml.safe_load(
+            open(R / cfg.get("config_equipos", "configs/team_classification.yaml"))
+        )
+    )
+    eq.setdefault("clasificador_color", {}).update(
+        representacion=rep, peso_embedding=peso
+    )
+    carpeta = SALIDA / pata
+    carpeta.mkdir(parents=True, exist_ok=True)
+    nombre = f"rep_{rep}_w{peso:g}"
+    (carpeta / f"equipos_{nombre}.yaml").write_text(
+        yaml.safe_dump(eq, allow_unicode=True)
+    )
+    cfg["config_equipos"] = str(carpeta / f"equipos_{nombre}.yaml")
+    csv = carpeta / f"posiciones_{nombre}.csv"
+    cfg["rutas"]["salida_csv"] = str(csv)
+    cfg["rutas"]["salida_meta"] = str(carpeta / f"meta_{nombre}.json")
+    procesar_desde_cache(cfg)
+    return csv
+
+
 def correr(pata: str, pv: float, pp: float) -> Path:
     """`desde_cache` de producción con los pesos dados. Devuelve el CSV."""
     from src.tracking_data.processor import procesar_desde_cache
@@ -148,11 +205,37 @@ def main() -> None:
     ap.add_argument("--pesos-v", type=float, nargs="+", default=[0, 0.25, 0.5, 1])
     ap.add_argument("--pesos-pantalon", type=float, nargs="+", default=[0, 0.5])
     ap.add_argument("--patas", nargs="+", default=list(PATAS))
+    ap.add_argument(
+        "--representaciones",
+        nargs="+",
+        default=None,
+        help="segundo intento: hs embedding hs+embedding (ignora los pesos v2)",
+    )
+    ap.add_argument("--pesos-embedding", type=float, nargs="+", default=[1.0])
     a = ap.parse_args()
     logging.basicConfig(level=logging.WARNING)
     SALIDA.mkdir(parents=True, exist_ok=True)
     ruta = SALIDA / "resultados.json"
     res = json.loads(ruta.read_text()) if ruta.exists() else {}
+    if a.representaciones:
+        for rep in a.representaciones:
+            for w in a.pesos_embedding if rep == "hs+embedding" else [1.0]:
+                clave = f"rep_{rep}_w{w:g}"
+                for pata in a.patas:
+                    if clave in res.get(pata, {}):
+                        continue
+                    csv = SALIDA / pata / f"posiciones_{clave}.csv"
+                    if not csv.exists():
+                        csv = correr_representacion(pata, rep, w)
+                    r = (
+                        medir_sin_gt(csv, *PATAS_EMB[pata]["campo"])
+                        if pata == "alevinb"
+                        else medir_con_gt(pata, csv)
+                    )
+                    res.setdefault(pata, {})[clave] = r
+                    ruta.write_text(json.dumps(res, indent=1, ensure_ascii=False))
+                    print(pata, clave, json.dumps(r, ensure_ascii=False), flush=True)
+        return
     for pv in a.pesos_v:
         for pp in a.pesos_pantalon:
             clave = f"v{pv:g}_p{pp:g}"
