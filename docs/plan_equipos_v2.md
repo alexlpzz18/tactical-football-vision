@@ -60,3 +60,46 @@ las oclusiones siguen con el bloque HS (no se tocan). Una feature v1 con pesos >
 
 Si no pasa, el siguiente paso NO es otro umbral: es una representación aprendida (embeddings) o
 etiquetado, y se decide con Alex.
+
+---
+
+## Resultado (12-nov): NO CUMPLE en ninguna pata. Primera vía cerrada.
+
+`scripts/banco_equipos_v2.py` (resultados en `outputs/banco_equipos_v2/resultados.json`). Control:
+con pesos 0 el benjamín da **1,245 % sobre 723** casadas, la cifra de producción (CLAUDE.md).
+
+| pesos (brillo, pantalón) | benjamín: eq. mal · centroide · ambos ok | Villaviciosa: eq. mal · centroide · ambos ok | alevín B: equilibrio 10-15 min |
+|---|---|---|---|
+| 0, 0 (hoy) | 1,2 % · 0,47 m · 52 % | 22,2 % · 4,69 m · 2 % | 0,25 (4 A / 15 B) |
+| 0,25, 0 | 1,2 % · 0,46 m · 52 % | 22,8 % · 4,33 m · 6 % | 0,07 |
+| 0,5, 0 | 2,1 % · 0,49 m · 50 % | 21,7 % · 4,90 m · 1 % | 0,00 |
+| 1, 0 | 1,4 % · 2,39 m · **0 %** (361 casadas) | 26,2 % · 3,84 m · 7 % | 0,00 |
+| 2, 0 | 1,9 % · 2,45 m · **0 %** | 22,7 % · 4,42 m · 6 % | 0,00 |
+| 0, 0,5 | 2,1 % · 0,49 m · 50 % | 22,6 % · 4,66 m · 3 % | — |
+| 0, 1 | 1,9 % · 0,49 m · 50 % | 23,0 % · 5,07 m · 1 % | — |
+
+- **Pantalón**: empeora el benjamín (+0,7-0,8 puntos) y Villaviciosa (centroide hasta 5,1 m). Fuera.
+- **Brillo**: solo 0,25 pasa en el benjamín; en Villaviciosa mejora centroide y recuento pero el
+  equipo equivocado sube +0,6 (criterio ≤ +0,5); desde 1 el benjamín se rompe (la mitad de los
+  jugadores a `otro`: separa por LUZ, que era el riesgo del criterio 6). Y en el alevín B, el caso
+  que motivaba todo, **empeora** a cualquier peso. Sin meseta común ⇒ el parámetro no existe.
+
+### Un fallo de MEDIDA cazado por el camino
+
+`foto_de_estado.medir` busca el mejor emparejamiento A/B para el equipo equivocado, pero el
+CENTROIDE lo calcula suponiendo A del sistema = A del GT. Con brillo 0,5 el fit llamó A al otro
+equipo (lo llama A al grupo más grande) y el centroide salió **10,98 m**: la distancia entre los dos
+equipos, no un fallo. El banco mide ahora con los dos nombres. ⚠️ `foto_de_estado.py` sigue con esa
+suposición y debería corregirse (con A/B estables entre corridas no se nota).
+
+### Lo que de verdad pasa en el alevín B (comprobado mirando recortes)
+
+- Las equipaciones son **blanca con rayas azules** y **VERDE OSCURO** (no negra, como dije).
+- La máscara anti-césped FIJA (H 35-85, S ≥ 40, V ≥ 40) borra gran parte de la camiseta verde
+  pensando que es césped. Es un problema GENERAL: cualquier equipo de verde.
+- Pero arreglar la máscara no basta: con la máscara medida por fotograma (v3,
+  `mascara_posicion`) los dos grupos de un KMeans de 2 siguen MEZCLADOS (hoja de 449 recortes de
+  40 frames). Con la neblina de este vídeo y 21-29 px, el blanco sale verdoso-azulado y el verde
+  apagado: **en un recorte suelto, el histograma HS casi no distingue los dos equipos.**
+- Pista lateral sin explicar: el equilibrio de la línea base sube con el minuto (0,19 → 0,82). Ajustar
+  solo con los minutos 25-35 NO lo arregla (todo a 0): la luz no es la causa principal.

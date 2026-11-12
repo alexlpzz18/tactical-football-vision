@@ -72,6 +72,12 @@ class ParametrosClasificadorColor:
     umbral_max: float = 1.3
     umbral_paso: float = 0.05
     semilla: int = 0
+    # Bloques de la feature v2 que entran en la decisión de EQUIPO (docs/plan_equipos_v2.md). Por
+    # defecto 0: solo tono y saturación del pecho, exactamente lo de siempre. La v1 no tiene brillo
+    # y no distingue una camiseta NEGRA de la sombra ni del blanco (alevín B, 11-nov: 4 de A y 15
+    # de B por fotograma); el pantalón separa camisetas iguales con pantalón distinto.
+    peso_v_pecho: float = 0.0
+    peso_pantalon: float = 0.0
 
     @classmethod
     def desde_dict(cls, d: dict) -> "ParametrosClasificadorColor":
@@ -89,6 +95,10 @@ class _Prototipos:
     a: np.ndarray
     b: np.ndarray
     otro: np.ndarray | None = None
+    # Los mismos tres grupos en el espacio de TRABAJO (con brillo y pantalón si hay pesos). Los de
+    # arriba se quedan en tono y saturación porque el árbitro, el cosido y los colores de la
+    # pizarra los comparan en esa escala; con pesos 0 los dos juegos son el mismo.
+    trabajo: dict | None = None
     etiquetas: list[str] = field(default_factory=lambda: ["A", "B", "otro"])
 
 
@@ -172,6 +182,38 @@ def _solo_hs(feature):
     return parte_camiseta_hs(np.asarray(feature))
 
 
+def _feature_trabajo(feature, params) -> np.ndarray:
+    """La feature con la que se decide el EQUIPO: HS del pecho y, si hay pesos, brillo y pantalón.
+
+    `[HS_pecho, peso_v · V_pecho, peso_p · HS_pantalón]` renormalizado a norma 1: cada bloque ya
+    viene normalizado, y sin renormalizar las distancias cambiarían de escala y los umbrales
+    calibrados (fusión 0,5-1,3) dejarían de significar lo que dicen. Con los dos pesos a 0 devuelve
+    el bloque HS tal cual, bit a bit lo de siempre. Una feature v1 (sin bloques nuevos) entra con
+    ceros en ellos, para que todas tengan la misma longitud.
+    """
+    from src.team_classification.feature_v2 import (
+        LONGITUD_HS_PANTALON,
+        LONGITUD_V1,
+        LONGITUD_V_PECHO,
+        es_v2,
+    )
+
+    f = np.asarray(feature, dtype=np.float64)
+    hs = _solo_hs(f)
+    if not (params.peso_v_pecho or params.peso_pantalon):
+        return hs
+    if es_v2(f):
+        ini_v, fin_v = LONGITUD_V1, LONGITUD_V1 + LONGITUD_V_PECHO
+        v, pantalon = f[ini_v:fin_v], f[fin_v:]
+    else:
+        v, pantalon = np.zeros(LONGITUD_V_PECHO), np.zeros(LONGITUD_HS_PANTALON)
+    vector = np.concatenate(
+        [hs, params.peso_v_pecho * v, params.peso_pantalon * pantalon]
+    )
+    norma = np.linalg.norm(vector)
+    return vector / norma if norma > 0 else vector
+
+
 def color_dominante(feature: np.ndarray, params=None) -> tuple[int, int, int]:
     """Color RGB representativo de una feature de torso (histograma HS).
 
@@ -226,7 +268,16 @@ class TeamClassifierColor:
         grandes por tamaño = equipos → prototipos.
         """
         p = self.params
-        features = np.array([_solo_hs(f) for f in np.asarray(features)])
+        crudas = list(features)
+        features = np.array([_solo_hs(f) for f in crudas])
+        trabajo = np.array([_feature_trabajo(f, p) for f in crudas])
+        if (p.peso_v_pecho or p.peso_pantalon) and not any(
+            len(f) > features.shape[1] for f in crudas[:1000]
+        ):
+            logger.warning(
+                "Pesos de brillo/pantalón > 0 pero el caché es v1 (sin esos bloques): se decide "
+                "solo con tono y saturación"
+            )
         if len(features) < p.k_clusters:
             raise ValueError(
                 f"Se necesitan al menos {p.k_clusters} features para entrenar "
@@ -236,7 +287,7 @@ class TeamClassifierColor:
         kmeans = KMeans(
             n_clusters=p.k_clusters, n_init=p.n_init, random_state=p.semilla
         )
-        asignacion = kmeans.fit_predict(features)
+        asignacion = kmeans.fit_predict(trabajo)
 
         # Fusión jerárquica de los CENTROS de los k clusters
         enlaces = linkage(kmeans.cluster_centers_, method="average")
@@ -262,6 +313,13 @@ class TeamClassifierColor:
             a=features[mascara_a].mean(axis=0),
             b=features[mascara_b].mean(axis=0),
             otro=features[mascara_otro].mean(axis=0) if mascara_otro.any() else None,
+            trabajo={
+                "A": trabajo[mascara_a].mean(axis=0),
+                "B": trabajo[mascara_b].mean(axis=0),
+                "otro": (
+                    trabajo[mascara_otro].mean(axis=0) if mascara_otro.any() else None
+                ),
+            },
         )
         logger.info(
             "Clasificador entrenado: umbral fusión=%.2f, tamaños A=%d B=%d otro=%d",
@@ -360,15 +418,20 @@ class TeamClassifierColor:
             raise RuntimeError(
                 "El clasificador no está entrenado: llama a fit primero."
             )
-        feat = _solo_hs(feat)
         pr = self._prototipos
-        candidatos = [("A", pr.a), ("B", pr.b)]
-        if pr.otro is not None and not solo_equipos:
-            candidatos.append(("otro", pr.otro))
+        if pr.trabajo is not None:
+            feat = _feature_trabajo(feat, self.params)
+            protos = pr.trabajo
+        else:  # prototipos de antes del cambio (p. ej. un clasificador serializado)
+            feat = _solo_hs(feat)
+            protos = {"A": pr.a, "B": pr.b, "otro": pr.otro}
+        candidatos = [("A", protos["A"]), ("B", protos["B"])]
+        if protos["otro"] is not None and not solo_equipos:
+            candidatos.append(("otro", protos["otro"]))
         distancias = [np.linalg.norm(feat - proto) for _, proto in candidatos]
         mejor = int(np.argmin(distancias))
         if dist_max is not None:
-            separacion = float(np.linalg.norm(pr.a - pr.b))
+            separacion = float(np.linalg.norm(protos["A"] - protos["B"]))
             if separacion > 0 and distancias[mejor] > dist_max * separacion:
                 return "otro"
         return candidatos[mejor][0]

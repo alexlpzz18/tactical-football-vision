@@ -45,6 +45,11 @@ CELDA_PX = 8
 # mataba el balón real que vuelve a la misma zona: 532 celdas fijas y 111 frames pintados de 3.750.
 FIJA_SEGUNDOS = 20
 MARGEN_CAMPO_M = 2.0
+# La pizarra solo une dos detecciones de balón a < 3 s y tras la última lo quita a los 0,25 s: con
+# balón en el 6,7 % de los frames era un parpadeo invisible. Tras cada detección se MANTIENE
+# este tiempo en su sitio, ATENUADO (ayuda visual: la leyenda lo dice; el dato no cambia).
+MANTENER_BALON_S = 1.5
+MAX_HUECO_PIZARRA_S = 3.0  # el `max_hueco_s` por defecto de generar_replay
 LARGO, ANCHO = 100.0, 64.0
 
 
@@ -99,7 +104,27 @@ def balon_provisional(
                 {"frame": e["frame_idx"], "tiempo_s": e["t"], "id_jugador": -1,
                  "etiqueta": "balon", "x_m": x, "y_m": y, "es_real": 1}
             )  # fmt: skip
-    return pd.DataFrame(filas)
+    return mantener_balon(pd.DataFrame(filas))
+
+
+def mantener_balon(
+    bal: pd.DataFrame, mantener_s: float = MANTENER_BALON_S
+) -> pd.DataFrame:
+    """Añade, tras cada detección aislada, una fila atenuada en el mismo sitio `mantener_s` después.
+
+    Solo donde la pizarra NO va a unir la detección con la siguiente (hueco > 3 s): ahí el balón
+    desaparecía a los 0,25 s. Las filas añadidas llevan `es_real = 0`, y la pizarra atenúa sola lo
+    que no es detección real.
+    """
+    if bal.empty:
+        return bal
+    bal = bal.sort_values("tiempo_s").reset_index(drop=True)
+    siguiente = bal["tiempo_s"].shift(-1)
+    aislada = siguiente.isna() | ((siguiente - bal["tiempo_s"]) > MAX_HUECO_PIZARRA_S)
+    extra = bal[aislada].copy()
+    extra["tiempo_s"] = extra["tiempo_s"] + mantener_s
+    extra["es_real"] = 0
+    return pd.concat([bal, extra], ignore_index=True).sort_values("tiempo_s")
 
 
 def reloj(t: float) -> str:
@@ -147,9 +172,10 @@ iframe { height: min(82vh, 760px); background: var(--fondo); }
 <header>
   <h1>Alevín B · parte 1 · __TRAMO__</h1>
   <p class="nota">Jugadores con su clasificación (A, B, porteros, árbitro y staff en gris). Balón
-  PROVISIONAL: la detección de más confianza de cada fotograma, sin las marcas fijas; donde no se
-  detecta, no se pinta (en esta cámara el balón mide 2-4 px en casi todo el campo). La pizarra sigue
-  al vídeo: dale al play o arrastra el vídeo.</p>
+  PROVISIONAL: la detección de más confianza de cada fotograma, sin las marcas fijas; tras cada
+  detección se mantiene 1,5 s atenuado (ayuda visual) y entre detecciones cercanas se une. Donde no
+  se detecta, no se pinta: en esta cámara el balón mide 2-4 px en casi todo el campo.
+  La pizarra sigue al vídeo: dale al play o arrastra el vídeo.</p>
   <p class="nota"><b>⚠️ Colores de equipo NO fiables en este partido:</b> una equipación es clara
   (blanca/celeste) y la otra oscura, y la feature de color de producción (tono y saturación, sin
   brillo) no separa el negro de la sombra. Sale ~4 de A y ~15 de B por fotograma, cuando deberían
