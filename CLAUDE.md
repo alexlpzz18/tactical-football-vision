@@ -78,6 +78,16 @@ A−B SUBE). El minuto 19 se parece al minuto 6 — no al minuto 1.
 - Staff lento, exclusividad de árbitro, plausibilidad física, checkpoint
   con reanudación en el modo full, atajo de distorsión nula.
 
+**Equipos en cualquier campo (13-nov, rama `alevinb-preparacion`, NO en `main`)**: tres
+interruptores encendidos en los configs de la rama: `entrenamiento.solo_dentro_del_campo` (el fit
+aprendía «gente de fuera contra jugadores»: 23 % de las detecciones del alevín B eran banquillo y
+público), el voto por ventana en las tres patas, y `entrenamiento.seleccion_automatica` (encendido solo en el config del alevín B), que elige
+la feature EN CADA PARTIDO por consistencia física (una persona no cambia de equipo entre
+profundidades distintas; `docs/plan_equipos_consistencia.md`). Benjamín idéntico, Villaviciosa
+22,2 → 17,5 %, alevín B 66 → 80 % en su mini-GT a ojo. La silueta como selector elige AL REVÉS
+(`docs/plan_equipos_seleccion_automatica.md`): una medida interna de partición premia lo compacto,
+no lo acertado. El alevín B necesita el caché de color v2 (`scripts/colores_v2_mac.py`).
+
 **Lo siguiente**: el frente del jugador se cierra aquí. Pasa al **BALÓN**,
 que es lo que falta para el informe (`src/balon/tracking_balon.py` ya
 tiene balón activo, fases aéreas y contactos; falta pasarlo por la parte

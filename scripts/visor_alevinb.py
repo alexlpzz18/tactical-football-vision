@@ -35,6 +35,11 @@ DATOS = R / "data/tracking_alevinb"
 VIDEO = R / "data/raw/alevinb_p1.mp4"
 CAMARA = R / "data/calibracion_alevinb/camara_alevinb.npz"
 SALIDA = R / "outputs/visor_alevinb"
+# Aviso por defecto sobre los colores de equipo (el del CSV de producción, sin selección automática)
+AVISO_EQUIPOS = """<b>⚠️ Colores de equipo NO fiables en este partido:</b> una equipación es clara
+  (blanca/celeste) y la otra oscura, y la feature de color de producción (tono y saturación, sin
+  brillo) no separa el negro de la sombra. Sale ~4 de A y ~15 de B por fotograma, cuando deberían
+  ser ~10 y ~10. Las POSICIONES sí valen; el color de cada ficha, no todavía."""
 INICIO_IMPRESO_S = 9 * 3600 + 25 * 60 + 1  # archivo 0:00 = 09:25:01 del reloj impreso
 INICIO_CORTE_ARCHIVO_S = (
     300.0  # la p1 empieza en el fotograma clave de 300,0 s del archivo
@@ -176,10 +181,7 @@ iframe { height: min(82vh, 760px); background: var(--fondo); }
   detección se mantiene 1,5 s atenuado (ayuda visual) y entre detecciones cercanas se une. Donde no
   se detecta, no se pinta: en esta cámara el balón mide 2-4 px en casi todo el campo.
   La pizarra sigue al vídeo: dale al play o arrastra el vídeo.</p>
-  <p class="nota"><b>⚠️ Colores de equipo NO fiables en este partido:</b> una equipación es clara
-  (blanca/celeste) y la otra oscura, y la feature de color de producción (tono y saturación, sin
-  brillo) no separa el negro de la sombra. Sale ~4 de A y ~15 de B por fotograma, cuando deberían
-  ser ~10 y ~10. Las POSICIONES sí valen; el color de cada ficha, no todavía.</p>
+  <p class="nota">__AVISO_EQUIPOS__</p>
 </header>
 <div class="reloj" id="reloj">--</div>
 <main>
@@ -227,6 +229,9 @@ def main() -> None:
     ap.add_argument("--csv", type=Path, default=DATOS / "posiciones_alevinb_p1.csv")
     ap.add_argument("--balon", type=Path, default=DATOS / "cache_alevinb_p1_balon.pkl")
     ap.add_argument("--salida", type=Path, default=SALIDA)
+    ap.add_argument(
+        "--aviso-equipos", default=AVISO_EQUIPOS, help="nota sobre los colores (HTML)"
+    )
     a = ap.parse_args()
     a.salida.mkdir(parents=True, exist_ok=True)
 
@@ -268,6 +273,7 @@ def main() -> None:
     recortar_video(a.desde, a.hasta, a.salida / "video.mp4")
     pagina = (
         PAGINA.replace("__TRAMO__", f"{reloj(a.desde)} → {reloj(a.hasta)}")
+        .replace("__AVISO_EQUIPOS__", a.aviso_equipos)
         .replace("__VIDEO__", "video.mp4")
         .replace("__PIZARRA__", "pizarra.html")
         .replace("__DESDE__", str(a.desde))

@@ -1039,12 +1039,21 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         # ajuste necesita las identidades, así que se hace DESPUÉS del tracking. En `bytetrack`
         # (producción) el tracking no usa el clasificador; con otro perfil sí, y se para.
         medias_s = (cfg_equipos.get("entrenamiento") or {}).get("medias_por_ventana_s")
-        if medias_s and cfg["tracking"]["perfil"] != "bytetrack":
+        # SELECCIÓN AUTOMÁTICA DE LA FEATURE (docs/plan_equipos_consistencia.md), apagada por
+        # defecto: elegir la feature necesita las identidades, así que también va DESPUÉS.
+        seleccion = bool(
+            (
+                (cfg_equipos.get("entrenamiento") or {}).get("seleccion_automatica")
+                or {}
+            ).get("activo", False)
+        )
+        if (medias_s or seleccion) and cfg["tracking"]["perfil"] != "bytetrack":
             raise ValueError(
-                "entrenamiento.medias_por_ventana_s solo vale con el perfil bytetrack "
-                f"(este usa el clasificador durante el tracking: {cfg['tracking']['perfil']})"
+                "entrenamiento.medias_por_ventana_s y seleccion_automatica solo valen con el "
+                "perfil bytetrack (este usa el clasificador durante el tracking: "
+                f"{cfg['tracking']['perfil']})"
             )
-        if not medias_s:
+        if not (medias_s or seleccion):
             clasificador = entrenar_clasificador(
                 colores_equipos, cfg_equipos, datos["cache"]
             )
@@ -1061,8 +1070,43 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         embeddings=embeddings,
     )
 
+    informe_seleccion = None
+    if (
+        colores_equipos is not None
+        and clasificador is None
+        and (
+            (cfg_equipos.get("entrenamiento") or {}).get("seleccion_automatica") or {}
+        ).get("activo", False)
+    ):
+        from src.team_classification.pipeline_equipos import _profundidad_configurada
+        from src.team_classification.seleccion_feature import elegir_feature
+
+        modelo_campo, eje = _profundidad_configurada(cfg_equipos)
+        margen_campo = float(
+            (cfg_equipos.get("entrenamiento") or {}).get("margen_campo_m", 1.0)
+        )
+
+        def _dentro(p) -> bool:
+            return (
+                -margen_campo <= p[0] <= modelo_campo.largo + margen_campo
+                and -margen_campo <= p[1] <= modelo_campo.ancho + margen_campo
+            )
+
+        cfg_equipos, informe_seleccion = elegir_feature(
+            identidades,
+            colores_equipos,
+            datos["cache"],
+            cfg_equipos,
+            _dentro,
+            lambda p: eje.de(p, modelo_campo),
+        )
+        if not (cfg_equipos.get("entrenamiento") or {}).get("medias_por_ventana_s"):
+            clasificador = entrenar_clasificador(
+                colores_equipos, cfg_equipos, datos["cache"]
+            )
+
     medias_s = (cfg_equipos.get("entrenamiento") or {}).get("medias_por_ventana_s")
-    if medias_s and colores_equipos is not None:
+    if medias_s and colores_equipos is not None and clasificador is None:
         colores_equipos = medias_por_ventana(
             identidades, colores_equipos, float(medias_s)
         )
@@ -1200,6 +1244,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         trayectorias=trayectorias,
         colores_equipo=colores_equipo,
         etiquetas_por_obs=etiquetas_por_obs,
+        informe_seleccion=informe_seleccion,
     )
 
 
@@ -1317,6 +1362,7 @@ def exportar_posiciones(
     trayectorias=None,
     colores_equipo: dict | None = None,
     etiquetas_por_obs: dict | None = None,
+    informe_seleccion: dict | None = None,
 ) -> pd.DataFrame:
     """Escribe el CSV de posiciones y el meta JSON (formato compatible).
 
@@ -1408,6 +1454,8 @@ def exportar_posiciones(
         "etiqueta_interpoladas": modo_interpoladas,
         # Color de camiseta de cada equipo, derivado del clasificador
         "colores_equipo": colores_equipo or {},
+        # Feature elegida para este partido (entrenamiento.seleccion_automatica), o None
+        "seleccion_feature": informe_seleccion,
         "n_identidades": len(identidades),
         "equipos": {
             etiqueta: sum(1 for e in equipos.values() if e == etiqueta)

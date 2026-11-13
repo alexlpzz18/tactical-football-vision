@@ -46,6 +46,14 @@ entrenamiento:
   # contra jugadores». Medido: benjamín idéntico, Villaviciosa 22,2 -> 17,5 %, alevín B mejor.
   solo_dentro_del_campo: true
   margen_campo_m: 1.0
+  # Elegir la feature de equipo EN CADA PARTIDO por consistencia física (12-nov-2026,
+  # docs/plan_equipos_consistencia.md): una persona no cambia de equipo. Si sumar brillo y
+  # pantalón hace a la misma persona más constante entre profundidades distintas, se usan; si no,
+  # tono y saturación como siempre. Benjamín y Villaviciosa: elige la base (resultado idéntico);
+  # alevín B: elige el brillo, 73 -> 80 % en su mini-GT. Necesita un caché de color v2 para poder
+  # elegir la alternativa (con uno v1 las dos opciones son la misma y se queda la base).
+  seleccion_automatica:
+    activo: false  # encendido solo en el alevín B: con perfiles que no son bytetrack no vale
   solo_cercanos: true
   umbral_profundidad_m: 25.0
   min_features: 300

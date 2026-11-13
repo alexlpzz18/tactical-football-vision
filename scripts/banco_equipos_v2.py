@@ -193,6 +193,8 @@ BRAZOS = {
         "obs": True,
         "todos": True,
     },
+    # docs/plan_equipos_consistencia.md: cada partido elige la feature por consistencia física
+    "auto-dentro-obs": {"dentro": True, "obs": True, "auto": True},
     "M-v05-k2-obs": {
         "medias": 1.5,
         "peso_v_pecho": 0.5,
@@ -230,6 +232,8 @@ def correr_brazo(pata: str, brazo: str) -> Path:
         eq["entrenamiento"]["solo_cercanos"] = False
     if cambios.pop("dentro", False):  # el ajuste solo con lo que está DENTRO del campo
         eq["entrenamiento"]["solo_dentro_del_campo"] = True
+    if cambios.pop("auto", False):  # la feature la elige el propio partido
+        eq["entrenamiento"]["seleccion_automatica"] = {"activo": True}
     eq.setdefault("clasificador_color", {}).update(cambios)
     carpeta = SALIDA / pata
     carpeta.mkdir(parents=True, exist_ok=True)
