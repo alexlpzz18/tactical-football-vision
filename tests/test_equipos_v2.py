@@ -184,3 +184,20 @@ def test_medias_por_ventana_no_pierde_observaciones():
     colores = {(0, 0): np.array([1.0]), (9, 9): np.array([7.0])}  # (9, 9): de nadie
     m = medias_por_ventana([[_Trozo([0.0], [(0, 0)])]], colores, ventana_s=1.5)
     assert set(m) == set(colores)
+
+
+def test_secuencia_ab_ignora_la_racha_corta_y_respeta_el_cambio_sostenido():
+    """docs/registro_mision.md, H2."""
+    from src.team_classification.pipeline_equipos import secuencia_ab
+
+    ruido = (
+        [0.3] * 20 + [-0.3] * 4 + [0.3] * 20
+    )  # 4 muestras en contra: no compensa cambiar
+    assert secuencia_ab(ruido, coste_cambio=4.0) == ["A"] * 44
+    cambio = [0.3] * 20 + [
+        -0.3
+    ] * 30  # la identidad pasó a otra persona: cambia, y en el sitio
+    assert secuencia_ab(cambio, coste_cambio=4.0) == ["A"] * 20 + ["B"] * 30
+    # con coste 0 es decidir punto a punto (el comportamiento de siempre)
+    assert secuencia_ab(ruido, coste_cambio=0.0) == ["A"] * 20 + ["B"] * 4 + ["A"] * 20
+    assert secuencia_ab([], 4.0) == []

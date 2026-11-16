@@ -419,6 +419,32 @@ class TeamClassifierColor:
         return salida
 
     # ------------------------------------------------------------- predict
+    def margen_ab(self, feat: np.ndarray) -> float:
+        """Cuánto más cerca está la feature de A que de B, en unidades de la separación A−B.
+
+        Positivo = A, negativo = B; ±1 es «tan lejos como están los dos prototipos entre sí». Es
+        la evidencia continua que `predict_color` reduce a una etiqueta, para quien quiera
+        decidir una SECUENCIA entera (docs/registro_mision.md, H2) en vez de cada punto suelto.
+        """
+        if self._prototipos is None:
+            raise RuntimeError(
+                "El clasificador no está entrenado: llama a fit primero."
+            )
+        pr = self._prototipos
+        sin_embedding = self.params.representacion != "hs" and not tiene_embedding(feat)
+        if pr.trabajo is not None and not sin_embedding:
+            feat = _feature_trabajo(feat, self.params)
+            pa, pb = pr.trabajo["A"], pr.trabajo["B"]
+        else:
+            feat = _solo_hs(feat)
+            pa, pb = pr.a, pr.b
+        separacion = float(np.linalg.norm(pa - pb))
+        if separacion <= 0:
+            return 0.0
+        return float(
+            (np.linalg.norm(feat - pb) - np.linalg.norm(feat - pa)) / separacion
+        )
+
     def predict_color(
         self,
         feat: np.ndarray,

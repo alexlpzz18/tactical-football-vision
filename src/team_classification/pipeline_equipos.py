@@ -639,6 +639,35 @@ def _recortes_para_votar(
     return cerca
 
 
+def secuencia_ab(margenes: list[float], coste_cambio: float) -> list[str]:
+    """La secuencia A/B más creíble para unos márgenes (positivo = A), con un coste por cambio.
+
+    Viterbi de dos estados: maximiza la suma de la evidencia a favor del estado elegido menos
+    `coste_cambio` por cada cambio de equipo. Usa pasado y futuro: una racha corta en contra no
+    cambia la etiqueta; una sostenida sí, y el cambio cae donde la evidencia se da la vuelta.
+    Con `coste_cambio` = 0 es el signo de cada margen (decidir punto a punto).
+    """
+    n = len(margenes)
+    if n == 0:
+        return []
+    m = np.asarray(margenes, dtype=float)
+    # puntuación acumulada de acabar en A (0) o en B (1), y de dónde se viene
+    punt = np.zeros((n, 2))
+    viene = np.zeros((n, 2), dtype=int)
+    punt[0] = (m[0], -m[0])
+    for k in range(1, n):
+        for s, ganancia in ((0, m[k]), (1, -m[k])):
+            quedarse, cambiar = punt[k - 1, s], punt[k - 1, 1 - s] - coste_cambio
+            viene[k, s] = s if quedarse >= cambiar else 1 - s
+            punt[k, s] = max(quedarse, cambiar) + ganancia
+    estado = int(np.argmax(punt[-1]))
+    camino = [estado]
+    for k in range(n - 1, 0, -1):
+        estado = int(viene[k, estado])
+        camino.append(estado)
+    return ["A" if s == 0 else "B" for s in reversed(camino)]
+
+
 def etiquetar_por_observacion(
     identidades,
     equipos: dict[int, str],
@@ -795,8 +824,20 @@ def etiquetar_por_observacion(
                     trozo.append(o)
             return salida
 
+    # ── DECIDIR LA SECUENCIA ENTERA (flag `por_observacion.secuencia`) ──
+    # docs/registro_mision.md, H2. Votar cada ventana por separado hace bailar la etiqueta donde
+    # el recorte es ruido (F11: 122 cambios A↔B por minuto). Con el flag, el A/B de una identidad
+    # se decide para toda su secuencia a la vez: cambia de equipo solo si la evidencia acumulada
+    # después del cambio compensa `coste_cambio`. Apagado por defecto (lo de siempre).
+    cfg_sec = cfg.get("secuencia") or {}
+    secuencia = bool(cfg_sec.get("activo", False)) and hasattr(
+        clasificador, "margen_ab"
+    )
+    coste_cambio = float(cfg_sec.get("coste_cambio", 4.0))
+
     # Fase 1: por cada observación de una identidad A/B, ¿dispara el catálogo? y su A/B.
     por_identidad: dict[int, list[tuple]] = {}
+    margenes_de: dict[int, list[tuple[int, float]]] = {}
     for id_identidad, identidad in enumerate(identidades, start=1):
         etiqueta = str(equipos.get(id_identidad, "otro"))
         es_staff_dentro = staff_dentro and etiqueta == "staff"
@@ -818,6 +859,7 @@ def etiquetar_por_observacion(
             continue
         pares = [(t, p) for t, p, _k in obs]
         decididas = []
+        margenes: list[tuple[int, float]] = []
         for t_actual, par, k_trozo in obs:
             cerca = [
                 (p, colores[p])
@@ -847,7 +889,31 @@ def etiquetar_por_observacion(
                 else clasificador.predict_color(media, solo_equipos=forzar)
             )
             decididas.append((par, k_trozo, dispara, nueva))
+            if secuencia and nueva in ("A", "B"):
+                margenes.append((len(decididas) - 1, clasificador.margen_ab(media)))
+        if secuencia and margenes:
+            margenes_de[id_identidad] = margenes
         por_identidad[id_identidad] = (etiqueta, decididas)
+
+    if secuencia and margenes_de:
+        # CALIBRAR la evidencia antes de decidir (intento 2, docs/registro_mision.md): los
+        # márgenes no son simétricos. En el alevín B la evidencia a favor del blanco es más
+        # grande que la del verde, y sin calibrar la secuencia se tragaba rachas verdes enteras
+        # (verdes etiquetados blanco: 8 → 13 de 30). Cada lado se divide por su mediana, así
+        # «una ventana típica» vale 1 para los dos equipos, y se acota a ±`tope_evidencia`.
+        todos = np.array([m for ms in margenes_de.values() for _i, m in ms])
+        esc_a = float(np.median(todos[todos > 0])) if (todos > 0).any() else 1.0
+        esc_b = float(np.median(-todos[todos < 0])) if (todos < 0).any() else 1.0
+        tope = float(cfg_sec.get("tope_evidencia", 2.0))
+        for id_identidad, margenes in margenes_de.items():
+            _etq, decididas = por_identidad[id_identidad]
+            evidencia = [
+                float(np.clip(m / (esc_a if m > 0 else esc_b), -tope, tope))
+                for _i, m in margenes
+            ]
+            for (i, _m), eq in zip(margenes, secuencia_ab(evidencia, coste_cambio)):
+                par, k_trozo, dispara, _vieja = decididas[i]
+                decididas[i] = (par, k_trozo, dispara, eq)
 
     # Fase 2 (solo con el flag): fracción que dispara por identidad y por trozo.
     permitido = None

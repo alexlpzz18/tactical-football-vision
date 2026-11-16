@@ -1070,6 +1070,21 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         embeddings=embeddings,
     )
 
+    # CORTE DE TELETRANSPORTES (docs/registro_mision.md, H1b), apagado por defecto: una identidad
+    # que salta a otra persona (cambio de nivel imposible) se parte ahí, ANTES de clasificar, para
+    # que cada trozo se etiquete y se suavice por separado.
+    cfg_corte_tp = cfg_tracking.get("corte_teletransporte") or {}
+    n_cortes_tp = None
+    if cfg_corte_tp.get("activo", False):
+        from src.tracking.corte_teletransporte import (
+            ParametrosCorte,
+            cortar_teletransportes,
+        )
+
+        identidades, n_cortes_tp = cortar_teletransportes(
+            identidades, ParametrosCorte.desde_dict(cfg_corte_tp)
+        )
+
     informe_seleccion = None
     if (
         colores_equipos is not None
@@ -1245,6 +1260,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         colores_equipo=colores_equipo,
         etiquetas_por_obs=etiquetas_por_obs,
         informe_seleccion=informe_seleccion,
+        cfg_fichas=cfg_tracking.get("fichas"),
     )
 
 
@@ -1363,6 +1379,7 @@ def exportar_posiciones(
     colores_equipo: dict | None = None,
     etiquetas_por_obs: dict | None = None,
     informe_seleccion: dict | None = None,
+    cfg_fichas: dict | None = None,
 ) -> pd.DataFrame:
     """Escribe el CSV de posiciones y el meta JSON (formato compatible).
 
@@ -1433,6 +1450,28 @@ def exportar_posiciones(
             )
     df = pd.DataFrame(filas).sort_values(["frame", "id_jugador"])
 
+    # ETAPA FINAL DE FICHAS (docs/registro_mision.md, H2' y H3), apagada por defecto: partir una
+    # ficha donde su etiqueta cambia de equipo y re-enlazar dentro de cada equipo. Solo cambia a
+    # qué ficha pertenece cada fila (y rellena el hueco de cada unión con filas interpoladas).
+    informe_fichas = None
+    cfg_fichas = cfg_fichas or {}
+    if len(df) and (cfg_fichas.get("partir_por_equipo") or cfg_fichas.get("reenlace")):
+        from src.tracking.reenlace import (
+            ParametrosReenlace,
+            partir_por_equipo,
+            reenlazar,
+        )
+
+        informe_fichas = {"fichas_antes": int(df.id_jugador.nunique())}
+        if cfg_fichas.get("partir_por_equipo", False):
+            df, informe_fichas["cortes_por_equipo"] = partir_por_equipo(df)
+        cfg_re = cfg_fichas.get("reenlace") or {}
+        if cfg_re.get("activo", False):
+            df, informe_fichas["uniones"] = reenlazar(
+                df, ParametrosReenlace.desde_dict(cfg_re)
+            )
+        informe_fichas["fichas_despues"] = int(df.id_jugador.nunique())
+
     Path(cfg["rutas"]["salida_csv"]).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(cfg["rutas"]["salida_csv"], index=False)
 
@@ -1456,6 +1495,7 @@ def exportar_posiciones(
         "colores_equipo": colores_equipo or {},
         # Feature elegida para este partido (entrenamiento.seleccion_automatica), o None
         "seleccion_feature": informe_seleccion,
+        "fichas": informe_fichas,
         "n_identidades": len(identidades),
         "equipos": {
             etiqueta: sum(1 for e in equipos.values() if e == etiqueta)

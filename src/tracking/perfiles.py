@@ -367,7 +367,17 @@ def postprocesar(
     # y el temblor de la caja simula decenas de m/s). No toca la
     # identidad ni el número de puntos, así que la cobertura no se paga.
     cfg_suave = cfg_tracking.get("suavizado", {})
-    if cfg_suave.get("activo", False):
+    if cfg_suave.get("activo", False) and cfg_suave.get("metodo") == "rts":
+        # RTS con ruido local medido de los datos (docs/registro_mision.md, H1). Interruptor:
+        # `suavizado.metodo: rts`. Con media o savgol, el camino de siempre.
+        from src.tracking.suavizado_rts import ParametrosRTS, suavizar_rts
+
+        trayectorias = suavizar_rts(
+            trayectorias,
+            dict(frames_ts),
+            ParametrosRTS.desde_dict(cfg_suave.get("rts")),
+        )
+    elif cfg_suave.get("activo", False):
         trayectorias = suavizar_trayectorias(
             trayectorias,
             ParametrosSuavizado.desde_dict(cfg_suave),
