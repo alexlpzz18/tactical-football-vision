@@ -117,3 +117,97 @@ y no repetir una ruta cerrada de CLAUDE.md sin un argumento nuevo escrito antes.
   del balón en juego (la hoja de 40 fotos decide si merece la pena etiquetar).
 - **Criterio** (cuando haya etiquetas): detección del balón cerca de la cámara ≥ YOLO actual + 10 puntos y
   balones inventados ≤ los del YOLO actual.
+
+---
+
+## Estado al cortar (19-nov, límite de uso)
+
+- **Hecho y commiteado** (`761082c`): plan, licencias, métodos 1 (EIoU, código propio) y 2 (GTA) tras
+  interruptores, banco con IDF1/fragmentación/intercambios, y la comprobación de identidad con `main`:
+  **idéntica byte a byte** en Villaviciosa, benjamín 60 s y benjamín entero.
+- **Sin commitear todavía** (falta pasar la suite): `scripts/banco_mision.py` (`--configs-de`),
+  `scripts/lit_siglip_equipos.py`, `lit_evaluar_equipos.py`, `lit_pose_suelo.py`, `lit_evaluar_pose.py`,
+  `lit_franjas_lejanas.py`.
+- **Corriendo en segundo plano** (salidas en `outputs/literatura/`): banco de los métodos 1 y 2
+  (`banco/resultados.json`), embeddings SigLIP de las dos ventanas (`siglip/`), pose de las dos ventanas
+  (`pose/`). Control del banco OK: «lo actual» da 27,3 apariciones/min en el tramo 14:00-15:30.
+- **Método 4, chequeo de 3 frames**: corre, pero el CONTROL NO PASA todavía: la variante «produccion» en
+  CPU reproduce solo el 85,9 % de las cajas del caché de producción (hecho en GPU). Hay que entender esa
+  diferencia (¿CPU frente a CUDA, versión de sahi/ultralytics, modelo?) antes de leer nada de recall.
+- **Siguiente**: evaluar SigLIP (`lit_evaluar_equipos.py`) y pose (`lit_evaluar_pose.py`) cuando acaben;
+  leer el banco; resolver el control del método 4; método 6 bloqueado (sin código de entrenamiento oficial
+  ni etiquetas del balón en juego). Correr con `OMP_NUM_THREADS` limitado: con todo a la vez la carga
+  llegó a 182.
+
+## Resultados de los intentos 1 y criterio de los intentos 2 (escrito ANTES de correrlos)
+
+| | benjamín IDF1 · interc. rivales en cruce · equipo mal | alevín A IDF1 · interc. · equipo mal | apariciones/min (tramo 14:00-15:30 · alevín A · alevín B) |
+|---|---|---|---|
+| actual | 0,628 · 20 · 1,245 % | 0,493 · 67 · 23,6 % | 27,3 · 96,2 · 70,4 |
+| EIoU (artículo, e = 0,7 + 0,1) | 0,653 · 27 · 2,22 % | 0,513 · 73 · 24,4 % | 17,3 · 77,1 · 66,8 |
+| GTA (racha 1,5 s, hueco 3 s) | 0,646 · 12 · 1,245 % | 0,502 · 69 · 23,6 % | 27,3 · 58,1 · 99,7 |
+
+- **Método 1, intento 1: NO CUMPLE** (IDF1 +2,5 y +2,0 puntos, pedía +5; los intercambios entre rivales
+  SUBEN). **Intento 2**: la ampliación del código público, w·(2 + 2e) (`eiou.variante: codigo`), con el
+  mismo criterio.
+- **Método 2, intento 1: NO CUMPLE** (apariciones −40 % en el alevín A, sin cambio en el tramo del
+  benjamín y SUBEN en el alevín B). Sí baja mucho el parpadeo de color (benjamín 45 → 9/min). El
+  mini-GT del alevín B no vale con GTA: renumera las fichas y el casado del mini-GT busca por número.
+  **Intento 2**: cortar menos y unir más: racha sostenida de 3 s (en vez de 1,5) y hueco de unión de
+  5 s (en vez de 3), con el mismo criterio.
+
+### Método 3, intento 1: NO CUMPLE (y el porqué)
+
+Punto de suelo = (x de la pelvis, y de los tobillos), sobre las MISMAS detecciones que producción:
+
+| | error mediano contra el GT (cerca · medio · lejos) | temblor de parados (cerca · medio · lejos) | con pose fiable |
+|---|---|---|---|
+| benjamín, producción | 1,23 · 0,38 · 0,59 m | 0,087 · 0,209 · 0,161 m | — |
+| benjamín, pelvis | 1,30 · **1,63 · 2,50 m** | 0,098 · 0,222 · 0,152 m | 86 % |
+| alevín A, producción | 0,41 · 0,76 · 0,74 m | 0,216 · 0,195 · 0,396 m | — |
+| alevín A, pelvis | 1,06 · 1,27 · 0,78 m | 0,220 · 0,280 · 0,480 m | **31 % (lejos: 3,4 %)** |
+
+- No es un fallo del código: los puntos caen donde deben (caderas al 50 % del alto de la caja, tobillos al
+  87 %). Es un SESGO de la definición: el tobillo está un 13 % del alto por encima del borde inferior de
+  la caja (la caja incluye la zapatilla y margen), y proyectarlo pone al jugador metros más lejos.
+- **Y el dato que cierra el F11**: en el tercio lejano del alevín A la pose solo es fiable en el 3,4 % de
+  las detecciones. Justo donde tenía que bajar el temblor, el modelo no ve a jugadores de 15-20 px.
+- **Intento 2 (criterio igual, escrito antes)**: quitar el sesgo vertical. Dos variantes, y vale la mejor:
+  (a) x de la pelvis e y del borde inferior de la caja (solo corrige el lateral); (b) y de los tobillos
+  más el desfase mediano tobillo → borde inferior, medido en la propia pata (en altos de caja).
+
+### Método 3, intento 2: NO CUMPLE. Ruta cerrada (no se repite «fichas por equipo»)
+
+| temblor de parados en el tercio lejano | producción | (a) x pelvis, y borde | (b) y tobillos + desfase (12,5 % del alto) |
+|---|---|---|---|
+| benjamín | 0,161 m | 0,158 m (−2 %) | 0,145 m (−10 %) |
+| alevín A | 0,396 m | 0,396 m (0 %) | 0,468 m (+18 %) |
+
+Error contra el GT: (a) igual que producción en todas las franjas; (b) mejora el fondo del benjamín
+(0,59 → 0,54 m) y empeora las demás. El criterio pedía −30 % de temblor lejano sin empeorar ninguna
+franja: ninguna variante llega. **La causa en el F11 es de cobertura**: la pose solo es fiable en el
+3,4 % de las detecciones lejanas (jugadores de 15-20 px), así que allí casi siempre se cae al punto de
+producción. Como la condición para repetir «fichas por equipo en metros» era que este punto mejorase,
+esa ruta no se reabre.
+
+## Intentos 2 de los métodos 1 y 2: NO CUMPLEN. Rutas cerradas
+
+| | benjamín IDF1 · interc. rivales · equipo mal | alevín A IDF1 · interc. · equipo mal | apariciones/min (tramo · alevín A · alevín B) |
+|---|---|---|---|
+| actual | 0,628 · 20 · 1,245 % | 0,493 · 67 · 23,6 % | 27,3 · 96,2 · 70,4 |
+| EIoU (código, w·(2+2e)) | 0,638 · 25 · 2,47 % | 0,497 · 73 · 25,7 % | 16,0 · 70,1 · 53,0 |
+| GTA 2 (racha 3 s, hueco 5 s) | 0,666 · 15 · 1,245 % | 0,505 · 69 · 23,6 % | 30,0 · 82,1 · 108,8 |
+
+- **EIoU**: ninguna de las dos ampliaciones sube el IDF1 5 puntos ni baja los intercambios entre
+  rivales; las dos EMPEORAN el equipo equivocado del benjamín (1,2 → 2,2-2,5 %). Lo que sí hace es bajar
+  apariciones (menos pistas que mueren), a costa de pegar pistas a la persona equivocada.
+- **GTA**: sube el IDF1 global (benjamín +3,7 puntos) y baja el parpadeo de color (45 → 9-21/min en el
+  benjamín, 123 → 48-83 en el alevín B), pero las apariciones SUBEN: cortar por equipo crea más trozos de
+  los que el agrupamiento une. Su acierto de equipo es por construcción el de «actual» (no cambia
+  etiquetas, solo fichas).
+- **Método 4, control**: con el criterio ya validado (IoU ≥ 0,9), la CPU reproduce el 85,9 % de las cajas
+  del caché de producción (hecho en GPU) en Villaviciosa; en el benjamín, en octubre, fue el 100 %. La
+  diferencia probable es la corrección de lente sobre fotogramas decodificados de otra forma. Por la
+  regla del control, las cifras ABSOLUTAS de la CPU no valen como «producción»; la comparación RELATIVA
+  (las dos variantes por el mismo camino) sí, y se mide así. Corregido además un sesgo de mi script: solo
+  la variante con franjas pasaba por una segunda fusión, y eso le bajaba los falsos positivos.

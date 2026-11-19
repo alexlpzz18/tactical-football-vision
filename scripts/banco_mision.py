@@ -29,6 +29,7 @@ sys.path.insert(0, str(R))
 sys.path.insert(0, str(R / "scripts"))
 
 SALIDA = R / "outputs/banco_mision"
+BASE_CONFIGS = None  # --configs-de
 PATAS = {
     "benja": {
         "config": "configs/processor_benja_v2color.yaml",
@@ -91,8 +92,14 @@ def correr(pata: str, nombre: str, tracking: dict, equipos: dict) -> Path:
     from src.tracking_data.processor import procesar_desde_cache
 
     d = PATAS[pata]
-    cfg = yaml.safe_load(open(R / d["config"]))
+    # Con --configs-de (p. ej. el worktree de main), los YAML de esa carpeta, si existen: así «lo
+    # actual» es el de producción y no el de la rama. Los datos se leen siempre de este data/.
+    raiz = BASE_CONFIGS if BASE_CONFIGS and (BASE_CONFIGS / d["config"]).exists() else R
+    cfg = yaml.safe_load(open(raiz / d["config"]))
     cfg["modo"] = "desde_cache"
+    for k, v in list(cfg["rutas"].items()):
+        if isinstance(v, str) and v.startswith("data/"):
+            cfg["rutas"][k] = str(R / v)
     for clave in ("cache", "cache_colores", "cache_chaleco"):
         if clave in d:
             cfg["rutas"][clave] = str(R / d[clave])
@@ -102,7 +109,7 @@ def correr(pata: str, nombre: str, tracking: dict, equipos: dict) -> Path:
         ("config_tracking", tracking, "configs/tracking.yaml"),
         ("config_equipos", equipos, "configs/team_classification.yaml"),
     ):
-        base = yaml.safe_load(open(R / cfg.get(clave, defecto)))
+        base = yaml.safe_load(open(raiz / cfg.get(clave, defecto)))
         ruta = carpeta / f"{clave}_{nombre}.yaml"
         ruta.write_text(yaml.safe_dump(mezclar(base, cambios), allow_unicode=True))
         cfg[clave] = str(ruta)
@@ -448,11 +455,19 @@ def main() -> None:
         default=None,
         help="carpeta de salida (por defecto la de siempre)",
     )
+    ap.add_argument(
+        "--configs-de",
+        type=Path,
+        default=None,
+        help="raíz de la que leer los YAML (p. ej. main)",
+    )
     a = ap.parse_args()
     logging.basicConfig(level=logging.ERROR)
-    global SALIDA
+    global SALIDA, BASE_CONFIGS
     if a.salida is not None:
         SALIDA = a.salida
+    if a.configs_de is not None:
+        BASE_CONFIGS = a.configs_de
     SALIDA.mkdir(parents=True, exist_ok=True)
     ruta = SALIDA / "resultados.json"
     res = json.loads(ruta.read_text()) if ruta.exists() else {}
