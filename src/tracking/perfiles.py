@@ -202,15 +202,29 @@ def _perfil_bytetrack(
             )
         pr = clasificador._prototipos
         separacion = float(np.linalg.norm(pr.a - pr.b))
-    identidades = asociar_con_bytetrack(
-        cache,
-        fps,
-        sample,
-        ParametrosByteTrack.desde_dict(cfg_tracking.get("bytetrack")),
-        colores=colores,
-        separacion=separacion,
-        params_color=params_color,
-    )
+    asociacion = (cfg_tracking.get("bytetrack") or {}).get("asociacion", "bytetrack")
+    if asociacion == "eiou":
+        # IoU de cajas ampliadas en rondas, sin Kalman (docs/plan_literatura.md, método 1).
+        # Interruptor `bytetrack.asociacion: eiou`; por defecto, ByteTrack.
+        from src.tracking.asociacion_eiou import ParametrosEIoU, asociar_con_eiou
+
+        if params_color.activo:
+            raise ValueError("bytetrack.asociacion: eiou no admite coste_color")
+        identidades = asociar_con_eiou(
+            cache, fps, sample, ParametrosEIoU.desde_dict(cfg_tracking.get("eiou"))
+        )
+    elif asociacion == "bytetrack":
+        identidades = asociar_con_bytetrack(
+            cache,
+            fps,
+            sample,
+            ParametrosByteTrack.desde_dict(cfg_tracking.get("bytetrack")),
+            colores=colores,
+            separacion=separacion,
+            params_color=params_color,
+        )
+    else:
+        raise ValueError(f"bytetrack.asociacion desconocida: {asociacion}")
     # CORTAR EN LOS CRUCES Y REENLAZAR (flag `corte_cruces`, apagado; docs/diagnostico_22oct_g.md,
     # B2): se parte cada pista donde su caja se solapa con otra y se reúne lo que sale del cruce
     # con lo que entró, por movimiento en metros y color de los frames limpios.

@@ -49,6 +49,17 @@ PATAS = {
         "por_equipo": 7,
         "tramo": (300.0, 1200.0),
     },
+    # El benjamín ENTERO con su caché de color de producción (v1); la pizarra se mide en el tramo
+    # 14:00-15:30 del archivo, el de los informes de la pizarra, y el GT cae en su minuto 5.
+    "benja20": {
+        "config": "configs/processor_benja_parte_entera.yaml",
+        "gt": "data/annotations/gt_benja/annotations.xml",
+        "homografia": "data/calibracion_benja/homografia_benja.npy",
+        "offset": 9750,
+        "campo": (62.0, 40.0),
+        "por_equipo": 7,
+        "tramo": (840.0, 930.0),
+    },
     "villa": {
         "config": "configs/processor.yaml",
         "gt": "data/annotations/ground_truth_tracking/annotations.xml",
@@ -308,6 +319,91 @@ def idf1_por_equipo(pata: str, csv: Path) -> dict:
     return mejor
 
 
+def asociacion_gt(
+    pata: str, csv: Path, radio: float = 2.0, cruce_m: float = 2.5
+) -> dict:
+    """Recall, IDF1 global, fragmentación e intercambios de persona contra el GT.
+
+    Casado 1-a-1 a ≤ `radio` en cada frame del GT entre las personas del GT (jugadores de A o B) y
+    las filas reales del sistema etiquetadas como jugador (A, B o porteros). Un INTERCAMBIO es una
+    identidad del sistema que, entre dos casados seguidos, pasa de la persona P a la Q; es «en
+    cruce» si P y Q están a ≤ `cruce_m` en alguno de los dos frames, y «entre rivales» si P y Q son
+    de equipos distintos.
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    from src.evaluation.gt_parser import gt_a_por_frame, parsear_cvat
+
+    d = PATAS[pata]
+    gt_m = gt_a_por_frame(
+        parsear_cvat(R / d["gt"]), np.load(R / d["homografia"]), d["offset"], 15
+    )
+    base = {"A": "A", "portero_A": "A", "B": "B", "portero_B": "B"}
+    df = pd.read_csv(csv)
+    df = df[(df.es_real == 1) & df.etiqueta.isin(list(base)) & df.frame.isin(set(gt_m))]
+    por_frame = {f: g for f, g in df.groupby("frame")}
+    equipo_de, pos_de = {}, {}
+    casados = []  # (frame, persona, ficha)
+    n_gt = 0
+    for f in sorted(gt_m):
+        gente = [o for o in gt_m[f] if base.get(str(o.team)) in ("A", "B")]
+        n_gt += len(gente)
+        for o in gente:
+            equipo_de[o.obj_id] = base[str(o.team)]
+            pos_de[(f, o.obj_id)] = np.asarray(o.pos, dtype=float)
+        g = por_frame.get(f)
+        if g is None or not gente:
+            continue
+        gt = np.array([o.pos for o in gente], dtype=float)
+        sis = g[["x_m", "y_m"]].to_numpy()
+        dist = np.linalg.norm(gt[:, None] - sis[None], axis=2)
+        i, j = linear_sum_assignment(np.where(dist <= radio, dist, 1e6))
+        for a_, b_ in zip(i, j):
+            if dist[a_, b_] <= radio:
+                casados.append((f, gente[a_].obj_id, int(g.id_jugador.iloc[b_])))
+    personas = sorted(equipo_de)
+    fichas = sorted({c[2] for c in casados})
+    W = np.zeros((len(personas), max(len(fichas), 1)))
+    ip = {x: k for k, x in enumerate(personas)}
+    jf = {x: k for k, x in enumerate(fichas)}
+    for _f, per, fi in casados:
+        W[ip[per], jf[fi]] += 1
+    a_, b_ = linear_sum_assignment(-W)
+    idtp = W[a_, b_].sum()
+    por_ficha: dict = {}
+    for f, per, fi in casados:
+        por_ficha.setdefault(fi, []).append((f, per))
+    cambios = {
+        "rivales_en_cruce": 0,
+        "companeros_en_cruce": 0,
+        "rivales": 0,
+        "companeros": 0,
+    }
+    for obs in por_ficha.values():
+        obs.sort()
+        for (f0, p0), (f1, p1) in zip(obs[:-1], obs[1:]):
+            if p0 == p1:
+                continue
+            tipo = "rivales" if equipo_de[p0] != equipo_de[p1] else "companeros"
+            cambios[tipo] += 1
+            cerca = [
+                np.linalg.norm(pos_de[(f, p0)] - pos_de[(f, p1)])
+                for f in (f0, f1)
+                if (f, p0) in pos_de and (f, p1) in pos_de
+            ]
+            if cerca and min(cerca) <= cruce_m:
+                cambios[f"{tipo}_en_cruce"] += 1
+    fichas_por_persona = [
+        len({fi for _f, pe, fi in casados if pe == per}) for per in personas
+    ]
+    return {
+        "recall_pct": round(100 * len(casados) / max(n_gt, 1), 1),
+        "idf1": round(float(2 * idtp / max(n_gt + len(df), 1)), 3),
+        "fichas_por_persona": round(float(np.mean(fichas_por_persona)), 2),
+        "intercambios": cambios,
+    }
+
+
 def medir(pata: str, csv: Path) -> dict:
     import linea_base_mision as lb
 
@@ -331,6 +427,7 @@ def medir(pata: str, csv: Path) -> dict:
         res["posicion"] = error_de_posicion(pata, csv)
         res["episodios"] = episodios_de_error(pata, csv)
         res["idf1_equipo"] = idf1_por_equipo(pata, csv)
+        res["asociacion"] = asociacion_gt(pata, csv)
     return res
 
 
@@ -345,8 +442,17 @@ def main() -> None:
         "--equipos", default="{}", help="cambios (JSON) sobre la config de equipos"
     )
     ap.add_argument("--rehacer", action="store_true")
+    ap.add_argument(
+        "--salida",
+        type=Path,
+        default=None,
+        help="carpeta de salida (por defecto la de siempre)",
+    )
     a = ap.parse_args()
     logging.basicConfig(level=logging.ERROR)
+    global SALIDA
+    if a.salida is not None:
+        SALIDA = a.salida
     SALIDA.mkdir(parents=True, exist_ok=True)
     ruta = SALIDA / "resultados.json"
     res = json.loads(ruta.read_text()) if ruta.exists() else {}
@@ -390,6 +496,7 @@ def main() -> None:
                     "posicion": r.get("posicion"),
                     "episodios": r.get("episodios"),
                     "idf1_equipo": r.get("idf1_equipo"),
+                    "asociacion": r.get("asociacion"),
                 },
                 ensure_ascii=False,
             ),

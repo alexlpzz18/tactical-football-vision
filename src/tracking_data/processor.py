@@ -1455,7 +1455,16 @@ def exportar_posiciones(
     # qué ficha pertenece cada fila (y rellena el hueco de cada unión con filas interpoladas).
     informe_fichas = None
     cfg_fichas = cfg_fichas or {}
-    if len(df) and (cfg_fichas.get("partir_por_equipo") or cfg_fichas.get("reenlace")):
+    cfg_gta = cfg_fichas.get("gta") or {}
+    if len(df) and cfg_gta.get("activo", False):
+        # Postproceso GLOBAL tipo GTA-link (docs/plan_literatura.md, método 2): partir por equipo
+        # sostenido y unir con agrupamiento jerárquico dentro de cada equipo.
+        from src.tracking.gta import ParametrosGTA, postproceso_gta
+
+        df, informe_fichas = postproceso_gta(df, ParametrosGTA.desde_dict(cfg_gta))
+    elif len(df) and (
+        cfg_fichas.get("partir_por_equipo") or cfg_fichas.get("reenlace")
+    ):
         from src.tracking.reenlace import (
             ParametrosReenlace,
             partir_por_equipo,
