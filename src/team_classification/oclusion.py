@@ -72,6 +72,81 @@ def detecciones_ocluidas(
     return ocluidas
 
 
+def torsos_tapados(
+    cache: list[dict],
+    umbral: float = 0.15,
+    torso_alto: tuple[float, float] = (0.12, 0.45),
+    torso_ancho: tuple[float, float] = (0.15, 0.85),
+) -> set[tuple[int, int]]:
+    """{(frame_idx, det_idx)} cuyo TORSO está tapado por otra caja en más de `umbral` de su área.
+
+    docs/plan_parpadeo_torso.md. A diferencia de `detecciones_ocluidas` (IoU de las cajas enteras,
+    la ruta cerrada el 21-sep), aquí se mide la parte del recorte de la que sale el color: la banda
+    del pecho (`torso_alto`, `torso_ancho`, las fracciones del clasificador). Dos cajas que solo se
+    pisan en las piernas no cuentan; un torso tapado por la cabeza de otro, sí. La fracción tapada
+    es la suma de las intersecciones con las otras cajas, acotada a 1.
+    """
+    tapados: set[tuple[int, int]] = set()
+    total = 0
+    for entrada in cache:
+        cajas = np.array([d[2:6] for d in entrada["dets"]], dtype=float).reshape(-1, 4)
+        total += len(cajas)
+        if len(cajas) < 2:
+            continue
+        w = cajas[:, 2] - cajas[:, 0]
+        h = cajas[:, 3] - cajas[:, 1]
+        tx1 = cajas[:, 0] + torso_ancho[0] * w
+        tx2 = cajas[:, 0] + torso_ancho[1] * w
+        ty1 = cajas[:, 1] + torso_alto[0] * h
+        ty2 = cajas[:, 1] + torso_alto[1] * h
+        area = np.maximum((tx2 - tx1) * (ty2 - ty1), 1e-9)
+        ix = np.clip(
+            np.minimum(tx2[:, None], cajas[None, :, 2])
+            - np.maximum(tx1[:, None], cajas[None, :, 0]),
+            0,
+            None,
+        )
+        iy = np.clip(
+            np.minimum(ty2[:, None], cajas[None, :, 3])
+            - np.maximum(ty1[:, None], cajas[None, :, 1]),
+            0,
+            None,
+        )
+        inter = ix * iy
+        np.fill_diagonal(inter, 0.0)
+        frac = np.minimum(inter.sum(axis=1) / area, 1.0)
+        for i in np.flatnonzero(frac > umbral):
+            tapados.add((entrada["frame_idx"], int(i)))
+    logger.info(
+        "Torsos tapados (> %.0f %% del pecho): %d de %d (%.1f %%) — no votan color",
+        100 * umbral,
+        len(tapados),
+        total,
+        100 * len(tapados) / total if total else 0,
+    )
+    return tapados
+
+
+def dilatar_por_identidad(identidades, marcadas: set, n: int) -> set:
+    """Amplía las observaciones marcadas a las `n` anteriores y siguientes de SU identidad.
+
+    Un torso tapado contamina también los fotogramas de justo antes y después del solape (las cajas
+    ya se separan pero el recorte aún coge a la otra persona, o el detector va un paso por detrás).
+    """
+    if n <= 0:
+        return set(marcadas)
+    salida = set(marcadas)
+    for identidad in identidades:
+        obs = sorted(
+            (t, tuple(par)) for tr in identidad for t, par in zip(tr.ts, tr.det_idxs)
+        )
+        pares = [p for _t, p in obs]
+        for k, par in enumerate(pares):
+            if par in marcadas:
+                salida.update(pares[max(0, k - n) : k + n + 1])  # noqa: E203
+    return salida
+
+
 def color_medio_limpio(
     pares_y_colores: list[tuple[tuple[int, int], np.ndarray]],
     ocluidas: set[tuple[int, int]] | None,

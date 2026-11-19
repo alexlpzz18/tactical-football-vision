@@ -234,6 +234,8 @@ NO_PINTAN_POR_OBSERVACION = {
     "observación EN ESE FRAME (la del CSV, no la moda de la identidad): no hay vida que colapsar",
     "scripts/lineas_tacticas.py": "pinta LÍNEAS por equipo calculadas con la etiqueta de cada fila "
     "EN ESE FRAME (no la moda de la identidad); no hay ficha por observación que colapsar",
+    "scripts/superposicion_tactica.py": "pinta sobre el vídeo el CONTORNO y las LÍNEAS de cada "
+    "equipo con la etiqueta de cada fila EN ESE FRAME (no la moda de la identidad); sin fichas",
 }
 
 

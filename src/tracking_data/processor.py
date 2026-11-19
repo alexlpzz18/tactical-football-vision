@@ -1132,6 +1132,23 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             "Equipos ajustados sobre medias de %.1f s por identidad", float(medias_s)
         )
 
+    # INTERCAMBIO DE COLAS ENTRE RIVALES (docs/plan_parpadeo_torso.md), apagado por defecto: dos
+    # identidades rivales que salen de un solape con los colores invertidos cambian sus colas.
+    cfg_colas = (cfg_equipos or {}).get("intercambio_colas") or {}
+    if clasificador is not None and cfg_colas.get("activo", False):
+        from src.team_classification.intercambio_colas import (
+            ParametrosIntercambio,
+            intercambiar_colas,
+        )
+
+        identidades, _n_intercambios = intercambiar_colas(
+            identidades,
+            datos["cache"],
+            colores_equipos,
+            clasificador,
+            ParametrosIntercambio.desde_dict(cfg_colas),
+        )
+
     equipos: dict[int, str] = {}
     if clasificador is not None:
         equipos = clasificar_identidades(
@@ -1179,11 +1196,31 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
     ocluidas_obs = None
     cfg_por_obs = (cfg_equipos or {}).get("agregacion", {}).get("por_observacion", {})
     if cfg_por_obs.get("excluir_ocluidas", False):
-        from src.team_classification.oclusion import detecciones_ocluidas
-
-        ocluidas_obs = detecciones_ocluidas(
-            datos["cache"], iou_max=float(cfg_por_obs.get("ocluidas_iou", 0.10))
+        from src.team_classification.oclusion import (
+            detecciones_ocluidas,
+            dilatar_por_identidad,
+            torsos_tapados,
         )
+
+        # `ocluidas_modo: torso` (docs/plan_parpadeo_torso.md): el solape se mide sobre el PECHO,
+        # que es de donde sale el color, y se amplía a lo largo de la identidad. Por defecto, el IoU
+        # de las cajas enteras de siempre.
+        if cfg_por_obs.get("ocluidas_modo", "iou") == "torso":
+            params_cc = (cfg_equipos or {}).get("clasificador_color", {}) or {}
+            ocluidas_obs = dilatar_por_identidad(
+                identidades,
+                torsos_tapados(
+                    datos["cache"],
+                    umbral=float(cfg_por_obs.get("torso_umbral", 0.15)),
+                    torso_alto=tuple(params_cc.get("torso_alto", (0.12, 0.45))),
+                    torso_ancho=tuple(params_cc.get("torso_ancho", (0.15, 0.85))),
+                ),
+                int(cfg_por_obs.get("dilatar_obs", 3)),
+            )
+        else:
+            ocluidas_obs = detecciones_ocluidas(
+                datos["cache"], iou_max=float(cfg_por_obs.get("ocluidas_iou", 0.10))
+            )
     if tope_activo:
         etiquetas_por_obs = etiquetas_tope  # vacío con `unidad: identidad`
     else:

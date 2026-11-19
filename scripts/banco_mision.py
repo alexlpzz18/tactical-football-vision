@@ -120,6 +120,87 @@ def correr(pata: str, nombre: str, tracking: dict, equipos: dict) -> Path:
     return csv
 
 
+HOJA_120 = R / "outputs/diagnostico_28oct_c/revision_equipo_por_obs_20min_alex.csv"
+CAJAS_120 = R / "outputs/hoja_equipos/cajas_equipo_por_obs_20min.csv"
+
+
+def correr_capturando(pata: str, nombre: str, tracking: dict, equipos: dict):
+    """Como `correr`, pero devuelve también las identidades [(f, j)] y el caché filtrado."""
+    import src.tracking.perfiles as perfiles
+
+    cap = {}
+    orig_correr, orig_post = perfiles.correr_perfil, perfiles.postprocesar
+
+    def espia_correr(cache, *a, **k):
+        cap["cache"] = {e["frame_idx"]: e["dets"] for e in cache}
+        return orig_correr(cache, *a, **k)
+
+    def espia_post(identidades, *a, **k):
+        cap["identidades"] = [
+            [(int(f), int(j)) for tr in ident for (f, j) in tr.det_idxs]
+            for ident in identidades
+        ]
+        return orig_post(identidades, *a, **k)
+
+    perfiles.correr_perfil, perfiles.postprocesar = espia_correr, espia_post
+    try:
+        csv = correr(pata, nombre, tracking, equipos)
+    finally:
+        perfiles.correr_perfil, perfiles.postprocesar = orig_correr, orig_post
+    return csv, cap["identidades"], cap["cache"]
+
+
+def medir_hoja_120(csv: Path, identidades: list, cache: dict) -> dict:
+    """Error de equipo contra las 120 marcas de Alex del benjamín (`equipo_por_obs_20min`).
+
+    La marca se refiere a la CAJA dibujada en la hoja (frame y coordenadas, redondeadas a píxel). Se
+    busca esa detección en el caché, su identidad en ESTA pasada y la etiqueta de su fila. Los dos
+    nombres A/B se prueban y vale el mejor.
+    """
+    marcas = pd.read_csv(HOJA_120)
+    cajas = pd.read_csv(CAJAS_120)
+    m = marcas.merge(
+        cajas[["imagen", "caja", "frame", "x1", "y1", "x2", "y2"]],
+        on=["imagen", "caja"],
+    )
+    m = m[m.equipo_correcto.isin(["A", "B"])]
+    filas = pd.read_csv(csv)
+    etiqueta = {
+        (int(r.frame), int(r.id_jugador)): r.etiqueta for r in filas.itertuples()
+    }
+    id_de = {}
+    for id_jugador, ident in enumerate(identidades, start=1):
+        for f, j in ident:
+            id_de[(f, j)] = id_jugador
+    base = {"A": "A", "portero_A": "A", "B": "B", "portero_B": "B"}
+    pares, sin_fila = [], 0
+    for r in m.itertuples():
+        caja = np.array([r.x1, r.y1, r.x2, r.y2], float)
+        j = next(
+            (
+                i
+                for i, d in enumerate(cache.get(int(r.frame), []))
+                if np.abs(np.array(d[2:6], float) - caja).max() < 1.5
+            ),
+            None,
+        )
+        ident = id_de.get((int(r.frame), j)) if j is not None else None
+        e = base.get(str(etiqueta.get((int(r.frame), ident)))) if ident else None
+        if e is None:
+            sin_fila += 1
+            continue
+        pares.append((r.equipo_correcto, e))
+    if not pares:
+        return {"marcas": len(m), "sin_fila": sin_fila}
+    directo = np.mean([a == b for a, b in pares])
+    return {
+        "marcas": len(m),
+        "con_fila_AB": len(pares),
+        "sin_fila_o_no_AB": sin_fila,
+        "error_pct": round(100 * (1 - max(directo, 1 - directo)), 1),
+    }
+
+
 def correr_con_mini_gt(nombre: str, tracking: dict, equipos: dict) -> tuple[Path, dict]:
     """Alevín B: corre capturando qué detección lleva cada identidad y mide el mini-GT a ojo."""
     import medir_gt_equipos_alevinb as mg
@@ -474,7 +555,13 @@ def main() -> None:
     for pata in a.patas:
         if a.nombre in res.get(pata, {}) and not a.rehacer:
             continue
-        if pata == "alevinb":
+        if pata == "benja20":
+            csv, ids_cap, cache_cap = correr_capturando(
+                pata, a.nombre, json.loads(a.tracking), json.loads(a.equipos)
+            )
+            mini_gt = None
+            hoja = medir_hoja_120(csv, ids_cap, cache_cap)
+        elif pata == "alevinb":
             csv, mini_gt = correr_con_mini_gt(
                 a.nombre, json.loads(a.tracking), json.loads(a.equipos)
             )
@@ -486,6 +573,8 @@ def main() -> None:
         r = medir(pata, csv)
         if mini_gt:
             r["mini_gt"] = mini_gt
+        if pata == "benja20":
+            r["hoja_120"] = hoja
         res = json.loads(ruta.read_text()) if ruta.exists() else {}
         res.setdefault(pata, {})[a.nombre] = r
         ruta.write_text(json.dumps(res, indent=1, ensure_ascii=False))
@@ -512,6 +601,8 @@ def main() -> None:
                     "episodios": r.get("episodios"),
                     "idf1_equipo": r.get("idf1_equipo"),
                     "asociacion": r.get("asociacion"),
+                    "hoja_120": r.get("hoja_120"),
+                    "cambios_color": p["cambios_de_color_por_min"],
                 },
                 ensure_ascii=False,
             ),
