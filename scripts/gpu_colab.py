@@ -107,6 +107,50 @@ def trabajos() -> dict[str, Trabajo]:
             },
             ficheros=("cache",),
         ),
+        # EMBEDDINGS SigLIP del TORSO (docs/plan_siglip_por_partido.md): la misma celda con
+        # `--modelo siglip`. El benjamín, con su caché v2 (cajas idénticas a producción), que es el
+        # que usa el banco.
+        "siglip_equipos": Trabajo(
+            nombre="siglip_equipos",
+            partes=[
+                Parte(
+                    "sig_benja",
+                    R / "data/raw/benja_gredos_p1_20min.mp4",
+                    [
+                        (
+                            R
+                            / "data/tracking_benja/cache_detecciones_benja_v2color.pkl",
+                            "det_sig_benja.pkl",
+                        )
+                    ],
+                ),
+                Parte(
+                    "sig_villa",
+                    R / "data/raw/partido.mp4",
+                    [
+                        (
+                            R / "data/tracking/cache_detecciones_v4pre.pkl",
+                            "det_sig_villa.pkl",
+                        )
+                    ],
+                ),
+                Parte(
+                    "sig_alevinb_p1",
+                    R / "data/raw/alevinb_p1.mp4",
+                    [(destino / "cache_alevinb_p1.pkl", "det_sig_alevinb_p1.pkl")],
+                ),
+            ],
+            script="scripts/colab_embeddings_equipos.py",
+            args=["--modelo", "siglip"],
+            modelo=None,
+            destino=R / "data/embeddings_equipos",
+            frames_por_parte={
+                "sig_benja": 600,
+                "sig_villa": 500,
+                "sig_alevinb_p1": 15184,
+            },
+            ficheros=("cache",),
+        ),
     }
 
 

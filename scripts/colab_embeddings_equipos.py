@@ -34,9 +34,13 @@ R = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(R))
 
 logger = logging.getLogger("emb_equipos")
-MODELO = "facebook/dinov2-base"  # Apache-2.0 (docs/licencias_apariencia.md)
+# Modelos (los dos Apache-2.0). `--modelo siglip` es el método 5 de docs/plan_literatura.md: SigLIP
+# sobre el TORSO (15-60 % del alto, 20-80 % del ancho de la caja), como `lit_siglip_equipos.py`.
+MODELOS = {"dinov2": "facebook/dinov2-base", "siglip": "google/siglip-base-patch16-224"}
+MODELO = MODELOS["dinov2"]
 LADO = 224
 MARGEN = 0.15  # holgura del recorte, la de generar_embeddings.py
+TORSO_ALTO, TORSO_ANCHO = (0.15, 0.60), (0.20, 0.80)
 LOTE = 256
 CHECKPOINT_FRAMES = 2000
 # Lente de cada pata, la de su config de producción (configs/processor*.yaml)
@@ -50,10 +54,21 @@ def distorsion_de(nombre: str) -> tuple[float, float]:
     raise SystemExit(f"No sé qué lente tiene «{nombre}»: añádela a DISTORSION")
 
 
-def recortar(frame, caja):
-    """Recorte cuadrado con holgura, escalado al lado del modelo (RGB)."""
+def recortar(frame, caja, torso: bool = False):
+    """Recorte cuadrado con holgura (o solo el torso), escalado al lado del modelo (RGB)."""
     h, w = frame.shape[:2]
     x1, y1, x2, y2 = caja
+    if torso:
+        cw, ch = x2 - x1, y2 - y1
+        a, b = max(0, int(x1 + TORSO_ANCHO[0] * cw)), max(
+            0, int(y1 + TORSO_ALTO[0] * ch)
+        )
+        c = min(w, int(np.ceil(x1 + TORSO_ANCHO[1] * cw)))
+        d = min(h, int(np.ceil(y1 + TORSO_ALTO[1] * ch)))
+        if c - a < 2 or d - b < 2:
+            return None
+        crop = cv2.resize(frame[b:d, a:c], (LADO, LADO), interpolation=cv2.INTER_CUBIC)
+        return cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
     dx, dy = (x2 - x1) * MARGEN, (y2 - y1) * MARGEN
     x1, y1 = max(0, int(x1 - dx)), max(0, int(y1 - dy))
     x2, y2 = min(w, int(x2 + dx)), min(h, int(y2 + dy))
@@ -70,9 +85,18 @@ def _volcar(ruta: Path, datos: dict) -> None:
     os.replace(tmp, ruta)
 
 
-def embeber_pata(nombre: str, video: Path, salida: Path, dispositivo: str) -> None:
+def embeber_pata(
+    nombre: str,
+    video: Path,
+    salida: Path,
+    dispositivo: str,
+    modelo_nombre: str = "dinov2",
+) -> None:
     import torch
-    from transformers import AutoImageProcessor, AutoModel
+    from transformers import AutoImageProcessor, AutoModel, SiglipVisionModel
+
+    MODELO = MODELOS[modelo_nombre]
+    torso = modelo_nombre == "siglip"
 
     from src.tracking_data.processor import (
         _build_camera_matrix,
@@ -85,7 +109,8 @@ def embeber_pata(nombre: str, video: Path, salida: Path, dispositivo: str) -> No
     proc = AutoImageProcessor.from_pretrained(MODELO)
     media = np.array(proc.image_mean, np.float32)
     desv = np.array(proc.image_std, np.float32)
-    modelo = AutoModel.from_pretrained(MODELO).eval().to(dispositivo)
+    clase = SiglipVisionModel if modelo_nombre == "siglip" else AutoModel
+    modelo = clase.from_pretrained(MODELO).eval().to(dispositivo)
     if dispositivo == "cuda":
         modelo = modelo.half()
 
@@ -147,7 +172,7 @@ def embeber_pata(nombre: str, video: Path, salida: Path, dispositivo: str) -> No
         if idx in por_frame:
             frame = _corregir_distorsion(frame, K, dist)
             for i, d in enumerate(por_frame[idx]):
-                crop = recortar(frame, d[2:6])
+                crop = recortar(frame, d[2:6], torso)
                 if crop is not None:
                     lote_img.append(crop)
                     lote_claves.append((idx, i))
@@ -178,6 +203,7 @@ def main() -> None:
     ap.add_argument("--nombres", required=True)
     ap.add_argument("--sin-chequeo", action="store_true")
     ap.add_argument("--dispositivo", default=None)
+    ap.add_argument("--modelo", choices=list(MODELOS), default="dinov2")
     a = ap.parse_args()
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
@@ -187,7 +213,7 @@ def main() -> None:
     dispositivo = a.dispositivo or ("cuda" if torch.cuda.is_available() else "cpu")
     for nombre, video in zip(a.nombres.split(","), a.videos.split(",")):
         t0 = time.time()
-        embeber_pata(nombre, Path(video), a.salida, dispositivo)
+        embeber_pata(nombre, Path(video), a.salida, dispositivo, a.modelo)
         print(
             f"✓ deteccion {nombre}: {round((time.time() - t0) / 60, 1)} min", flush=True
         )
