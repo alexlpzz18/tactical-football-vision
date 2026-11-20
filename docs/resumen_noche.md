@@ -22,7 +22,7 @@ al de `main` en Villaviciosa, el benjamín de 60 s y el benjamín entero (`scrip
 | 6 | Scripts de GPU de los métodos 3-6 | **preparada** (3 de 4) | probados en CPU con 3 fotogramas: pose (3), franjas (4), SigLIP (5). WASB (6) **bloqueado**: sin código de entrenamiento oficial y sin etiquetas del balón en juego | `docs/celdas_gpu_literatura.md` |
 | — | Método 3 (pelvis con pose), medido en CPU | **hecha, no cumple** (2 intentos) | temblor lejano −10 % en el benjamín y +18 % en el alevín A (pedía −30 %); en el F11 la pose solo es fiable en el 3,4 % de las detecciones lejanas | `docs/plan_literatura.md` |
 | — | Método 5 (SigLIP + UMAP + K-means), medido en CPU | **hecha, no cumple (1 intento)** | **alevín A: error 24,8 → 13,2 %** por recorte (27,0 → 12,6 % con voto); **benjamín: 7,1 → 10,0 %** (empeora) | ídem |
-| — | Método 4 (recortes en la franja lejana), medido en CPU | **PENDIENTE de la medida corregida** | la primera medida era inválida por un fallo mío (cajas sin desplazar al fotograma); se está repitiendo | ídem |
+| — | Método 4 (recortes en la franja lejana), medido en CPU | **hecha, no cumple** (1 intento) | recall de jugadores < 20 px 52,4 → 55,5 % (pedía +15 puntos), falsos positivos +49 % (pedía ≤ +10 %), el doble de inferencias. La primera medida fue inválida por un fallo mío, corregido | ídem |
 
 ## Lo que te toca a ti por la mañana
 

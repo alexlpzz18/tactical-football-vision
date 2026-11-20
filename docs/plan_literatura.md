@@ -236,3 +236,21 @@ cajas en coordenadas del recorte, y no las desplacé al fotograma; las cajas ext
 superior izquierda (fuera del campo: ni casaban ni contaban como falso positivo). Corregido con
 `get_shifted_object_prediction()`; en un frame de control la variante ya añade 2 cajas dentro de la
 banda. El resultado inválido se conserva como `outputs/literatura/franjas/resultado_INVALIDO_sin_desplazar.json`.
+
+## Método 4 (recortes extra en la franja lejana), intento 1 corregido: NO CUMPLE
+
+100 frames del GT del alevín A, en CPU. Control: la CPU reproduce el 83,2 % de las cajas del caché de
+producción (hecho en GPU): las cifras absolutas no son «producción», la comparación entre variantes sí
+(todas por el mismo camino y el mismo postproceso).
+
+| | recall < 20 px (418) | 20-30 px (1.238) | ≥ 30 px (562) | falsos positivos/frame | inferencias/frame |
+|---|---|---|---|---|---|
+| producción (CPU) | 52,4 % | 93,3 % | 99,3 % | 0,39 | 9 |
+| + franja, recortes de 320 px | 55,5 % | 94,3 % | 99,5 % | 0,58 | 19 |
+| + franja, recortes de 240 px | 54,5 % | 94,0 % | 99,3 % | 0,56 | 23 |
+
+Criterio: recall < 20 px +15 puntos con los falsos positivos ≤ +10 %. Sale +3,1 puntos con +49 % de
+falsos positivos y el doble de coste. Ampliar ×2-×3 no basta para un jugador de 15-20 px con este
+detector. Un segundo intento tendría que cambiar algo más que el tamaño del recorte (p. ej. un detector
+entrenado con jugadores pequeños): con recortes aún más pequeños, la red ve trozos de 1-2 jugadores sin
+contexto. No se ha corrido.
