@@ -50,3 +50,12 @@ al de `main` en Villaviciosa, el benjamín de 60 s y el benjamín entero (`scrip
 - `pip install` en el entorno del detector subió numpy y rompía torch; devuelto a numpy 1.26.4 antes de
   seguir. Ese entorno (`~/.venvs/detector-cpu`) tiene ahora también umap-learn 0.5.7, onnxruntime y
   rtmlib.
+
+## Después de la noche (20-nov, tarde): SigLIP elegido por partido
+
+`docs/plan_siglip_por_partido.md`. El selector de consistencia física elige HS en el benjamín y SigLIP en
+el alevín B (2.058 parejas, kappa 0,80 frente a 0,61). **Alevín B, mini-GT: 79,7 → 89,9 %** (91,1 % por
+recorte); benjamín sin cambio (6,1 %). En el alevín A, con solo 60 s, faltan 8 parejas para el mínimo
+fijado y por regla se queda con HS (27,0 %), aunque la señal favorece a SigLIP (que daría 12,6 %).
+Cumple 3 de 4 criterios. **Decisión tuya**: adoptarlo detrás de su interruptor en la rama del alevín B,
+o esperar a la hoja de 300 recortes.
