@@ -162,10 +162,14 @@ def svg_forma(t: pd.DataFrame, largo: float, ancho: float, color: str) -> str:
     lineas = "".join(
         f'<line x1="{x * esc:.0f}" y1="{y0:.0f}" x2="{x * esc:.0f}" y2="{y1:.0f}" '
         f'stroke="{color}" stroke-width="5" stroke-linecap="round"/>'
-        f'<text x="{x * esc + 6:.0f}" y="{y0 - 6:.0f}" class="et">{n}</text>'
-        for x, n in ((d0, "defensa"), (d1, "medio"), (d2, "ataque"))
+        f'<text x="{x * esc:.0f}" y="{yt:.0f}" class="et" text-anchor="middle">{n}</text>'
+        for x, n, yt in (
+            (d0, "defensa", y0 - 6),
+            (d1, "medio", y1 + 16),
+            (d2, "ataque", y0 - 6),
+        )
     )
-    return f"""<svg viewBox="-10 -24 {w + 20:.0f} {h + 34:.0f}" role="img"
+    return f"""<svg viewBox="-10 -24 {w + 20:.0f} {h + 44:.0f}" role="img"
 aria-label="Forma media del equipo" class="campo">
 <rect x="0" y="0" width="{w:.0f}" height="{h:.0f}" class="cesped"/>
 <line x1="{w / 2:.0f}" y1="0" x2="{w / 2:.0f}" y2="{h:.0f}" class="raya"/>

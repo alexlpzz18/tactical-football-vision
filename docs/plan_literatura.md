@@ -211,3 +211,28 @@ esa ruta no se reabre.
   regla del control, las cifras ABSOLUTAS de la CPU no valen como «producción»; la comparación RELATIVA
   (las dos variantes por el mismo camino) sí, y se mide así. Corregido además un sesgo de mi script: solo
   la variante con franjas pasaba por una segunda fusión, y eso le bajaba los falsos positivos.
+
+## Método 5 (SigLIP + UMAP + K-means), intento 1: NO CUMPLE (mejora mucho el F11, empeora el F7)
+
+Error de equipo contra el GT, mismas detecciones y mismo voto para los dos métodos
+(`lit_evaluar_equipos.py`; clasificador HS e identidades de una pasada de producción con configs de
+`main`):
+
+| | por recorte: HS · SigLIP | con voto de 1,5 s: HS · SigLIP |
+|---|---|---|
+| alevín A (F11) | 24,8 % · **13,2 %** | 27,0 % · **12,6 %** |
+| benjamín (F7) | **7,1 %** · 10,0 % | **6,1 %** · 9,8 % |
+
+Criterio: baja en el F11 y no sube en el benjamín. Baja a la mitad en el F11, pero sube 3,7 puntos en el
+benjamín. **Intento 2 propuesto (no corrido)**: que cada partido elija entre HS y SigLIP con la
+consistencia física ya construida (`seleccion_feature.py`: una persona no cambia de equipo entre
+profundidades), en vez de un método único. Es una vía con argumento propio: la premisa ya se cumplió con
+el brillo en las tres patas.
+
+## Método 4, primera medida completa: INVÁLIDA (fallo mío, corregido)
+
+Las tres variantes daban cifras idénticas hasta el decimal. Causa: `get_prediction` de SAHI devuelve las
+cajas en coordenadas del recorte, y no las desplacé al fotograma; las cajas extra caían en la esquina
+superior izquierda (fuera del campo: ni casaban ni contaban como falso positivo). Corregido con
+`get_shifted_object_prediction()`; en un frame de control la variante ya añade 2 cajas dentro de la
+banda. El resultado inválido se conserva como `outputs/literatura/franjas/resultado_INVALIDO_sin_desplazar.json`.

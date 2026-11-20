@@ -45,3 +45,26 @@ En el tramo 14:00-15:30 del benjamín (840-930 s de la parte 1), sin histéresis
 
 Control: «actual» con los configs de `main` reproduce 48,0 cambios/min y 1,245 %. Se mide también en el
 benjamín de 60 s y en el alevín A, que no pueden empeorar.
+
+---
+
+## Resultado (20-nov): NO CUMPLEN ninguna de las dos. Sin segundo intento
+
+Tramo 14:00-15:30 del benjamín, sin histéresis; configs de `main`. Control: «actual» reproduce 48,0
+cambios/min y 1,245 % (y 0,9 % en la hoja de 120, 1 de 109 marcas).
+
+| | cambios de color/min (≤ 24) | equipo mal, GT 30 s | hoja de 120 | IDF1 dentro del equipo A · B |
+|---|---|---|---|---|
+| actual | 48,0 | 1,245 % | 0,9 % | 0,641 · 0,628 |
+| a. torso tapado (> 15 % del pecho, ±3 obs.) | **49,3** | **1,94 %** | **1,8 %** | 0,639 · 0,628 |
+| b. intercambio de colas entre rivales | 44,0 (−8 %) | **1,70 %** | 0,9 % | **0,531** · 0,615 |
+
+- **a**: no baja el parpadeo y empeora el acierto en las dos verdades. Repite el resultado de septiembre
+  con otra definición de oclusión (sobre el pecho y ampliada en el tiempo): queda REFORZADA la conclusión
+  de entonces, el parpadeo no es color contaminado.
+- **b**: baja el parpadeo un 8 % (pedía 50 %) y rompe identidades buenas (IDF1 de A −11 puntos).
+- **Sin segundo intento**: las dos van en la dirección contraria al criterio (el error sube), no se
+  quedan cortas. Un intento más con otro umbral no tiene argumento.
+- Arreglo de mi instrumento por el camino: las cajas de la hoja de 120 están en coordenadas del RECORTE
+  que vio Alex, no del fotograma; se casan como las dibujó la hoja (la detección más cercana a la
+  posición de la fila). La primera pasada daba «109 sin fila» y no se leyó.

@@ -90,7 +90,12 @@ def detectar(img, modelo, filas, cols, solape, extra):
             r = get_prediction(
                 tile, modelo, shift_amount=[x0, y0], full_shape=[h, w], verbose=0
             )
-            preds += list(r.object_prediction_list)
+            # ⚠️ get_prediction devuelve las cajas en coordenadas del RECORTE: hay que desplazarlas
+            # al fotograma (sin esto caían en la esquina superior izquierda y la variante no medía
+            # nada; cazado el 20-nov porque las tres variantes daban cifras idénticas)
+            preds += [
+                q.get_shifted_object_prediction() for q in r.object_prediction_list
+            ]
             inferencias += 1
     # El MISMO postproceso para todas las variantes (también para la de producción): fusionar otra
     # vez lo ya fusionado no es neutro, y aplicarlo solo a las franjas falseaba sus falsos

@@ -153,15 +153,14 @@ def correr_capturando(pata: str, nombre: str, tracking: dict, equipos: dict):
 def medir_hoja_120(csv: Path, identidades: list, cache: dict) -> dict:
     """Error de equipo contra las 120 marcas de Alex del benjamín (`equipo_por_obs_20min`).
 
-    La marca se refiere a la CAJA dibujada en la hoja (frame y coordenadas, redondeadas a píxel). Se
-    busca esa detección en el caché, su identidad en ESTA pasada y la etiqueta de su fila. Los dos
-    nombres A/B se prueban y vale el mejor.
+    La marca se refiere a la CAJA dibujada en la hoja, que fue la detección más cercana a la
+    posición (x_m, y_m) de la fila. Se busca esa detección en el caché, su identidad en ESTA pasada
+    y la etiqueta de su fila. Los dos nombres A/B se prueban y vale el mejor.
     """
     marcas = pd.read_csv(HOJA_120)
     cajas = pd.read_csv(CAJAS_120)
     m = marcas.merge(
-        cajas[["imagen", "caja", "frame", "x1", "y1", "x2", "y2"]],
-        on=["imagen", "caja"],
+        cajas[["imagen", "caja", "frame", "x_m", "y_m"]], on=["imagen", "caja"]
     )
     m = m[m.equipo_correcto.isin(["A", "B"])]
     filas = pd.read_csv(csv)
@@ -175,14 +174,13 @@ def medir_hoja_120(csv: Path, identidades: list, cache: dict) -> dict:
     base = {"A": "A", "portero_A": "A", "B": "B", "portero_B": "B"}
     pares, sin_fila = [], 0
     for r in m.itertuples():
-        caja = np.array([r.x1, r.y1, r.x2, r.y2], float)
-        j = next(
-            (
-                i
-                for i, d in enumerate(cache.get(int(r.frame), []))
-                if np.abs(np.array(d[2:6], float) - caja).max() < 1.5
-            ),
-            None,
+        # Las coordenadas de caja de la hoja son del RECORTE que vio Alex. La hoja dibujó la
+        # detección más cercana a la posición (x_m, y_m) de la fila: se reproduce lo mismo.
+        dets = cache.get(int(r.frame), [])
+        j = (
+            int(np.argmin([np.hypot(d[0] - r.x_m, d[1] - r.y_m) for d in dets]))
+            if dets
+            else None
         )
         ident = id_de.get((int(r.frame), j)) if j is not None else None
         e = base.get(str(etiqueta.get((int(r.frame), ident)))) if ident else None
