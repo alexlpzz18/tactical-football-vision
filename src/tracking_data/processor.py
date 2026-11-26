@@ -1221,6 +1221,15 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             ocluidas_obs = detecciones_ocluidas(
                 datos["cache"], iou_max=float(cfg_por_obs.get("ocluidas_iou", 0.10))
             )
+    # SigLIP ELEGIDO POR PARTIDO (docs/plan_siglip_por_partido.md), interruptor `siglip.activo`
+    # del YAML de equipos, apagado por defecto: si la consistencia física prefiere SigLIP, el voto
+    # por ventana decide con sus etiquetas.
+    etiquetas_siglip, informe_siglip = None, None
+    cfg_sig = (cfg_equipos or {}).get("siglip") or {}
+    if clasificador is not None and cfg_sig.get("activo", False):
+        etiquetas_siglip, informe_siglip = _etiquetas_siglip(
+            cfg, cfg_equipos, cfg_sig, identidades, colores_equipos, datos, clasificador
+        )
     if tope_activo:
         etiquetas_por_obs = etiquetas_tope  # vacío con `unidad: identidad`
     else:
@@ -1232,6 +1241,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
                 clasificador,
                 cfg_equipos,
                 ocluidas_obs,
+                etiquetas_externas=etiquetas_siglip,
             )
             if clasificador is not None
             else {}
@@ -1296,9 +1306,54 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
         trayectorias=trayectorias,
         colores_equipo=colores_equipo,
         etiquetas_por_obs=etiquetas_por_obs,
-        informe_seleccion=informe_seleccion,
+        informe_seleccion=(
+            {**(informe_seleccion or {}), "siglip": informe_siglip}
+            if informe_siglip is not None
+            else informe_seleccion
+        ),
         cfg_fichas=cfg_tracking.get("fichas"),
     )
+
+
+def _etiquetas_siglip(
+    cfg, cfg_equipos, cfg_sig, identidades, colores, datos, clasificador
+):
+    """(etiquetas A/B de SigLIP por detección del caché del tracking, o None; informe)."""
+    from src.team_classification.pipeline_equipos import _profundidad_configurada
+    from src.team_classification.siglip_equipos import alinear_por_caja, elegir, nombrar
+    from src.tracking.cache_io import cargar_cache
+
+    ruta = Path(cfg_sig["etiquetas"])
+    if not ruta.exists():
+        raise ValueError(f"siglip.etiquetas no existe: {ruta}")
+    z = np.load(ruta, allow_pickle=True)
+    crudas = {(int(f), int(j)): int(e) for (f, j), e in zip(z["claves"], z["etiqueta"])}
+    etiquetas = alinear_por_caja(
+        crudas, cargar_cache(cfg["rutas"]["cache"])["cache"], datos["cache"]
+    )
+    modelo_campo, eje = _profundidad_configurada(cfg_equipos)
+    margen = float((cfg_equipos.get("entrenamiento") or {}).get("margen_campo_m", 1.0))
+
+    def _dentro(p) -> bool:
+        return (
+            -margen <= p[0] <= modelo_campo.largo + margen
+            and -margen <= p[1] <= modelo_campo.ancho + margen
+        )
+
+    informe = elegir(
+        identidades,
+        colores,
+        etiquetas,
+        datos["cache"],
+        _dentro,
+        lambda p: eje.de(p, modelo_campo),
+        cfg_sig,
+    )
+    informe["alineadas"] = len(etiquetas)
+    logger.info("Selector SigLIP: %s", informe)
+    if not informe["usa_siglip"]:
+        return None, informe
+    return nombrar(etiquetas, colores, clasificador), informe
 
 
 def puntuacion_chaleco(cfg: dict, datos_crudos: dict) -> dict:

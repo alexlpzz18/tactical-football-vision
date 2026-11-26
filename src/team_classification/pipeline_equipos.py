@@ -675,8 +675,13 @@ def etiquetar_por_observacion(
     clasificador,
     cfg_equipos: dict | None = None,
     ocluidas: set[tuple[int, int]] | None = None,
+    etiquetas_externas: dict | None = None,
 ) -> dict[tuple[int, int], str]:
     """{(id_identidad, frame_idx): etiqueta} decidida por VENTANA de color.
+
+    `etiquetas_externas` ({(frame, det): 'A'/'B'}, p. ej. las de SigLIP elegidas por partido,
+    `siglip_equipos.py`): si se pasan, el A/B de cada ventana es la MAYORÍA de esas etiquetas en la
+    ventana, en vez del color medio. El catálogo arbitral sigue mirando el color medio.
 
     Por qué existe: hoy la etiqueta de equipo la decide un voto sobre TODA
     la identidad, así que una identidad que mezcla dos personas manda a
@@ -888,6 +893,12 @@ def etiquetar_por_observacion(
                 if (dispara and not requiere) or solo_catalogo
                 else clasificador.predict_color(media, solo_equipos=forzar)
             )
+            if etiquetas_externas and nueva is not None:
+                votos = [
+                    etiquetas_externas[p] for p, _c in cerca if p in etiquetas_externas
+                ]
+                if votos:
+                    nueva = "A" if votos.count("A") >= votos.count("B") else "B"
             decididas.append((par, k_trozo, dispara, nueva))
             if secuencia and nueva in ("A", "B"):
                 margenes.append((len(decididas) - 1, clasificador.margen_ab(media)))

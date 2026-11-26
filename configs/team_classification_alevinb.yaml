@@ -335,3 +335,17 @@ arbitro:
   margen_equipo: 0.0
   activo: true
   min_observaciones: 25
+
+# ── SigLIP ELEGIDO POR PARTIDO (20-nov-2026, docs/plan_siglip_por_partido.md) ──────────────────
+# Encendido SOLO en esta rama (decisión de Alex, 26-nov); a `main` solo si la hoja de 300 recortes
+# confirma la mejora. El selector de consistencia física («una persona no cambia de equipo entre
+# profundidades») compara HS y SigLIP en este partido y usa SigLIP solo si gana por margen_kappa con
+# al menos min_parejas parejas. Medido: elige SigLIP aquí (kappa 0,80 contra 0,61) y HS en el
+# benjamín; mini-GT del alevín B 79,7 → 89,9 %. Las etiquetas por detección salen de
+# scripts/lit_siglip_etiquetar.py (UMAP 3D + K-means sobre el embedding del torso, celda de GPU
+# `siglip_equipos`).
+siglip:
+  activo: true
+  etiquetas: data/embeddings_equipos/etiquetas_siglip_alevinb_p1.npz
+  margen_kappa: 0.05
+  min_parejas: 100

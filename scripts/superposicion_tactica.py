@@ -89,8 +89,14 @@ def lineas_del_frame(
     return salida
 
 
-def a_pixeles(Hi: np.ndarray, xy) -> np.ndarray:
-    p = np.column_stack([np.asarray(xy, float), np.ones(len(xy))]) @ Hi.T
+def a_pixeles(Hi, xy) -> np.ndarray:
+    """Metros → píxeles: con la homografía inversa (una matriz) o con un modelo de lente (un objeto
+    con `proyectar`, el de `scripts/lente_camara.py`, que es como se calculan los metros en F11).
+    """
+    xy = np.asarray(xy, float).reshape(-1, 2)
+    if hasattr(Hi, "proyectar"):
+        return np.asarray(Hi.proyectar(xy)).astype(np.int32)
+    p = np.column_stack([xy, np.ones(len(xy))]) @ Hi.T
     return (p[:, :2] / p[:, 2:3]).astype(np.int32)
 
 
@@ -103,13 +109,24 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--csv", type=Path, required=True)
     ap.add_argument("--video", type=Path, required=True)
-    ap.add_argument("--homografia", type=Path, required=True)
+    ap.add_argument("--homografia", type=Path, default=None)
+    ap.add_argument(
+        "--camara",
+        type=Path,
+        default=None,
+        help="modelo de lente .npz (F11), en vez de homografía",
+    )
     ap.add_argument("--desde", type=float, required=True)
     ap.add_argument("--hasta", type=float, required=True)
     ap.add_argument("--largo", type=float, default=62.0)
     ap.add_argument("--ancho", type=float, default=40.0)
     ap.add_argument("--ventana-s", type=float, default=3.0)
     ap.add_argument("--fps", type=float, default=30.0)
+    ap.add_argument(
+        "--colores",
+        default=None,
+        help="'#hexA,#hexB' para forzar colores (si los prototipos de color salen casi iguales)",
+    )
     ap.add_argument("--salida", type=Path, required=True)
     a = ap.parse_args()
 
@@ -120,6 +137,8 @@ def main() -> None:
     colores = (
         json.loads(meta.read_text()).get("colores_equipo", {}) if meta.exists() else {}
     ) or {"A": "#3b82f6", "B": "#ef4444"}
+    if a.colores:
+        colores = dict(zip("AB", a.colores.split(",")))
     tramo = df[
         (df.tiempo_s >= a.desde - a.ventana_s) & (df.tiempo_s <= a.hasta + a.ventana_s)
     ]
@@ -153,8 +172,19 @@ def main() -> None:
         arr = np.array(sel)  # (n, 3, 3)
         return arr.mean(axis=0)
 
-    H = np.load(a.homografia)
-    Hi = np.linalg.inv(H)
+    if a.camara is not None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "lc", R / "scripts/lente_camara.py"
+        )
+        lc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lc)
+        Hi = lc.cargar_camara(a.camara)
+    elif a.homografia is not None:
+        Hi = np.linalg.inv(np.load(a.homografia))
+    else:
+        raise SystemExit("hace falta --homografia o --camara")
     ancho_v, alto_v = tamano_video(a.video)
     a.salida.parent.mkdir(parents=True, exist_ok=True)
     escala = 1280 / ancho_v
