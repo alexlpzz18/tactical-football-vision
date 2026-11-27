@@ -128,15 +128,26 @@ class ColabCLI:
     def parar(self, sesion: str) -> str:
         return self._cmd("stop", "-s", sesion, timeout=300)
 
-    def montar_drive(self, sesion: str, ruta: str = "/content/drive") -> None:
+    def montar_drive(
+        self, sesion: str, ruta: str = "/content/drive", timeout: float = 180
+    ) -> None:
         """Monta el Drive de Alex en la máquina. INTERACTIVO, y una vez por máquina.
 
         La CLI abre en el navegador del Mac la página de permiso de Google y espera un Enter en la
         terminal (medido el 11-nov). Por eso NO se captura la salida: se hereda la terminal desde
         la que se lanzó, para que Alex vea el aviso y pueda responder.
+
+        Tiempo máximo 180 s (antes 900): el 27-nov el montaje se quedó colgado y la L4 esperó los
+        15 min enteros sin hacer nada (0,37 h encendida). Aceptar el permiso lleva segundos; si en
+        3 min no ha terminado, es que está colgado. Se lanza `SinRespuesta` (una `ErrorColab`), así
+        que el orquestador cae a subir los vídeos desde el Mac en vez de apagarlo todo.
         """
         cmd = [self.ruta, "--auth", self.auth, "drivemount", "-s", sesion, ruta]
-        r = self._ejecutar(cmd, timeout=900)
+        try:
+            r = self._ejecutar(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired as err:
+            msg = f"`colab drivemount` no respondió en {timeout:.0f} s"
+            raise SinRespuesta(msg) from err
         if r.returncode != 0:
             raise ErrorColab(f"`colab drivemount` salió con {r.returncode}")
 

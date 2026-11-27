@@ -4,6 +4,8 @@
 Comandos:
     python scripts/gpu_colab.py saldo                 # unidades de cómputo y máquinas encendidas
     python scripts/gpu_colab.py lanzar alevinb        # detección de las dos partes en GPU
+    python scripts/gpu_colab.py lanzar alevinb --gpu T4   # en T4 si la L4 da 503
+    python scripts/gpu_colab.py probar --gpu T4       # ¿hay T4 hoy? enciende y apaga (~0,02 CU)
     python scripts/gpu_colab.py seguimiento alevinb   # tracking en el Mac sobre esos cachés
     python scripts/gpu_colab.py parar                 # apaga TODAS las máquinas tfv-*
 
@@ -12,6 +14,8 @@ Comandos:
 
 Si se corta, se repite el mismo comando: lo completo se salta y lo empezado se reanuda.
 """
+
+from __future__ import annotations  # `str | None` también en el Python 3.9 de los tests
 
 import argparse
 import json
@@ -27,10 +31,13 @@ import yaml
 R = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(R))
 
-from src.cloud.colab_cli import ColabCLI  # noqa: E402
+from src.cloud.colab_cli import ColabCLI, ErrorColab  # noqa: E402
 from src.cloud.trabajo_gpu import Orquestador, Parte, Trabajo  # noqa: E402
 
 CONFIG = R / "configs/gpu_colab.yaml"
+# GPU que se pueden pedir por lanzamiento. La del YAML (L4) es la de por defecto; T4 es la
+# alternativa cuando Google responde 503 a la L4 (27-nov, dos veces seguidas).
+GPUS = ("L4", "T4", "A100")
 logger = logging.getLogger("gpu_colab")
 
 
@@ -181,6 +188,13 @@ def trabajos() -> dict[str, Trabajo]:
     }
 
 
+def con_gpu(cfg: dict, gpu: str | None) -> dict:
+    """Copia de la config con otra GPU para ESTE lanzamiento; sin `gpu`, la del YAML intacta."""
+    if not gpu:
+        return cfg
+    return {**cfg, "maquina": {**cfg["maquina"], "gpu": gpu}}
+
+
 def cli_desde_config(cfg: dict) -> ColabCLI:
     return ColabCLI(cfg["cli"]["ruta"], cfg["cli"]["auth"])
 
@@ -216,11 +230,18 @@ def cmd_lanzar(
     if video_desde:  # p. ej. «mac» cuando nadie va a estar para dar el permiso de Drive
         cfg = {**cfg, "video": {**cfg.get("video", {}), "origen": video_desde}}
     orq = Orquestador(cli_desde_config(cfg), cfg, trabajo, R)
-    informe = {}
+    informe, error = {}, None
     try:
         informe = orq.adjuntar(mantener) if adjuntar else orq.lanzar(mantener=mantener)
+    except BaseException as err:
+        # 27-nov: cinco informes sin la causa del fallo; ahora queda escrita
+        error = f"{type(err).__name__}: {str(err)[:500]}"
+        raise
     finally:
         informe = informe or orq.informe
+        informe["gpu"] = cfg["maquina"]["gpu"]
+        if error:
+            informe["error"] = error
         informe["fin"] = datetime.now().isoformat(timespec="seconds")
         ruta = trabajo.destino / f"informe_gpu_{datetime.now():%Y%m%d_%H%M}.json"
         trabajo.destino.mkdir(parents=True, exist_ok=True)
@@ -236,6 +257,29 @@ def cmd_seguimiento(nombre: str, partes: str | None = None) -> None:
          "--nombres", ",".join(p.nombre for p in t.partes)],
         check=True,
     )  # fmt: skip
+
+
+def cmd_probar(cfg: dict) -> None:
+    """Enciende una máquina con la GPU pedida y la apaga en seguida: ¿la da Google hoy?
+
+    Solo `new` + `nvidia-smi -L` + `stop`: no sube vídeos ni modelo. Cuesta lo que tarda en
+    encender (2-3 min, unas centésimas de CU). Si Google responde 503, sale con error sin gastar.
+    """
+    cli = cli_desde_config(cfg)
+    gpu = cfg["maquina"]["gpu"]
+    sesion = f"{cfg['maquina']['prefijo_sesion']}-prueba-{gpu.lower()}"
+    print(f"Pidiendo una {gpu}…")
+    try:
+        cli.nueva(sesion, gpu)
+    except ErrorColab as err:
+        raise SystemExit(f"✗ {gpu} NO disponible ahora: {str(err)[-300:]}") from err
+    try:
+        print(cli.python(sesion, "import subprocess\nprint(subprocess.run(['nvidia-smi', "
+                         "'-L'], capture_output=True, text=True).stdout)\n"))  # fmt: skip
+        print(f"✓ {gpu} disponible")
+    finally:
+        cli.parar(sesion)
+        print(f"apagada {sesion}")
 
 
 def cmd_parar(cfg: dict) -> None:
@@ -270,6 +314,12 @@ def main() -> None:
         help="tope de CU de ESTE lanzamiento (si no, el de configs/gpu_colab.yaml)",
     )
     p.add_argument(
+        "--gpu",
+        choices=GPUS,
+        default=None,
+        help="GPU de ESTE lanzamiento (si no, la de configs/gpu_colab.yaml: L4)",
+    )
+    p.add_argument(
         "--adjuntar",
         action="store_true",
         help="engancharse a la máquina que YA está detectando (no enciende ni sube nada)",
@@ -277,6 +327,8 @@ def main() -> None:
     p = sub.add_parser("seguimiento")
     p.add_argument("trabajo", choices=sorted(trabajos()))
     p.add_argument("--partes", default=None, help="solo estas partes, por comas")
+    p = sub.add_parser("probar")
+    p.add_argument("--gpu", choices=GPUS, default=None)
     sub.add_parser("parar")
     a = ap.parse_args()
     logging.basicConfig(
@@ -284,7 +336,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
     )
-    cfg = yaml.safe_load(open(CONFIG))
+    cfg = con_gpu(yaml.safe_load(open(CONFIG)), getattr(a, "gpu", None))
     if a.cmd == "saldo":
         cmd_saldo(cfg)
     elif a.cmd == "lanzar":
@@ -294,6 +346,8 @@ def main() -> None:
         cmd_lanzar(cfg, a.trabajo, a.mantener, a.partes, a.adjuntar, a.video_desde)
     elif a.cmd == "seguimiento":
         cmd_seguimiento(a.trabajo, a.partes)
+    elif a.cmd == "probar":
+        cmd_probar(cfg)
     else:
         cmd_parar(cfg)
 

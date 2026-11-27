@@ -77,6 +77,20 @@ Cada una cambió el código; ninguna estaba en la documentación de la CLI:
 El primer lanzamiento (L4 no, T4, 11:58) cayó en la subida del modelo y **la máquina se apagó sola
 a los 36 s** (0,01 h): el `finally` hizo su trabajo.
 
+## 27-nov: la L4 no llega y Drive se cuelga
+
+Cinco intentos de `alevinb_dos_etapas` sin detectar un frame (~0,8 CU: saldo 193,28 → 192,49):
+13:04-13:26 la L4 encendió y `colab drivemount` se quedó colgado los 900 s de su tiempo máximo
+(0,37 h); 14:02 encendió 4 min y cayó sin dejar la causa (0,07 h); 14:04, 14:07 y 14:13 Google
+respondió **503 Service Unavailable** al pedir la L4, tras 3 min 15 s de reintentos de la CLI, sin
+gastar. Ninguno dejó cachés a medias en el Mac. Cambios:
+
+- `drivemount` corta a los **180 s** y, si se cuelga, **no se repite**: los vídeos se suben desde
+  el Mac (~3 min por vídeo; el de la parte 2 sube mientras la 1 detecta).
+- `--gpu T4|L4|A100` por lanzamiento (la del YAML, L4, sigue siendo la de por defecto) y
+  `probar --gpu T4`, que enciende, lista la GPU y apaga (¿la da Google hoy?).
+- El informe guarda la GPU y, si falla, el **error** (los cinco de hoy no lo tenían).
+
 ## Qué queda medido y qué no
 
 - **Medido en el Mac**: 21 tests (`tests/test_gpu_colab.py`) con una CLI falsa: se apaga siempre

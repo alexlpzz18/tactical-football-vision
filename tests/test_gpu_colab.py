@@ -15,7 +15,14 @@ from pathlib import Path
 
 import pytest
 
-from src.cloud.colab_cli import MARCA_FIN, ColabCLI, ErrorColab, Saldo, leer_saldo
+from src.cloud.colab_cli import (
+    MARCA_FIN,
+    ColabCLI,
+    ErrorColab,
+    Saldo,
+    SinRespuesta,
+    leer_saldo,
+)
 from src.cloud.trabajo_gpu import (
     Orquestador,
     Parte,
@@ -490,6 +497,50 @@ def test_drive_que_no_monta_cae_a_subir_desde_el_mac(tmp_path):
     assert cli.llamadas.count("drivemount") == 2  # un reintento del permiso
     assert "upload /d/x_p1.mp4" in cli.llamadas
     assert cli.llamadas[-1] == "stop tfv-x"
+
+
+def test_drivemount_colgado_se_corta_a_los_180_s_y_no_se_repite(tmp_path):
+    # 27-nov: el montaje se colgó y la L4 esperó 15 min sin hacer nada. Ahora: 3 min, sin
+    # reintento, y los vídeos se suben desde el Mac (no se apaga todo)
+    vistos = []
+
+    def colgado(cmd, timeout=None, **kw):
+        vistos.append(timeout)
+        raise subprocess.TimeoutExpired(cmd, timeout)
+
+    with pytest.raises(SinRespuesta, match="180"):
+        ColabCLI("/bin/colab", "oauth2", colgado).montar_drive("tfv-x")
+    assert vistos == [180]
+
+    t = _trabajo(tmp_path)
+    p1 = t.partes[0].video
+    cli = FalsaCLI(
+        [(True, _log(1000) + "✓ deteccion x_p1: 1 min\n")],
+        en_drive={p1.name: p1.read_bytes()},
+    )
+
+    def montar_colgado(sesion):
+        cli.llamadas.append("drivemount")
+        raise SinRespuesta("`colab drivemount` no respondió en 180 s")
+
+    cli.montar_drive = montar_colgado
+    _orq_drive(cli, tmp_path, t).lanzar()
+    assert cli.llamadas.count("drivemount") == 1
+    assert "upload /d/x_p1.mp4" in cli.llamadas
+    assert cli.llamadas[-1] == "stop tfv-x"
+
+
+def test_gpu_por_lanzamiento_no_toca_la_del_yaml():
+    spec = importlib.util.spec_from_file_location(
+        "gpu_colab", R / "scripts/gpu_colab.py"
+    )
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    base = {"maquina": {"gpu": "L4", "prefijo_sesion": "tfv"}, "otra": 1}
+    t4 = m.con_gpu(base, "T4")
+    assert t4["maquina"] == {"gpu": "T4", "prefijo_sesion": "tfv"} and t4["otra"] == 1
+    assert base["maquina"]["gpu"] == "L4"  # el YAML leído no se modifica
+    assert m.con_gpu(base, None) is base
 
 
 def test_apagar_reintenta_si_falla_la_red(tmp_path):

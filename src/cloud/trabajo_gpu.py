@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from src.cloud.colab_cli import ColabCLI, ErrorColab, sha256
+from src.cloud.colab_cli import ColabCLI, ErrorColab, SinRespuesta, sha256
 
 logger = logging.getLogger(__name__)
 
@@ -554,6 +554,10 @@ class Orquestador:
             )
             try:
                 self.cli.montar_drive(self.sesion)
+            except SinRespuesta as err:
+                # colgado (27-nov): no se repite, cada intento son minutos de GPU parada
+                logger.warning("drivemount colgado: %s", err)
+                break
             except ErrorColab as err:
                 logger.warning("drivemount falló: %s", err)
             out = self.cli.python(
