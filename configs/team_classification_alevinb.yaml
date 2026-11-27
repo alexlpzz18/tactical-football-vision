@@ -184,6 +184,16 @@ agregacion:
   por_observacion:
     activo: true
     ventana_s: 1.5
+    # Staff que ENTRA en el campo (docs/staff_dentro_del_campo.md; F11 aprobado por Alex el 27-nov,
+    # docs/segunda_opinion_27nov.md, sección 6): las observaciones de una identidad de staff con el
+    # pie a ≥ margen_m DENTRO de las líneas y en trozos que corren se etiquetan como las de un
+    # jugador. Alevín B: mini-GT 86,1 -> 89,9 %. ERROR CONOCIDO: ~7 s en 30 min de una persona de rojo
+    # junto al poste de la portería de x = 100 (sale como B). Sin margen extra en las líneas de fondo.
+    staff_dentro_del_campo:
+      activo: true
+      margen_m: 1.0
+      solo_trozos_rapidos: true
+      hueco_trozo_s: 1.0
   # Mínimo de observaciones para poder etiquetar 'otro'. Por debajo se
   # fuerza A/B. El prototipo 'otro' es un imán para las medias ruidosas de
   # identidades cortas: con 1, 7, 14 o 16 observaciones la media de color

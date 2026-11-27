@@ -65,6 +65,18 @@ def trabajos() -> dict[str, Trabajo]:
             frames_por_parte={"alevinb_p1_balon": 22775, "alevinb_p2_balon": 22850},
             ficheros=("cache",),  # el balón no tiene caché de colores
         ),
+        # OPCIÓN 1 del embudo lejano (docs/plan_opcion1_dos_etapas.md): el alevín A, 60 s
+        # (5:00-6:00), con las detecciones de 0,10-0,30 AÑADIDAS a las de producción. Unos minutos
+        # de L4 (~1 CU con arranque y subida del vídeo).
+        "villa_dos_etapas": Trabajo(
+            nombre="villa_dos_etapas",
+            partes=[Parte("villa_conf010", R / "data/raw/partido.mp4")],
+            script="scripts/colab_villa_dos_etapas.py",
+            args=[],
+            modelo=R / "models/weights/best_v4pre.pt",
+            destino=R / "data/tracking",
+            frames_por_parte={"villa_conf010": 500},
+        ),
         # EMBEDDINGS DINOv2 de cada detección de producción de las tres patas
         # (docs/plan_equipos_embeddings.md). DINOv2 se descarga en la máquina: no hay pesos propios.
         "embeddings_equipos": Trabajo(

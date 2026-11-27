@@ -176,3 +176,11 @@ Es el mismo tipo de error conocido del benjamín (el adulto de 10:54, 3 s), aqu�
 filas. Decisión de Alex. Si se quiere evitar, la opción sin color sería pedir más margen DENTRO solo
 junto a las líneas de FONDO (la persona de rojo no pasa de ~4 m de la línea; el portero lo decide su
 propia regla); no se ha medido.
+
+## 7. `staff_dentro_del_campo` encendido en F11 (27-nov, aprobado por Alex; solo en la rama)
+
+En `configs/team_classification_alevinb.yaml` y `configs/team_classification.yaml` (alevín A), con
+`margen_m` 1,0 y trozos rápidos, sin margen extra en las líneas de fondo. Medido: alevín B, mini-GT
+89,9 %; alevín A, salida **idéntica byte a byte** con y sin el interruptor (en esos 60 s nadie del
+staff entra en el campo). El benjamín no cambia (usa su propio config). Error conocido: ~7 s en 30
+min de una persona de rojo junto al poste (sección 6).
