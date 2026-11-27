@@ -978,6 +978,25 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             datos["cache"], colores, conf_min
         )
 
+    # Filtro de detecciones DÉBILES QUIETAS (opción 1 del embudo lejano,
+    # docs/plan_opcion1_dos_etapas.md). Solo toca detecciones con conf < conf_max: con un caché de
+    # producción (todo ≥ 0,30) no hace nada. Renumera los colores; los embeddings no se renumeran
+    # aquí, así que se rechaza la combinación en vez de desalinearlos en silencio.
+    cfg_quietas = cfg_tracking.get("filtro_quietas", {}) or {}
+    if cfg_quietas.get("activo", False):
+        if cfg["rutas"].get("cache_embeddings"):
+            raise ValueError(
+                "filtro_quietas no renumera la caché de embeddings: apágalo o quita "
+                "rutas.cache_embeddings"
+            )
+        from src.tracking.filtro_quietas import filtrar_quietas
+
+        datos["cache"], colores, _nq = filtrar_quietas(
+            datos["cache"],
+            colores,
+            **{k: v for k, v in cfg_quietas.items() if k != "activo"},
+        )
+
     # Filtro de PLAUSIBILIDAD FÍSICA, en el mismo sitio y por la misma
     # razón. Usa la escala del suelo que da la homografía para preguntar
     # cuánto mide en metros lo que hay dentro de cada caja: una línea del

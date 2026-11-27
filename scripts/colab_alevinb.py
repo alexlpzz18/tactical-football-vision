@@ -45,6 +45,9 @@ FPS = 25.0
 DETECCIONES_EN_CAMPO = (10, 40)
 FRAMES_CHEQUEO = 9  # originales: 3 procesados con sample_every 3
 MIN_COLORES = 0.90
+# Opción 1 (docs/plan_opcion1_dos_etapas.md): con `--dos-etapas`, SAHI a 0,10 y las detecciones
+# débiles (0,10-0,30) se AÑADEN a las de producción (la envoltura de colab_villa_dos_etapas.py).
+DOS_ETAPAS = {"activo": False}
 FUERA = -1000.0  # un pie que la lente no sabe convertir queda lejos del campo
 
 
@@ -66,6 +69,8 @@ def config(
         cfg["checkpoint"] = {"cada_frames": 0, "reanudar": False}
     if dispositivo:
         cfg["deteccion"]["device"] = dispositivo
+    if DOS_ETAPAS["activo"]:
+        cfg["deteccion"]["confianza"] = 0.10  # el filtro deja pasar las débiles
     if imagen == "original":
         # sin corregir el fotograma; los metros los pone `a_metros_con_lente` después
         cfg["distorsion"] = {"k1": 0.0, "k2": 0.0}
@@ -203,6 +208,11 @@ def seguimiento(salida: Path, videos: list[Path], nombres: list[str], imagen):
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--imagen", choices=["corregida", "original"], required=True)
+    ap.add_argument(
+        "--dos-etapas",
+        action="store_true",
+        help="añade las detecciones de 0,10-0,30 (opción 1, docs/plan_opcion1_dos_etapas.md)",
+    )
     ap.add_argument("--salida", type=Path, required=True)
     ap.add_argument("--solo-chequeo", action="store_true")
     # todo: la celda de siempre. deteccion: solo GPU (scripts/gpu_colab.py). seguimiento: en el Mac
@@ -224,6 +234,12 @@ def main() -> None:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     a.salida.mkdir(parents=True, exist_ok=True)
+    if a.dos_etapas and a.fase != "seguimiento":
+        sys.path.insert(0, str(R / "scripts"))
+        from colab_villa_dos_etapas import envolver_sahi
+
+        envolver_sahi()
+        DOS_ETAPAS["activo"] = True
     videos = (
         [Path(v) for v in a.videos.split(",")]
         if a.videos

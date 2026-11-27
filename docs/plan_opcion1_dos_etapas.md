@@ -155,3 +155,38 @@ inferencia: ≤ 0,53 s por frame procesado. La pasada de producción del alevín
 **entre 1,9 y 4,5 h de L4, unas 4-10 CU**, más ~10 min fijos por lanzamiento (los vídeos del alevín B
 sí están en Drive). El tope de `gpu_colab.yaml` (40 CU) y la proyección tras el primer checkpoint
 paran la pasada si se dispara.
+
+---
+
+## Adopción en `alevinb-preparacion` (Alex, 27-nov)
+
+Se adopta con la lectura «con SigLIP» (lo que se usará en F11): anchura 3,82 m, centroide 3,57 m y
+profundidad 1,77 m, sin subir «sobran» (4 %).
+
+**En la rama** (los dos F11 usan `configs/tracking.yaml`; el benjamín no se toca):
+- `bytetrack.umbral_activacion: 0.20`;
+- `filtro_quietas` como etapa del pipeline (`src/tracking/filtro_quietas.py`), encendido. Solo toca
+  detecciones con conf < 0,30.
+- Control: la etapa del pipeline reproduce byte a byte la variante V3 medida. Con los cachés de
+  producción de hoy (sin débiles), la salida de las dos patas F11 tiene que ser idéntica byte a byte
+  (comprobación en `outputs/f11_neutralidad/`).
+
+**Checklist antes de lanzar el alevín B en Colab**:
+1. **Imagen original sin rectificar**: sí. `colab_alevinb.py --imagen original` detecta sobre el
+   fotograma sin corregir (`distorsion` 0) y guarda las cajas en PÍXELES; los metros se ponen después
+   en el Mac con la lente (`a_metros_con_lente`, fase `seguimiento`). Recalibrar con Iberpix = repetir
+   esa fase en local, sin GPU.
+2. **SigLIP**: no se recalcula solo. Para la parte 1 se reasigna en local por caja
+   (`scripts/siglip_reasignar.py`, IoU ≥ 0,9: es justo lo que se midió en el alevín A; control: el
+   100 % de las fuertes del alevín A recupera etiqueta). Las débiles se quedan sin etiqueta y el voto
+   por ventana las decide con el color. La parte 2 no tiene SigLIP: necesitaría su pasada de
+   embeddings en Colab (~1,5 CU).
+3. **Trabajo** `alevinb_dos_etapas` de `gpu_colab.py`: las dos partes, con nombres NUEVOS
+   (`alevinb_p1_conf010`, `_p2_conf010`) para no pisar los cachés de producción. `--max-cu` baja el
+   tope de ese lanzamiento (nunca lo sube por encima del YAML).
+
+**Después de Colab** (en el Mac):
+1. `gpu_colab.py seguimiento alevinb_dos_etapas` (metros con la lente);
+2. `siglip_reasignar.py` de `cache_alevinb_p1.pkl` a `cache_alevinb_p1_conf010.pkl`;
+3. apuntar `data/tracking_alevinb/config_alevinb_p1.yaml` (`rutas.cache`, `rutas.cache_colores`) y
+   `siglip.etiquetas` del YAML de equipos del alevín B a los ficheros nuevos, banco y mini-GT.

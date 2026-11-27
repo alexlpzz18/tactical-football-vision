@@ -65,6 +65,21 @@ def trabajos() -> dict[str, Trabajo]:
             frames_por_parte={"alevinb_p1_balon": 22775, "alevinb_p2_balon": 22850},
             ficheros=("cache",),  # el balón no tiene caché de colores
         ),
+        # OPCIÓN 1 en el alevín B (adoptada en la rama el 27-nov): las dos partes con las
+        # detecciones débiles añadidas. Nombres de parte NUEVOS (_conf010) para no pisar los cachés
+        # de producción. Estimado 4-10 CU (docs/plan_opcion1_dos_etapas.md).
+        "alevinb_dos_etapas": Trabajo(
+            nombre="alevinb_dos_etapas",
+            partes=[
+                Parte("alevinb_p1_conf010", R / "data/raw/alevinb_p1.mp4"),
+                Parte("alevinb_p2_conf010", R / "data/raw/alevinb_p2.mp4"),
+            ],
+            script="scripts/colab_alevinb.py",
+            args=["--imagen", "original", "--dos-etapas"],
+            modelo=R / "models/weights/best_v4pre.pt",
+            destino=destino,
+            frames_por_parte={"alevinb_p1_conf010": 15184, "alevinb_p2_conf010": 15234},
+        ),
         # OPCIÓN 1 del embudo lejano (docs/plan_opcion1_dos_etapas.md): el alevín A, 60 s
         # (5:00-6:00), con las detecciones de 0,10-0,30 AÑADIDAS a las de producción. Unos minutos
         # de L4 (~1 CU con arranque y subida del vídeo).
@@ -249,6 +264,12 @@ def main() -> None:
     p.add_argument("--partes", default=None, help="solo estas partes, por comas")
     p.add_argument("--video-desde", choices=["drive", "mac"], default=None)
     p.add_argument(
+        "--max-cu",
+        type=float,
+        default=None,
+        help="tope de CU de ESTE lanzamiento (si no, el de configs/gpu_colab.yaml)",
+    )
+    p.add_argument(
         "--adjuntar",
         action="store_true",
         help="engancharse a la máquina que YA está detectando (no enciende ni sube nada)",
@@ -267,6 +288,9 @@ def main() -> None:
     if a.cmd == "saldo":
         cmd_saldo(cfg)
     elif a.cmd == "lanzar":
+        if a.max_cu is not None:  # solo puede BAJAR el tope del YAML, nunca subirlo
+            tope = min(float(a.max_cu), float(cfg["presupuesto"]["max_cu"]))
+            cfg = {**cfg, "presupuesto": {**cfg["presupuesto"], "max_cu": tope}}
         cmd_lanzar(cfg, a.trabajo, a.mantener, a.partes, a.adjuntar, a.video_desde)
     elif a.cmd == "seguimiento":
         cmd_seguimiento(a.trabajo, a.partes)

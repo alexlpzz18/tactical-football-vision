@@ -184,3 +184,37 @@ En `configs/team_classification_alevinb.yaml` y `configs/team_classification.yam
 89,9 %; alevín A, salida **idéntica byte a byte** con y sin el interruptor (en esos 60 s nadie del
 staff entra en el campo). El benjamín no cambia (usa su propio config). Error conocido: ~7 s en 30
 min de una persona de rojo junto al poste (sección 6).
+
+## 8. El «fantasma del portero» y las verdes que sobran en el 3:00.0 (27-nov, noche)
+
+**El patrón** (`scripts/fantasmas_interpolados.py`): una fila INTERPOLADA que, en su mismo fotograma,
+está a ≤ 1,5 m de una fila REAL del mismo equipo o de un portero. En el 3:00.0 del alevín B, el
+portero verde real (id 16) y, a 0,57 m, una pista solo interpolada (id 713) etiquetada como jugador
+de campo: el bloque verde pasa de 29 a 79 m.
+
+| | alevín B (parte 1) | alevín A (60 s) |
+|---|---|---|
+| fotogramas con algún fantasma | 38 % | 37 % |
+| fantasmas por fotograma | 0,56 | 0,39 |
+| de las filas interpoladas, fantasmas | 7,3 % | 13,2 % |
+| (fotograma, equipo) cuyo largo de bloque cambia > 5 m | 1,6 % | 3,0 % |
+| cambio del largo de bloque: medio · p99 | 0,5 m · 19,9 m | 1,0 m · 35,1 m |
+| contra el GT (todas las filas, como pinta la pizarra): profundidad | — | 7,40 → **6,48 m** |
+| anchura · centroide | — | 4,89 → 4,90 m · 4,41 → 4,34 m |
+
+Raro pero brutal cuando pasa (p99 de 20-35 m), y quitarlo baja el error de profundidad un 12 % sin
+tocar la anchura. Lo que podría estar inventando: quitar a un jugador real que en ese instante no se
+detecta y está pegado a un compañero; contra el GT, ni la anchura ni el centroide empeoran.
+
+**Las verdes que sobran en el 3:00.0**, con la caja PROPIA de cada fila (control: la pasada de la
+captura es idéntica byte a byte a la de la demo). En ese fotograma hay 10 verdes de campo con
+detección real + el portero, pero:
+- la **301 es el árbitro** (amarillo flúor) con etiqueta de verde (en F11 no hay regla de árbitro);
+- la **328 y la 716 son la misma persona en dos identidades** a 1,2 m, con equipos DISTINTOS: la 716
+  (un jugador de verde etiquetado como blanco) es real y la 328 está interpolada en ese instante. La
+  regla «mismo equipo o portero» no la coge; con «cualquier equipo» sí;
+- la **727** es una pista interpolada que entra desde detrás de la línea de fondo (x 104 → 98).
+
+**Demo**: por defecto (modo reunión) la pizarra quita los fantasmas (interpolada en el instante y a
+≤ 1,5 m de una detección real del mismo equipo o de un portero), sin aros ni botones. Las marcas de
+diagnóstico van detrás del interruptor «Diagnóstico», apagado.

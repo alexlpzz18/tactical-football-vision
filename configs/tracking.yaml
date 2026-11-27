@@ -175,10 +175,24 @@ bytetrack:
   # permisivo. Con el 0.8 de la librería se perdía el 11 % de nuestras
   # detecciones, porque nuestros jugadores son diminutos (15-40 px) y el
   # IoU entre frames cae a plomo.
-  umbral_activacion: 0.10
+  # 0.20 (opción 1 del embudo lejano, adoptada en la rama el 27-nov, docs/plan_opcion1_dos_etapas.md):
+  # en supervision una pista nueva exige umbral + 0.1, así que todo lo ≥ 0,30 crea pistas como antes
+  # y las detecciones débiles (0,10-0,30) solo ALARGAN pistas. Con un caché de producción (sin
+  # débiles) la salida es idéntica byte a byte a la de 0.10 (medido en el alevín A). 0.30 NO: las
+  # detecciones de 0,30-0,40 dejarían de crear pistas y cambiaría la base.
+  umbral_activacion: 0.20
   buffer_perdido_s: 2.0
   umbral_emparejamiento: 0.995
   usar_fps_efectivo: true
+
+# Detecciones DÉBILES QUIETAS fuera antes del tracking (src/tracking/filtro_quietas.py; opción 1,
+# docs/plan_opcion1_dos_etapas.md). Solo toca conf < conf_max: con un caché de producción no hace nada.
+filtro_quietas:
+  activo: true
+  conf_max: 0.30
+  ventana_s: 2.0
+  radio_px: 2.0
+  fraccion: 0.5
 
 # Cosido de los fragmentos de ByteTrack con criterio de PUREZA. Sin cota
 # de plantilla, a propósito: el número de identidades es un proxy y la

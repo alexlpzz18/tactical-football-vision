@@ -30,7 +30,10 @@
   .oculto { display:none; }
   circle.ficha { cursor:grab; stroke:#fff; stroke-width:.35; }
   circle.ficha.movida { stroke:#ffd400; stroke-width:.6; }
-  circle.ficha.fantasma { fill-opacity:.4; }
+  body:not(.diagnostico) .solo-diagnostico { display:none; }
+  body.diagnostico circle.ficha.fantasma { fill-opacity:.4; }
+  label.interruptor { margin-left:auto; color:var(--suave); font-size:13px; display:inline-flex;
+                      align-items:center; gap:4px; cursor:pointer; }
   circle.duplicado { fill:none; stroke:#ff8a00; stroke-width:.35; stroke-dasharray:.7 .5; pointer-events:none; }
 </style>
 </head>
@@ -39,18 +42,21 @@
   <h1>Alevín B · superposición táctica y pizarra en directo</h1>
   <p class="ayuda">Reproduce el clip. Al <b>pausar</b> (o con <b>Congelar</b>, tecla C) aparece la pizarra del
     instante: cada ficha en su posición mediana de ± 0,4 s. Arrastra las fichas para corregir y mira cómo
-    cambian el bloque, las líneas y las distancias. <b>Doble clic</b> (o pulsación larga) quita una ficha
-    que sobra. La pizarra marca los fallos del sistema: semitransparente, una ficha sin detección real en
-    ese instante; con aro naranja, dos fichas del mismo equipo a menos de 1 m (posible duplicado).
+    cambian el bloque, las líneas y las distancias. <b>Doble clic</b> (o pulsación larga) quita una ficha.
     Nada se guarda.</p>
+  <p class="ayuda solo-diagnostico"><b>Diagnóstico:</b> se ven TODAS las fichas, también las que el modo
+    normal quita (interpoladas en ese instante a ≤ 1,5 m de una detección real del mismo equipo o de un
+    portero). Semitransparente: sin detección real en ± 0,4 s. Aro naranja: dos fichas del mismo equipo
+    a menos de 1 m (posible duplicado).</p>
   <div class="pestanas" id="pestanas"></div>
   <video id="v" controls preload="auto"></video>
   <div class="barra">
     <span class="reloj" id="reloj"></span>
     <button id="congelar">Congelar pizarra (C)</button>
     <button id="restaurar">Restaurar</button>
-    <button id="duplicados">Quitar duplicados</button>
+    <button id="duplicados" class="solo-diagnostico">Quitar duplicados</button>
     <span class="leyenda" id="leyenda"></span>
+    <label class="interruptor"><input type="checkbox" id="diag"> Diagnóstico</label>
   </div>
   <div id="pizarra" class="oculto">
     <svg id="campo"></svg>
@@ -88,20 +94,37 @@ function congelar() {
   const d = DATOS[tramo], t = v.currentTime, por = new Map();
   for (const [tr, id, eq, gk, x, y, real] of d.filas) {
     if (Math.abs(tr - t) > VENTANA) continue;
-    if (!por.has(id)) por.set(id, { id, xs: [], ys: [], eq: {}, gk: 0, n: 0, reales: 0 });
+    if (!por.has(id)) por.set(id, { id, xs: [], ys: [], eq: {}, gk: 0, n: 0, reales: 0, dt: 1e9, realT: 0 });
     const p = por.get(id); p.xs.push(x); p.ys.push(y); p.eq[eq] = (p.eq[eq] || 0) + 1; p.gk += gk; p.n++;
     p.reales += real;
+    // la fila del INSTANTE (la más cercana a t): ¿es una detección o una interpolación?
+    if (Math.abs(tr - t) < p.dt) { p.dt = Math.abs(tr - t); p.realT = real; }
   }
-  fichas = [...por.values()].map(p => ({ id: p.id, x: mediana(p.xs), y: mediana(p.ys), reales: p.reales,
-    eq: Object.entries(p.eq).sort((a, b) => b[1] - a[1])[0][0], gk: p.gk * 2 > p.n, movida: false }))
+  todas = [...por.values()].map(p => ({ id: p.id, x: mediana(p.xs), y: mediana(p.ys), reales: p.reales,
+    realT: p.realT, eq: Object.entries(p.eq).sort((a, b) => b[1] - a[1])[0][0], gk: p.gk * 2 > p.n,
+    movida: false }))
     // solo quien está DENTRO del campo (el CSV exporta hasta 8 m fuera: banquillo y público)
     .filter(f => f.x >= 0 && f.x <= L && f.y >= 0 && f.y <= W);
-  originales = fichas.map(f => ({ ...f }));
+  // FANTASMAS (modo reunión): interpolada en el instante y a ≤ 1,5 m de una detección real del
+  // mismo equipo o de un portero (el «fantasma del portero» del 3:00.0; scripts/fantasmas_interpolados.py)
+  for (const f of todas) {
+    f.fantasmaT = !f.realT && todas.some(g => g !== f && g.realT && (g.eq === f.eq || g.gk) &&
+      Math.hypot(g.x - f.x, g.y - f.y) <= 1.5);
+  }
+  originales = visibles();
+  fichas = originales.map(f => ({ ...f }));
   document.getElementById("pizarra").classList.remove("oculto");
   pintar();
 }
 v.addEventListener("pause", congelar);
 document.getElementById("congelar").onclick = () => { v.pause(); congelar(); };
+let todas = [];
+const diag = () => document.getElementById("diag").checked;
+function visibles() { return (diag() ? todas : todas.filter(f => !f.fantasmaT)).map(f => ({ ...f })); }
+document.getElementById("diag").onchange = () => {
+  document.body.classList.toggle("diagnostico", diag());
+  if (todas.length) { originales = visibles(); fichas = originales.map(f => ({ ...f })); pintar(); }
+};
 document.getElementById("restaurar").onclick = () => { fichas = originales.map(f => ({ ...f })); pintar(); };
 // parejas del MISMO equipo a menos de 1 m: posible duplicado (una persona en dos identidades)
 function parejasDuplicadas() {
@@ -179,7 +202,7 @@ function pintar() {
       cifras.push(`<div><b style="color:${COLOR[eq]}">${NOMBRE[eq]}</b> · ${P.length} de campo<br>${d}largo ${(Math.max(...xs) - Math.min(...xs)).toFixed(1)} m · ancho ${(Math.max(...ys) - Math.min(...ys)).toFixed(1)} m</div>`);
     }
   }
-  const dup = new Set(parejasDuplicadas().flat());
+  const dup = new Set(diag() ? parejasDuplicadas().flat() : []);
   for (const f of fichas) {
     if (dup.has(f)) el("circle", { cx: f.x, cy: f.y, r: 2.0, class: "duplicado" });
     const c = el("circle", { cx: f.x, cy: f.y, r: f.gk ? 1.3 : 1.1, fill: COLOR[f.eq],
@@ -189,8 +212,13 @@ function pintar() {
     c.addEventListener("dblclick", () => quitar(f));
   }
   const n = fichas.filter(f => f.movida).length, q = originales.length - fichas.length;
-  const fant = fichas.filter(f => !f.reales).length, nd = parejasDuplicadas().length;
-  cifras.push(`<div>Instante ${reloj(DATOS[tramo].desde + v.currentTime)} (archivo) · ${fichas.length} fichas${n ? ` · ${n} movidas a mano` : ""}${q ? ` · ${q} quitadas` : ""}<br>${fant} sin detección real en ± 0,4 s (semitransparentes) · ${nd} posibles duplicados (aro naranja)</div>`);
+  let txt = `Instante ${reloj(DATOS[tramo].desde + v.currentTime)} (archivo) · ${fichas.length} fichas${n ? ` · ${n} movidas a mano` : ""}${q ? ` · ${q} quitadas` : ""}`;
+  if (diag()) {
+    const fant = fichas.filter(f => !f.reales).length, nd = parejasDuplicadas().length;
+    const fT = todas.filter(f => f.fantasmaT).length;
+    txt += `<br>${fT} que el modo normal quita · ${fant} sin detección real en ± 0,4 s · ${nd} posibles duplicados`;
+  }
+  cifras.push(`<div>${txt}</div>`);
   document.getElementById("cifras").innerHTML = cifras.join("");
 }
 function quitar(f) { fichas = fichas.filter(g => g !== f); pintar(); }
