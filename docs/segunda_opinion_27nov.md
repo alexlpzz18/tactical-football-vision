@@ -218,3 +218,33 @@ detección real + el portero, pero:
 **Demo**: por defecto (modo reunión) la pizarra quita los fantasmas (interpolada en el instante y a
 ≤ 1,5 m de una detección real del mismo equipo o de un portero), sin aros ni botones. Las marcas de
 diagnóstico van detrás del interruptor «Diagnóstico», apagado.
+
+## 9. Fantasmas al pipeline, el caso 727 e informe de una página (27-nov, noche)
+
+**Variantes del filtro de fantasmas**, alevín A con SigLIP + opción 1 (configs de la rama), contra el
+GT con TODAS las filas (las que pintan pizarra e informe):
+
+| | sin filtro | V1 mismo equipo o portero | V2 cualquier equipo |
+|---|---|---|---|
+| filas quitadas | 0 | 331 | 452 |
+| faltan total · tercio lejano | 14,0 · 18,8 % | 14,3 · 19,2 % | 14,7 · 19,9 % |
+| centroide | 2,98 m | **2,91 m** | 2,99 m |
+| anchura · profundidad | 3,41 · 2,32 m | 3,41 · 2,32 m | 3,42 · 2,48 m |
+| (fotograma, equipo) con el largo cambiando > 5 m | — | 3,0 % (p99 33 m) | — |
+
+**V2 no pasa** (empeora presencia, centroide y profundidad frente a V1: borra jugadores tapados en
+cruces con rivales). **V1 entra al pipeline** (`src/tracking/fantasmas.py`, paso final antes de
+escribir el CSV; `quitar_fantasmas` en `configs/tracking.yaml`, que comparten las dos patas F11 y no
+el benjamín). Con SigLIP + opción 1 apenas mueve los promedios (el −12 % de profundidad era con
+`main` e histograma): su valor es quitar los picos de 20-35 m del largo del bloque. Control: el
+pipeline marca exactamente las mismas 331 filas que el script.
+
+**727 no es una interpolación que cruce desde fuera**: tiene detecciones REALES detrás de la línea de
+fondo (x 102-104) y entrando (99), y su interpolación de 0,8 s va entre dos reales ya dentro del campo.
+Prohibir las interpolaciones que cruzan la línea no lo cazaría. No es trivial.
+
+**Informe de una página** (`scripts/informe_alevinb.py`, borrador sobre el CSV de hoy:
+`outputs/informe_alevinb/index.html`): los dos equipos (largo, anchura, altura de la defensa,
+distancias entre líneas), la forma media dibujada, la evolución por bloques de 5 min, la ocupación
+del campo, «3 cosas a entrenar» por reglas (marcadas con su fase: sin posesión se evalúan sobre todos
+los tramos) y los momentos con enlace a los clips de la superposición.

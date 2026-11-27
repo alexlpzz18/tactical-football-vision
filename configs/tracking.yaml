@@ -185,6 +185,15 @@ bytetrack:
   umbral_emparejamiento: 0.995
   usar_fps_efectivo: true
 
+# FANTASMAS fuera del CSV (src/tracking/fantasmas.py; docs/segunda_opinion_27nov.md, sección 8): filas
+# INTERPOLADAS a ≤ radio_m de una detección real del mismo equipo o de un portero. Quita los picos de
+# 20-35 m del largo del bloque (el «fantasma del portero»). Medido en el alevín A con SigLIP + opción
+# 1 contra el GT: centroide 2,98 → 2,91 m, anchura y profundidad iguales, faltan 14,0 → 14,3 %. La
+# variante «de cualquier equipo» NO pasa (borra jugadores tapados en cruces con rivales).
+quitar_fantasmas:
+  activo: true
+  radio_m: 1.5
+
 # Detecciones DÉBILES QUIETAS fuera antes del tracking (src/tracking/filtro_quietas.py; opción 1,
 # docs/plan_opcion1_dos_etapas.md). Solo toca conf < conf_max: con un caché de producción no hace nada.
 filtro_quietas:

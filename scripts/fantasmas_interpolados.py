@@ -46,8 +46,11 @@ PATAS = {
 }
 
 
-def marcar_fantasmas(df: pd.DataFrame, radio: float) -> pd.Series:
-    """True en las filas fantasma (interpolada a ≤ radio de una real del mismo equipo o portero)."""
+def marcar_fantasmas(
+    df: pd.DataFrame, radio: float, cualquier_equipo: bool = False
+) -> pd.Series:
+    """True en las filas fantasma: interpolada a ≤ radio de una real del mismo equipo o de un
+    portero (V1) o de cualquier equipo (V2, `cualquier_equipo`)."""
     df = df[df.etiqueta.isin(EQUIPO)]
     fantasma = pd.Series(False, index=df.index)
     for _f, g in df.groupby("frame"):
@@ -57,10 +60,14 @@ def marcar_fantasmas(df: pd.DataFrame, radio: float) -> pd.Series:
             continue
         for i, r in interp.iterrows():
             eq = EQUIPO[r.etiqueta]
-            cand = reales[
-                (reales.etiqueta.map(EQUIPO) == eq)
-                | reales.etiqueta.str.startswith("portero")
-            ]
+            cand = (
+                reales
+                if cualquier_equipo
+                else reales[
+                    (reales.etiqueta.map(EQUIPO) == eq)
+                    | reales.etiqueta.str.startswith("portero")
+                ]
+            )
             if (
                 len(cand)
                 and np.hypot(cand.x_m - r.x_m, cand.y_m - r.y_m).min() <= radio

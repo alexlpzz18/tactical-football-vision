@@ -1,0 +1,41 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Informe alevín B</title><style>
+:root { --fondo:#f7f7f5; --texto:#1c1f24; --tenue:#5f6670; --linea:#d9dcd6; --tarjeta:#fff;
+        --cesped:#2f7d4a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fondo:#14171b;
+  --texto:#e9ebee; --tenue:#a2a9b1; --linea:#2e343b; --tarjeta:#1c2026; } }
+body { margin:0; background:var(--fondo); color:var(--texto);
+  font:15px/1.45 system-ui,-apple-system,sans-serif; }
+main { max-width:980px; margin:0 auto; padding:20px 16px; }
+h1 { font-size:22px; margin:0 0 2px; } h2 { font-size:16px; margin:22px 0 8px; }
+.tenue { color:var(--tenue); font-size:13px; }
+.dos { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+.tarjeta { background:var(--tarjeta); border:1px solid var(--linea); border-radius:10px; padding:12px; }
+table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+th, td { padding:5px 8px; border-bottom:1px solid var(--linea); text-align:right; }
+th:first-child { text-align:left; font-weight:500; }
+.evol { font-size:13px; } .evol-envoltorio { overflow-x:auto; }
+.zonas td { text-align:center; background:color-mix(in srgb, var(--c) calc(var(--o)*220%), transparent); }
+svg.campo { width:100%; height:auto; } .cesped { fill:var(--cesped); }
+.raya { stroke:rgba(255,255,255,.8); stroke-width:1.2; } .et { font-size:11px; fill:var(--texto); }
+.momentos li { margin-bottom:8px; } .aviso { border-left:3px solid #d97706; padding-left:10px; }
+</style></head><body><main>
+<h1>__TITULO__</h1>
+<p class="tenue">__CALIDAD__ · generado el __FECHA__</p>
+<div class="dos">
+  <div class="tarjeta"><h2>Los dos equipos (mediana de todo el tramo)</h2>__TABLA__</div>
+  <div class="tarjeta"><h2 style="color:__COLOR_EQ__">Forma media · __NOMBRE_EQ__</h2>
+    __SVG__</div>
+</div>
+<h2>Cómo evoluciona</h2><div class="tarjeta evol-envoltorio">__EVOL__</div>
+<h2>Dónde está cada equipo (tercio propio → rival, de izquierda a derecha)</h2>
+<div class="dos">
+  <div class="tarjeta"><b style="color:__COLOR_A__">__NOMBRE_A__</b>__REJ_A__</div>
+  <div class="tarjeta"><b style="color:__COLOR_B__">__NOMBRE_B__</b>__REJ_B__</div>
+</div>
+<h2>3 cosas a entrenar · __NOMBRE_EQ__</h2>
+<p class="tenue aviso">Todavía sin separar con y sin balón (falta la posesión): las reglas miran todos
+los tramos.</p><ol>__TRES__</ol>
+<h2>Momentos</h2>__MOMENTOS__
+</main></body></html>

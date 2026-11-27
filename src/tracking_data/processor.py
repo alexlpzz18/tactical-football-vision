@@ -1331,6 +1331,7 @@ def procesar_desde_cache(cfg: dict) -> pd.DataFrame:
             else informe_seleccion
         ),
         cfg_fichas=cfg_tracking.get("fichas"),
+        cfg_fantasmas=cfg_tracking.get("quitar_fantasmas"),
     )
 
 
@@ -1491,6 +1492,7 @@ def exportar_posiciones(
     etiquetas_por_obs: dict | None = None,
     informe_seleccion: dict | None = None,
     cfg_fichas: dict | None = None,
+    cfg_fantasmas: dict | None = None,
 ) -> pd.DataFrame:
     """Escribe el CSV de posiciones y el meta JSON (formato compatible).
 
@@ -1592,6 +1594,15 @@ def exportar_posiciones(
             )
         informe_fichas["fichas_despues"] = int(df.id_jugador.nunique())
 
+    # FANTASMAS (src/tracking/fantasmas.py): filas interpoladas pegadas (≤ radio_m) a una detección
+    # real del mismo equipo o de un portero. Solo se quitan filas interpoladas. Apagado por defecto.
+    n_fantasmas = None
+    cfg_fantasmas = cfg_fantasmas or {}
+    if len(df) and cfg_fantasmas.get("activo", False):
+        from src.tracking.fantasmas import quitar_fantasmas
+
+        df, n_fantasmas = quitar_fantasmas(df, float(cfg_fantasmas.get("radio_m", 1.5)))
+
     Path(cfg["rutas"]["salida_csv"]).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(cfg["rutas"]["salida_csv"], index=False)
 
@@ -1616,6 +1627,7 @@ def exportar_posiciones(
         # Feature elegida para este partido (entrenamiento.seleccion_automatica), o None
         "seleccion_feature": informe_seleccion,
         "fichas": informe_fichas,
+        "fantasmas_quitados": n_fantasmas,
         "n_identidades": len(identidades),
         "equipos": {
             etiqueta: sum(1 for e in equipos.values() if e == etiqueta)

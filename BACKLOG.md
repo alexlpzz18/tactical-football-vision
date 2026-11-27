@@ -894,3 +894,15 @@ alevín B, ¿cuántas candidatas DENTRO del campo son quietas? (en el tramo medi
 balón real parado en un saque de banda o una falta está quieto 2-10 s: el umbral de 10 s y 25
 apariciones no debe borrarlo (medir sobre saques marcados en la hoja de posesión). Criterio: no
 perder ningún balón real de la hoja y quitar las quietas de fuera.
+
+## 34. El árbitro en F11 sale como jugador de un equipo (27-nov-2026)
+
+Visto en el 3:00.0 del alevín B (`docs/segunda_opinion_27nov.md`, sección 8): la identidad 301 es el
+árbitro (camiseta amarilla flúor) y sale como «verde». En F11 no corre ninguna regla de árbitro: la
+pista Viterbi del benjamín (`arbitro.viterbi`) vive de la puntuación del CHALECO, que en F11 no se
+calcula (`deteccion.chaleco_banda: null`: no hay banda medida para el amarillo de este árbitro) y no
+está en los cachés. Probarla «tal cual» no es un cambio de config: pide medir la banda del chaleco
+en el alevín B (como `scripts/colab_arbitro_villa.py`) y una pasada de GPU para la puntuación.
+No es para diciembre (decisión de Alex). Comprobación previa cuando se abra: ¿cuántas filas A/B del
+alevín B son el árbitro? (en F11, el oráculo del alevín A dice que el árbitro es solo el 2 % de
+«sobran», así que el peso en las métricas colectivas es pequeño; en la pizarra se ve).
