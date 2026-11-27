@@ -41,9 +41,12 @@ propio indicador, no la verdad):
 algún indicador I1-I4, **y claramente por encima de T1 y T2** (al menos +10 puntos sobre el mejor de
 los dos). Se informa con ventanas de 4 y 6 s; vale si cumple en las dos.
 
-Se informa también (no decide): el acierto en todo el juego vivo contando la disputa (los modelos de
-2 y 3 estados nunca dicen «disputa», así que ahí fallan siempre), y el porcentaje de ventanas
-«parado» que I3/I4 marcan como balón muerto.
+Se informa también (no decide; pedido por Alex el 27-nov):
+- el reparto del TIEMPO del tramo por fase según las marcas, en particular **qué % es «disputa»**;
+- el acierto en todo el juego vivo contando la disputa (los modelos de 2 y 3 estados nunca dicen
+  «disputa», así que ahí fallan siempre);
+- **precisión y recall de «parado/fuera»** por ventanas (I3/I4): la precisión dice si el modelo
+  corta juego vivo, el recall si se le escapa balón parado hacia las métricas.
 
 **¿Qué podría estar inventando?** Un indicador puede acertar por inercia si un equipo tiene la
 posesión casi todo el tramo: por eso T1. Y puede acertar por la geometría (el que ataca tiene más

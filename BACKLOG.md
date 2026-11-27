@@ -878,3 +878,19 @@ campo. Arreglo previsto: derivar `dist_max_jugadores = fraccion_ancho_campo × a
 `dimensiones_campo` (ya llega a `seleccionar_balon_activo`), con un test de COMPORTAMIENTO que
 cambie el ancho y vea cambiar la guarda. Antes, comprobar que el benjamín sale byte a byte igual.
 Mismo patrón que el `_resolucion` del cosido: un comentario que promete algo que el código no hace.
+
+## 33. Filtro de candidatas de balón QUIETAS en el pipeline general (27-nov-2026)
+
+Visto en la prueba de posesión del alevín B (`docs/plan_posesion_prueba.md`): en 3:00-6:00 el **49 %**
+de las candidatas de balón (conf ≥ 0,3) repiten píxel (± 3 px) ≥ 25 veces en ± 10 s, y **todas
+están fuera del campo**; la principal, un balón parado junto a la banda cercana en (33, −3) m, con
+más de 550 apariciones. Sin filtrarlas, el 39 % de los fotogramas tenía «balón fuera». La cámara
+tiembla 0,22 px (`docs/segunda_opinion_26nov.md`), así que algo que no se mueve en píxeles durante
+segundos es un objeto parado, no el balón del partido. Es el mismo tipo de criterio que faltó con las
+marcas del campo («¿se comporta como un balón?», CLAUDE.md).
+
+Comprobación previa antes de llevarlo a `src/balon/`: (1) en el benjamín y en la parte entera del
+alevín B, ¿cuántas candidatas DENTRO del campo son quietas? (en el tramo medido, ninguna); (2) un
+balón real parado en un saque de banda o una falta está quieto 2-10 s: el umbral de 10 s y 25
+apariciones no debe borrarlo (medir sobre saques marcados en la hoja de posesión). Criterio: no
+perder ningún balón real de la hoja y quitar las quietas de fuera.

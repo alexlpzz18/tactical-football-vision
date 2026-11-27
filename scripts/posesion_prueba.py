@@ -238,6 +238,18 @@ def por_ventana(t: np.ndarray, etiquetas: np.ndarray, ancho: float) -> list:
     return salida
 
 
+def precision_recall(pred: list, verdad: list, clase: str) -> dict:
+    """Precisión y recall de una clase por ventanas (¿corta juego vivo? ¿se le escapa parado?)."""
+    tp = sum(p == clase and v == clase for p, v in zip(pred, verdad))
+    n_pred = sum(p == clase for p in pred)
+    n_verdad = sum(v == clase for v in verdad)
+    return {
+        f"{clase}_precision_pct": round(100 * tp / n_pred, 1) if n_pred else None,
+        f"{clase}_recall_pct": round(100 * tp / n_verdad, 1) if n_verdad else None,
+        f"{clase}_ventanas_predichas": n_pred,
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--marcas", type=Path, required=True)
@@ -272,6 +284,11 @@ def main() -> None:
         "parametros": P,
         "muestras": len(s),
         "balon_visto_pct": round(100 * s.visto.mean(), 1),
+        # reparto del TIEMPO del tramo según las marcas (no por ventanas)
+        "tramo_pct_por_fase": {
+            e: round(100 * float(np.mean(verdad == e)), 1)
+            for e in ("verde", "blanco", "disputa", "parado", "sin_marca")
+        },
     }
     for ancho in (4.0, 6.0):
         v = por_ventana(t, verdad, ancho)
@@ -295,9 +312,7 @@ def main() -> None:
                 "acierto_juego_vivo_con_disputa_pct": round(
                     100 * np.mean([p[i] == v[i] for i in vivo_total]), 1
                 ) if vivo_total else None,
-                "parado_detectado_pct": round(
-                    100 * np.mean([p[i] == "parado" for i, x in enumerate(v) if x == "parado"]), 1
-                ) if "parado" in v else None,
+                **precision_recall(p, v, "parado"),
             }  # fmt: skip
         res[f"ventana_{ancho:g}s"] = r
     a.salida.mkdir(parents=True, exist_ok=True)

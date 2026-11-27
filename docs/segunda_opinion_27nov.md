@@ -106,3 +106,73 @@ conf < 0,1 o nunca 15 %), **tracking 10 %**, **localización de píxel 31 %**, e
    espacial de la nota 4 de Alex).
 
 La fusión (13 %) se queda fuera de las baratas: el primer intento fuera de línea fue negativo.
+
+## 5. Opción 3: el oráculo con radio por profundidad, y la mediana espacial (27-nov, tarde)
+
+`scripts/oraculo_f11_radio_profundidad.py`, sobre el mismo CSV de `main`.
+
+**Radio por profundidad.** Una fila casa con una persona si está a ≤ max(2 m, K px × metros por
+píxel vertical en su pie). K se mide, no se elige: el p90 de la diferencia vertical entre el pie de
+la detección y el del GT en el tercio lejano, **3,5 px**. En el fondo el radio queda en 2,9-4,3 m
+(mediana 3,5).
+
+| | radio fijo 2 m | radio por profundidad |
+|---|---|---|
+| faltan en el tercio lejano | 46,5 % | **35,0 %** |
+| faltan en total | 27,5 % | 21,1 % |
+| anchura: parte de Shapley de «faltan» | 60 % | **60 %** |
+| anchura: arreglando SOLO «faltan» | −59 % | **−59 %** |
+| anchura: arreglando SOLO localización | −1 % | −5 % |
+| centroide: etiqueta · faltan | 42 · 38 % | 46 · 38 % |
+
+**La presencia real sigue rompiendo la anchura.** Al reclasificar el temblor de píxel, un cuarto de
+los «faltan» del fondo pasa a «casados», pero el peso de «faltan» en la anchura no se mueve (60 %) y
+el criterio (> 30 %) se sigue cumpliendo con holgura. Los que faltan de verdad son los que definen
+la anchura (los del fondo, la banda lejana). ⇒ la opción 1 (umbral bajo solo para continuar pistas)
+está justificada. En el centroide manda la etiqueta de equipo (46 %).
+
+**Mediana espacial: no** (sistema sin arreglos contra el GT con el MISMO estimador, 200 pares
+frame-equipo):
+
+| métrica | media (hoy) | alternativa | |
+|---|---|---|---|
+| centroide | **4,82 m** | mediana 7,08 m (6,74 en mediana) · contra la media del GT 5,71 | peor |
+| líneas (defensa/medio/ataque) | **5,01 m** | mediana dentro de cada línea 5,28 m | peor |
+| anchura | **5,71 m** | 2.º máx − 2.º mín 5,88 m | peor |
+
+La mediana no absorbe las filas desplazadas porque el error dominante no son unos pocos puntos
+raros: faltan personas enteras (las del fondo) y otras llevan la etiqueta del otro equipo. Con un
+conjunto sesgado así, la mediana es más ruidosa que la media (usa menos información) y no corrige el
+sesgo. Y recortar extremos en la anchura empeora, como avisaba Alex: borra al lateral que la define.
+
+## 6. La regla de staff en el alevín B: encender el interruptor que ya existe (27-nov, tarde; NO integrado)
+
+No hace falta una regla nueva: `main` ya tiene la versión por observación,
+`agregacion.por_observacion.staff_dentro_del_campo` (`docs/staff_dentro_del_campo.md`, adoptada el
+30-oct solo en el benjamín). Las observaciones de una identidad de staff con el pie a ≥ 1 m DENTRO
+de las líneas, y en trozos que corren (≥ `staff.vel_max_lento`), se etiquetan como las de un
+jugador; fuera sigue siendo staff.
+
+**Por qué la 2246 era staff**: de 626 a ~680 s sigue a jugadores dentro del campo; luego pasa 4 min
+plantada 1,6 m detrás de la línea de fondo, junto a la portería (x ≈ 101,6, 0,9 m/s de media). La rama
+de staff lento marca la identidad ENTERA.
+
+**Medido** (banco con el interruptor encendido solo en el alevín B, `outputs/alevinb_staff_dentro/`):
+- mini-GT a ojo **86,1 → 89,9 %** (recupera las 3 marcas mandadas a staff);
+- solo cambian filas que eran staff (1.387 de 512.923, en 53 identidades); las posiciones, idénticas;
+- cambios de color por minuto 87,5 → 90,3.
+
+**¿Qué podría estar inventando?** Hoja de 74 rachas con la caja de la propia detección
+(`scripts/staff_dentro_alevinb.py` → `outputs/alevinb_staff_dentro/hoja/`; control: la pasada de la
+hoja es idéntica byte a byte a la del banco). Revisadas a ojo:
+- la gran mayoría son **jugadores junto a la banda lejana** (42 rachas, 339 filas con y ≥ 50 m) y el
+  primer minuto de la 2246: vuelven bien;
+- **~10 rachas cortas (~60 filas, ~7 s en 30 min) son una persona de ROJO plantada en la línea de
+  fondo junto al poste** (x 96-100, y 17-23) que da pasos dentro del campo. No es el portero de A: en
+  los mismos instantes el portero está a y ≈ 24-27. Salen sobre todo como B;
+- 3-4 rachas dudosas (una figura de azul junto al banderín, dos junto a la barandilla cercana).
+
+Es el mismo tipo de error conocido del benjamín (el adulto de 10:54, 3 s), aquí con ~2-3 veces más
+filas. Decisión de Alex. Si se quiere evitar, la opción sin color sería pedir más margen DENTRO solo
+junto a las líneas de FONDO (la persona de rojo no pasa de ~4 m de la línea; el portero lo decide su
+propia regla); no se ha medido.
