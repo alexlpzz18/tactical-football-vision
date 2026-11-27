@@ -81,3 +81,37 @@ sobrante. Por eso el criterio 3 y el recuento de filas desplazadas 2-5 m.
   Con SigLIP la etiqueta pesa menos en el centroide (43 → 33 %) y «faltan» pasa a mandar todavía
   más. La opción 1 se mide con los configs de `main`, como dice el plan, para que la base sea la del
   oráculo (5,71 m); la combinación con SigLIP es un paso posterior.
+
+---
+
+## Resultado (27-nov)
+
+Colab: L4, 0,20 h encendida (0,47 CU), 7,5 min de detección; el vídeo se subió desde el Mac (no está
+en Drive). Caché: 500 frames (7500-8997), 13.713 detecciones, de ellas **2.311 débiles** (0,10-0,30);
+el filtro de quietos quita 545.
+
+**Control**: las fuertes del caché nuevo reproducen el **99,9 %** de las cajas de producción (IoU ≥ 0,9).
+V1 (solo fuertes) da los mismos faltan y la misma anchura que V0; el centroide (4,67 frente a 4,82 m) y
+«sobran» (3,39 frente a 2,57 filas por frame) se mueven porque la feature de color se recalculó en
+Colab y el fit cambia un poco.
+
+| | V0 producción | V1 solo fuertes | V2 débiles, activación 0,2 | **V3 = V2 + quietos** |
+|---|---|---|---|---|
+| faltan en el tercio lejano (radio por profundidad) | 35,0 % | 35,0 % | 30,0 % | **30,5 %** |
+| error de anchura | 5,71 m | 5,71 m | 4,73 m | **4,50 m** (−21 %) |
+| peso de «sobran» en la anchura | 2 % | 2 % | 1 % | **1 %** |
+| centroide | 4,82 m | 4,67 m | 4,77 m | 4,81 m |
+| profundidad | 6,63 m | 6,63 m | 7,00 m | 7,00 m |
+| sobran, filas por frame | 2,57 | 3,39 | 2,53 | 2,56 |
+| identidades | 115 | 115 | 109 | 110 |
+
+**Criterio**: 1. faltan lejanos ≤ 25 % → **NO** (30,5 %) · 2. anchura ≤ 4,85 m → **sí** (4,50) ·
+3. «sobran» en la anchura ≤ 5 % → **sí** (1 %).
+
+**Cumple 2 de 3: no se adopta por la letra del criterio.** La anchura baja más de lo pedido (−21 %
+frente a −15 %) sin meter sobrantes, pero la presencia lejana solo recupera 4,5 puntos de los 10 que
+se pedían. Coherente con el embudo: la parte de 0,10-0,30 era el 21 % de los que faltan y aquí se
+recupera ~13 % de ellos; el resto de la presencia perdida es fusión (13 %), detecciones por debajo de
+0,10 o nunca vistas (15 %) y tracking (10 %). La profundidad empeora un 6 % (6,63 → 7,00 m), a vigilar.
+El filtro de quietos apenas cambia la presencia (30,0 → 30,5 %) y mejora la anchura (4,73 → 4,50 m).
+Decide Alex. Regla de dos intentos: este es el intento 1.
