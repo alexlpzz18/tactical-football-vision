@@ -115,3 +115,43 @@ recupera ~13 % de ellos; el resto de la presencia perdida es fusión (13 %), det
 0,10 o nunca vistas (15 %) y tracking (10 %). La profundidad empeora un 6 % (6,63 → 7,00 m), a vigilar.
 El filtro de quietos apenas cambia la presencia (30,0 → 30,5 %) y mejora la anchura (4,73 → 4,50 m).
 Decide Alex. Regla de dos intentos: este es el intento 1.
+
+## Las tres comprobaciones de Alex antes de decidir (27-nov, tarde)
+
+**1. Comparación limpia** (V1 = solo fuertes del caché de Colab, V3 = fuertes + débiles + quietos;
+MISMO fichero de colores, configs de `main`):
+
+| | V1 | V3 | delta |
+|---|---|---|---|
+| anchura | 5,71 m | 4,50 m | **−21 %** |
+| centroide | 4,67 m | 4,81 m | +0,14 m |
+| profundidad | 6,63 m | 7,00 m | **+0,37 m** |
+| «sobran» en la anchura | 2 % | 1 % | −1 punto |
+| sobran, filas por frame | 3,39 | 2,56 | −24 % |
+
+El +0,37 m de profundidad viene de las DÉBILES, no del recálculo del color (V1 y V3 comparten
+colores y V1 tiene la misma profundidad que producción).
+
+**2. Con los configs de la rama y SigLIP forzado** (etiquetas de SigLIP reasignadas por caja, IoU ≥
+0,9, a cada caché: si no, sus índices apuntarían a otras cajas; 4 detecciones de V1 sin etiqueta y las
+1.770 débiles de V3, que votan por HS):
+
+| | V1 rama HS | V3 rama HS | V1 rama SigLIP | V3 rama SigLIP |
+|---|---|---|---|---|
+| anchura | 4,99 m | 4,41 m (−12 %) | 4,59 m | **3,82 m (−17 %)** |
+| centroide | 5,09 m | 4,53 m | 4,04 m | **3,57 m** |
+| profundidad | 2,47 m | 2,24 m | 1,92 m | **1,77 m** (mejora) |
+| «sobran» en la anchura | 5 % | 7 % | 4 % | 4 % |
+| sobran, filas por frame | 2,58 | 2,84 | 2,58 | 2,84 |
+| faltan lejanos | 35,0 % | 30,5 % | 35,0 % | 30,5 % |
+
+Con el voto por ventana de la rama, la profundidad la manda la etiqueta y las débiles la MEJORAN.
+
+**3. Coste**. Máquina encendida 12 min (0,47 CU a 2,33 CU/h): arranque y Drive ~2 min, modelo 0,5
+min, subida del vídeo 2 min, **detección 4,4 min** (11:41:17 → 11:45:41, incluye cargar el modelo y
+llegar al frame 7500 decodificando desde el principio), descarga de los colores ~3 min. Cota de
+inferencia: ≤ 0,53 s por frame procesado. La pasada de producción del alevín B (conf 0,30) fue de
+0,22 s por frame (56,8 min para 15.184 frames). El alevín B entero son 30.418 frames procesados:
+**entre 1,9 y 4,5 h de L4, unas 4-10 CU**, más ~10 min fijos por lanzamiento (los vídeos del alevín B
+sí están en Drive). El tope de `gpu_colab.yaml` (40 CU) y la proyección tras el primer checkpoint
+paran la pasada si se dispara.

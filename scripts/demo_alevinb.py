@@ -9,6 +9,10 @@ Para enseñar correcciones en una reunión (petición de Alex, 27-nov): para cad
 3. las fichas se arrastran con el ratón o el dedo (doble clic o pulsación larga: se quita una ficha
    que sobra) y el contorno, las líneas y las distancias se recalculan al momento. Nada se guarda
    (todo en memoria): «Restaurar» vuelve a lo calculado.
+4. la pizarra NO esconde los fallos del sistema, los marca: semitransparente, la ficha sin ninguna
+   detección real en ± 0,4 s (solo filas interpoladas); con aro naranja, las parejas del MISMO
+   equipo a < 1 m (posible duplicado: una persona en dos identidades). «Quitar duplicados» deja la
+   de más detecciones reales de cada pareja, y se deshace con «Restaurar».
 
 Las líneas de la pizarra se calculan igual que en la superposición (corte 1D óptimo en 3 grupos a lo
 largo de la dirección de ataque, sin porteros); la dirección de ataque de cada equipo sale de dónde
@@ -52,7 +56,7 @@ def datos_del_tramo(df: pd.DataFrame, desde: float, hasta: float) -> dict:
         )  # defiende x=0 → ataca hacia +x
     filas = [
         [round(r.tiempo_s - desde, 2), int(r.id_jugador), EQUIPO[r.etiqueta],
-         int(r.etiqueta.startswith("portero")), round(r.x_m, 2), round(r.y_m, 2)]
+         int(r.etiqueta.startswith("portero")), round(r.x_m, 2), round(r.y_m, 2), int(r.es_real)]
         for r in t.itertuples()
     ]  # fmt: skip
     return {"desde": desde, "hasta": hasta, "ataque": ataque, "filas": filas}
