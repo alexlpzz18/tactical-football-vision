@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo alevín B</title>
+<style>
+  :root { --fondo:#f5f5f2; --tarjeta:#fff; --texto:#1c1c1a; --suave:#6a6a64; --borde:#deded8;
+          --cesped:#2f7d4a; --linea:rgba(255,255,255,.85); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+          --fondo:#151514; --tarjeta:#1f1f1d; --texto:#ecece7; --suave:#a2a29b; --borde:#33332f; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--fondo); color:var(--texto);
+         font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  main { max-width:1280px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:0 0 4px; } .ayuda { color:var(--suave); margin:0 0 12px; }
+  .pestanas { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  button { font:inherit; padding:7px 12px; border-radius:6px; border:1px solid var(--borde);
+           background:var(--tarjeta); color:var(--texto); cursor:pointer; }
+  button.activo { outline:2px solid var(--texto); }
+  video { width:100%; border-radius:8px; background:#000; display:block; }
+  .barra { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+  .reloj { font-variant-numeric:tabular-nums; font-weight:600; }
+  .leyenda span { display:inline-flex; align-items:center; gap:6px; margin-right:14px; }
+  .punto { width:12px; height:12px; border-radius:50%; display:inline-block; }
+  svg { width:100%; height:auto; display:block; border-radius:8px; touch-action:none; }
+  .cifras { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px;
+            margin-top:8px; font-variant-numeric:tabular-nums; }
+  .cifras div { background:var(--tarjeta); border:1px solid var(--borde); border-radius:8px; padding:8px 10px; }
+  .oculto { display:none; }
+  circle.ficha { cursor:grab; stroke:#fff; stroke-width:.35; }
+  circle.ficha.movida { stroke:#ffd400; stroke-width:.6; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Alevín B · superposición táctica y pizarra en directo</h1>
+  <p class="ayuda">Reproduce el clip. Al <b>pausar</b> (o con <b>Congelar</b>, tecla C) aparece la pizarra del
+    instante: cada ficha en su posición mediana de ± 0,4 s. Arrastra las fichas para corregir y mira cómo
+    cambian el bloque, las líneas y las distancias. <b>Doble clic</b> (o pulsación larga) quita una ficha
+    que sobra. Nada se guarda.</p>
+  <div class="pestanas" id="pestanas"></div>
+  <video id="v" controls preload="auto"></video>
+  <div class="barra">
+    <span class="reloj" id="reloj"></span>
+    <button id="congelar">Congelar pizarra (C)</button>
+    <button id="restaurar">Restaurar</button>
+    <span class="leyenda" id="leyenda"></span>
+  </div>
+  <div id="pizarra" class="oculto">
+    <svg id="campo"></svg>
+    <div class="cifras" id="cifras"></div>
+  </div>
+</main>
+<script>
+const DATOS = __DATOS__;
+const COLOR = __COLORES__, NOMBRE = __NOMBRES__, L = __LARGO__, W = __ANCHO__, VENTANA = 0.4;
+const v = document.getElementById("v"), svg = document.getElementById("campo");
+let tramo = 0, fichas = [], originales = [];
+const NS = "http://www.w3.org/2000/svg";
+
+document.getElementById("leyenda").innerHTML = Object.keys(NOMBRE).map(e =>
+  `<span><i class="punto" style="background:${COLOR[e]}"></i>${NOMBRE[e]}</span>`).join("");
+DATOS.forEach((d, i) => {
+  const b = document.createElement("button");
+  b.textContent = `${reloj(d.desde)}–${reloj(d.hasta)}`;
+  b.onclick = () => elegir(i);
+  document.getElementById("pestanas").appendChild(b);
+});
+function reloj(s) { const m = Math.floor(s / 60); return `${m}:${(s - 60 * m).toFixed(1).padStart(4, "0")}`; }
+function elegir(i) {
+  tramo = i; v.src = `clip_${i}.mp4`;
+  document.querySelectorAll("#pestanas button").forEach((b, k) => b.classList.toggle("activo", k === i));
+  document.getElementById("pizarra").classList.add("oculto");
+}
+setInterval(() => { document.getElementById("reloj").textContent =
+  reloj(DATOS[tramo].desde + v.currentTime) + " (archivo)"; }, 100);
+
+const mediana = a => { const s = [...a].sort((x, y) => x - y), n = s.length;
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+
+function congelar() {
+  const d = DATOS[tramo], t = v.currentTime, por = new Map();
+  for (const [tr, id, eq, gk, x, y] of d.filas) {
+    if (Math.abs(tr - t) > VENTANA) continue;
+    if (!por.has(id)) por.set(id, { id, xs: [], ys: [], eq: {}, gk: 0, n: 0 });
+    const p = por.get(id); p.xs.push(x); p.ys.push(y); p.eq[eq] = (p.eq[eq] || 0) + 1; p.gk += gk; p.n++;
+  }
+  fichas = [...por.values()].map(p => ({ id: p.id, x: mediana(p.xs), y: mediana(p.ys),
+    eq: Object.entries(p.eq).sort((a, b) => b[1] - a[1])[0][0], gk: p.gk * 2 > p.n, movida: false }))
+    // solo quien está DENTRO del campo (el CSV exporta hasta 8 m fuera: banquillo y público)
+    .filter(f => f.x >= 0 && f.x <= L && f.y >= 0 && f.y <= W);
+  originales = fichas.map(f => ({ ...f }));
+  document.getElementById("pizarra").classList.remove("oculto");
+  pintar();
+}
+v.addEventListener("pause", congelar);
+document.getElementById("congelar").onclick = () => { v.pause(); congelar(); };
+document.getElementById("restaurar").onclick = () => { fichas = originales.map(f => ({ ...f })); pintar(); };
+document.addEventListener("keydown", e => { if (e.key === "c" || e.key === "C") { v.pause(); congelar(); } });
+
+// envolvente convexa (cadena monótona)
+function envolvente(P) {
+  if (P.length < 3) return P;
+  const p = [...P].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cruz = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const inf = [], sup = [];
+  for (const q of p) { while (inf.length >= 2 && cruz(inf.at(-2), inf.at(-1), q) <= 0) inf.pop(); inf.push(q); }
+  for (const q of p.reverse()) { while (sup.length >= 2 && cruz(sup.at(-2), sup.at(-1), q) <= 0) sup.pop(); sup.push(q); }
+  return inf.slice(0, -1).concat(sup.slice(0, -1));
+}
+// corte 1D óptimo en k grupos seguidos (mínima suma de varianzas), como cortes_1d de Python
+function cortes(v, k) {
+  const n = v.length; if (n < k) return v.map(x => [x]);
+  const sse = (a, b) => { const s = v.slice(a, b), m = s.reduce((x, y) => x + y, 0) / s.length;
+    return s.reduce((x, y) => x + (y - m) ** 2, 0); };
+  const C = Array.from({ length: k + 1 }, () => Array(n + 1).fill(Infinity)), K = C.map(r => r.map(() => 0));
+  C[0][0] = 0;
+  for (let g = 1; g <= k; g++) for (let f = g; f <= n; f++) for (let i = g - 1; i < f; i++) {
+    const c = C[g - 1][i] + sse(i, f); if (c < C[g][f]) { C[g][f] = c; K[g][f] = i; } }
+  const out = []; let f = n;
+  for (let g = k; g > 0; g--) { const i = K[g][f]; out.unshift([i, f]); f = i; }
+  return out;
+}
+function lineas(eq) {
+  const s = DATOS[tramo].ataque[eq];
+  const P = fichas.filter(f => f.eq === eq && !f.gk).sort((a, b) => s * (a.x - b.x));
+  if (P.length < 3) return [];
+  const prof = P.map(f => s * f.x);
+  return cortes(prof, 3).map(([a, b]) => { const g = P.slice(a, b);
+    return { x: g.reduce((u, f) => u + f.x, 0) / g.length, y0: Math.min(...g.map(f => f.y)),
+             y1: Math.max(...g.map(f => f.y)) }; });
+}
+function el(tag, attrs, padre = svg) { const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]); padre.appendChild(e); return e; }
+function pintar() {
+  const M = 3; svg.setAttribute("viewBox", `${-M} ${-M} ${L + 2 * M} ${W + 2 * M}`); svg.innerHTML = "";
+  el("rect", { x: -M, y: -M, width: L + 2 * M, height: W + 2 * M, fill: "var(--cesped)" });
+  const raya = { fill: "none", stroke: "var(--linea)", "stroke-width": 0.25 };
+  el("rect", { x: 0, y: 0, width: L, height: W, ...raya });
+  el("line", { x1: L / 2, y1: 0, x2: L / 2, y2: W, ...raya });
+  el("circle", { cx: L / 2, cy: W / 2, r: 9.15, ...raya });
+  const cifras = [];
+  for (const eq of ["A", "B"]) {
+    const P = fichas.filter(f => f.eq === eq && !f.gk).map(f => [f.x, f.y]);
+    const H = envolvente(P);
+    if (H.length >= 3) el("polygon", { points: H.map(p => p.join(",")).join(" "), fill: COLOR[eq],
+      "fill-opacity": 0.12, stroke: COLOR[eq], "stroke-width": 0.35 });
+    const ls = lineas(eq);
+    ls.forEach(l => el("line", { x1: l.x, y1: l.y0 - 1, x2: l.x, y2: l.y1 + 1, stroke: COLOR[eq],
+      "stroke-width": 0.5, "stroke-dasharray": "1.2 0.8" }));
+    if (P.length) {
+      const xs = P.map(p => p[0]), ys = P.map(p => p[1]);
+      const d = ls.length === 3 ? `def–med ${Math.abs(ls[1].x - ls[0].x).toFixed(1)} m · med–ata ${Math.abs(ls[2].x - ls[1].x).toFixed(1)} m · ` : "";
+      cifras.push(`<div><b style="color:${COLOR[eq]}">${NOMBRE[eq]}</b> · ${P.length} de campo<br>${d}largo ${(Math.max(...xs) - Math.min(...xs)).toFixed(1)} m · ancho ${(Math.max(...ys) - Math.min(...ys)).toFixed(1)} m</div>`);
+    }
+  }
+  for (const f of fichas) {
+    const c = el("circle", { cx: f.x, cy: f.y, r: f.gk ? 1.3 : 1.1, fill: COLOR[f.eq],
+      class: "ficha" + (f.movida ? " movida" : "") });
+    if (f.gk) c.setAttribute("stroke-dasharray", "0.6 0.4");
+    c.addEventListener("pointerdown", ev => arrastrar(ev, f));
+    c.addEventListener("dblclick", () => quitar(f));
+  }
+  const n = fichas.filter(f => f.movida).length, q = originales.length - fichas.length;
+  cifras.push(`<div>Instante ${reloj(DATOS[tramo].desde + v.currentTime)} (archivo) · ${fichas.length} fichas${n ? ` · ${n} movidas a mano` : ""}${q ? ` · ${q} quitadas` : ""}</div>`);
+  document.getElementById("cifras").innerHTML = cifras.join("");
+}
+function quitar(f) { fichas = fichas.filter(g => g !== f); pintar(); }
+function arrastrar(ev, f) {
+  ev.preventDefault(); svg.setPointerCapture(ev.pointerId);
+  // pulsación larga sin moverse (tableta): quita la ficha, como el doble clic
+  let movido = false;
+  const largo = setTimeout(() => { if (!movido) { soltar(); quitar(f); } }, 700);
+  const mover = e => { const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY;
+    const q = p.matrixTransform(svg.getScreenCTM().inverse());
+    movido = true; clearTimeout(largo);
+    f.x = Math.max(-2, Math.min(L + 2, q.x)); f.y = Math.max(-2, Math.min(W + 2, q.y)); f.movida = true; pintar(); };
+  const soltar = () => { clearTimeout(largo); svg.removeEventListener("pointermove", mover); svg.removeEventListener("pointerup", soltar); };
+  svg.addEventListener("pointermove", mover); svg.addEventListener("pointerup", soltar);
+}
+elegir(0);
+</script>
+</body>
+</html>

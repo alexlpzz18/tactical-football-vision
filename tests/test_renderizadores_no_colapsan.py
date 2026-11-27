@@ -236,6 +236,9 @@ NO_PINTAN_POR_OBSERVACION = {
     "EN ESE FRAME (no la moda de la identidad); no hay ficha por observación que colapsar",
     "scripts/superposicion_tactica.py": "pinta sobre el vídeo el CONTORNO y las LÍNEAS de cada "
     "equipo con la etiqueta de cada fila EN ESE FRAME (no la moda de la identidad); sin fichas",
+    "scripts/demo_alevinb.py": "la pizarra congelada pinta cada ficha con la etiqueta "
+    "mayoritaria de SUS filas en ± 0,4 s alrededor del instante (no la moda de la identidad "
+    "entera); el vídeo es superposicion_tactica",
 }
 
 
